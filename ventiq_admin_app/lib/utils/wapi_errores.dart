@@ -203,6 +203,52 @@ WapiDiagnostico diagnosticarError({
     );
   }
 
+  // ── 3-bis. Choques de la clave de idempotencia ───────────────────────
+  // El backend manda una Idempotency-Key por contenido para no repetir
+  // envíos. Si esa clave se reutiliza con otra petición, el servidor frena el
+  // intento (422/409): eso NO es un rechazo de WhatsApp, y el texto crudo
+  // ("This Idempotency-Key was already used for a different request...") no
+  // le dice nada al dueño de la tienda.
+  if (code == 'IDEMPOTENCY_KEY_REUSED' ||
+      _alguna(raw, ['was already used for a different request'])) {
+    return d(
+      WapiDiagTipo.transitorio,
+      'El reintento chocó con un envío anterior',
+      'El sistema recordó que esa clave ya se había usado para un envío '
+          'anterior y frenó este intento para no mandar el mensaje dos veces. '
+          'Por este intento el mensaje NO salió.',
+      'Vuelve a reintentar la tanda; el sistema ya usa una clave nueva para '
+          'cada contenido.',
+      icono: Icons.content_copy_rounded,
+      color: AppColors.warning,
+    );
+  }
+
+  if (code == 'IDEMPOTENCY_KEY_IN_PROGRESS') {
+    return d(
+      WapiDiagTipo.informativo,
+      'El envío anterior seguía en curso',
+      'Todavía había un envío con esa misma clave que no había terminado, así '
+          'que este intento se frenó para no duplicar el mensaje.',
+      'Espera unos segundos y vuelve a reintentar la tanda.',
+      icono: Icons.hourglass_top_rounded,
+      color: AppColors.info,
+    );
+  }
+
+  if (code == 'IDEMPOTENCY_OUTCOME_UNKNOWN') {
+    return d(
+      WapiDiagTipo.informativo,
+      'No se pudo confirmar si salió',
+      'Un intento anterior con esa misma clave falló y no se pudo confirmar '
+          'si el mensaje llegó a salir: puede que sí.',
+      'Revisa el chat antes de reenviar; si no llegó, reintenta la tanda con '
+          'una clave nueva.',
+      icono: Icons.help_outline_rounded,
+      color: AppColors.info,
+    );
+  }
+
   // ── 4. Errores del servidor del bot ──────────────────────────────────
   if (code == 'HTTP_500' || code == 'HTTP_502' || code == 'HTTP_503' ||
       code == 'HTTP_504' || _alguna(raw, ['internal server error'])) {
@@ -300,7 +346,39 @@ WapiDiagnostico diagnosticarError({
     );
   }
 
-  // ── 10. Genérico ─────────────────────────────────────────────────────
+  // ── 10. Filtrado por "solo disponibles" (reanudación) ───────────────
+  // El backend marca `SKIPPED_AGOTADO` cuando la tanda se reanuda con el
+  // filtro activo y el producto ya no tiene stock: reintentar no sirve hasta
+  // que se reponga.
+  if (code == 'SKIPPED_AGOTADO') {
+    return d(
+      WapiDiagTipo.definitivo,
+      'Producto agotado: no se envió',
+      'Tienes activado "solo disponibles" y este producto ya no tiene stock, '
+      'así que se omitió del mensaje.',
+      'No hay nada que reintentar: si quieres anunciarlo igualmente, '
+          'desactiva "solo disponibles" en la programación o repón el stock.',
+      icono: Icons.inventory_2_outlined,
+      color: AppColors.warning,
+      reintentable: false,
+    );
+  }
+
+  // ── 11. Producto que ya no existe ───────────────────────────────────
+  if (code == 'PRODUCTO_NO_ENCONTRADO') {
+    return d(
+      WapiDiagTipo.definitivo,
+      'El producto ya no existe',
+      'Uno de los productos de la tanda no se pudo resolver: puede que se '
+      'haya eliminado después de programar el envío.',
+      'Edita la programación y quita ese producto de la lista.',
+      icono: Icons.remove_shopping_cart_outlined,
+      color: AppColors.error,
+      reintentable: false,
+    );
+  }
+
+  // ── 12. Genérico ─────────────────────────────────────────────────────
   return d(
     WapiDiagTipo.transitorio,
     'No se pudo entregar el mensaje',
@@ -402,6 +480,9 @@ WapiDiagnostico diagnosticarExcepcion(Object e) {
 
 String? _codigoDesdeTexto(String texto) {
   for (final c in [
+    'IDEMPOTENCY_KEY_REUSED',
+    'IDEMPOTENCY_KEY_IN_PROGRESS',
+    'IDEMPOTENCY_OUTCOME_UNKNOWN',
     'NOT_CONNECTED',
     'RECOVERY_FAILED',
     'SESSION_DOWN',

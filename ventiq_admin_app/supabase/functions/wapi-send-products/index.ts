@@ -8,7 +8,9 @@
 //   delay_min_seconds?: number,   // anti-ban (default 5)
 //   delay_max_seconds?: number,   // anti-ban (default 10)
 //   tipo_envio?: 'manual'|'programado',
-//   send_summary?: boolean        // resumen final (default true)
+//   send_summary?: boolean,       // resumen final (default true)
+//   solo_disponibles?: boolean,   // sólo anuncia productos con stock conocido > 0
+//   dry_run?: boolean             // resuelve plan+captions y los devuelve SIN enviar
 // }
 //
 // Formato del mensaje (ver buildCaption): una imagen por producto con un
@@ -33,12 +35,15 @@
 //      recomendado de 20 msgs/min/sesión.
 //
 // IDEMPOTENCIA (OpenWA 0.25.0+): cada mensaje viaja con `Idempotency-Key`
-// derivada de su fila de log (`wa-log-<id>`), estable entre reintentos y entre
-// reanudaciones. Eso hace que reintentar NUNCA duplique el mensaje, y permite
+// derivada del CUERPO real que se manda (`wa-log-<logId>-<hash(chatId|url|
+// caption)>`), estable entre reintentos y entre reanudaciones sin cambios de
+// contenido. Eso hace que reintentar NUNCA duplique el mensaje, y permite
 // tratar `IDEMPOTENCY_KEY_IN_PROGRESS` / `IDEMPOTENCY_OUTCOME_UNKNOWN` como
 // "todavía no sé el resultado" (se espera y se reintenta con la MISMA clave;
 // OpenWA devuelve la respuesta guardada) en vez de marcarlos `fallido` cuando
-// el mensaje probablemente SÍ salió.
+// el mensaje probablemente SÍ salió. Si el contenido cambia (precio/stock), la
+// clave cambia y OpenWA lo acepta como mensaje nuevo en vez de responder 422
+// `IDEMPOTENCY_KEY_REUSED`; ese 422 se reintenta UNA vez con clave nueva.
 //
 // El envío se reparte en chunks encadenados: cada invocación despacha los
 // productos que le caben en su presupuesto de wall-clock (los workers de Edge
@@ -107,6 +112,48 @@ interface SendBody {
 
   /** ¿Mandar el mensaje resumen al final del envío? Default true. */
   send_summary?: boolean;
+
+  /**
+   * Si es `true`, sólo se anuncian productos con stock CONOCIDO > 0.
+   *
+   * Lo lee `wapi-cron-dispatch` de `app_wapi_programacion.solo_disponibles` y
+   * lo reenvía aquí (en el envío manual la app lo manda directo). Se filtra
+   * ANTES de construir el plan, así que el producto agotado no genera ni una
+   * fila de log en una tanda nueva. Un stock DESCONOCIDO (`null`: fallo de
+   * lectura o tienda sin almacén) NO se filtra — misma política que el
+   * semáforo del caption: no se anuncia agotado algo que no sabemos.
+   */
+  solo_disponibles?: boolean;
+
+  /**
+   * MODO DRY-RUN (verificación sin efectos). Contrato:
+   *
+   *   · Resuelve los datos de TODOS los productos, el plan por destino y el
+   *     caption de cada mensaje — exactamente lo que se enviaría.
+   *   · NO llama a WAPI, NO escribe en `app_wapi_envio_log`, NO crea filas,
+   *     NO manda el resumen y NO encadena chunks.
+   *   · NO exige que la sesión esté conectada: es una prueba.
+   *   · El "no escribe" vale también en REANUDACIÓN (`resume_log_ids`): aunque
+   *     `solo_disponibles` deje productos agotados fuera, el dry-run NO marca
+   *     sus filas como `SKIPPED_AGOTADO` (eso sólo lo hace el envío real); los
+   *     reporta en `filtrados_agotados`.
+   *
+   * Respuesta (200):
+   * {
+   *   dry_run: true,
+   *   productos: N, productos_resueltos: N,
+   *   productos_sin_info: [ids...],        // no se pudieron leer
+   *   productos_sin_imagen: [{id_producto, motivo}],
+   *   productos_stock_desconocido: [ids...],
+   *   filtrados_agotados: [{id_producto, stock}],  // sólo si solo_disponibles
+   *   destinos: N, mensajes: N,            // mensajes = longitud de plan
+   *   plan: [{ id_producto, chat_id, stock, caption_resumen, caption_chars }]
+   * }
+   *
+   * Requiere las mismas credenciales que un envío real (service_role o un
+   * usuario con acceso a la tienda): no se abre a llamadas anónimas.
+   */
+  dry_run?: boolean;
 }
 
 // ───────────────────────────────────────────────────────────────────────
@@ -235,6 +282,25 @@ function esIdemResultadoDesconocido(
   return m.includes("may have been sent");
 }
 
+/**
+ * ¿El error dice "esta clave de idempotencia ya se usó con OTRO cuerpo"?
+ * (`IDEMPOTENCY_KEY_REUSED`, HTTP 422 de OpenWA.)
+ *
+ * Con la clave derivada del contenido (ver `claveIdemBase` en `dispatchOne`),
+ * un 422 sólo puede significar que la petición que reclamó esa clave llevaba
+ * OTRO contenido: era otro mensaje. Reintentar con la MISMA clave volvería a
+ * dar 422, así que el único reintento útil es con una clave nueva (nonce).
+ */
+function esIdemClaveReusada(
+  code: string | undefined,
+  message: string | undefined,
+): boolean {
+  if (code === "IDEMPOTENCY_KEY_REUSED") return true;
+  const m = (message ?? "").toLowerCase();
+  return m.includes("idempotency_key_reused") ||
+    m.includes("was already used for a different request");
+}
+
 /** Hash estable (FNV-1a) para construir claves de idempotencia. */
 function fnv1a(texto: string): string {
   let h = 0x811c9dc5;
@@ -243,6 +309,23 @@ function fnv1a(texto: string): string {
     h = Math.imul(h, 0x01000193) >>> 0;
   }
   return h.toString(36);
+}
+
+/**
+ * Semilla del icono del caption: hash ESTABLE del `idProducto`, no su posición
+ * en la lista efectiva del worker.
+ *
+ * Antes el seed era `posDeProducto.get(idProd)` — el índice dentro de
+ * `effProductIds` — y al reanudar esa lista trae SÓLO los productos sin enviar:
+ * el mismo producto cambiaba de índice (y por tanto de icono) según el
+ * subconjunto de cada reanudación, alterando el caption. Derivarlo del id hace
+ * que el mismo producto salga SIEMPRE con el mismo texto, tanto en la tanda
+ * original como en cualquier reanudación/continuación.
+ */
+function seedIcono(idProducto: number): number {
+  // `fnv1a` devuelve base36; `pick` necesita un entero no negativo y el hash
+  // vuelve a ser exacto al parsearlo (cabe en 32 bits sin signo).
+  return Number.parseInt(fnv1a(String(idProducto)), 36);
 }
 
 // Trunca caption (WhatsApp permite máx 1024 chars en captions de imagen)
@@ -843,6 +926,10 @@ export async function dispatchProducts(args: {
   enviarResumen?: boolean;
   /** Ver `SendBody.summary_only`: no despacha productos, sólo el resumen. */
   summaryOnly?: boolean;
+  /** Ver `SendBody.solo_disponibles`. */
+  soloDisponibles?: boolean;
+  /** Ver `SendBody.dry_run`: resuelve y devuelve el plan sin enviar nada. */
+  dryRun?: boolean;
 }) {
   const {
     admin, idSesion, idTienda, wapiSessionId, productIds,
@@ -851,6 +938,8 @@ export async function dispatchProducts(args: {
   } = args;
   const enviarResumen = args.enviarResumen ?? true;
   const summaryOnly = args.summaryOnly === true;
+  const soloDisponibles = args.soloDisponibles === true;
+  const dryRun = args.dryRun === true;
 
   // ── MODO REANUDAR ───────────────────────────────────────────────────
   // Reconstruimos productos y destinos a partir de las filas de log que
@@ -975,14 +1064,9 @@ export async function dispatchProducts(args: {
     return { enviados: 0, fallidos: 0, batch_id: null, skipped: true };
   }
 
-  // Productos que listará el resumen final. En la primera invocación son
-  // todos los pedidos; en las continuaciones viene heredado del chunk previo.
-  // (Al reanudar, la app manda la lista completa de la tanda en
-  //  `summary_product_ids`; si no llegara, el resumen listaría sólo los
-  //  productos que quedaron sin enviar.)
-  const summaryIds = args.summaryProductIds?.length
-    ? args.summaryProductIds
-    : effProductIds;
+  // NOTA: `summaryIds` (la lista que pinta el resumen final) se calcula más
+  // abajo, DESPUÉS de aplicar el filtro de `solo_disponibles`: el resumen no
+  // debe listar justo los productos que la programación pidió no anunciar.
 
   // ───────────────────────────────────────────────────────────────────
   //  CHUNKING anti-timeout — guiado por el RELOJ, no por una estimación
@@ -1027,6 +1111,77 @@ export async function dispatchProducts(args: {
   const maxMs = Math.max(minMs + 1_000, delayMax * 1000);
   const avgDelayMs = (minMs + maxMs) / 2;
 
+  // ── Datos de producto, con caché ────────────────────────────────────
+  // Se cargan por ventanas en vez de todos de golpe: así un chunk que se
+  // corta pronto no paga las consultas de históricos de productos que nunca
+  // va a tocar, y lo ya cargado se reutiliza para el resumen final.
+  //
+  // OJO — CAUSA RAÍZ del incidente "producto no encontrado" (2026-10-28):
+  // quien consume esta caché NO puede asumir que los productos se visitan en
+  // orden ascendente dentro de `effProductIds`. El plan va ordenado POR
+  // DESTINO y, al reanudar, cada destino trae SÓLO sus pares sin enviar: el
+  // primer par del worker puede ser el producto en la posición 47 y el
+  // siguiente destino empezar en la posición 0. La precarga anterior avanzaba
+  // una marca de agua monótona (`ventanaFin`) que daba por cargado TODO lo
+  // anterior a la primera posición vista: en el chunk del 16:06 se cargó
+  // `slice(47,53)` (6 productos), `ventanaFin` quedó en 53, y los 47 productos
+  // de los destinos siguientes nunca se cargaron → se marcaron `fallido`/
+  // SKIPPED en los 5 destinos (194 mensajes perdidos).
+  // Ahora la precarga se indexa por VENTANA POSICIONAL
+  // (`floor(pos / WINDOW_SIZE)`) y se recuerda qué ventanas ya se cargaron, de
+  // modo que el orden del plan da igual.
+  const infoCache = new Map<number, ProdInfo>();
+  /** Ids con al menos un intento de `loadProductInfo` en este worker. */
+  const infoIntentados = new Set<number>();
+  /** Ids que ya se reintentaron puntualmente tras no llegar a la caché. */
+  const infoReintentados = new Set<number>();
+  /** ¿Cuántos de `ids` quedaron resueltos en la caché? (para logs honestos) */
+  const infoResueltos = (ids: number[]): number =>
+    ids.filter((id) => infoCache.has(id)).length;
+
+  /**
+   * Carga en `infoCache` lo que falte de `ids`.
+   *
+   * `forzar` reintenta UNA vez los ids que ya se intentaron y no llegaron:
+   * `loadProductInfo` puede devolver menos filas que las pedidas (producto
+   * borrado, fallo puntual de lectura) y sin este escape un id marcado como
+   * "intentado" quedaría inaccesible para el resto del worker — el otro lado
+   * del bug: descartar un producto que sí existe.
+   */
+  const ensureInfo = async (
+    ids: number[],
+    opts: { forzar?: boolean } = {},
+  ): Promise<void> => {
+    const faltan = ids.filter((id) => {
+      if (infoCache.has(id)) return false;
+      if (!infoIntentados.has(id)) return true;
+      return !!opts.forzar && !infoReintentados.has(id);
+    });
+    if (faltan.length === 0) return;
+    for (const id of faltan) {
+      if (infoIntentados.has(id)) infoReintentados.add(id);
+      infoIntentados.add(id);
+    }
+    const cargado = await loadProductInfo(admin, idTienda, faltan);
+    for (const [id, info] of cargado.entries()) infoCache.set(id, info);
+  };
+
+  /**
+   * Precarga los datos de TODOS los `effProductIds`, ventana a ventana.
+   * Lo necesitan `solo_disponibles` (hay que conocer el stock ANTES de armar
+   * el plan) y el dry-run. El bucle normal precarga de forma perezosa.
+   * Ventanas de `WINDOW_SIZE`: ni una consulta gigante (PostgREST la trunca en
+   * `max-rows`) ni una por producto.
+   */
+  const precargarTodosLosProductos = async (): Promise<void> => {
+    const total = Math.ceil(effProductIds.length / WINDOW_SIZE);
+    for (let v = 0; v < total; v++) {
+      await ensureInfo(
+        effProductIds.slice(v * WINDOW_SIZE, (v + 1) * WINDOW_SIZE),
+      );
+    }
+  };
+
   /** Destinos con chat_id válido: WhatsApp exige `@c.us` (números) o `@g.us`
    *  (grupos). Se deduplican — el mismo grupo repetido en la programación
    *  duplicaría cada mensaje. Son los únicos que cuentan para los tiempos. */
@@ -1062,6 +1217,123 @@ export async function dispatchProducts(args: {
       Math.max(envioEstimadoMs, peorEnvioMs * 1.2) + avgDelayMs,
     );
 
+  // ── SOLO DISPONIBLES (opt-in por programación) ──────────────────────
+  // Si la programación lo pide, se anuncian SÓLO productos con stock
+  // CONOCIDO > 0. Un stock `null` (no se pudo leer: tienda sin almacén,
+  // fallo de la consulta de inventario) NO se filtra — misma política que el
+  // semáforo del caption: es preferible anunciar un producto cuyo stock no
+  // sabemos que dar por agotado algo que sí hay por un fallo de lectura.
+  //
+  // Se resuelve ANTES de armar el plan (que se construye con `effProductIds`)
+  // y por ventanas (`precargarTodosLosProductos`) para no hacer una consulta
+  // gigante ni gastar el presupuesto del worker: lo cargado queda en
+  // `infoCache` y lo reaprovechan el bucle y el resumen.
+  const filtradosAgotados: Array<{ id_producto: number; stock: number }> = [];
+  const productosStockDesconocido: number[] = [];
+  if (soloDisponibles) {
+    await precargarTodosLosProductos();
+    const conservar: number[] = [];
+    for (const idProd of effProductIds) {
+      const info = infoCache.get(idProd);
+      if (!info) {
+        // No se pudo leer el producto: no hay dato de stock que aplicar.
+        conservar.push(idProd);
+        continue;
+      }
+      if (info.stock == null) {
+        conservar.push(idProd);
+        productosStockDesconocido.push(idProd);
+        continue;
+      }
+      if (info.stock > 0) {
+        conservar.push(idProd);
+        continue;
+      }
+      filtradosAgotados.push({ id_producto: idProd, stock: info.stock });
+    }
+    if (productosStockDesconocido.length > 0) {
+      console.warn(
+        `[wapi-send-products] solo_disponibles: ${productosStockDesconocido.length} ` +
+          `producto(s) con stock DESCONOCIDO — NO se filtran: ` +
+          `${JSON.stringify(productosStockDesconocido.slice(0, 10))}`,
+      );
+    }
+    if (filtradosAgotados.length > 0) {
+      console.log(
+        `[wapi-send-products] solo_disponibles: ${filtradosAgotados.length}/` +
+          `${effProductIds.length} producto(s) sin stock quedan fuera del envío`,
+      );
+      // Al REANUDAR esas filas ya existen y no se van a despachar nunca: se
+      // marcan `fallido`/SKIPPED_AGOTADO para que la tanda no quede
+      // "interrumpida" para siempre ni el botón de reanudar las reintente en
+      // bucle. En una tanda NUEVA no se inventan filas: el producto
+      // simplemente no se anuncia (no ensuciamos el historial con fallos de
+      // mensajes que nunca se quisieron mandar).
+      //
+      // `!dryRun`: el contrato de `dry_run` es NO escribir en
+      // `app_wapi_envio_log`. Este bloque corre ANTES del early-return del
+      // dry-run (para que el dry-run refleje el filtrado por stock), así que
+      // sin esta guarda un dry-run en reanudación marcaría filas reales como
+      // `SKIPPED_AGOTADO` y el llamador creería que no hubo efectos. En
+      // dry-run el agotado se sigue reportando en `filtrados_agotados`.
+      if (esReanudacion && !dryRun) {
+        const filasAgotadas: number[] = [];
+        for (const f of filtradosAgotados) {
+          for (const c of chatsValidos) {
+            const id = logIdPorPar.get(`${f.id_producto}|${c}`);
+            if (id != null) filasAgotadas.push(id);
+          }
+        }
+        for (const lote of chunkArray(filasAgotadas, 500)) {
+          await admin.from("app_wapi_envio_log").update({
+            estado: "fallido",
+            error_code: "SKIPPED_AGOTADO",
+            error_message: "No se anuncia: sin stock (solo_disponibles)",
+          }).in("id", lote);
+        }
+        if (filasAgotadas.length > 0) {
+          console.log(
+            `[wapi-send-products] ${filasAgotadas.length} fila(s) de la ` +
+              `reanudación marcadas fallido/SKIPPED_AGOTADO`,
+          );
+        }
+      }
+      effProductIds = conservar;
+      if (effProductIds.length === 0) {
+        console.log(
+          `[wapi-send-products] solo_disponibles: no queda ningún producto ` +
+            `con stock — no se envía nada`,
+        );
+        return {
+          enviados: 0,
+          fallidos: 0,
+          batch_id: null,
+          skipped: true,
+          mode: "solo-disponibles",
+          solo_disponibles: true,
+          filtrados_agotados: filtradosAgotados,
+          productos_stock_desconocido: productosStockDesconocido.length,
+        };
+      }
+    }
+  }
+
+  // Productos que listará el resumen final. En la primera invocación son
+  // todos los pedidos; en las continuaciones viene heredado del chunk previo.
+  // (Al reanudar, la app manda la lista completa de la tanda en
+  //  `summary_product_ids`; si no llegara, el resumen listaría sólo los
+  //  productos que quedaron sin enviar.)
+  //
+  // Con `solo_disponibles` se filtra también aquí: el texto final no debe
+  // listar como "Agotado" justo lo que la programación pidió no anunciar.
+  const summaryIdsBrutos = args.summaryProductIds?.length
+    ? args.summaryProductIds
+    : effProductIds;
+  const enviables = new Set(effProductIds);
+  const summaryIds = soloDisponibles
+    ? summaryIdsBrutos.filter((id) => enviables.has(id))
+    : summaryIdsBrutos;
+
   // ── PLAN DE ENVÍO: ORDEN POR DESTINO ────────────────────────────────
   //
   // `plan` es la lista ORDENADA de mensajes a despachar: primero TODOS los
@@ -1080,6 +1352,86 @@ export async function dispatchProducts(args: {
       if (esReanudacion && !logIdPorPar.has(clavePar(par))) continue;
       plan.push(par);
     }
+  }
+
+  // ── DRY-RUN: resolver el envío SIN efectos ──────────────────────────
+  // Ver el contrato en `SendBody.dry_run`. Resuelve los datos de producto, el
+  // plan por destino y el caption de cada mensaje — lo MISMO que se enviaría —
+  // y lo devuelve. NO llama a WAPI, NO escribe en `app_wapi_envio_log` ni crea
+  // filas, NO manda el resumen y NO encadena chunks.
+  //
+  // Va aquí (y no en `handleSendProducts`) porque el plan y los captions los
+  // construye esta función; y antes de `prepararProducto` porque ése inserta
+  // las filas de log del producto al prepararlo.
+  if (dryRun) {
+    // `solo_disponibles` ya precargó; esto es un no-op en ese caso.
+    await precargarTodosLosProductos();
+    const sinInfo: number[] = [];
+    for (const idProd of effProductIds) {
+      if (!infoCache.has(idProd)) sinInfo.push(idProd);
+    }
+    const sinImagen: Array<{ id_producto: number; motivo: string }> = [];
+    const filas: Array<{
+      id_producto: number;
+      chat_id: string;
+      stock: number | null;
+      caption_resumen: string;
+      caption_chars: number;
+    }> = [];
+    const productosSinImagen = new Set<number>();
+    for (const par of plan) {
+      const info = infoCache.get(par.idProducto);
+      if (!info) continue; // ya consta en `productos_sin_info`
+      const imagen = typeof info.imagen === "string" ? info.imagen.trim() : "";
+      const imagenOk = imagen.length > 0 && /^https?:\/\//i.test(imagen);
+      if (!imagenOk) {
+        if (!productosSinImagen.has(par.idProducto)) {
+          productosSinImagen.add(par.idProducto);
+          sinImagen.push({
+            id_producto: par.idProducto,
+            motivo: imagen.length === 0
+              ? "sin imagen"
+              : `imagen no es URL http(s): ${imagen.slice(0, 40)}...`,
+          });
+        }
+        continue;
+      }
+      const caption = buildCaption(template, info, seedIcono(par.idProducto));
+      filas.push({
+        id_producto: par.idProducto,
+        chat_id: par.chatId,
+        stock: info.stock,
+        // Resumen de una línea para no devolver un payload enorme con 265
+        // mensajes: el caption completo se reconstruye igual en el envío real.
+        caption_resumen: caption.split("\n")[0].slice(0, 120),
+        caption_chars: caption.length,
+      });
+    }
+    const resueltos = effProductIds.length - sinInfo.length;
+    console.log(
+      `[wapi-send-products] DRY-RUN: ${resueltos}/${effProductIds.length} ` +
+        `producto(s) resueltos, ${filas.length}/${plan.length} mensaje(s) ` +
+        `preparables, ${sinInfo.length} sin info, ${sinImagen.length} sin imagen` +
+        (soloDisponibles
+          ? `, ${filtradosAgotados.length} filtrado(s) por stock`
+          : ""),
+    );
+    return {
+      dry_run: true,
+      mode: "serie-por-destino",
+      reanudacion: esReanudacion,
+      solo_disponibles: soloDisponibles,
+      productos: effProductIds.length,
+      productos_resueltos: resueltos,
+      productos_sin_info: sinInfo,
+      productos_sin_imagen: sinImagen,
+      productos_stock_desconocido: productosStockDesconocido,
+      filtrados_agotados: filtradosAgotados,
+      destinos: chatsValidos.length,
+      // Mensajes que el plan intentaría despachar de verdad.
+      mensajes: filas.length,
+      plan: filas,
+    };
   }
 
   /** Mensajes que este worker no alcanzará (corte por presupuesto). Los lee
@@ -1242,19 +1594,9 @@ export async function dispatchProducts(args: {
     return { ids, ok };
   };
 
-  // ── Datos de producto, con caché ────────────────────────────────────
-  // Se cargan por ventanas en vez de todos de golpe: así un chunk que se
-  // corta pronto no paga las consultas de históricos de productos que nunca
-  // va a tocar, y lo ya cargado se reutiliza para el resumen final.
-  const infoCache = new Map<number, ProdInfo>();
-  const infoIntentados = new Set<number>();
-  const ensureInfo = async (ids: number[]): Promise<void> => {
-    const faltan = ids.filter((id) => !infoIntentados.has(id));
-    if (faltan.length === 0) return;
-    for (const id of faltan) infoIntentados.add(id);
-    const cargado = await loadProductInfo(admin, idTienda, faltan);
-    for (const [id, info] of cargado.entries()) infoCache.set(id, info);
-  };
+  // (`infoCache` / `ensureInfo` viven arriba, junto a la precarga: se usan
+  //  antes de armar el plan para `solo_disponibles` y el dry-run. Ver la nota
+  //  de la CAUSA RAÍZ del bug "producto no encontrado".)
 
   // ── RESUMEN FINAL ───────────────────────────────────────────────────
   // Mensaje de texto con el listado completo (nombre · cantidad ·
@@ -1412,9 +1754,10 @@ export async function dispatchProducts(args: {
   // batchId para correlación interna (no se envía al WAPI).
   const batchId = `b_${idTienda}_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
 
-  /** Posición del producto en la tanda: fija el icono del caption. Así el
-   *  MISMO producto sale con el MISMO texto en todos los grupos (antes el
-   *  contador rotaba en cada destino y cada grupo veía un icono distinto). */
+  /** Posición del producto en la lista efectiva del worker (`effProductIds`).
+   *  OJO: ya NO fija el icono del caption (eso lo hace `seedIcono(idProducto)`,
+   *  estable entre reanudaciones); aquí sólo se usa para la precarga por
+   *  ventanas (`effProductIds.slice`). */
   const posDeProducto = new Map<number, number>();
   effProductIds.forEach((id, i) => {
     if (!posDeProducto.has(id)) posDeProducto.set(id, i);
@@ -1426,7 +1769,11 @@ export async function dispatchProducts(args: {
   // poder avanzar nunca.
   const descartados = new Set<number>();
 
-  const descartar = async (idProd: number, razon: string): Promise<void> => {
+  const descartar = async (
+    idProd: number,
+    razon: string,
+    errorCode = "SKIPPED",
+  ): Promise<void> => {
     if (descartados.has(idProd)) return;
     descartados.add(idProd);
     skipped.push({ id_producto: idProd, reason: razon });
@@ -1448,7 +1795,7 @@ export async function dispatchProducts(args: {
     for (const lote of chunkArray(ids, 500)) {
       await admin.from("app_wapi_envio_log").update({
         estado: "fallido",
-        error_code: "SKIPPED",
+        error_code: errorCode,
         error_message: `No se puede enviar: ${razon}`,
       }).in("id", lote);
     }
@@ -1459,9 +1806,25 @@ export async function dispatchProducts(args: {
   const prepararProducto = async (
     idProd: number,
   ): Promise<ProductoListo | null> => {
-    const p = infoCache.get(idProd);
+    let p = infoCache.get(idProd);
     if (!p) {
-      await descartar(idProd, "producto no encontrado");
+      // ÚLTIMO INTENTO PUNTUAL antes de descartar. La precarga por ventanas
+      // pudo no cubrirlo (plan desordenado, ventana ya marcada como cargada o
+      // una lectura que no lo devolvió). Sin esto se marcaban `fallido`
+      // productos que SÍ existen: era el otro lado del incidente del
+      // 2026-10-28, donde 47 productos se dieron por "no encontrados" porque
+      // la precarga monótona los había saltado.
+      await ensureInfo([idProd], { forzar: true });
+      p = infoCache.get(idProd);
+      if (p) {
+        console.warn(
+          `[wapi-send-products] producto ${idProd} resuelto en el intento ` +
+            `puntual (no estaba en la precarga por ventanas)`,
+        );
+      }
+    }
+    if (!p) {
+      await descartar(idProd, "producto no encontrado", "PRODUCTO_NO_ENCONTRADO");
       return null;
     }
     if (!p.imagen || typeof p.imagen !== "string" || !p.imagen.trim()) {
@@ -1477,7 +1840,11 @@ export async function dispatchProducts(args: {
       );
       return null;
     }
-    const caption = buildCaption(template, p, posDeProducto.get(idProd) ?? 0);
+    // El seed del icono sale del `idProducto` (estable), no de su posición en
+    // `effProductIds` (que al reanudar encoge): así el caption del mismo
+    // producto no cambia entre la tanda original y una reanudación, que es lo
+    // que mantenía el cuerpo estable para la clave de idempotencia.
+    const caption = buildCaption(template, p, seedIcono(idProd));
     // Inferir mimetype desde la extensión (algunas builds de WAPI lo exigen).
     const ext = imageUrl.split("?")[0].split(".").pop()?.toLowerCase() ?? "";
     const mimetype = ext === "png"
@@ -1624,6 +1991,28 @@ export async function dispatchProducts(args: {
     const inicioMensaje = Date.now();
 
     /**
+     * Clave de idempotencia derivada del CONTENIDO REAL que se envía, no del
+     * `logId` a secas. `sendImage` manda el cuerpo FLAT `{chatId, url, caption}`
+     * (ver `_shared/wapi_client.ts`), así que el hash cubre exactamente esos
+     * tres campos y en ese orden fijo:
+     *
+     *   · mismo cuerpo → misma clave → se conserva la deduplicación/replay: los
+     *     reintentos y las reanudaciones sin cambios de contenido NO duplican
+     *     (OpenWA reproduce la respuesta guardada).
+     *   · cuerpo realmente distinto (precio/stock/imagen cambiados) → clave
+     *     nueva → OpenWA lo acepta en vez de devolver 422
+     *     `IDEMPOTENCY_KEY_REUSED` por reutilizar la clave con otro cuerpo.
+     *
+     * Es el mismo patrón que usa el resumen (`wa-sum-${chatId}-${fnv1a(text)}`).
+     */
+    const claveIdemBase = e.logId
+      ? `wa-log-${e.logId}-${fnv1a(`${e.chatId}|${e.url}|${e.caption ?? ""}`)}`
+      : undefined;
+    /** Reintentos ya hechos con una clave NUEVA tras un 422
+     *  `IDEMPOTENCY_KEY_REUSED`. Máximo 1 (ver el bloque en el bucle). */
+    let reintentosClaveReusada = 0;
+
+    /**
      * Deja la fila en `pendiente` (trabajo por hacer, NO fallo) y sale.
      *
      * Se usa cuando el resultado es indeterminado. `fallido` sería mentira y
@@ -1649,7 +2038,10 @@ export async function dispatchProducts(args: {
     };
 
     for (let intento = 1; intento <= RETRY_MAX_ATTEMPTS; intento++) {
-      intentosHechos = intento;
+      // Los reintentos con clave nueva (`-r<n>`) NO consumen presupuesto de
+      // reintentos pero SÍ son peticiones reales: hay que contarlas para que
+      // `error_message` no mienta ("tras 1 intento(s)" cuando hubo 2).
+      intentosHechos = intento + reintentosClaveReusada;
       const single = await wapi.sendImage(
         wapiSessionId,
         e.chatId,
@@ -1658,8 +2050,14 @@ export async function dispatchProducts(args: {
         e.mimetype,
         // Idempotencia (OpenWA 0.25.0+): si un TIMEOUT hizo que el mensaje sí
         // saliera, el reintento con la misma clave devuelve el mismo mensajeId
-        // en vez de mandar un duplicado. En builds viejas el header se ignora.
-        e.logId ? `wa-log-${e.logId}` : undefined,
+        // en vez de mandar un duplicado. La clave va derivada del cuerpo (ver
+        // `claveIdemBase`): sólo cambia con el sufijo `-r<n>` cuando un 422
+        // `IDEMPOTENCY_KEY_REUSED` obligó a reclamar una clave nueva; en el
+        // resto de intentos es idéntica, que es lo que da el replay seguro.
+        // En builds viejas el header se ignora.
+        claveIdemBase && reintentosClaveReusada > 0
+          ? `${claveIdemBase}-r${reintentosClaveReusada}`
+          : claveIdemBase,
       );
 
       if (single.success) {
@@ -1672,16 +2070,16 @@ export async function dispatchProducts(args: {
               // Limpiamos rastros de intentos previos: si acabó enviándose,
               // el error anterior ya no describe el estado de la fila.
               error_code: null,
-              error_message: intento > 1
-                ? `Enviado tras ${intento} intentos`
+              error_message: intentosHechos > 1
+                ? `Enviado tras ${intentosHechos} intentos`
                 : null,
             })
             .eq("id", e.logId);
         }
-        if (intento > 1) {
+        if (intentosHechos > 1) {
           console.log(
             `[wapi-send-products] recuperado prod=${e.idProducto} ` +
-              `chat=${e.chatId} en el intento ${intento}`,
+              `chat=${e.chatId} en el intento ${intentosHechos}`,
           );
         }
         return { ok: true };
@@ -1689,6 +2087,39 @@ export async function dispatchProducts(args: {
 
       ultimoCode = single.error?.code ?? "SEND_ERROR";
       ultimoMsg = single.error?.message ?? "Error desconocido";
+
+      // ── Clave de idempotencia REUTILIZADA con OTRO cuerpo (422) ────────
+      // Como la clave se deriva del cuerpo (ver `claveIdemBase`), un 422 aquí
+      // significa que la petición que reclamó esa clave llevaba OTRO
+      // contenido: era otro mensaje, no éste. Reintentar con la MISMA clave
+      // daría 422 otra vez, así que se hace UN único reintento con una clave
+      // nueva (sufijo determinista `-r<n>`, no aleatorio: si ese intento sufre
+      // un TIMEOUT, la reanudación vuelve a usar la MISMA `-r<n>` y OpenWA
+      // reproduce el resultado en vez de duplicar), sin tocar la fila todavía:
+      // no se marca `fallido` antes de agotar ese intento. Si el reintento con
+      // clave nueva también falla, se cae al comportamiento por defecto
+      // (fallido o pendiente) de más abajo. Y como la clave nueva no la reclamó
+      // este mensaje, volver a enviarlo así no duplica nada.
+      if (claveIdemBase && esIdemClaveReusada(ultimoCode, ultimoMsg)) {
+        const cabeReintento = reintentosClaveReusada < 1 &&
+          elapsed() + 15_000 < WORKER_BUDGET_MS &&
+          Date.now() - inicioMensaje + 15_000 < MENSAJE_MAX_MS;
+        if (cabeReintento) {
+          reintentosClaveReusada++;
+          console.warn(
+            `[wapi-send-products] prod=${e.idProducto} chat=${e.chatId} ` +
+              `${ultimoCode}: la clave ya se había usado con otro cuerpo — ` +
+              `reintentando con clave nueva (-r${reintentosClaveReusada})`,
+          );
+          intento--; // el reintento con clave nueva no consume presupuesto
+          continue;
+        }
+        console.error(
+          `[wapi-send-products] prod=${e.idProducto} chat=${e.chatId} ` +
+            `${ultimoCode}: clave reutilizada y sin margen para reintentar ` +
+            `con clave nueva`,
+        );
+      }
 
       // ── Clave de idempotencia EN VUELO ─────────────────────────────────
       // NO es un fallo. Casi siempre significa que nuestro cliente abortó por
@@ -1920,7 +2351,10 @@ export async function dispatchProducts(args: {
   // `resume_log_ids`. Si un destino falla varias veces seguidas se SALTA (sus
   // mensajes quedan `pendiente`) para que no se coma el presupuesto de los
   // demás grupos.
-  let ventanaFin = 0;
+  // Ventanas posicionales de `effProductIds` ya precargadas en este worker.
+  // Es un Set (no una marca de agua monótona) porque el plan NO recorre los
+  // productos en orden: va por destino. Ver la CAUSA RAÍZ en `infoCache`.
+  const ventanasCargadas = new Set<number>();
   let destinoActual: string | null = plan.length > 0 ? plan[0].chatId : null;
   let fallosDelDestino = 0;
   /** Destinos ya marcados como problemáticos. Sirve para que un grupo caído no
@@ -1968,13 +2402,36 @@ export async function dispatchProducts(args: {
     // Producto descartado: ni se prepara ni cuenta como trabajo pendiente.
     if (descartados.has(par.idProducto)) continue;
 
-    // Precarga por ventanas: una consulta cada WINDOW_SIZE productos, en vez
-    // de una por producto (lento) o una sola gigante (se trunca).
+    // Precarga por ventanas POSICIONALES: cada producto carga SU ventana
+    // (`floor(pos / WINDOW_SIZE)`), no "todo lo que va después de la marca de
+    // agua". Una consulta cada WINDOW_SIZE productos (ni una por producto,
+    // lento, ni una gigante, que se trunca), pero SIN suponer que el plan
+    // visita los productos en orden ascendente: al reanudar, el plan va por
+    // destino y el primer par puede estar en la posición 47 con el siguiente
+    // destino empezando en la 0. Ver la nota de la CAUSA RAÍZ en `infoCache`.
     const posProd = posDeProducto.get(par.idProducto) ?? 0;
-    if (posProd >= ventanaFin) {
-      const fin = Math.min(effProductIds.length, posProd + WINDOW_SIZE);
-      await ensureInfo(effProductIds.slice(posProd, fin));
-      ventanaFin = fin;
+    const ventana = Math.floor(posProd / WINDOW_SIZE);
+    if (!ventanasCargadas.has(ventana)) {
+      ventanasCargadas.add(ventana);
+      const ini = ventana * WINDOW_SIZE;
+      const trozo = effProductIds.slice(
+        ini,
+        Math.min(effProductIds.length, ini + WINDOW_SIZE),
+      );
+      await ensureInfo(trozo);
+      const resueltos = infoResueltos(trozo);
+      if (resueltos < trozo.length) {
+        console.warn(
+          `[wapi-send-products] precarga ventana ${ventana}: ${resueltos}/` +
+            `${trozo.length} producto(s) resueltos — el resto se reintenta ` +
+            `puntualmente antes de descartar`,
+        );
+      } else {
+        console.log(
+          `[wapi-send-products] precarga ventana ${ventana}: ${resueltos}/` +
+            `${trozo.length} producto(s) resueltos`,
+        );
+      }
     }
 
     const listo = await obtenerProductoListo(par.idProducto);
@@ -2171,6 +2628,15 @@ export async function dispatchProducts(args: {
       }
       : {}),
     resumen_entregas: resumenEntregas,
+    // Trazabilidad de `solo_disponibles` en la respuesta del chunk: el
+    // resumen de la tanda no incluye los productos agotados.
+    ...(soloDisponibles
+      ? {
+        solo_disponibles: true,
+        filtrados_agotados: filtradosAgotados,
+        productos_stock_desconocido: productosStockDesconocido.length,
+      }
+      : {}),
   };
 }
 
@@ -2218,6 +2684,11 @@ export async function handleSendProducts(req: Request): Promise<Response> {
     )
     : [];
 
+  // Ver `SendBody.dry_run`: resuelve el plan y lo devuelve sin enviar nada.
+  const dryRun = body.dry_run === true;
+  // Ver `SendBody.solo_disponibles`: no anunciar productos agotados.
+  const soloDisponibles = body.solo_disponibles === true;
+
   // Al reanudar, product_ids/destinations se derivan de los propios logs, así
   // que sólo exigimos id_sesion + la lista de logs a reintentar.
   if (!Number.isFinite(idSesion)) {
@@ -2258,7 +2729,10 @@ export async function handleSendProducts(req: Request): Promise<Response> {
   let sesionLista = ses.status === "CONNECTED";
   let statusCrudo: string | null = null;
 
-  if (!sesionLista) {
+  // En dry-run NO se toca OpenWA (ni se intenta recuperar la sesión): es una
+  // verificación del plan, no un envío. Además así puede ejecutarse aunque la
+  // sesión esté caída.
+  if (!dryRun && !sesionLista) {
     const live = await wapi.getSession(ses.wapi_session_id);
     statusCrudo = live.success
       ? ((live.data?.status as string | undefined) ?? null)
@@ -2353,7 +2827,8 @@ export async function handleSendProducts(req: Request): Promise<Response> {
     mensajesDelPlan * (8 + (delayMin + delayMax) / 2),
   );
 
-  const job = dispatchProducts({
+  /** Argumentos comunes del dispatch (envío real y dry-run). */
+  const dispatchArgs: Parameters<typeof dispatchProducts>[0] = {
     admin,
     idSesion: ses.id,
     idTienda: ses.id_tienda,
@@ -2379,7 +2854,36 @@ export async function handleSendProducts(req: Request): Promise<Response> {
       ? { summaryProductIds }
       : {}),
     ...(esReanudacion ? { resumeLogIds } : {}),
-  }).catch((err) => {
+    ...(soloDisponibles ? { soloDisponibles: true } : {}),
+  };
+
+  // ── DRY-RUN ─────────────────────────────────────────────────────────
+  // Se ejecuta EN LÍNEA y se devuelve el plan resuelto. No encola, no envía,
+  // no escribe logs (contrato completo en `SendBody.dry_run`).
+  if (dryRun) {
+    try {
+      const preview = await dispatchProducts({ ...dispatchArgs, dryRun: true });
+      return okResponse({
+        ...preview,
+        queued: false,
+        resumed: esReanudacion,
+        sesion_lista: sesionLista,
+        sesion_estado_openwa: statusCrudo,
+        delay_segundos: { min: delayMin, max: delayMax },
+      });
+    } catch (e) {
+      console.error(
+        `[wapi-send-products] dry_run falló: ${(e as Error).message ?? e}`,
+      );
+      return errorResponse(
+        `dry_run falló: ${(e as Error).message ?? e}`,
+        500,
+        "DRY_RUN_FAILED",
+      );
+    }
+  }
+
+  const job = dispatchProducts(dispatchArgs).catch((err) => {
     console.error(
       `[wapi-send-products] background dispatch falló: ${(err as Error).message ?? err}`,
     );
@@ -2400,6 +2904,7 @@ export async function handleSendProducts(req: Request): Promise<Response> {
     queued: true,
     resumed: esReanudacion,
     summary_only: soloResumen,
+    solo_disponibles: soloDisponibles,
     sesion_lista: sesionLista,
     sesion_estado_openwa: statusCrudo,
     total_mensajes_estimados: totalMensajes,

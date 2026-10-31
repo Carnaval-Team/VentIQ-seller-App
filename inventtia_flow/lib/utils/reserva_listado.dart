@@ -57,6 +57,29 @@ class ReservaListItem {
 
   bool get esActiva => !esCancelada && !esCompletada;
 
+  /// Motivo con el que se canceló la reserva (migración 61), o `null` si no lo
+  /// hay (p. ej. cancelaciones anteriores a esa migración).
+  ///
+  /// Fuente única para las tres tarjetas (admin, vendedor y «Mis tickets»): el
+  /// par ida+vuelta comparte cancelación, así que se toma el primero que
+  /// exista. Un texto en blanco cuenta como sin motivo.
+  String? get motivoCancelacion {
+    for (final a in agendas) {
+      final texto = a.motivoCancelacion?.trim();
+      if (texto != null && texto.isNotEmpty) return texto;
+    }
+    return null;
+  }
+
+  /// Rol de quien canceló (`cliente`/`admin`/`staff`/`sistema`), o `null`.
+  String? get canceladoPorRol {
+    for (final a in agendas) {
+      final rol = a.canceladoPorRol?.trim();
+      if (rol != null && rol.isNotEmpty) return rol;
+    }
+    return null;
+  }
+
   /// Pasajeros de este ítem (no duplica ida+vuelta mismo día).
   int get pasajeros {
     final n = principal.cantidad;

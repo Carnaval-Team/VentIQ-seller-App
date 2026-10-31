@@ -3,12 +3,69 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/wapi_agotado_config.dart';
+import '../models/wapi_agotado_log.dart';
 import '../models/wapi_destinatario.dart';
 import '../models/wapi_envio_log.dart';
 import '../models/wapi_group.dart';
 import '../models/wapi_programacion.dart';
 import '../models/wapi_session.dart';
 import '../utils/timezone_helper.dart';
+
+/// ============================================================================
+///  Avisos de agotado: la feature depende de tablas que se crean en una
+///  migración aparte. Mientras esa migración no esté aplicada en el proyecto
+///  Supabase, la app NO debe romperse: el servicio traduce el error de
+///  Postgres y la UI muestra un aviso claro.
+/// ============================================================================
+
+/// Se lanza cuando las tablas/columna de avisos de agotado todavía no existen
+/// en la base (migración pendiente de aplicar).
+class WapiAgotadoNoDisponible implements Exception {
+  final String? detalle;
+  const WapiAgotadoNoDisponible([this.detalle]);
+
+  /// Mensaje único para toda la UI: no duplicar el texto en cada pantalla.
+  static const String mensaje =
+      'Avisos de agotado no disponibles todavía: falta aplicar la migración.';
+
+  @override
+  String toString() => detalle == null ? mensaje : '$mensaje ($detalle)';
+}
+
+/// ¿El error es "la relación/columna no existe"? Cubre el código Postgres
+/// `42P01` (undefined_table) y `42703` (undefined_column), además de los
+/// `PGRST204`/`PGRST205` que devuelve PostgREST cuando el esquema del proyecto
+/// todavía no tiene la migración aplicada.
+bool esEsquemaFaltante(Object e, {String? columna}) {
+  String? code;
+  String texto = '';
+  if (e is PostgrestException) {
+    code = e.code;
+    texto = '${e.message} ${e.details ?? ''} ${e.hint ?? ''}'.toLowerCase();
+  } else {
+    texto = '$e'.toLowerCase();
+  }
+  final col = columna?.toLowerCase();
+  // Tabla inexistente: si falta la tabla, falta todo lo que hay dentro.
+  if (code == '42P01' || code == 'PGRST205') return true;
+  if (texto.contains('42p01') || texto.contains('pgrst205')) return true;
+  // Columna inexistente (Postgres 42703 / PostgREST PGRST204): sólo cuenta si
+  // el error nombra la columna que nos interesa. Un 42703 de OTRA columna no
+  // se arregla reintentando sin la nuestra.
+  if (code == '42703' || code == 'PGRST204') {
+    return col == null || texto.contains(col);
+  }
+  if (texto.contains('42703') || texto.contains('pgrst204')) {
+    return col == null || texto.contains(col);
+  }
+  final noExiste = texto.contains('does not exist') ||
+      texto.contains('no existe') ||
+      texto.contains('schema cache');
+  if (!noExiste) return false;
+  if (col == null) return true;
+  return texto.contains(col);
+}
 
 /// Acciones que acepta `wapi-session-action`. Se listan aquí para que un
 /// typo falle en desarrollo en vez de llegar al backend (que responde 400).
@@ -36,6 +93,21 @@ class WapiNotificationService {
   factory WapiNotificationService() => instance;
 
   final SupabaseClient _sb = Supabase.instance.client;
+
+  /// ¿El backend soporta `app_wapi_programacion.solo_disponibles`?
+  ///
+  /// La app puede actualizarse ANTES de que se aplique la migración que crea
+  /// esa columna. La primera vez que Postgres contesta "columna inexistente"
+  /// se guarda aquí (en memoria, por sesión) para guardar sin el campo y no
+  /// repetir el intento fallido en cada guardado.
+  bool _soloDisponiblesSoportado = true;
+  bool get soloDisponiblesSoportado => _soloDisponiblesSoportado;
+
+  /// Mensaje NO bloqueante para la UI cuando el servidor aún no soporta el
+  /// filtro. La programación se guarda igual; sólo falta aplicar la migración.
+  static const String avisoSoloDisponiblesNoSoportado =
+      'Programación guardada, pero tu base de datos todavía no soporta "solo '
+      'disponibles": actualízala para habilitar ese filtro.';
 
   // =========================================================================
   // Edge Function invoker
@@ -285,6 +357,12 @@ class WapiNotificationService {
   /// `{ queued: true, total_mensajes_estimados, tiempo_estimado_segundos,
   ///   delay_segundos: { min, max }, message }`.
   /// El progreso real se ve en el historial (`app_wapi_envio_log`).
+  ///
+  /// [soloDisponibles] lo decide el usuario en el selector de productos: si
+  /// viene `true`, el backend descarta los productos agotados en el momento
+  /// del envío (el stock puede cambiar entre que se elige y que se envía).
+  /// Sólo se manda la clave cuando es `true`, así el envío manual normal sigue
+  /// funcionando contra un backend que todavía no conozca el campo.
   Future<Map<String, dynamic>> sendProductsNow({
     required int idSesion,
     required List<int> productIds,
@@ -292,6 +370,7 @@ class WapiNotificationService {
     String? template,
     int delayMinSeconds = 5,
     int delayMaxSeconds = 10,
+    bool soloDisponibles = false,
   }) async {
     final destPayload = destinations
         .map((d) => {
@@ -309,6 +388,7 @@ class WapiNotificationService {
       'delay_min_seconds': delayMinSeconds,
       'delay_max_seconds': delayMaxSeconds,
       'tipo_envio': 'manual',
+      if (soloDisponibles) 'solo_disponibles': true,
     });
   }
 
@@ -382,6 +462,17 @@ class WapiNotificationService {
     );
   }
 
+  /// Guarda (crea o actualiza) la programación diaria.
+  ///
+  /// [soloDisponibles] se persiste en `app_wapi_programacion.solo_disponibles`
+  /// y es lo que decide si el cron re-filtra los productos agotados. Se manda
+  /// también cuando es `false`: omitirlo impediría volver a desactivarlo.
+  ///
+  /// COMPATIBILIDAD HACIA ATRÁS: la app puede actualizarse antes de que se
+  /// aplique la migración de esa columna. Si el guardado falla por "columna
+  /// inexistente", se reintenta SIN el campo (la programación se guarda igual,
+  /// como antes), se recuerda en [soloDisponiblesSoportado] para no reintentar
+  /// en cada guardado y la UI avisa de forma no bloqueante.
   Future<WapiProgramacion> saveProgramacion({
     required int idTienda,
     required int idSesion,
@@ -391,38 +482,55 @@ class WapiNotificationService {
     required bool activa,
     int delayMinSeconds = 5,
     int delayMaxSeconds = 10,
+    bool soloDisponibles = false,
     // Si no se pasa, detectamos la zona IANA del dispositivo automáticamente.
     // Pasar un valor explícito sólo si el cliente eligió otra zona manualmente.
     String? timezone,
     int? idExistente,
   }) async {
     final tz = timezone ?? await TimezoneHelper.getLocalTimezone();
-    final horaStr =
-        '${hora.hour.toString().padLeft(2, '0')}:${hora.minute.toString().padLeft(2, '0')}:00';
-    final payload = {
-      'id_tienda': idTienda,
-      'id_sesion': idSesion,
-      'hora_envio': horaStr,
-      'timezone': tz,
-      'activa': activa,
-      'delay_min_seconds': delayMinSeconds,
-      'delay_max_seconds': delayMaxSeconds,
-    };
+    final modelo = WapiProgramacion(
+      id: idExistente ?? 0,
+      idTienda: idTienda,
+      idSesion: idSesion,
+      nombre: 'Difusión diaria',
+      horaEnvio: hora,
+      timezone: tz,
+      activa: activa,
+      delayMinSeconds: delayMinSeconds,
+      delayMaxSeconds: delayMaxSeconds,
+      soloDisponibles: soloDisponibles,
+    );
 
-    Map<String, dynamic> prog;
-    if (idExistente != null) {
-      prog = await _sb
-          .from('app_wapi_programacion')
-          .update(payload)
-          .eq('id', idExistente)
-          .select()
-          .single();
-    } else {
-      prog = await _sb
+    Future<Map<String, dynamic>> escribir(Map<String, dynamic> payload) {
+      if (idExistente != null) {
+        return _sb
+            .from('app_wapi_programacion')
+            .update(payload)
+            .eq('id', idExistente)
+            .select()
+            .single();
+      }
+      return _sb
           .from('app_wapi_programacion')
           .insert(payload)
           .select()
           .single();
+    }
+
+    final payload = modelo.toDbMap();
+    // Ya sabemos que el servidor no tiene la columna: no la mandamos.
+    if (!_soloDisponiblesSoportado) payload.remove('solo_disponibles');
+
+    Map<String, dynamic> prog;
+    try {
+      prog = await escribir(payload);
+    } on PostgrestException catch (e) {
+      if (!esEsquemaFaltante(e, columna: 'solo_disponibles')) rethrow;
+      // La migración todavía no está aplicada. Guardamos SIN el campo para no
+      // romper un guardado que hoy funciona, y lo recordamos para la sesión.
+      _soloDisponiblesSoportado = false;
+      prog = await escribir(payload..remove('solo_disponibles'));
     }
     final idProg = (prog['id'] as num).toInt();
 
@@ -471,6 +579,142 @@ class WapiNotificationService {
         .from('app_wapi_programacion')
         .update({'activa': activa})
         .eq('id', idProgramacion);
+  }
+
+  // =========================================================================
+  // Avisos de agotado (stock 0)
+  //
+  // Tablas del contrato WS3: `app_wapi_agotado_config`,
+  // `app_wapi_agotado_destinatario` y `app_wapi_agotado_log` (config con
+  // UNIQUE(id_tienda) → una fila por tienda). Mientras la migración no esté
+  // aplicada, TODO lo de esta sección lanza [WapiAgotadoNoDisponible] y la UI
+  // muestra el aviso de migración pendiente en vez de reventar.
+  // =========================================================================
+
+  static String _detalleError(Object e) =>
+      e is PostgrestException ? (e.message) : '$e';
+
+  /// Traduce el error: si es "no existe la tabla/columna" lo convierte en
+  /// [WapiAgotadoNoDisponible]; si no, lo relanza intacto (con su stack).
+  static Never _falloAgotado(Object e, StackTrace st) {
+    if (esEsquemaFaltante(e)) {
+      throw WapiAgotadoNoDisponible(_detalleError(e));
+    }
+    Error.throwWithStackTrace(e, st);
+  }
+
+  /// Configuración de avisos de agotado de la tienda, o `null` si aún no hay
+  /// ninguna guardada. Lanza [WapiAgotadoNoDisponible] si falta la migración.
+  Future<WapiAgotadoConfig?> getAgotadoConfig(int idTienda) async {
+    try {
+      final rows = await _sb
+          .from('app_wapi_agotado_config')
+          .select()
+          .eq('id_tienda', idTienda)
+          .limit(1);
+      if (rows.isEmpty) return null;
+      final cfg = rows.first;
+      final idCfg = (cfg['id'] as num).toInt();
+      final dests = await _sb
+          .from('app_wapi_agotado_destinatario')
+          .select('id_destinatario')
+          .eq('id_config', idCfg);
+      return WapiAgotadoConfig.fromJson(
+        cfg,
+        destinatarioIds: dests
+            .map<int>((e) => ((e as Map)['id_destinatario'] as num).toInt())
+            .toList(),
+      );
+    } catch (e, st) {
+      _falloAgotado(e, st);
+    }
+  }
+
+  /// Crea o actualiza la configuración y reemplaza sus destinatarios.
+  ///
+  /// Usa `upsert` sobre `id_tienda` (UNIQUE en el contrato): si la fila ya
+  /// existe se actualiza, si no se crea. Idempotente y sin carrera con otro
+  /// dispositivo de la misma tienda.
+  Future<WapiAgotadoConfig> saveAgotadoConfig({
+    required int idTienda,
+    required int idSesion,
+    required bool activo,
+    required String plantilla,
+    required int delayMinSeconds,
+    required int delayMaxSeconds,
+    required int cooldownMinutos,
+    required List<int> destinatarioIds,
+  }) async {
+    final modelo = WapiAgotadoConfig(
+      id: 0,
+      idTienda: idTienda,
+      idSesion: idSesion,
+      activo: activo,
+      plantilla: plantilla.trim().isEmpty
+          ? WapiAgotadoConfig.plantillaDefault
+          : plantilla.trim(),
+      delayMinSeconds: delayMinSeconds,
+      delayMaxSeconds: delayMaxSeconds,
+      cooldownMinutos: cooldownMinutos,
+      destinatarioIds: destinatarioIds,
+    );
+    try {
+      final cfg = await _sb
+          .from('app_wapi_agotado_config')
+          .upsert(modelo.toDbMap(), onConflict: 'id_tienda')
+          .select()
+          .single();
+      final idCfg = (cfg['id'] as num).toInt();
+
+      await _sb
+          .from('app_wapi_agotado_destinatario')
+          .delete()
+          .eq('id_config', idCfg);
+      if (destinatarioIds.isNotEmpty) {
+        await _sb.from('app_wapi_agotado_destinatario').insert(
+              destinatarioIds
+                  .map((id) => {
+                        'id_config': idCfg,
+                        'id_destinatario': id,
+                      })
+                  .toList(),
+            );
+      }
+      return WapiAgotadoConfig.fromJson(cfg, destinatarioIds: destinatarioIds);
+    } catch (e, st) {
+      _falloAgotado(e, st);
+    }
+  }
+
+  /// Enciende/apaga los avisos sin tocar el resto de la configuración.
+  Future<void> setAgotadoActivo(int idConfig, bool activo) async {
+    try {
+      await _sb
+          .from('app_wapi_agotado_config')
+          .update({'activo': activo}).eq('id', idConfig);
+    } catch (e, st) {
+      _falloAgotado(e, st);
+    }
+  }
+
+  /// Historial reciente de avisos (pendientes, enviados, fallidos u omitidos).
+  Future<List<WapiAgotadoLog>> getAgotadoLogs(
+    int idTienda, {
+    int limit = 30,
+  }) async {
+    try {
+      final rows = await _sb
+          .from('app_wapi_agotado_log')
+          .select()
+          .eq('id_tienda', idTienda)
+          .order('created_at', ascending: false)
+          .limit(limit);
+      return (rows as List)
+          .map((e) => WapiAgotadoLog.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e, st) {
+      _falloAgotado(e, st);
+    }
   }
 
   // =========================================================================

@@ -21,10 +21,12 @@ import '../../services/agenda_admin_service.dart';
 import '../../services/agenda_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/catalogo_service.dart';
+import '../../utils/motivo_cancelacion.dart';
 import '../../utils/precio_reserva.dart';
 import '../../utils/reactivar_reserva.dart';
 import '../../utils/reserva_listado.dart';
 import '../../utils/telefono_contacto.dart';
+import '../../widgets/dialogo_motivo_cancelacion.dart';
 import '../../widgets/dialogo_reactivar_reserva.dart';
 import '../../widgets/totales_datos_adicionales.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -132,36 +134,26 @@ class _VendedorScreenState extends State<VendedorScreen> {
     final reserva = item.principal;
     final cancelaRegreso =
         reserva.tipoTrayecto == 'ida' && reserva.idViaje?.isNotEmpty == true;
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Cancelar reserva'),
-        content: Text(
-          cancelaRegreso
-              ? '¿Cancelar el viaje de ida y vuelta de '
-                    '${reserva.cliente?.nombreCompleto ?? 'este cliente'} '
-                    '(se cancelan ambos tramos)?'
-              : '¿Cancelar la reserva de '
-                    '${reserva.cliente?.nombreCompleto ?? 'este cliente'}?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('No'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: AppTheme.error),
-            child: const Text('Sí, cancelar'),
-          ),
-        ],
-      ),
+    // [61] El motivo es obligatorio al cancelar desde el panel; el diálogo se
+    // abre antes de poner la pantalla en carga.
+    final motivo = await dialogoMotivoCancelacion(
+      context,
+      titulo: 'Cancelar reserva',
+      detalle: cancelaRegreso
+          ? '¿Cancelar el viaje de ida y vuelta de '
+                '${reserva.cliente?.nombreCompleto ?? 'este cliente'} '
+                '(se cancelan ambos tramos)?'
+          : '¿Cancelar la reserva de '
+                '${reserva.cliente?.nombreCompleto ?? 'este cliente'}?',
     );
 
-    if (confirm != true || !mounted) return;
+    if (motivo == null || !mounted) return;
     setState(() => _loading = true);
     try {
-      await AgendaAdminService.cancelarReserva(idAgenda: reserva.id);
+      await AgendaAdminService.cancelarReserva(
+        idAgenda: reserva.id,
+        motivo: motivo,
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -175,9 +167,9 @@ class _VendedorScreenState extends State<VendedorScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              'Error: ${e.toString().replaceFirst('Exception: ', '')}',
-            ),
+            // [61] Traduce los fallos del servidor (motivo ausente, permisos,
+            // migración sin aplicar...).
+            content: Text('Error: ${mensajeErrorCancelacion(e)}'),
             backgroundColor: AppTheme.error,
           ),
         );
@@ -1679,6 +1671,68 @@ class _VendedorScreenState extends State<VendedorScreen> {
             for (final c in cols)
               if (_valorDato(r, c.clave) != '-')
                 _infoRow(c.etiqueta, _valorDato(r, c.clave)),
+            // [61] Motivo de la cancelación (idéntico al listado del admin).
+            // Sin motivo no se pinta nada: las canceladas antiguas no lo tienen.
+            if (esCancelada && hayMotivoCancelacion(item.motivoCancelacion)) ...[
+              const SizedBox(height: 6),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: AppTheme.error.withValues(alpha: 0.07),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: AppTheme.error.withValues(alpha: 0.35),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(
+                          Icons.event_busy,
+                          size: 14,
+                          color: AppTheme.error,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Motivo de cancelación: '
+                            '${textoMotivoCancelacion(item.motivoCancelacion)}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              height: 1.3,
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.error,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (textoCanceladoPor(item.canceladoPorRol).isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Padding(
+                        padding: const EdgeInsets.only(left: 20),
+                        child: Text(
+                          'Cancelada por: '
+                          '${textoCanceladoPor(item.canceladoPorRol)}',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                            color: AppTheme.error,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 6),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,

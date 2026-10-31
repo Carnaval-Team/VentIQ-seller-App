@@ -16,6 +16,12 @@ class WapiProgramacion {
   final List<int> productIds;
   final List<int> destinatarioIds;
 
+  /// Cuando es `true`, el backend re-filtra los productos en el momento del
+  /// envío y descarta los que ya no tienen stock (el stock cambia entre que
+  /// se programa la difusión y que el cron la dispara). Con `false` se envía
+  /// tal cual lo que eligió el usuario, aunque alguno se haya agotado.
+  final bool soloDisponibles;
+
   WapiProgramacion({
     required this.id,
     required this.idTienda,
@@ -30,6 +36,7 @@ class WapiProgramacion {
     this.nextRunAt,
     this.productIds = const [],
     this.destinatarioIds = const [],
+    this.soloDisponibles = false,
   });
 
   factory WapiProgramacion.fromJson(
@@ -63,6 +70,29 @@ class WapiProgramacion {
           j['next_run_at'] != null ? DateTime.tryParse(j['next_run_at']) : null,
       productIds: productIds ?? const [],
       destinatarioIds: destinatarioIds ?? const [],
+      // Tolerante a backends viejos donde la columna aún no existe.
+      soloDisponibles: (j['solo_disponibles'] as bool?) ?? false,
     );
   }
+
+  /// Hora en formato `HH:mm:ss`, tal como la guarda la columna `hora_envio`.
+  String get horaEnvioStr =>
+      '${horaEnvio.hour.toString().padLeft(2, '0')}:'
+      '${horaEnvio.minute.toString().padLeft(2, '0')}:00';
+
+  /// Campos que el servicio escribe en `app_wapi_programacion` (insert/update).
+  ///
+  /// `nombre` queda fuera a propósito: el servicio nunca lo envió al guardar
+  /// y así no se pisa un nombre personalizado puesto desde el backend.
+  /// Los productos y destinos se persisten aparte, en sus tablas de join.
+  Map<String, dynamic> toDbMap() => {
+        'id_tienda': idTienda,
+        'id_sesion': idSesion,
+        'hora_envio': horaEnvioStr,
+        'timezone': timezone,
+        'activa': activa,
+        'delay_min_seconds': delayMinSeconds,
+        'delay_max_seconds': delayMaxSeconds,
+        'solo_disponibles': soloDisponibles,
+      };
 }

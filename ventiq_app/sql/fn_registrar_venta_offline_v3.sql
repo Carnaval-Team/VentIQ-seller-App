@@ -31,7 +31,12 @@ CREATE OR REPLACE FUNCTION public.fn_registrar_venta_offline_v3(
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path TO ''
+-- 2026-10-29: antes SET search_path TO ''. Con el vacio, este se heredaba hacia
+-- los callees y public.fn_registrar_venta_v2 moria con 42P01 en su primera
+-- tabla sin calificar -> la app mostraba "Error al registrar venta: relation
+-- ... does not exist". Mismo patron que la _v4 ya corregida.
+-- Ver sql_updates/fix_search_path_venta_ingredientes.sql (bloques A + B).
+SET search_path TO 'public', 'pg_catalog'
 AS $function$
 DECLARE
   v_existing_op bigint; v_result jsonb; v_op bigint; v_ok boolean;

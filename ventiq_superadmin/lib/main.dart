@@ -52,6 +52,7 @@ import 'screens/flow_suscripciones_screen.dart';
 import 'screens/flow_planes_screen.dart';
 import 'screens/flow_config_screen.dart';
 import 'screens/flow_categorias_screen.dart';
+import 'screens/versiones_screen.dart';
 import 'widgets/route_guard.dart';
 import 'services/auth_service.dart';
 
@@ -90,197 +91,229 @@ class VentIQSuperAdminApp extends StatelessWidget {
       routes: {
         '/': (context) => const AuthWrapper(),
         '/login': (context) => const LoginScreen(),
-        '/dashboard': (context) => const RouteGuard(
-              route: '/dashboard',
-              child: DashboardScreen(),
-            ),
-        '/tiendas': (context) => const RouteGuard(
-              route: '/tiendas',
-              child: TiendasScreen(),
-            ),
-        '/tiendas-catalogo': (context) => const RouteGuard(
+        '/dashboard':
+            (context) =>
+                const RouteGuard(route: '/dashboard', child: DashboardScreen()),
+        '/tiendas':
+            (context) =>
+                const RouteGuard(route: '/tiendas', child: TiendasScreen()),
+        '/tiendas-catalogo':
+            (context) => const RouteGuard(
               route: '/tiendas-catalogo',
               child: TiendasCatalogoScreen(),
             ),
-        '/usuarios': (context) => const RouteGuard(
-              route: '/usuarios',
-              child: UsuariosScreen(),
-            ),
-        '/usuarios-bloqueados': (context) => const RouteGuard(
+        '/usuarios':
+            (context) =>
+                const RouteGuard(route: '/usuarios', child: UsuariosScreen()),
+        '/usuarios-bloqueados':
+            (context) => const RouteGuard(
               route: '/usuarios-bloqueados',
               child: UsuariosBloqueadosScreen(),
             ),
-        '/administradores': (context) => const RouteGuard(
+        '/administradores':
+            (context) => const RouteGuard(
               route: '/administradores',
               child: AdministradoresScreen(),
             ),
-        '/almacenes': (context) => const RouteGuard(
-              route: '/almacenes',
-              child: AlmacenesScreen(),
-            ),
-        '/tpvs': (context) => const RouteGuard(
-              route: '/tpvs',
-              child: TpvsScreen(),
-            ),
-        '/trabajadores': (context) => const RouteGuard(
+        '/almacenes':
+            (context) =>
+                const RouteGuard(route: '/almacenes', child: AlmacenesScreen()),
+        '/tpvs':
+            (context) => const RouteGuard(route: '/tpvs', child: TpvsScreen()),
+        '/trabajadores':
+            (context) => const RouteGuard(
               route: '/trabajadores',
               child: TrabajadoresScreen(),
             ),
-        '/licencias': (context) => const RouteGuard(
-              route: '/licencias',
-              child: LicenciasScreen(),
-            ),
-        '/renovaciones': (context) => const RouteGuard(
+        '/licencias':
+            (context) =>
+                const RouteGuard(route: '/licencias', child: LicenciasScreen()),
+        '/renovaciones':
+            (context) => const RouteGuard(
               route: '/renovaciones',
               child: RenovacionesScreen(),
             ),
-        '/configuracion': (context) => const RouteGuard(
+        '/configuracion':
+            (context) => const RouteGuard(
               route: '/configuracion',
               child: ConfiguracionScreen(),
             ),
-        '/consignacion': (context) => const RouteGuard(
+        '/consignacion':
+            (context) => const RouteGuard(
               route: '/consignacion',
               child: ConsignacionScreen(),
             ),
-        '/carnaval-tiendas': (context) => const RouteGuard(
+        '/carnaval-tiendas':
+            (context) => const RouteGuard(
               route: '/carnaval-tiendas',
               child: CarnavalStoreMappingScreen(),
             ),
-        '/productos-carnaval-inventtia': (context) => const RouteGuard(
+        '/productos-carnaval-inventtia':
+            (context) => const RouteGuard(
               route: '/productos-carnaval-inventtia',
               child: CarnavalInventtiaProductsScreen(),
             ),
-        '/pago-proveedores': (context) => const RouteGuard(
+        '/pago-proveedores':
+            (context) => const RouteGuard(
               route: '/pago-proveedores',
               child: PagoProveedoresScreen(),
             ),
-        '/pago-inventtia': (context) => const RouteGuard(
+        '/pago-inventtia':
+            (context) => const RouteGuard(
               route: '/pago-inventtia',
               child: PagoInventtiaScreen(),
             ),
-        '/eliminacion-tiendas': (context) => const RouteGuard(
+        '/eliminacion-tiendas':
+            (context) => const RouteGuard(
               route: '/eliminacion-tiendas',
               child: EliminacionTiendasScreen(),
             ),
-        '/control-flota': (context) => const RouteGuard(
+        '/control-flota':
+            (context) => const RouteGuard(
               route: '/control-flota',
               child: FleetControlScreen(),
             ),
-        '/movimientos': (context) => const RouteGuard(
+        '/movimientos':
+            (context) => const RouteGuard(
               route: '/movimientos',
               child: MovimientosScreen(),
             ),
-        '/referral-payments': (context) => const RouteGuard(
+        '/referral-payments':
+            (context) => const RouteGuard(
               route: '/referral-payments',
               child: ReferralPaymentsScreen(),
             ),
         // Muévete
-        '/muevete/dashboard': (context) => const RouteGuard(
+        '/muevete/dashboard':
+            (context) => const RouteGuard(
               route: '/muevete/dashboard',
               child: MueveteDashboardScreen(),
             ),
-        '/muevete/conductores': (context) => const RouteGuard(
+        '/muevete/conductores':
+            (context) => const RouteGuard(
               route: '/muevete/conductores',
               child: MueveteDriversScreen(),
             ),
-        '/muevete/viajes': (context) => const RouteGuard(
+        '/muevete/viajes':
+            (context) => const RouteGuard(
               route: '/muevete/viajes',
               child: MueveteTripsScreen(),
             ),
-        '/muevete/solicitudes': (context) => const RouteGuard(
+        '/muevete/solicitudes':
+            (context) => const RouteGuard(
               route: '/muevete/solicitudes',
               child: MueveteRequestsScreen(),
             ),
-        '/muevete/mapa': (context) => const RouteGuard(
+        '/muevete/mapa':
+            (context) => const RouteGuard(
               route: '/muevete/mapa',
               child: MueveteMapScreen(),
             ),
-        '/muevete/mapa-offline': (context) => const RouteGuard(
+        '/muevete/mapa-offline':
+            (context) => const RouteGuard(
               route: '/muevete/mapa-offline',
               child: MueveteMapUploadScreen(),
             ),
-        '/muevete/valoraciones': (context) => const RouteGuard(
+        '/muevete/valoraciones':
+            (context) => const RouteGuard(
               route: '/muevete/valoraciones',
               child: MueveteRatingsScreen(),
             ),
-        '/muevete/billeteras': (context) => const RouteGuard(
+        '/muevete/billeteras':
+            (context) => const RouteGuard(
               route: '/muevete/billeteras',
               child: MueveteWalletsScreen(),
             ),
-        '/muevete/kyc': (context) => const RouteGuard(
+        '/muevete/kyc':
+            (context) => const RouteGuard(
               route: '/muevete/kyc',
               child: MueveteKycScreen(),
             ),
-        '/muevete/planes': (context) => const RouteGuard(
+        '/muevete/planes':
+            (context) => const RouteGuard(
               route: '/muevete/planes',
               child: MuevetesPlanesScreen(),
             ),
-        '/muevete/cargas': (context) => const RouteGuard(
+        '/muevete/cargas':
+            (context) => const RouteGuard(
               route: '/muevete/cargas',
               child: MueveteCargasScreen(),
             ),
-        '/agentes': (context) => const RouteGuard(
-              route: '/agentes',
-              child: AgentesScreen(),
-            ),
-        '/ingresos-distribucion': (context) => const RouteGuard(
+        '/agentes':
+            (context) =>
+                const RouteGuard(route: '/agentes', child: AgentesScreen()),
+        '/ingresos-distribucion':
+            (context) => const RouteGuard(
               route: '/ingresos-distribucion',
               child: IngresosDistribucionScreen(),
             ),
-        '/carnaval-dashboard': (context) => const RouteGuard(
+        '/carnaval-dashboard':
+            (context) => const RouteGuard(
               route: '/carnaval-dashboard',
               child: CarnavalDashboardScreen(),
             ),
-        '/carnaval-precios-tiendas': (context) => const RouteGuard(
+        '/carnaval-precios-tiendas':
+            (context) => const RouteGuard(
               route: '/carnaval-precios-tiendas',
               child: CarnavalStorePricingScreen(),
             ),
-        '/carnaval-productos-tienda': (context) => const RouteGuard(
+        '/carnaval-productos-tienda':
+            (context) => const RouteGuard(
               route: '/carnaval-productos-tienda',
               child: CarnavalStoreProductsScreen(),
             ),
-        '/carnaval-geo': (context) => const RouteGuard(
+        '/carnaval-geo':
+            (context) => const RouteGuard(
               route: '/carnaval-geo',
               child: CarnavalGeoAdminScreen(),
             ),
-        '/banners-inicio': (context) => const RouteGuard(
+        '/banners-inicio':
+            (context) => const RouteGuard(
               route: '/banners-inicio',
               child: HomeBannersScreen(),
             ),
-        '/patrocinados': (context) => const RouteGuard(
+        '/patrocinados':
+            (context) => const RouteGuard(
               route: '/patrocinados',
               child: PatrocinadosScreen(),
             ),
-        '/colecciones': (context) => const RouteGuard(
+        '/colecciones':
+            (context) => const RouteGuard(
               route: '/colecciones',
               child: ColeccionesScreen(),
             ),
-        '/fidelidad': (context) => const RouteGuard(
-              route: '/fidelidad',
-              child: FidelidadScreen(),
-            ),
-        '/roles': (context) => const RouteGuard(
-              route: '/roles',
-              child: RolesScreen(),
-            ),
+        '/fidelidad':
+            (context) =>
+                const RouteGuard(route: '/fidelidad', child: FidelidadScreen()),
+        '/roles':
+            (context) =>
+                const RouteGuard(route: '/roles', child: RolesScreen()),
         // Inventtia Flow: suscripciones de las entidades y su configuracion.
-        '/flow-suscripciones': (context) => const RouteGuard(
+        '/flow-suscripciones':
+            (context) => const RouteGuard(
               route: '/flow-suscripciones',
               child: FlowSuscripcionesScreen(),
             ),
-        '/flow-planes': (context) => const RouteGuard(
+        '/flow-planes':
+            (context) => const RouteGuard(
               route: '/flow-planes',
               child: FlowPlanesScreen(),
             ),
-        '/flow-config': (context) => const RouteGuard(
+        '/flow-config':
+            (context) => const RouteGuard(
               route: '/flow-config',
               child: FlowConfigScreen(),
             ),
         // Taxonomia de servicios: categorias y subcategorias del Home.
-        '/flow-categorias': (context) => const RouteGuard(
+        '/flow-categorias':
+            (context) => const RouteGuard(
               route: '/flow-categorias',
               child: FlowCategoriasScreen(),
             ),
+        // Versiones y changelogs de las 5 apps del ecosistema.
+        '/versiones':
+            (context) =>
+                const RouteGuard(route: '/versiones', child: VersionesScreen()),
       },
     );
   }

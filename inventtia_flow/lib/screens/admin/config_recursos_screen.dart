@@ -1,10 +1,19 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../../config/app_theme.dart';
+import '../../models/config_precio.dart';
+import '../../models/precio_config.dart';
 import '../../models/recurso.dart';
 import '../../models/servicio.dart';
+import '../../models/tasa_cambio.dart';
 import '../../services/auth_service.dart';
+import '../../services/precio_config_service.dart';
 import '../../services/recurso_service.dart';
+import '../../services/tasa_cambio_service.dart';
 import '../../tutorial/tutorial_anchor.dart';
+import '../../utils/conversion_precio.dart';
+import '../../utils/parse_monto.dart';
 
 /// Pantalla que envuelve el panel de configuración de recursos de un
 /// local_servicio.
@@ -84,11 +93,24 @@ class _ConfigRecursosPanelState extends State<ConfigRecursosPanel> {
 
   bool _cambiandoModo = false;
 
+  /// Configuración de precios de la entidad dueña del servicio (moneda de
+  /// origen y redondeo). Se lee una vez; si no se puede, quedan los valores por
+  /// defecto de la base y el formulario de turno sigue funcionando.
+  PrecioConfig _precioConfig = const PrecioConfig();
+
   String get _uuid => AuthService.currentUserId ?? '';
 
   /// Moneda del servicio para el precio fijo de los turnos.
   String get _moneda =>
       widget.localServicio.servicio?.configPrecio.monedaDefault ?? 'USD';
+
+  /// Monedas habilitadas del servicio: el turno guarda el precio en TODAS (el
+  /// cliente lo verá en la que corresponda), no sólo en la moneda por defecto.
+  List<String> get _monedasServicio {
+    final monedas = widget.localServicio.servicio?.configPrecio.monedas;
+    if (monedas == null || monedas.isEmpty) return ['USD'];
+    return [...monedas];
+  }
 
   bool get _esTransporte => widget.localServicio.esTransporteOmnibus;
 
@@ -142,7 +164,20 @@ class _ConfigRecursosPanelState extends State<ConfigRecursosPanel> {
     super.initState();
     _soloTurnos = widget.localServicio.soloTurnos;
     _sinTramos = widget.localServicio.sinTramos;
+    _cargarPrecioConfig();
     _cargar();
+  }
+
+  /// Configuración de precios automáticos de la entidad dueña del servicio.
+  ///
+  /// Se resuelve a partir del servicio (el panel no conoce la entidad) y no
+  /// bloquea la pantalla: mientras llega se usan los valores por defecto.
+  Future<void> _cargarPrecioConfig() async {
+    final config = await PrecioConfigService.paraServicio(
+      widget.localServicio.idServicio,
+    );
+    if (!mounted) return;
+    setState(() => _precioConfig = config);
   }
 
   Future<void> _cargar() async {
@@ -304,6 +339,8 @@ class _ConfigRecursosPanelState extends State<ConfigRecursosPanel> {
         turno: turno,
         sinTramos: _sinTramos,
         moneda: _moneda,
+        monedas: _monedasServicio,
+        precioConfig: _precioConfig,
         exigirTurnosMinimos: _esTransporte && !_modoSimple,
       ),
     );
@@ -325,6 +362,8 @@ class _ConfigRecursosPanelState extends State<ConfigRecursosPanel> {
         idLocalServicio: widget.localServicio.id,
         sinTramos: true,
         moneda: _moneda,
+        monedas: _monedasServicio,
+        precioConfig: _precioConfig,
       ),
     );
     if (res == true) _cargar();
@@ -1386,6 +1425,13 @@ class _TurnoFormSheet extends StatefulWidget {
   final int idLocalServicio;
   final Turno? turno;
   final String moneda;
+
+  /// Monedas habilitadas del servicio: el turno guarda el precio en todas.
+  final List<String> monedas;
+
+  /// Configuración de precios de la entidad (origen + decimales).
+  final PrecioConfig precioConfig;
+
   final bool exigirTurnosMinimos;
 
   /// Modo "no uso tramos": no se piden tramos; la RPC asigna el tramo propio del
@@ -1398,6 +1444,8 @@ class _TurnoFormSheet extends StatefulWidget {
     required this.moneda,
     this.recurso,
     this.turno,
+    this.monedas = const ['USD'],
+    this.precioConfig = const PrecioConfig(),
     this.exigirTurnosMinimos = false,
     this.sinTramos = false,
   });
@@ -1412,14 +1460,130 @@ class _TurnoFormSheetState extends State<_TurnoFormSheet> {
   );
   late final Set<int> _tramosSel = {...(widget.turno?.tramosIds ?? const [])};
   late bool _activo = widget.turno?.activo ?? true;
-  late final TextEditingController _precio = TextEditingController(
-    text: widget.turno?.precios[widget.moneda]?.toString() ?? '',
-  );
+
+  /// Un controlador de precio por moneda habilitada del servicio.
+  late final Map<String, TextEditingController> _preciosCtrls = {
+    for (final m in widget.monedas)
+      m: TextEditingController(text: _textoPrecio(widget.turno?.precios[m])),
+  };
+
+  // ── Punto 4: precios automáticos con la tasa del día ──
+  bool _calculandoPrecios = false;
+
+  /// Contexto del cartel de extracción, para cerrarlo sin tocar la pila.
+  BuildContext? _cartelCtx;
+
+  /// Tasa con la que se calcularon los precios que hay ahora en la hoja.
+  TasasDia? _tasasUsadas;
+
+  /// Se está extrayendo la tasa: banner discreto (el diálogo modal es del botón).
+  bool _extrayendoTasa = false;
+
+  /// Último valor YA calculado por moneda de origen («CUP» -> 17000).
+  ///
+  /// Es un mapa y no una única firma global: con una sola firma, el cálculo de
+  /// una moneda bloqueaba el de otra y editar CUP después de USD no recalculaba
+  /// nada.
+  final Map<String, double> _ultimoCalculado = {};
+
+  /// Monedas cuyo precio lo puso el cálculo automático: salen en verde con su
+  /// icono dentro del cuadro. Al editar a mano deja de estar marcada.
+  final Set<String> _calculadas = {};
+
+  /// El aviso de «no hay tasa» se da una sola vez por hoja.
+  bool _avisoTasaMostrado = false;
+
+  Timer? _debounceAuto;
 
   // ── Punto 7: la hora del turno es opcional ──
   TimeOfDay? _horaInicio;
   TimeOfDay? _horaFin;
   bool _saving = false;
+
+  /// Moneda **base** del turno: la del servicio (`widget.moneda`, que es su
+  /// «Moneda por defecto») si está habilitada. La preferencia de la entidad no
+  /// manda: se usa solo como respaldo, igual que en el formulario del servicio.
+  String get _origenEfectivo {
+    if (widget.monedas.contains(widget.moneda)) return widget.moneda;
+    if (widget.monedas.contains(widget.precioConfig.monedaOrigen)) {
+      return widget.precioConfig.monedaOrigen;
+    }
+    return widget.monedas.isNotEmpty ? widget.monedas.first : widget.moneda;
+  }
+
+  /// Monedas del turno con la **base primero**.
+  List<String> get _monedasOrdenadas => [
+    _origenEfectivo,
+    ...widget.monedas.where((m) => m != _origenEfectivo),
+  ];
+
+  /// La base se distingue con el sello «BASE» y el color de marca; un precio
+  /// calculado sale en **verde** con su icono dentro del cuadro (y deja de
+  /// estarlo en cuanto se escribe a mano).
+  InputDecoration _decoracionPrecio(String m) {
+    final esBase = m == _origenEfectivo;
+    final calculada = _calculadas.contains(m);
+    final color = calculada
+        ? AppTheme.success
+        : (esBase ? AppTheme.primary : null);
+
+    return InputDecoration(
+      label: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('Precio fijo (${MonedasApp.simbolo(m)})'),
+          if (esBase) ...[
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(
+                color: AppTheme.primary.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: const Text(
+                'BASE',
+                style: TextStyle(
+                  fontSize: 8.5,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.6,
+                  color: AppTheme.primary,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+      fillColor: color?.withValues(alpha: 0.07),
+      border: const OutlineInputBorder(),
+      enabledBorder: color == null
+          ? null
+          : OutlineInputBorder(
+              borderSide: BorderSide(color: color, width: 1.5),
+            ),
+      focusedBorder: color == null
+          ? null
+          : OutlineInputBorder(
+              borderSide: BorderSide(color: color, width: 1.8),
+            ),
+      suffixIcon: calculada
+          ? const Tooltip(
+              message: 'Calculado con la tasa del día',
+              child: Icon(
+                Icons.auto_awesome,
+                size: 16,
+                color: AppTheme.success,
+              ),
+            )
+          : null,
+    );
+  }
+
+  /// `18.375` guardado se releería como 18375 (`parseMonto` lee tres decimales
+  /// como millares), así que se limita a los decimales de precio.
+  static String _textoPrecio(double? valor) {
+    if (valor == null || valor == 0) return '';
+    return Redondeo.texto(valor, Redondeo.maxDecimales);
+  }
 
   @override
   void initState() {
@@ -1450,9 +1614,235 @@ class _TurnoFormSheetState extends State<_TurnoFormSheet> {
 
   @override
   void dispose() {
+    _debounceAuto?.cancel();
     _nombre.dispose();
-    _precio.dispose();
+    for (final c in _preciosCtrls.values) {
+      c.dispose();
+    }
     super.dispose();
+  }
+
+  // ── Precios automáticos con la tasa del día (punto 4) ────────────────────
+
+  /// Lee un precio escrito a mano. `null` si no hay número o no es positivo:
+  /// en esta app `0` significa «sin precio».
+  double? _precioEscrito(TextEditingController? ctrl) {
+    final valor = parseMonto(ctrl?.text ?? '');
+    if (valor == null || valor <= 0) return null;
+    return valor;
+  }
+
+  /// De dónde sale el precio que se convierte: el de la moneda de origen o, si
+  /// está vacío, el de la primera moneda con precio.
+  ({String moneda, double valor})? _baseParaCalcular([String? origenPedido]) {
+    final origen = origenPedido ?? _origenEfectivo;
+    final propio = _precioEscrito(_preciosCtrls[origen]);
+    if (propio != null) return (moneda: origen, valor: propio);
+    for (final m in widget.monedas) {
+      final valor = _precioEscrito(_preciosCtrls[m]);
+      if (valor != null) return (moneda: m, valor: valor);
+    }
+    return null;
+  }
+
+  void _snack(String mensaje, {Color? color}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(mensaje),
+          backgroundColor: color ?? AppTheme.warning,
+        ),
+      );
+  }
+
+  /// Cartel no descartable mientras se extrae la tasa (mismo texto que en el
+  /// formulario de servicio). Se espera un frame para que su contexto exista
+  /// antes de cerrarlo.
+  Future<void> _mostrarCartelExtraccion() async {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      useRootNavigator: true,
+      builder: (ctx) {
+        _cartelCtx = ctx;
+        return const PopScope(
+          canPop: false,
+          child: AlertDialog(
+            content: Row(
+              children: [
+                SizedBox(
+                  height: 22,
+                  width: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2.5),
+                ),
+                SizedBox(width: 16),
+                Expanded(
+                  child: Text('Extrayendo los precios automáticamente...'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    await WidgetsBinding.instance.endOfFrame;
+  }
+
+  void _cerrarCartelExtraccion() {
+    final ctx = _cartelCtx;
+    _cartelCtx = null;
+    if (ctx == null || !ctx.mounted) return;
+    Navigator.of(ctx).pop();
+  }
+
+  /// Calcula el resto de monedas del turno con la tasa del día. Sin tasa no se
+  /// toca ningún precio: se avisa y se deja todo como estaba.
+  Future<void> _calcularRestoDesdeOrigen({
+    String? origen,
+    bool avisar = true,
+  }) async {
+    if (_calculandoPrecios) return;
+    if (widget.monedas.length < 2) {
+      if (avisar) {
+        _snack(
+          'Este servicio sólo tiene una moneda habilitada. Añade otra en la '
+          'configuración del servicio para calcular el resto.',
+        );
+      }
+      return;
+    }
+
+    setState(() => _calculandoPrecios = true);
+    await _mostrarCartelExtraccion();
+
+    TasasDia? tasas;
+    try {
+      tasas = await TasaCambioService.obtener();
+    } finally {
+      _cerrarCartelExtraccion();
+      if (mounted) setState(() => _calculandoPrecios = false);
+    }
+    if (!mounted) return;
+
+    if (tasas == null) {
+      _snack(
+        'No se pudo obtener la tasa de cambio. Los precios no se han '
+        'modificado.',
+        color: AppTheme.error,
+      );
+      return;
+    }
+
+    final base = _baseParaCalcular(origen);
+    if (base == null) {
+      _snack(
+        'Escribe primero un precio en $_origenEfectivo (o en cualquier '
+        'moneda) para calcular el resto.',
+      );
+      return;
+    }
+
+    final convertidos = convertirVarios(
+      precios: {base.moneda: base.valor},
+      origen: base.moneda,
+      monedas: widget.monedas,
+      tasas: tasas,
+      decimalesDe: widget.precioConfig.decimalesDe,
+    );
+    setState(() {
+      _calculadas.clear();
+      for (final entrada in convertidos.entries) {
+        if (entrada.key == base.moneda) continue;
+        final valor = entrada.value;
+        if (valor == null) continue; // sin tasa: NO se toca ese precio
+        _preciosCtrls[entrada.key]?.text = Redondeo.texto(
+          valor,
+          widget.precioConfig.decimalesDe(entrada.key),
+        );
+        _calculadas.add(entrada.key);
+      }
+      _tasasUsadas = tasas;
+    });
+    // Al teclear no se avisa con SnackBar en cada pausa: el aviso es del botón.
+    if (avisar) {
+      _snack(
+        'Precios calculados con la tasa del ${tasas.fechaTexto}.',
+        color: AppTheme.success,
+      );
+    }
+  }
+
+  /// Cálculo automático al teclear (debounce de 700 ms).
+  ///
+  /// Ya **no** es «sólo la primera vez»: cada cambio de precio recalcula las
+  /// demás monedas del turno, que es lo que se espera sin pulsar nada.
+  void _programarCalculoAutomatico(String moneda) {
+    _debounceAuto?.cancel();
+    _debounceAuto = Timer(const Duration(milliseconds: 700), () {
+      _debounceAuto = null;
+      if (!mounted) return;
+      _calcularAutomatico(moneda);
+    });
+  }
+
+  Future<void> _calcularAutomatico(String moneda) async {
+    if (!mounted || _calculandoPrecios) return;
+    if (!widget.precioConfig.autoActivo) return;
+    if (widget.monedas.length < 2) return;
+
+    final origen = widget.monedas.contains(moneda) ? moneda : _origenEfectivo;
+    final valor = _precioEscrito(_preciosCtrls[origen]);
+    if (valor == null || valor <= 0) return;
+    final firma = origen;
+    if (_ultimoCalculado[firma] == valor) return;
+    _ultimoCalculado[firma] = valor;
+
+    var tasas = _tasasUsadas;
+    if (tasas == null || !tasas.vigente) {
+      setState(() => _extrayendoTasa = true);
+      try {
+        tasas = await TasaCambioService.obtener();
+      } finally {
+        if (mounted) setState(() => _extrayendoTasa = false);
+      }
+      if (!mounted) return;
+    }
+
+    if (tasas == null) {
+      if (!_avisoTasaMostrado) {
+        _avisoTasaMostrado = true;
+        _snack(
+          'No se pudo obtener la tasa de cambio. Los precios no se han '
+          'modificado.',
+          color: AppTheme.error,
+        );
+      }
+      return;
+    }
+
+    final convertidos = convertirVarios(
+      precios: {origen: valor},
+      origen: origen,
+      monedas: widget.monedas,
+      tasas: tasas,
+      decimalesDe: widget.precioConfig.decimalesDe,
+    );
+    setState(() {
+      _calculadas.clear();
+      for (final entrada in convertidos.entries) {
+        if (entrada.key == origen) continue;
+        final convertido = entrada.value;
+        if (convertido == null) continue; // sin tasa: NO se toca ese precio
+        _preciosCtrls[entrada.key]?.text = Redondeo.texto(
+          convertido,
+          widget.precioConfig.decimalesDe(entrada.key),
+        );
+        _calculadas.add(entrada.key);
+      }
+      _tasasUsadas = tasas;
+    });
   }
 
   Future<void> _elegirHora({required bool inicio}) async {
@@ -1483,12 +1873,19 @@ class _TurnoFormSheetState extends State<_TurnoFormSheet> {
       _err('Selecciona al menos un tramo que el turno ocupa');
       return;
     }
-    final precio = _precio.text.trim().isEmpty
-        ? null
-        : double.tryParse(_precio.text.trim());
-    if (_precio.text.trim().isNotEmpty && (precio == null || precio < 0)) {
-      _err('Ingresa un precio válido');
-      return;
+    // Precio del turno en TODAS las monedas habilitadas del servicio. Se lee
+    // con `parseMonto` (admite "1.500" como 1500 y "18.5" como 18,5); un campo
+    // vacío simplemente no se guarda para esa moneda.
+    final precios = <String, double>{};
+    for (final m in widget.monedas) {
+      final texto = _preciosCtrls[m]?.text.trim() ?? '';
+      if (texto.isEmpty) continue;
+      final valor = parseMonto(texto);
+      if (valor == null || valor < 0) {
+        _err('Ingresa un precio válido en $m');
+        return;
+      }
+      if (valor > 0) precios[m] = valor;
     }
     // Hora fin después de inicio: misma regla que el CHECK de la base de datos,
     // validada aquí para dar un mensaje claro antes de ir a la red.
@@ -1500,9 +1897,6 @@ class _TurnoFormSheetState extends State<_TurnoFormSheet> {
         return;
       }
     }
-    final precios = precio == null
-        ? const <String, double>{}
-        : {widget.moneda: precio};
 
     if (widget.exigirTurnosMinimos && widget.recurso != null) {
       // `widget.recurso` no se promueve a no-nulo (es un campo público detrás de
@@ -1697,15 +2091,107 @@ class _TurnoFormSheetState extends State<_TurnoFormSheet> {
             ),
           ),
         const SizedBox(height: 8),
-        TextField(
-          controller: _precio,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: InputDecoration(
-            labelText: 'Precio fijo (${widget.moneda})',
-            helperText: 'Opcional. Vacío: usa el precio base del servicio.',
-            border: const OutlineInputBorder(),
+        // ── Precio del turno (punto 4) ─────────────────
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'Precio del turno',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+            TextButton.icon(
+              onPressed: _calculandoPrecios
+                  ? null
+                  : _calcularRestoDesdeOrigen,
+              icon: const Icon(Icons.calculate_outlined, size: 16),
+              label: Text(
+                'Calcular desde $_origenEfectivo',
+                style: const TextStyle(fontSize: 12),
+              ),
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+              ),
+            ),
+          ],
+        ),
+        // Banner discreto del cálculo automático (el diálogo es del botón).
+        if (_extrayendoTasa)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                const SizedBox(
+                  height: 14,
+                  width: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'Extrayendo los precios automáticamente...',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: AppTheme.textSecondary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        for (final m in _monedasOrdenadas)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: TextField(
+              controller: _preciosCtrls[m],
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: _decoracionPrecio(m),
+              // Cálculo automático: se dispara escribiendo en CUALQUIER moneda
+              // (la que el admin esté tocando, incluida la base) y rellena las
+              // demás.
+              onChanged: (_) {
+                // Escrito a mano ⇒ este campo deja de ser «calculado».
+                if (_calculadas.remove(m)) setState(() {});
+                if (widget.precioConfig.autoActivo) {
+                  _programarCalculoAutomatico(m);
+                }
+              },
+            ),
+          ),
+        const Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            'Opcional. Un campo vacío usa el precio base del servicio.',
+            style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
           ),
         ),
+        if (_tasasUsadas != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.auto_awesome,
+                  size: 14,
+                  color: AppTheme.primary,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Precios calculados con la tasa del '
+                    '${_tasasUsadas!.fechaTexto}. Revísalos antes de guardar.',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppTheme.textSecondary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
 
         if (ocultarTramos) ...[
           const SizedBox(height: 16),

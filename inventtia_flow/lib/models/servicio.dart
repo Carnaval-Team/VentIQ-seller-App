@@ -39,6 +39,13 @@ class Servicio {
   /// [LocalServicio.activoEfectivo].
   final bool activo;
 
+  /// Si este servicio se puede **pagar por adelantado** (migración 67).
+  ///
+  /// Es el interruptor por servicio: la entidad aporta la cuenta que cobra
+  /// (`flow.cobro_config`) y aquí se decide qué servicios la usan. Hacen falta
+  /// las dos cosas para que el cliente vea la opción.
+  final bool cobroAdelantado;
+
   Servicio({
     required this.id,
     required this.nombre,
@@ -53,6 +60,7 @@ class Servicio {
     this.tipoActividadNombre,
     this.idPadreTipoActividad,
     this.activo = true,
+    this.cobroAdelantado = false,
   }) : camposAdicionales = camposAdicionales ?? [],
        configPrecio = configPrecio ?? ConfigPrecio();
 
@@ -87,6 +95,9 @@ class Servicio {
     // `?? true`: los payloads antiguos (o PostgREST sin la columna) siguen
     // tratando el servicio como publicado en vez de ocultarlo por accidente.
     activo: (json['activo'] as bool?) ?? true,
+    // `?? false`: sin la migración 67 (o en payloads que no traen la columna) el
+    // servicio NO ofrece pago por adelantado, que es el estado por defecto.
+    cobroAdelantado: (json['cobro_adelantado'] as bool?) ?? false,
   );
 
   /// Nombre legible de la actividad, venga como objeto `tipo_actividad` o como

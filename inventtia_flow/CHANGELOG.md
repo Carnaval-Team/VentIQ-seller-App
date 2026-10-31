@@ -1,5 +1,70 @@
 # Changelog
 
+## Sin publicar
+
+### Suscripción en la cabecera y cobros por adelantado con pantalla propia
+
+- **La suscripción pasa al AppBar**: «Mi suscripción» deja de ser un cuadrito del
+  grid de Gestión y pasa a un **icono en la cabecera**, con un badge que solo se
+  enciende cuando toca avisar: rojo con «!» si hay un pago pendiente o el plan está
+  vencido, ámbar con los días que quedan cuando son **7 o menos**. El tooltip explica
+  el estado («Tu suscripción vence en 3 días»).
+- **Pagos por adelantado, con pantalla propia**: todo lo relacionado con el cobro por
+  adelantado de los servicios sale de «Mi suscripción» y pasa a
+  `lib/screens/admin/cobros_screen.dart` («Pagos por adelantado»): estado del cobro
+  (número de proveedor, moneda, plazo, WhatsApp de verificación), bandeja de
+  **pagos por verificar** con su contador, acceso a la configuración y un resumen del
+  circuito en 3 pasos. Se entra desde el cuadrito **«Pagos por adelantado»** del grid
+  de Gestión.
+- **La ruedita ⚙ vuelve a abrir la ficha de la entidad** (el cobro ya no cuelga de
+  ahí). Dos circuitos separados, cada uno en su sitio: el plan del negocio con el
+  superadmin y el pago del cliente con el admin de la entidad.
+- **Tutorial del admin actualizado** al nuevo recorrido: 4 pasos (icono de
+  suscripción con su badge, «Mi suscripción», cuadrito «Pagos por adelantado» y
+  verificación de pagos) y 2 destinos nuevos en la navegación del tutorial
+  (`suscripcion`, `cobros`) para que «Siguiente» abra la pantalla correcta.
+
+### La suscripción se cobra siempre en CUP
+
+- **Transfermóvil solo cobra en CUP**, así que el intent de la suscripción deja de
+  usar la moneda del plan: el servidor convierte el precio con la **tasa del día**
+  (`flow.tasa_factor` sobre la caché de `flow.tasa_cambio`) y redondea a pesos
+  enteros, exactamente como ya hacía el pago por adelantado de un servicio. Si no
+  hay tasa para esa moneda, **no se crea el intent** y se avisa con un mensaje
+  claro en lugar de mandar a Transfermóvil un importe que no puede cobrar.
+- La app muestra el **precio del plan en su moneda** y, debajo, el **equivalente en
+  CUP** que se va a transferir («≈ 2535 CUP al cambio de hoy» + «El cobro con
+  Transfermóvil se hace en CUP»), tanto en la tarjeta del plan como en el paso de
+  pago. El panel del superadmin avisa de lo mismo en el editor y en las tarjetas
+  que no están en CUP.
+- Requiere la migración **74** (`docs/flow_schema/migraciones/74_suscripcion_cobro_en_cup.sql`),
+  que añade `flow._monto_en_cup(...)` y redefine el intent y el listado de planes
+  (`precio_cup`). Los importes los calcula **siempre el servidor**: la app no
+  convierte nada.
+
+### Actualizaciones con changelog e historial de novedades
+
+- **El aviso de versión nueva enseña lo que cambia**: diálogo con la versión y su
+  fecha, el título de la versión y el **changelog completo** (cada cambio con su
+  icono: Novedad, Mejora o Corrección), botón **Descargar ahora** y enlace al
+  **historial de cambios**. Si la actualización es **obligatoria**, el aviso no se
+  puede cerrar (puedes abrir el historial, pero no saltarte la actualización).
+- **Pantalla «Novedades»**: historial de todas las versiones publicadas, con la
+  **instalada marcada**, y un botón para buscar actualizaciones. Sin conexión, cae al
+  historial que viaja dentro de la app. Se entra desde Perfil y desde el propio aviso.
+- **La app reporta la versión realmente instalada** (`package_info_plus`) en lugar de
+  la de `assets/changelog.json`: el asset iba por delante de la base de datos y por eso
+  el aviso **nunca saltaba**. Se detectó el desfase (asset 1.4.8/16 · `pubspec` 1.4.0+8 ·
+  BD 1.4.7/15) y queda documentado en `docs/ACTUALIZACIONES.md`.
+- **El changelog se publica desde el panel** (Superadmin → *Versiones de las apps*):
+  versión, build, versión mínima, obligatoria, título, cambios estructurados y URL de
+  descarga opcional, con **vista previa** de cómo lo verá el usuario en el móvil.
+- Requiere la migración **75** (`docs/flow_schema/migraciones/75_app_versiones_novedades.sql`),
+  que añade `titulo`, `novedades` y `url_descarga` a `public.app_versiones`, amplía
+  `fn_check_update` (sin romper a las otras apps), crea el historial y **endurece la
+  seguridad**: antes cualquier usuario autenticado podía publicar versiones por
+  PostgREST; ahora solo se escribe por los RPC del superadmin.
+
 ## 1.4.0+8 - 2026-10-12
 
 ### Suscripciones por entidad (nueva funcionalidad)

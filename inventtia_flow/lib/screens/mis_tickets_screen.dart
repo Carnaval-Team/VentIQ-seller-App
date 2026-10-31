@@ -3,20 +3,52 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../config/app_theme.dart';
 import '../models/agenda.dart';
+import '../models/cobro.dart';
 import '../models/entidad.dart';
 import '../models/servicio.dart';
 import '../providers/auth_provider.dart';
 import '../providers/entidad_provider.dart';
 import '../providers/modo_vista_provider.dart';
+import '../providers/reservas_provider.dart';
 import '../services/agenda_admin_service.dart';
 import '../services/agenda_service.dart';
 import '../services/auth_service.dart';
 import '../services/catalogo_service.dart';
+import '../services/cobro_service.dart';
+import '../utils/estado_pago.dart';
+import '../utils/motivo_cancelacion.dart';
 import '../utils/precio_reserva.dart';
 import '../utils/reserva_listado.dart';
 import '../utils/telefono_contacto.dart';
 import '../widgets/datos_adicionales_view.dart';
+import '../widgets/dialogo_motivo_cancelacion.dart';
 import '../widgets/notificaciones_bell.dart';
+import '../widgets/pago_adelantado_sheet.dart';
+
+/// ¿Se le ofrece al cliente el botón de pago de esta reserva?
+///
+/// Es la regla única de la tarjeta, separada del widget para poder probarla sin
+/// montar la pantalla ni hablar con el servidor:
+///
+///  * reserva cancelada o completada → nunca;
+///  * con intento de pago (`pagoEstado != null`, incluido `rechazado`/`expirado`)
+///    → manda el estado del intento, como antes;
+///  * sin intento todavía → solo si el servidor **confirmó** que ese
+///    local-servicio cobra por adelantado. Con `cobroDisponible == null` (aún sin
+///    resolver, o la consulta falló) **no se ofrece**: antes que un botón que
+///    lleva a un error del servidor, ninguno. El reintento es del usuario: al
+///    volver a la pestaña o con pull-to-refresh se vuelve a consultar.
+bool puedeOfrecerPagoAlCliente({
+  required bool activa,
+  required String? pagoEstado,
+  required bool? cobroDisponible,
+}) {
+  if (!activa) return false;
+  if (pagoEstado != null) {
+    return EstadoPago.enCurso(pagoEstado) || EstadoPago.sePuedePagar(pagoEstado);
+  }
+  return cobroDisponible == true;
+}
 
 class MisTicketsScreen extends StatefulWidget {
   const MisTicketsScreen({super.key});
@@ -40,6 +72,38 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
   List<Local> _locales = [];
   List<LocalServicio> _localServicios = [];
   List<EstadoAgenda> _estados = [];
+
+  /// ¿Este local-servicio admite **pago por adelantado**?
+  /// (`flow.cliente_cobro_info`, migración 62).
+  ///
+  /// Lo decide el servidor —servicio **y** entidad— y aquí solo se cachea por
+  /// `id_local_servicio`: la tarjeta se repinta en cada gesto del listado y el RPC
+  /// no es gratis. Solo se resuelven los servicios de reservas **activas y sin
+  /// intento de pago**, que son las únicas que pueden llegar a ofrecer el botón.
+  ///
+  /// No estar en el mapa = todavía no se sabe (o la consulta falló): en ese caso
+  /// el botón no se pinta. Nunca se inventa un «sí», porque el servidor rechaza
+  /// el pago de un servicio que no lo tenga activado.
+  final Map<int, bool> _cobroDisponible = {};
+
+  /// Local-servicios con una consulta en vuelo: evita lanzar dos veces el mismo
+  /// RPC si la lista se recarga mientras la primera sigue en el aire.
+  final Set<int> _cobroConsultando = {};
+
+  /// `true` cuando la próxima resolución debe reconsultar aunque ya haya cache.
+  ///
+  /// Lo encienden las recargas **explícitas** (volver a la pestaña, llegar desde
+  /// un aviso, pull-to-refresh): es la forma de ver un cambio del admin sin
+  /// reabrir la app. El refresco de Realtime NO lo enciende, para no lanzar el
+  /// RPC en cada evento de `flow.agenda`.
+  bool _cobroRevalidar = false;
+
+  /// Suscripción **ya viva** de [ReservasProvider] que se reutiliza como fuente
+  /// de tiempo real (ver [_escucharTiempoReal]).
+  ReservasProvider? _reservas;
+
+  /// `true` mientras hay una recarga silenciosa (Realtime) en vuelo.
+  bool _recargaSilenciosaEnVuelo = false;
 
   final _fmt = DateFormat('dd/MM/yyyy');
   final _fmtDiaSemana = DateFormat('EEEE', 'es');
@@ -79,18 +143,70 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
     final now = DateTime.now();
     _fecha = DateTime(now.year, now.month, now.day);
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _escucharTiempoReal();
       _loadLocales();
       _load();
     });
   }
 
   void reload() {
+    // Al volver a la pestaña (o llegar aquí desde un aviso de pago) se revalida
+    // también la disponibilidad del cobro: el interruptor lo mueve el admin en
+    // otro dispositivo y `flow.cobro_config` todavía no está en Realtime (es la
+    // parte que queda pendiente de SQL).
+    //
+    // Se revalida **sin borrar** el mapa: el botón sigue con el último valor
+    // conocido mientras llega la respuesta (si se vaciara, parpadearía en cada
+    // entrada a la pestaña). Si el admin lo apagó, desaparece al contestar el
+    // servidor; y el toque se vuelve a validar en el servidor de todas formas.
+    _cobroRevalidar = true;
     _loadLocales();
     _load();
   }
 
+  /// Pull-to-refresh: además de la lista, fuerza la relectura de la
+  /// disponibilidad del cobro, que es la vía del usuario para reintentar una
+  /// consulta que falló (con error de red el botón se queda oculto a propósito).
+  Future<void> _refrescar() async {
+    _cobroRevalidar = true;
+    await _load();
+  }
+
+  /// Engancha esta lista a la suscripción de Realtime que **ya** tiene
+  /// [ReservasProvider] sobre `flow.agenda` (migración 37).
+  ///
+  /// No se abre una segunda: el provider ya escucha la tabla por `uuid_usuario` y
+  /// por `reservado_por`, agrupa las ráfagas y avisa al terminar de recargar.
+  /// Aquí ese aviso solo se traduce en recargar esta lista, que es la que pinta
+  /// el chip del pago. Así, cuando el admin verifica el pago, el chip pasa de
+  /// «Pago pendiente» a «Pago verificado» sin reabrir la app.
+  void _escucharTiempoReal() {
+    if (!mounted) return;
+    final reservas = context.read<ReservasProvider>();
+    if (identical(reservas, _reservas)) return;
+    _reservas?.removeListener(_alCambiarReservas);
+    _reservas = reservas..addListener(_alCambiarReservas);
+  }
+
+  void _alCambiarReservas() {
+    if (!mounted) return;
+    // Sin sesión no hay nada que listar (el shell ya está yendo a login).
+    if (AuthService.currentUserId == null) return;
+    // Con una carga normal en marcha (entrada a la pestaña, arranque) esa misma
+    // carga ya trae los datos frescos: no se lanza otra igual.
+    if (_isLoading) return;
+    // Una recarga silenciosa a la vez: el provider puede avisar por una ráfaga
+    // de filas y no tiene sentido pisar la misma consulta.
+    if (_recargaSilenciosaEnVuelo) return;
+    _recargaSilenciosaEnVuelo = true;
+    _load(silencioso: true).whenComplete(() {
+      _recargaSilenciosaEnVuelo = false;
+    });
+  }
+
   @override
   void dispose() {
+    _reservas?.removeListener(_alCambiarReservas);
     _searchController.dispose();
     super.dispose();
   }
@@ -113,6 +229,71 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
       'telefono' => cli?.telefono ?? '-',
       _ => '-',
     };
+  }
+
+  /// Abre el pago por adelantado de una reserva del cliente.
+  ///
+  /// Sirve para las tres situaciones, sin que la tarjeta tenga que saber cuál es:
+  ///  * ya hay un intento vivo (`pendiente`/`reportado`) → reabre su hoja;
+  ///  * el anterior se rechazó o caducó → crea uno nuevo;
+  ///  * no hay intento (la reserva se hizo sin pagar) → comprueba que el local
+  ///    tenga el cobro activo y lo crea.
+  ///
+  /// Los importes y las URLs SIEMPRE los calcula el servidor: aquí no se inventa
+  /// ningún precio.
+  Future<void> _pagarPorAdelantado(Agenda ticket) async {
+    try {
+      var pago = await CobroService.pagoDeReserva(ticket.id);
+      CobroInfo? info;
+
+      // Un pago verificado (o en un estado que esta versión no conoce) no se
+      // vuelve a tocar: no hay nada que ofrecer.
+      if (pago != null &&
+          !EstadoPago.enCurso(pago.estado) &&
+          !EstadoPago.sePuedePagar(pago.estado)) {
+        if (!mounted) return;
+        _toast('Este pago ya no se puede modificar.', AppTheme.success);
+        return;
+      }
+
+      // Solo hay que crear intento si no existe o si el anterior murió
+      // (rechazado / caducado).
+      if (pago == null || !EstadoPago.enCurso(pago.estado)) {
+        // Antes de crear nada: ¿este local cobra por adelantado?
+        info = await CobroService.infoLocalServicio(ticket.idLocalServicio);
+        if (!info.disponible) {
+          if (!mounted) return;
+          _toast(
+            'Este servicio no tiene activado el pago por adelantado.',
+            AppTheme.warning,
+          );
+          return;
+        }
+        pago = await CobroService.crearPago(ticket.id);
+      }
+
+      if (!mounted) return;
+      await PagoAdelantadoSheet.mostrar(
+        context,
+        pago: pago,
+        info: info,
+        // Mismo criterio que en la ficha: se muestra el local, no el número.
+        nombreComercio: ticket.localServicio?.local?.nombre,
+      );
+      if (mounted) await _load();
+    } catch (e) {
+      if (!mounted) return;
+      _toast(
+        e.toString().replaceFirst('Exception: ', '').trim(),
+        AppTheme.error,
+      );
+    }
+  }
+
+  void _toast(String mensaje, Color color) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(mensaje), backgroundColor: color));
   }
 
   Future<void> _cancelar(Agenda ticket) async {
@@ -140,33 +321,22 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
       return;
     }
 
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Cancelar reserva'),
-        content: const Text(
-          '¿Estás seguro de que quieres cancelar esta reserva?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('No'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.error),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Cancelar reserva'),
-          ),
-        ],
-      ),
+    // [61] El motivo es OPCIONAL para el cliente. El diálogo sustituye al
+    // «¿Estás seguro?»: es la misma confirmación, con un campo que puede
+    // quedarse vacío. Se abre antes de llamar al servicio.
+    final motivo = await dialogoMotivoCancelacion(
+      context,
+      titulo: 'Cancelar reserva',
+      detalle: '¿Estás seguro de que quieres cancelar esta reserva?',
+      obligatorio: false,
     );
-    if (confirm != true || !mounted) return;
+    if (motivo == null || !mounted) return;
 
     try {
       await AgendaService.cancelarTicketCliente(
         uuidUsuario: uuid,
         idAgenda: ticket.id,
+        motivo: motivo,
       );
       await _load();
       if (!mounted) return;
@@ -179,7 +349,11 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString()), backgroundColor: AppTheme.error),
+        SnackBar(
+          // [61] Mensajes del servidor traducidos (antes: `e.toString()`).
+          content: Text(mensajeErrorCancelacion(e)),
+          backgroundColor: AppTheme.error,
+        ),
       );
     }
   }
@@ -195,16 +369,20 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
     colorConfirmar: AppTheme.success,
   );
 
-  Future<void> _cancelarStaff(Agenda ticket) => _cambiarEstadoStaff(
-    ticket,
-    2,
-    titulo: 'Cancelar reserva',
-    mensaje:
-        '¿Cancelar esta reserva? Se liberará el turno y se notificará al cliente.',
-    confirmar: 'Cancelar reserva',
-    okMsg: 'Reserva cancelada',
-    colorConfirmar: AppTheme.error,
-  );
+  /// Cancelar como staff (vendedor): [61] el motivo es **obligatorio**.
+  ///
+  /// El diálogo del motivo hace también de confirmación («Sí, cancelar»), así
+  /// que después no se vuelve a preguntar.
+  Future<void> _cancelarStaff(Agenda ticket) async {
+    final motivo = await dialogoMotivoCancelacion(
+      context,
+      titulo: 'Cancelar reserva',
+      detalle:
+          '¿Cancelar esta reserva? Se liberará el turno y se notificará al cliente.',
+    );
+    if (motivo == null || !mounted) return;
+    await _aplicarEstadoStaff(ticket, 2, 'Reserva cancelada', motivo: motivo);
+  }
 
   Future<void> _cambiarEstadoStaff(
     Agenda ticket,
@@ -235,10 +413,22 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
       ),
     );
     if (ok != true || !mounted) return;
+    await _aplicarEstadoStaff(ticket, idEstado, okMsg);
+  }
+
+  /// Aplica el cambio de estado una vez confirmado (y, al cancelar, con el
+  /// motivo ya recogido).
+  Future<void> _aplicarEstadoStaff(
+    Agenda ticket,
+    int idEstado,
+    String okMsg, {
+    String? motivo,
+  }) async {
     try {
       await AgendaAdminService.marcarEstadoAgenda(
         idAgenda: ticket.id,
         idEstado: idEstado,
+        motivo: motivo,
       );
       await _load();
       if (!mounted) return;
@@ -248,7 +438,11 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString()), backgroundColor: AppTheme.error),
+        SnackBar(
+          // [61] Mensajes del servidor traducidos (antes: `e.toString()`).
+          content: Text(mensajeErrorCancelacion(e)),
+          backgroundColor: AppTheme.error,
+        ),
       );
     }
   }
@@ -336,13 +530,20 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
     });
   }
 
-  Future<void> _load() async {
+  /// Recarga la lista de reservas.
+  ///
+  /// [silencioso] deja en pantalla la lista que ya había mientras llega la nueva.
+  /// Es lo que usa el refresco por Realtime: poner `_isLoading` a `true` apagaría
+  /// toda la pantalla (spinner + `AbsorbPointer`) por un cambio que el usuario no
+  /// pidió y le quitaría la posición del scroll.
+  Future<void> _load({bool silencioso = false}) async {
     if (!mounted) return;
-    setState(() => _isLoading = true);
+    final esVendedor = _esVendedor;
+    if (!silencioso) setState(() => _isLoading = true);
     try {
       final uuid = AuthService.currentUserId ?? '';
       List<Agenda> tickets;
-      if (_esVendedor) {
+      if (esVendedor) {
         final entidad = _entidad!;
         final desde = DateTime(_fecha.year, _fecha.month, _fecha.day);
         final hasta = DateTime(
@@ -377,9 +578,67 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
             : tickets;
         _isLoading = false;
       });
+      // Después de pintar: ¿alguna de estas reservas puede ofrecer pago? El
+      // staff no pinta el botón, así que no se consulta nada por él.
+      if (!esVendedor) await _resolverCobroDisponible(tickets);
     } catch (e) {
       print('[flow] MisTicketsScreen _load ERROR: $e');
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  /// Resuelve si se puede ofrecer pagar en cada local-servicio de la lista.
+  ///
+  /// Solo pregunta por los servicios de reservas activas y **sin intento de
+  /// pago**: en las demás el botón ni se plantea, así que sería una llamada de
+  /// red regalada. Los resultados se guardan en [_cobroDisponible] y se
+  /// reutilizan en las siguientes cargas; solo una recarga explícita
+  /// ([_cobroRevalidar]) vuelve a preguntar. Ese mapa es lo único que leen las
+  /// tarjetas en `build`: **ningún `build` dispara red**.
+  Future<void> _resolverCobroDisponible(Iterable<Agenda> tickets) async {
+    // La revalidación explícita se consume aquí: vuelve a preguntar por los
+    // servicios ya cacheados y conserva el último valor en pantalla mientras
+    // tanto.
+    final revalidar = _cobroRevalidar;
+    _cobroRevalidar = false;
+
+    final ids = <int>{};
+    for (final t in tickets) {
+      if (t.pagoEstado != null) continue;
+      if (t.estado?.esCancelado == true || t.idEstado == 2) continue;
+      if (t.estado?.esCompletado == true || t.idEstado == 3) continue;
+      if (!revalidar && _cobroDisponible.containsKey(t.idLocalServicio)) {
+        continue;
+      }
+      if (_cobroConsultando.contains(t.idLocalServicio)) continue;
+      ids.add(t.idLocalServicio);
+    }
+    if (ids.isEmpty) return;
+
+    _cobroConsultando.addAll(ids);
+    try {
+      final respuestas = await Future.wait(
+        ids.map((id) async {
+          try {
+            final info = await CobroService.infoLocalServicio(id);
+            return MapEntry(id, info.disponible);
+          } catch (e) {
+            // Error de red (o migración sin aplicar): se deja SIN resolver. El
+            // botón no se pinta y se reintenta en la próxima recarga o en el
+            // pull-to-refresh; guardar un `false` aquí lo ocultaría para siempre.
+            debugPrint('[flow] MisTicketsScreen cobro $id ERROR: $e');
+            return null;
+          }
+        }),
+      );
+      if (!mounted) return;
+      setState(() {
+        for (final r in respuestas) {
+          if (r != null) _cobroDisponible[r.key] = r.value;
+        }
+      });
+    } finally {
+      _cobroConsultando.removeAll(ids);
     }
   }
 
@@ -440,7 +699,7 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
                           ? _buildNoResultsState()
                           : _buildEmptyState()
                     : RefreshIndicator(
-                        onRefresh: _load,
+                        onRefresh: _refrescar,
                         color: AppTheme.primary,
                         child: ListView.builder(
                           padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
@@ -450,6 +709,13 @@ class MisTicketsScreenState extends State<MisTicketsScreen> {
                             miUuid: context.read<AuthProvider>().user?.id ?? '',
                             onCancelar: _esVendedor ? null : _cancelar,
                             esVendedor: _esVendedor,
+                            onPagar: _esVendedor ? null : _pagarPorAdelantado,
+                            // `null` = todavía no se sabe si este local-servicio
+                            // cobra por adelantado; la tarjeta no pinta el botón.
+                            pagoDisponible: _esVendedor
+                                ? null
+                                : _cobroDisponible[_filteredTickets[i]
+                                      .idLocalServicio],
                             onCompletarStaff: _esVendedor
                                 ? _completarStaff
                                 : null,
@@ -943,6 +1209,16 @@ class _TicketCard extends StatelessWidget {
   final ValueChanged<Agenda>? onCompletarStaff;
   final ValueChanged<Agenda>? onCancelarStaff;
 
+  /// Pago por adelantado (migración 62): abrir/gestionar el pago de esta
+  /// reserva. Null = no se ofrece (staff).
+  final ValueChanged<Agenda>? onPagar;
+
+  /// Disponibilidad del pago resuelta por el servidor para el local-servicio de
+  /// esta reserva: `true` si lo tiene activo, `false` si no, `null` si todavía no
+  /// se sabe (o la consulta falló). Solo decide cuando la reserva aún no tiene
+  /// intento de pago; ver [puedeOfrecerPagoAlCliente].
+  final bool? pagoDisponible;
+
   const _TicketCard({
     required this.ticket,
     required this.miUuid,
@@ -950,6 +1226,8 @@ class _TicketCard extends StatelessWidget {
     this.esVendedor = false,
     this.onCompletarStaff,
     this.onCancelarStaff,
+    this.onPagar,
+    this.pagoDisponible,
   });
 
   bool get _esCompletada =>
@@ -974,6 +1252,33 @@ class _TicketCard extends StatelessWidget {
   // Una sola fuente de verdad (estado Reservado + reserva futura + plazo de
   // anticipación de la entidad), compartida con la validación de `_cancelar`.
   bool get _puedeCancelar => puedeCancelarCliente(ticket);
+
+  /// Texto del chip de pago («Pago pendiente · 1500 CUP»), o `null` si esta
+  /// reserva no pide pago por adelantado.
+  String? get _textoPago {
+    final etiqueta = EstadoPago.etiqueta(ticket.pagoEstado);
+    if (etiqueta == null) return null;
+    final monto = ticket.pagoMonto;
+    if (monto == null || monto <= 0) return etiqueta;
+    final texto = monto == monto.roundToDouble()
+        ? monto.toStringAsFixed(0)
+        : monto.toStringAsFixed(2);
+    final moneda = ticket.pagoMoneda;
+    return moneda == null ? '$etiqueta · $texto' : '$etiqueta · $texto $moneda';
+  }
+
+  /// ¿El cliente puede hacer algo con el pago?
+  ///
+  /// Delega en [puedeOfrecerPagoAlCliente]: con un intento ya creado manda su
+  /// estado (como antes); sin intento hace falta que el servidor haya confirmado
+  /// que el local-servicio cobra por adelantado. Antes bastaba `pagoEstado ==
+  /// null` para pintar el botón, así que toda reserva activa lo enseñaba aunque
+  /// la entidad tuviera el cobro apagado y al pulsarlo llegara el error.
+  bool get _puedeAccionarPago => puedeOfrecerPagoAlCliente(
+    activa: _esActiva,
+    pagoEstado: ticket.pagoEstado,
+    cobroDisponible: pagoDisponible,
+  );
 
   IconData get _estadoIcon {
     switch (ticket.estado?.nombre) {
@@ -1166,6 +1471,71 @@ class _TicketCard extends StatelessWidget {
                         color: AppTheme.success,
                       ),
                     ],
+                    // [61] Motivo de la cancelación, justo bajo el chip de
+                    // estado. Las canceladas antiguas no tienen motivo: en ese
+                    // caso no se pinta el bloque.
+                    if (_esCancelada &&
+                        hayMotivoCancelacion(ticket.motivoCancelacion)) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppTheme.error.withValues(alpha: 0.07),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: AppTheme.error.withValues(alpha: 0.35),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Icon(
+                                  Icons.event_busy,
+                                  size: 15,
+                                  color: AppTheme.error,
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    'Motivo de cancelación: '
+                                    '${textoMotivoCancelacion(ticket.motivoCancelacion)}',
+                                    style: const TextStyle(
+                                      fontSize: 12.5,
+                                      height: 1.3,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppTheme.error,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (textoCanceladoPor(ticket.canceladoPorRol)
+                                .isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Padding(
+                                padding: const EdgeInsets.only(left: 21),
+                                child: Text(
+                                  'Cancelada por: '
+                                  '${textoCanceladoPor(ticket.canceladoPorRol)}',
+                                  style: const TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w500,
+                                    color: AppTheme.error,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
                     ...[
                       const SizedBox(height: 12),
                       _ClienteDataSection(ticket: ticket),
@@ -1231,6 +1601,68 @@ class _TicketCard extends StatelessWidget {
                         ],
                       );
                     }(),
+                    // ── Pago por adelantado (migración 62) ──────────────────────────────────
+                    // Chip con el estado del pago (lo ve también el staff: le
+                    // sirve para saber si la reserva está cobrada) y, solo para
+                    // el cliente, el botón de pagar/gestionar/reintentar.
+                    if (_textoPago != null) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: EstadoPago.color(
+                            ticket.pagoEstado,
+                          ).withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: EstadoPago.color(
+                              ticket.pagoEstado,
+                            ).withValues(alpha: 0.35),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              EstadoPago.icono(ticket.pagoEstado),
+                              size: 16,
+                              color: EstadoPago.color(ticket.pagoEstado),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _textoPago!,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: EstadoPago.color(ticket.pagoEstado),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    if (!esVendedor && onPagar != null && _puedeAccionarPago) ...[
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () => onPagar!(ticket),
+                          icon: Icon(
+                            EstadoPago.icono(ticket.pagoEstado),
+                            size: 18,
+                          ),
+                          label: Text(EstadoPago.etiquetaBoton(ticket.pagoEstado)),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppTheme.primary,
+                            side: const BorderSide(color: AppTheme.primary),
+                          ),
+                        ),
+                      ),
+                    ],
                     if (_puedeCancelar && onCancelar != null) ...[
                       const SizedBox(height: 14),
                       SizedBox(

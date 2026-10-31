@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ventiq_admin_app/config/app_colors.dart';
 import 'package:ventiq_admin_app/models/wapi_envio_log.dart';
 import 'package:ventiq_admin_app/models/wapi_envio_tanda.dart';
 import 'package:ventiq_admin_app/utils/wapi_errores.dart';
@@ -97,6 +98,57 @@ void main() {
       expect(d.detalle, contains('HTTP_500'));
       expect(d.detalle, contains('Internal server error'));
     });
+
+    test('código desconocido sigue dando el genérico de siempre', () {
+      final d = diagnosticarError(codigo: 'RARO_XYZ', mensaje: 'algo pasó');
+      expect(d.titulo, 'No se pudo entregar el mensaje');
+      expect(d.tipo, WapiDiagTipo.transitorio);
+    });
+
+    test('IDEMPOTENCY_KEY_REUSED → choque de reintento, no rechazo de WhatsApp',
+        () {
+      final d = diagnosticarError(
+        codigo: 'IDEMPOTENCY_KEY_REUSED',
+        mensaje: 'This Idempotency-Key was already used for a different '
+            'request. Use a new key.',
+      );
+      expect(d.tipo, WapiDiagTipo.transitorio);
+      expect(d.titulo, 'El reintento chocó con un envío anterior');
+      expect(d.reintentable, isTrue);
+      expect(d.requiereReconectar, isFalse);
+      expect(d.color, AppColors.warning);
+      expect(d.explicacion, contains('NO salió'));
+      expect(d.queHacer, contains('clave nueva'));
+      // El código crudo sigue disponible para soporte, pero ya no es el título.
+      expect(d.detalle, contains('IDEMPOTENCY_KEY_REUSED'));
+    });
+
+    test('IDEMPOTENCY_KEY_REUSED por el mensaje en inglés (sin código)', () {
+      final d = diagnosticarError(
+        codigo: 'HTTP_422',
+        mensaje: 'This Idempotency-Key was already used for a different '
+            'request. Use a new key.',
+      );
+      expect(d.titulo, 'El reintento chocó con un envío anterior');
+      expect(d.tipo, WapiDiagTipo.transitorio);
+      expect(d.reintentable, isTrue);
+    });
+
+    test('IDEMPOTENCY_KEY_IN_PROGRESS ya no cae en el genérico', () {
+      final d = diagnosticarError(codigo: 'IDEMPOTENCY_KEY_IN_PROGRESS');
+      expect(d.tipo, WapiDiagTipo.informativo);
+      expect(d.titulo, 'El envío anterior seguía en curso');
+      expect(d.queHacer, contains('Espera'));
+      expect(d.titulo, isNot('No se pudo entregar el mensaje'));
+    });
+
+    test('IDEMPOTENCY_OUTCOME_UNKNOWN pide mirar el chat antes de reenviar', () {
+      final d = diagnosticarError(codigo: 'IDEMPOTENCY_OUTCOME_UNKNOWN');
+      expect(d.tipo, WapiDiagTipo.informativo);
+      expect(d.titulo, 'No se pudo confirmar si salió');
+      expect(d.queHacer, contains('Revisa el chat'));
+      expect(d.titulo, isNot('No se pudo entregar el mensaje'));
+    });
   });
 
   group('diagnosticarTanda', () {
@@ -189,6 +241,25 @@ void main() {
       final d = diagnosticarExcepcion(Exception('algo raro'));
       expect(d.titulo, isNotEmpty);
       expect(d.queHacer, isNotNull);
+    });
+
+    test('reconoce IDEMPOTENCY_KEY_REUSED lanzado por la edge function', () {
+      final d = diagnosticarExcepcion(
+        Exception('[wapi-send-products] ([IDEMPOTENCY_KEY_REUSED]) HTTP_422: '
+            'This Idempotency-Key was already used for a different request. '
+            'Use a new key.'),
+      );
+      expect(d.titulo, 'El reintento chocó con un envío anterior');
+      expect(d.tipo, WapiDiagTipo.transitorio);
+      expect(d.reintentable, isTrue);
+    });
+
+    test('reconoce el 422 en inglés aunque no venga el código', () {
+      final d = diagnosticarExcepcion(
+        Exception('[wapi-send-products] HTTP 422: This Idempotency-Key was '
+            'already used for a different request.'),
+      );
+      expect(d.titulo, 'El reintento chocó con un envío anterior');
     });
   });
 }

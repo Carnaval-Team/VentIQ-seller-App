@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../models/entidad.dart';
+import '../screens/admin/cobros_screen.dart';
 import '../screens/admin/config_categorias_screen.dart';
 import '../screens/admin/gestion_servicios_screen.dart';
 import '../screens/admin/local_servicio_admin_screen.dart';
 import '../screens/admin/locales_servicios_screen.dart';
+import '../screens/admin/mi_suscripcion_screen.dart';
 import '../screens/admin/reservas_screen.dart';
 import '../services/catalogo_service.dart';
 import '../services/exploracion_service.dart';
@@ -83,7 +85,9 @@ class TutorialNavegacion {
           TutorialDestino.servicios ||
           TutorialDestino.serviciosFormulario ||
           TutorialDestino.reservas ||
-          TutorialDestino.categorias:
+          TutorialDestino.categorias ||
+          TutorialDestino.cobros ||
+          TutorialDestino.suscripcion:
         return;
     }
   }
@@ -130,6 +134,8 @@ class TutorialNavegacion {
       ),
       TutorialDestino.reservas => ReservasScreen(entidad: entidad),
       TutorialDestino.categorias => ConfigCategoriasScreen(entidad: entidad),
+      TutorialDestino.cobros => CobrosScreen(entidad: entidad),
+      TutorialDestino.suscripcion => const MiSuscripcionScreen(),
       TutorialDestino.home ||
       TutorialDestino.catalogo ||
       TutorialDestino.servicio ||
