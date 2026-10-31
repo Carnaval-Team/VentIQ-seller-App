@@ -1,6 +1,6 @@
 -- ============================================================================
 -- 48 · Precio/costo unitarios en unidades base + reporte por turno con
---      presentaciones (prueba en newa antes de producción)
+--      presentaciones — APLICADO en newa y en Main.
 -- ============================================================================
 -- Corrige dos huecos para empezar a vender en presentaciones no-base:
 --
@@ -12,12 +12,12 @@
 --
 -- 2) El filtro "Turnos" de Tiempo Real llamaba a
 --    `fn_reporte_ventas_con_proveedor_por_turno` SIN columnas de presentación
---    y emparejando turnos por rango de IDs, mientras el tab TPVs
---    (`fn_reporte_ventas_por_turno`) usa ventana temporal. Se crea la v2 con
---    el mismo contrato de columnas que la v5 y el mismo criterio temporal
---    que TPVs, para que las sumas cuadren.
+--    y emparejando turnos por rango de IDs. Se crea la v2 con el mismo
+--    contrato de columnas que la v5. Posteriormente (fix_reportes_turnos_
+--    ventana_solapada.sql) se decidió que el reporte liste las operaciones
+--    por FECHA, sin depender de turnos.
 --
--- La v4 / por_turno original NO se tocan. Solo newa de momento.
+-- La v4 / por_turno original NO se tocan.
 -- ============================================================================
 
 -- ---------------------------------------------------------------------------
@@ -208,36 +208,15 @@ BEGIN
 
     RETURN QUERY
     WITH
-    -- Misma ventana de turnos que fn_reporte_ventas_por_turno (tab TPVs).
-    turnos AS MATERIALIZED (
-        SELECT
-            ct.id_tpv,
-            ct.fecha_apertura AS tinicio,
-            COALESCE(ct.fecha_cierre, NOW()) AS tfin,
-            v.uuid AS vuuid
-        FROM app_dat_caja_turno ct
-        JOIN app_dat_vendedor v ON v.id = ct.id_vendedor
-        JOIN app_dat_tpv tp ON tp.id = ct.id_tpv
-        WHERE tp.id_tienda = p_id_tienda
-          AND ct.fecha_apertura >= v_fecha_inicio
-          AND ct.fecha_apertura <  v_fecha_fin
-    ),
-
-    -- Operaciones por ventana temporal (NO por rango de IDs).
+    -- Operaciones de venta por FECHA (sin lógica de turnos): pagadas y
+    -- completadas dentro de la ventana pedida.
     ops AS MATERIALIZED (
         SELECT DISTINCT
             o.id,
             o.created_at AS ts_op
-        FROM turnos t
-        JOIN app_dat_operaciones o
-          ON o.uuid = t.vuuid
-         AND o.id_tipo_operacion = v_id_tipo_venta
-         AND o.id_tienda = p_id_tienda
-         AND o.created_at >= t.tinicio
-         AND o.created_at <= t.tfin
+        FROM app_dat_operaciones o
         JOIN app_dat_operacion_venta ov
           ON ov.id_operacion = o.id
-         AND ov.id_tpv = t.id_tpv
          AND ov.es_pagada = true
         CROSS JOIN LATERAL (
             SELECT eo.estado
@@ -246,7 +225,11 @@ BEGIN
              ORDER BY eo.id DESC
              LIMIT 1
         ) e
-        WHERE e.estado = 2
+        WHERE o.id_tipo_operacion = v_id_tipo_venta
+          AND o.id_tienda = p_id_tienda
+          AND o.created_at >= v_fecha_inicio
+          AND o.created_at <  v_fecha_fin
+          AND e.estado = 2
     ),
 
     ventas_detalle AS MATERIALIZED (
