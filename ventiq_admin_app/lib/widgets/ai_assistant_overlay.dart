@@ -20,8 +20,9 @@ class AiAssistantOverlay extends StatefulWidget {
     required this.navigatorKey,
   });
 
-  // Rutas donde NO se muestra el botón (splash / login).
-  static const Set<String> _hiddenRoutes = {'/', '/login'};
+  // Rutas donde NO se muestra el botón (splash / login / ventas tiene el
+  // asistente integrado en su AppBar).
+  static const Set<String> _hiddenRoutes = {'/', '/login', '/sales'};
 
   @override
   State<AiAssistantOverlay> createState() => _AiAssistantOverlayState();

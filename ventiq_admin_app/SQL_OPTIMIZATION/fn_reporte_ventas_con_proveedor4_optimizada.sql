@@ -1,6 +1,8 @@
 -- =============================================================================
 -- fn_reporte_ventas_con_proveedor4  —  VERSIÓN OPTIMIZADA
 -- =============================================================================
+-- Precio de venta = cobrado en la operación (precio_unitario / importe).
+-- Lista app_dat_precio_venta solo como fallback si la línea no trae precio.
 -- Firma y columnas de salida IDÉNTICAS a la versión original.
 -- Validado con EXCEPT ALL bidireccional contra la original (0 diferencias).
 --
@@ -197,6 +199,7 @@ BEGIN
             ep.id_presentacion,
             ep.cantidad,
             ep.importe,
+            ep.precio_unitario,
             op.ts_op::date AS fecha_op,
             op.ts_op
         FROM ops op
@@ -226,31 +229,10 @@ BEGIN
     ),
 
     -- -------------------------------------------------------------------------
-    -- 2. Precio de venta vigente en la fecha de la operación.
-    --    Optimización 4: DISTINCT ON + sort global  ->  LATERAL + LIMIT 1
-    --    sobre las claves distintas (13k lookups de índice en vez de un
-    --    sort de todas las combinaciones producto x precio x fecha).
+    -- 2. (Reservado) Antes se resolvía precio desde app_dat_precio_venta.
+    --    Ahora el precio de venta del reporte es el cobrado en la operación
+    --    (precio_unitario / importe). La lista queda solo como fallback.
     -- -------------------------------------------------------------------------
-    precio_venta_historico AS MATERIALIZED (
-        SELECT
-            k.id_producto,
-            k.variante_key,
-            k.fecha_op,
-            ROUND(x.precio_venta_cup::NUMERIC, 2) AS precio_cup_historico
-        FROM (SELECT DISTINCT vd.id_producto, vd.variante_key, vd.fecha_op
-              FROM ventas_detalle vd) k
-        CROSS JOIN LATERAL (
-            SELECT pv.precio_venta_cup
-            FROM app_dat_precio_venta pv
-            WHERE pv.id_producto = k.id_producto
-              AND (pv.id_variante IS NULL OR pv.id_variante = 0
-                   OR pv.id_variante = k.variante_key)
-              AND pv.fecha_desde <= k.fecha_op
-              AND (pv.fecha_hasta IS NULL OR pv.fecha_hasta >= k.fecha_op)
-            ORDER BY pv.created_at DESC       -- en solapamiento, el más reciente
-            LIMIT 1
-        ) x
-    ),
 
     -- -------------------------------------------------------------------------
     -- 3. Tasa USD->CUP vigente en cada fecha de operación (126 fechas, no 23k filas).
@@ -382,9 +364,8 @@ BEGIN
     ),
 
     -- -------------------------------------------------------------------------
-    -- 5. Enriquecer cada línea con precio, tasa y costo históricos.
-    --    Con las estimaciones ya correctas, el planner usa HASH/MERGE JOIN
-    --    en vez de los nested loops que descartaban 21.3M de filas.
+    -- 5. Enriquecer cada línea con precio cobrado, tasa y costo históricos.
+    --    Precio de venta = lo cobrado en la operación (no la lista de precios).
     -- -------------------------------------------------------------------------
     ventas_enriquecidas AS MATERIALIZED (
         SELECT
@@ -392,11 +373,31 @@ BEGIN
             vd.variante_key,
             vd.id_presentacion,
             vd.cantidad,
+            COALESCE(
+                vd.importe,
+                CASE
+                    WHEN vd.cantidad > 0 AND COALESCE(vd.precio_unitario, 0) > 0
+                        THEN vd.cantidad * vd.precio_unitario
+                    ELSE NULL
+                END
+            ) AS importe_op,
 
-            -- Precio de venta CUP vigente; fallback: importe/cantidad
+            -- Precio real cobrado; lista histórica solo si la línea no trae precio
             ROUND(COALESCE(
-                pvh.precio_cup_historico,
-                CASE WHEN vd.cantidad > 0 THEN (vd.importe / vd.cantidad)::NUMERIC ELSE 0 END
+                NULLIF(vd.precio_unitario, 0),
+                CASE WHEN vd.cantidad > 0 AND vd.importe IS NOT NULL
+                     THEN (vd.importe / vd.cantidad)::NUMERIC END,
+                (
+                    SELECT pv.precio_venta_cup
+                    FROM app_dat_precio_venta pv
+                    WHERE pv.id_producto = vd.id_producto
+                      AND (pv.id_variante IS NULL OR pv.id_variante = 0
+                           OR pv.id_variante = vd.variante_key)
+                      AND pv.fecha_desde <= vd.fecha_op
+                      AND (pv.fecha_hasta IS NULL OR pv.fecha_hasta >= vd.fecha_op)
+                    ORDER BY pv.created_at DESC
+                    LIMIT 1
+                )
             ), 2) AS precio_venta_cup_op,
 
             -- Tasa vigente; fallback: tasa actual de tasas_conversion (precalculada)
@@ -419,10 +420,6 @@ BEGIN
 
         FROM ventas_detalle vd
         JOIN app_dat_producto p ON p.id = vd.id_producto
-        LEFT JOIN precio_venta_historico pvh
-               ON pvh.id_producto  = vd.id_producto
-              AND pvh.variante_key = vd.variante_key
-              AND pvh.fecha_op     = vd.fecha_op
         LEFT JOIN tasa_historica th
                ON th.fecha_op = vd.fecha_op
         LEFT JOIN costo_historico ch
@@ -452,7 +449,9 @@ BEGIN
             ve.costo_usd_op,
             ve.tasa_op,
             SUM(ve.cantidad)                                 AS total_vendido,
-            SUM(ve.precio_venta_cup_op * ve.cantidad)        AS ingresos_totales,
+            -- Ingresos = importe real de la línea (no precio_lista × qty)
+            SUM(COALESCE(ve.importe_op, ve.precio_venta_cup_op * ve.cantidad))
+                                                             AS ingresos_totales,
             SUM(ve.costo_usd_op * ve.tasa_op * ve.cantidad)  AS costo_total_vendido
         FROM ventas_enriquecidas ve
         GROUP BY

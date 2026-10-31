@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -96,12 +97,11 @@ class ExportService {
           return;
         }
       } else {
-        final tempDir = await getTemporaryDirectory();
-        final file = File('${tempDir.path}/$fileName');
-        await file.writeAsBytes(fileBytes);
-
-        await Share.shareXFiles(
-          [XFile(file.path, mimeType: mimeType)],
+        await _saveOrShareFile(
+          context,
+          bytes: fileBytes,
+          fileName: fileName,
+          mimeType: mimeType,
           subject: 'Oferta Comercial - $storeName',
           text: 'Se adjunta la oferta comercial solicitada.',
         );
@@ -169,12 +169,11 @@ class ExportService {
           return;
         }
       } else {
-        final tempDir = await getTemporaryDirectory();
-        final file = File('${tempDir.path}/$fileName');
-        await file.writeAsBytes(fileBytes);
-
-        await Share.shareXFiles(
-          [XFile(file.path, mimeType: mimeType)],
+        await _saveOrShareFile(
+          context,
+          bytes: fileBytes,
+          fileName: fileName,
+          mimeType: mimeType,
           subject: 'Operación de Inventario - $operationId',
           text:
               'Comprobante de operación de inventario generado el ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}',
@@ -255,14 +254,11 @@ class ExportService {
           return; // Salir temprano si hay error web
         }
       } else {
-        // Guardar archivo temporalmente y compartir en móvil
-        final tempDir = await getTemporaryDirectory();
-        final file = File('${tempDir.path}/$fileName');
-        await file.writeAsBytes(fileBytes);
-
-        // Compartir archivo
-        await Share.shareXFiles(
-          [XFile(file.path, mimeType: mimeType)],
+        await _saveOrShareFile(
+          context,
+          bytes: fileBytes,
+          fileName: fileName,
+          mimeType: mimeType,
           subject: 'Inventario - $warehouseName - $zoneName',
           text:
               'Reporte de inventario generado el ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}',
@@ -1599,14 +1595,11 @@ class ExportService {
           return; // Salir temprano si hay error web
         }
       } else {
-        // Guardar archivo temporalmente y compartir en móvil
-        final tempDir = await getTemporaryDirectory();
-        final file = File('${tempDir.path}/$fileName');
-        await file.writeAsBytes(fileBytes);
-
-        // Compartir archivo
-        await Share.shareXFiles(
-          [XFile(file.path, mimeType: mimeType)],
+        await _saveOrShareFile(
+          context,
+          bytes: fileBytes,
+          fileName: fileName,
+          mimeType: mimeType,
           subject: 'Inventario - $warehouseName',
           text:
               'Reporte de inventario generado el ${DateFormat('dd/MM/yyyy HH:mm').format(now)}',
@@ -1647,6 +1640,80 @@ class ExportService {
     if (kIsWeb) {
       web_download.downloadFileWeb(bytes, fileName, mimeType);
     }
+  }
+
+  /// En nativo pregunta si guardar el archivo en el dispositivo o compartirlo.
+  /// Guardar usa el selector del sistema (SAF) vía FilePicker; si el
+  /// dispositivo no lo soporta cae a compartir. Devuelve false si el usuario
+  /// canceló.
+  Future<bool> _saveOrShareFile(
+    BuildContext context, {
+    required Uint8List bytes,
+    required String fileName,
+    required String mimeType,
+    required String subject,
+    String? text,
+  }) async {
+    final action = context.mounted
+        ? await showDialog<String>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Archivo generado'),
+              content: const Text('¿Qué deseas hacer con el archivo?'),
+              actions: [
+                TextButton.icon(
+                  onPressed: () => Navigator.pop(ctx, 'save'),
+                  icon: const Icon(Icons.save_alt),
+                  label: const Text('Guardar en dispositivo'),
+                ),
+                TextButton.icon(
+                  onPressed: () => Navigator.pop(ctx, 'share'),
+                  icon: const Icon(Icons.share),
+                  label: const Text('Compartir'),
+                ),
+              ],
+            ),
+          )
+        : 'share';
+    if (action == null) return false;
+
+    if (action == 'save') {
+      final ext = fileName.contains('.')
+          ? fileName.split('.').last.toLowerCase()
+          : null;
+      try {
+        final savedPath = await FilePicker.platform.saveFile(
+          dialogTitle: 'Guardar archivo',
+          fileName: fileName,
+          type: FileType.custom,
+          allowedExtensions: ext != null ? [ext] : null,
+          bytes: bytes,
+        );
+        if (savedPath != null && context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Archivo guardado: $savedPath'),
+              backgroundColor: AppColors.success,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
+        return true;
+      } catch (e) {
+        // saveFile no soportado en este dispositivo → fallback a compartir
+        print('saveFile no disponible, usando compartir: $e');
+      }
+    }
+
+    final tempDir = await getTemporaryDirectory();
+    final file = File('${tempDir.path}/$fileName');
+    await file.writeAsBytes(bytes);
+    await Share.shareXFiles(
+      [XFile(file.path, mimeType: mimeType)],
+      subject: subject,
+      text: text,
+    );
+    return true;
   }
 
   /// Abre un archivo usando el visor predeterminado del sistema
@@ -2934,11 +3001,11 @@ class ExportService {
           return;
         }
       } else {
-        final tempDir = await getTemporaryDirectory();
-        final file = File('${tempDir.path}/$fileName');
-        await file.writeAsBytes(fileBytes);
-        await Share.shareXFiles(
-          [XFile(file.path, mimeType: mimeType)],
+        await _saveOrShareFile(
+          context,
+          bytes: fileBytes,
+          fileName: fileName,
+          mimeType: mimeType,
           subject: 'Envío de Consignación #$numero',
           text:
               'Detalle del envío de consignación generado el ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}',
@@ -3367,11 +3434,11 @@ class ExportService {
     if (kIsWeb) {
       _downloadFileWeb(bytes, fileName, mimeType);
     } else {
-      final tempDir = await getTemporaryDirectory();
-      final file = File('${tempDir.path}/$fileName');
-      await file.writeAsBytes(bytes);
-      await Share.shareXFiles(
-        [XFile(file.path, mimeType: mimeType)],
+      await _saveOrShareFile(
+        context,
+        bytes: bytes,
+        fileName: fileName,
+        mimeType: mimeType,
         subject: 'Órdenes Carnaval',
         text:
             'Órdenes Carnaval exportadas el ${DateFormat('dd/MM/yyyy HH:mm').format(now)}',
@@ -3616,11 +3683,11 @@ class ExportService {
     if (kIsWeb) {
       _downloadFileWeb(bytes, fileName, mimeType);
     } else {
-      final tempDir = await getTemporaryDirectory();
-      final file = File('${tempDir.path}/$fileName');
-      await file.writeAsBytes(bytes);
-      await Share.shareXFiles(
-        [XFile(file.path, mimeType: mimeType)],
+      await _saveOrShareFile(
+        context,
+        bytes: bytes,
+        fileName: fileName,
+        mimeType: mimeType,
         subject: 'Productos por recoger - Carnaval',
         text:
             'Productos por recoger exportados el ${DateFormat('dd/MM/yyyy HH:mm').format(now)}',
@@ -3801,6 +3868,369 @@ class ExportService {
         ],
       ),
     );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // FACTURA DE OPERACIÓN DE INVENTARIO (formato factura cliente, columnas
+  // configurables)
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /// Columnas seleccionables para la factura de operación.
+  static const List<String> invoiceColumns = [
+    'sku',
+    'denominacion',
+    'descripcion',
+    'cantidad',
+    'precio_cup',
+    'precio_usd',
+    'subtotal_cup',
+    'subtotal_usd',
+  ];
+
+  /// Exporta una factura PDF para una operación de inventario.
+  ///
+  /// - [columns]: subconjunto ordenado de [invoiceColumns] a incluir.
+  /// - [rows]: por cada fila, mapa {columna: texto} ya formateado.
+  /// - [totals]: mapa {'subtotal_cup','subtotal_usd'} con totales (opcional;
+  ///   solo se muestran si la columna correspondiente está seleccionada).
+  Future<void> exportOperationInvoicePdf({
+    required BuildContext context,
+    required String operationId,
+    required DateTime operationDate,
+    required String storeName,
+    String storeAddress = '',
+    String storeLocation = '',
+    String storePhone = '',
+    Uint8List? logoBytes,
+    required List<String> columns,
+    required List<Map<String, String>> rows,
+    Map<String, double> totals = const {},
+    double? usdRate,
+  }) async {
+    try {
+      final dateStr = DateFormat('yyyyMMdd_HHmmss').format(operationDate);
+      final fileName = 'Factura_Op_${operationId}_$dateStr.pdf';
+      final fileBytes = await _generateOperationInvoicePdf(
+        operationId: operationId,
+        operationDate: operationDate,
+        storeName: storeName,
+        storeAddress: storeAddress,
+        storeLocation: storeLocation,
+        storePhone: storePhone,
+        logoBytes: logoBytes,
+        columns: columns,
+        rows: rows,
+        totals: totals,
+        usdRate: usdRate,
+      );
+
+      const mimeType = 'application/pdf';
+      if (kIsWeb) {
+        try {
+          _downloadFileWeb(fileBytes, fileName, mimeType);
+        } catch (webError) {
+          print('Error específico de descarga web: $webError');
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Problema de compatibilidad del navegador. Intenta con Edge o actualiza tu navegador.',
+                ),
+                backgroundColor: Colors.orange,
+                duration: Duration(seconds: 5),
+              ),
+            );
+          }
+          return;
+        }
+      } else {
+        await _saveOrShareFile(
+          context,
+          bytes: fileBytes,
+          fileName: fileName,
+          mimeType: mimeType,
+          subject: 'Factura operación #$operationId',
+          text: 'Factura generada el ${DateFormat('dd/MM/yyyy HH:mm').format(operationDate)}',
+        );
+      }
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Factura PDF generada exitosamente'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error al exportar factura de operación a PDF: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al generar la factura: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<Uint8List> _generateOperationInvoicePdf({
+    required String operationId,
+    required DateTime operationDate,
+    required String storeName,
+    required String storeAddress,
+    required String storeLocation,
+    required String storePhone,
+    Uint8List? logoBytes,
+    required List<String> columns,
+    required List<Map<String, String>> rows,
+    required Map<String, double> totals,
+    required double? usdRate,
+  }) async {
+    final pdf = pw.Document();
+    final regularFont = await _getRegularFont();
+    final boldFont = await _getBoldFont();
+    final dateFormatter = DateFormat('dd/MM/yyyy HH:mm');
+    final numFormatter = NumberFormat('#,##0.00');
+
+    String _fmt(dynamic v) {
+      final n = (v is num)
+          ? v.toDouble()
+          : double.tryParse(v?.toString() ?? '') ?? 0.0;
+      return numFormatter.format(n);
+    }
+
+    // Anchos relativos de las columnas
+    const Map<String, double> colFlex = {
+      'sku': 1.6,
+      'denominacion': 3.2,
+      'descripcion': 3.0,
+      'cantidad': 1.1,
+      'precio_cup': 1.4,
+      'precio_usd': 1.4,
+      'subtotal_cup': 1.5,
+      'subtotal_usd': 1.5,
+    };
+    const Map<String, String> colLabel = {
+      'sku': 'SKU',
+      'denominacion': 'Denominación',
+      'descripcion': 'Descripción',
+      'cantidad': 'Cant.',
+      'precio_cup': 'P. Unit. CUP',
+      'precio_usd': 'P. Unit. USD',
+      'subtotal_cup': 'Subtotal CUP',
+      'subtotal_usd': 'Subtotal USD',
+    };
+
+    final columnWidths = <int, pw.TableColumnWidth>{
+      for (int i = 0; i < columns.length; i++)
+        i: pw.FlexColumnWidth(colFlex[columns[i]] ?? 1.5),
+    };
+
+    pw.Widget _cell(String text, {bool bold = false, bool header = false}) {
+      return pw.Container(
+        padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+        decoration: header
+            ? const pw.BoxDecoration(
+                border: pw.Border(bottom: pw.BorderSide(width: 0.8)),
+              )
+            : null,
+        child: pw.Text(
+          text,
+          style: pw.TextStyle(
+            font: bold || header ? boldFont : regularFont,
+            fontSize: header ? 9.5 : 9,
+          ),
+        ),
+      );
+    }
+
+    final hasAmountCol =
+        columns.contains('subtotal_cup') || columns.contains('subtotal_usd');
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+        header: (pw.Context ctx) => pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Row(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                if (logoBytes != null)
+                  pw.Container(
+                    width: 72,
+                    height: 72,
+                    margin: const pw.EdgeInsets.only(right: 16),
+                    decoration: pw.BoxDecoration(
+                      borderRadius: pw.BorderRadius.circular(12),
+                      border: pw.Border.all(color: PdfColors.grey300, width: 1),
+                    ),
+                    child: pw.ClipRRect(
+                      horizontalRadius: 12,
+                      verticalRadius: 12,
+                      child: pw.Image(
+                        pw.MemoryImage(logoBytes),
+                        fit: pw.BoxFit.cover,
+                      ),
+                    ),
+                  ),
+                pw.Expanded(
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                        storeName,
+                        style: pw.TextStyle(
+                          font: boldFont,
+                          fontSize: 20,
+                          color: PdfColors.black,
+                        ),
+                      ),
+                      if (storeAddress.isNotEmpty || storeLocation.isNotEmpty)
+                        pw.Text(
+                          [
+                            if (storeAddress.isNotEmpty) storeAddress,
+                            if (storeLocation.isNotEmpty) storeLocation,
+                          ].join(' · '),
+                          style: pw.TextStyle(
+                            font: regularFont,
+                            fontSize: 10,
+                            color: PdfColors.grey600,
+                          ),
+                        ),
+                      if (storePhone.isNotEmpty)
+                        pw.Text(
+                          'Tel: $storePhone',
+                          style: pw.TextStyle(
+                            font: regularFont,
+                            fontSize: 10,
+                            color: PdfColors.grey600,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.end,
+                  children: [
+                    pw.Text(
+                      'Factura',
+                      style: pw.TextStyle(
+                        font: boldFont,
+                        fontSize: 16,
+                        color: PdfColor.fromHex('#0F172A'),
+                      ),
+                    ),
+                    pw.SizedBox(height: 4),
+                    pw.Text(
+                      'Operación: #$operationId',
+                      style: pw.TextStyle(
+                        font: regularFont,
+                        fontSize: 11,
+                        color: PdfColors.grey700,
+                      ),
+                    ),
+                    pw.Text(
+                      dateFormatter.format(operationDate),
+                      style: pw.TextStyle(
+                        font: regularFont,
+                        fontSize: 11,
+                        color: PdfColors.grey700,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            pw.SizedBox(height: 20),
+            pw.Text(
+              'Productos',
+              style: pw.TextStyle(
+                font: boldFont,
+                fontSize: 13,
+                color: PdfColor.fromHex('#0F172A'),
+              ),
+            ),
+            pw.SizedBox(height: 6),
+          ],
+        ),
+        footer: (pw.Context ctx) => pw.Column(
+          children: [
+            pw.Divider(),
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Text(
+                  'Documento generado por Inventtia',
+                  style: pw.TextStyle(
+                    font: regularFont,
+                    fontSize: 8,
+                    color: PdfColors.grey600,
+                  ),
+                ),
+                pw.Text(
+                  'Página ${ctx.pageNumber} de ${ctx.pagesCount}',
+                  style: pw.TextStyle(
+                    font: regularFont,
+                    fontSize: 8,
+                    color: PdfColors.grey600,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        build: (pw.Context ctx) => [
+          pw.Table(
+            border: pw.TableBorder(
+              horizontalInside:
+                  const pw.BorderSide(color: PdfColors.grey300, width: 0.4),
+              bottom: const pw.BorderSide(color: PdfColors.grey300, width: 0.6),
+            ),
+            columnWidths: columnWidths,
+            children: [
+              pw.TableRow(
+                children: [
+                  for (final c in columns)
+                    _cell(colLabel[c] ?? c, header: true),
+                ],
+              ),
+              for (final r in rows)
+                pw.TableRow(
+                  children: [for (final c in columns) _cell(r[c] ?? '')],
+                ),
+              if (hasAmountCol)
+                pw.TableRow(
+                  decoration: const pw.BoxDecoration(
+                    border: pw.Border(
+                      top: pw.BorderSide(color: PdfColors.grey400, width: 0.8),
+                    ),
+                  ),
+                  children: [
+                    for (final c in columns)
+                      _cell(
+                        c == 'subtotal_cup' && totals.containsKey('subtotal_cup')
+                            ? _fmt(totals['subtotal_cup'])
+                            : c == 'subtotal_usd' &&
+                                    totals.containsKey('subtotal_usd')
+                                ? _fmt(totals['subtotal_usd'])
+                                : c == columns.first
+                                    ? 'Totales'
+                                    : '',
+                        bold: true,
+                      ),
+                  ],
+                ),
+            ],
+          ),
+          pw.SizedBox(height: 10),
+        ],
+      ),
+    );
+    return pdf.save();
   }
 }
 

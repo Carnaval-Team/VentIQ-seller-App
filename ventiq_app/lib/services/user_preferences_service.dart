@@ -55,6 +55,12 @@ class UserPreferencesService {
       'promotion_id_medio_pago_requerido';
   static const String _productPromotionsKey = 'product_promotions';
 
+  // Marcadores locales de turno cerrado: mapa serverTurnoId -> fechaCierre ISO.
+  // 3ra fuente de verdad al vender (además del estado en servidor y la cola
+  // closed_pending_sync): aunque la entrada de cola se pierda, el turno
+  // marcado no se expone como abierto.
+  static const String _closedTurnoMarkersKey = 'closed_turno_markers';
+
   // Data usage keys
   static const String _limitDataUsageKey = 'limit_data_usage';
 
@@ -2622,6 +2628,55 @@ class UserPreferencesService {
     return tpvFallback;
   }
 
+  /// Persiste que el turno [serverTurnoId] fue cerrado (online o encolado).
+  /// Capado a los últimos 50 marcadores.
+  Future<void> saveClosedTurnoMarker(
+    int serverTurnoId, {
+    required String fechaCierre,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final map = await _loadClosedTurnoMarkers();
+      map['$serverTurnoId'] = fechaCierre;
+      while (map.length > 50) {
+        map.remove(map.keys.first);
+      }
+      await prefs.setString(_closedTurnoMarkersKey, jsonEncode(map));
+    } catch (e) {
+      print('⚠️ saveClosedTurnoMarker($serverTurnoId): $e');
+    }
+  }
+
+  Future<Map<String, dynamic>> _loadClosedTurnoMarkers() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_closedTurnoMarkersKey);
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      return Map<String, dynamic>.from(jsonDecode(raw) as Map);
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /// true si hay constancia local de que [serverTurnoId] ya fue cerrado.
+  Future<bool> hasClosedTurnoMarker(int serverTurnoId) async {
+    final map = await _loadClosedTurnoMarkers();
+    return map.containsKey('$serverTurnoId');
+  }
+
+  /// Limpia el marcador (p.ej. si la fila se reutilizó como turno abierto).
+  Future<void> clearClosedTurnoMarker(int serverTurnoId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final map = await _loadClosedTurnoMarkers();
+      if (map.remove('$serverTurnoId') != null) {
+        await prefs.setString(_closedTurnoMarkersKey, jsonEncode(map));
+      }
+    } catch (e) {
+      print('⚠️ clearClosedTurnoMarker($serverTurnoId): $e');
+    }
+  }
+
   /// Turno cerrado o sincronizado más reciente (para UI cuando no hay open).
   Future<Map<String, dynamic>?> getLastClosedOrSyncedTurnoForDisplay() async {
     final all = await getOfflineTurnos();
@@ -3004,6 +3059,15 @@ class UserPreferencesService {
         );
         return;
       }
+    }
+
+    // 3ra fuente: marcador persistente de cierre sobre este server_id.
+    if (incomingId != null && await hasClosedTurnoMarker(incomingId)) {
+      print(
+        'ℹ️ saveOfflineTurno: turno $incomingId tiene marcador local de '
+        'cierre; no se re-cachea como abierto',
+      );
+      return;
     }
 
     // Si el cierre ya está en cola (closed_pending_sync), NUNCA recrear un

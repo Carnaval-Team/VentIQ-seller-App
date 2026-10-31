@@ -16,6 +16,7 @@ import 'settings_screen.dart';
 import '../config/app_colors.dart';
 import '../widgets/admin_drawer.dart';
 import '../widgets/admin_bottom_navigation.dart';
+import '../widgets/admin_ai_assistant_sheet.dart';
 import '../widgets/paqueteria_tab.dart';
 import '../models/sales.dart';
 import '../models/sales_analyst_models.dart';
@@ -54,7 +55,6 @@ class _SalesScreenState extends State<SalesScreen>
   DateTime? _pdfEndDate;
   bool _isGeneratingPdf = false;
   bool _isExportingProductHistory = false;
-  bool _isPdfFabExpanded = false;
   String _selectedTPV = 'Todos';
   // Tab TPVs: reporte por turno (fn_reporte_ventas_por_turno).
 
@@ -211,140 +211,35 @@ class _SalesScreenState extends State<SalesScreen>
     return raw;
   }
 
-  Widget _buildGeneratePdfFab() {
-    final tabController = _tabController;
-    if (tabController == null) return const SizedBox.shrink();
-
-    // Mapear al índice “lógico” (con Tiempo Real = 0) para reutilizar el switch.
-    final logicalIndex = _canViewRealTime
-        ? tabController.index
-        : tabController.index + 1;
-
-    if (logicalIndex == 5 || logicalIndex == 6) {
-      // 5 = Paquetería, 6 = Analista — sin FAB.
-      return const SizedBox.shrink();
-    }
-    // Un solo botón con opciones según el tab activo
-    bool isLoading = false;
-    bool isPdfAction = false;
-    String label = 'Opciones';
-    IconData icon = Icons.more_vert;
-    Future<void> Function()? action;
-
-    /* debugPrint(
-      '🔍 FAB: Tab ${tabController.index}, SupplierReports: ${_supplierReports.length}',
-    ); */
-
-    switch (logicalIndex) {
-      case 0: // Tiempo Real
-        isLoading = _isGeneratingPdf || _isExportingProductHistory;
-        label = isLoading ? 'Generando...' : 'Opciones de exportación';
-        icon = Icons.download_outlined;
-        action = isLoading ? null : _showRealtimeExportMenu;
-        break;
-
-      case 1: // TPVs
-        isPdfAction = true;
-        isLoading = _isGeneratingPdf;
-        label = _isGeneratingPdf ? 'Generando...' : 'Exportar factura PDF';
-        icon = Icons.picture_as_pdf_outlined;
-        action = _isGeneratingPdf
-            ? null
-            : () async {
-                await _pickPdfDateRange(context);
-                if (_pdfStartDate != null && _pdfEndDate != null) {
-                  await _generateInvoicesPdf(
-                    start: _pdfStartDate!,
-                    end: _pdfEndDate!,
-                  );
-                }
-              };
-        break;
-
-      case 2: // Proveedores
-        /* debugPrint(
-          '🔍 FAB: En tab Proveedores, _supplierReports.isNotEmpty: ${_supplierReports.isNotEmpty}',
-        ); */
-        isLoading = _isExportingPDF;
-        label = _isExportingPDF ? 'Exportando...' : 'Exportar Resumen';
-        icon = Icons.download_outlined;
-        action = _supplierReports.isNotEmpty && !_isExportingPDF
-            ? () async => _showExportMenu()
-            : null;
-        break;
-
-      case 3: // Desglose ventas
-        // Same pdf action for now or nothing
-        break;
-
-      case 4: // Análisis
-        isPdfAction = true;
-        isLoading = _isGeneratingPdf;
-        label = _isGeneratingPdf ? 'Generando...' : 'Exportar factura PDF';
-        icon = Icons.picture_as_pdf_outlined;
-        action = _isGeneratingPdf
-            ? null
-            : () async {
-                await _pickPdfDateRange(context);
-                if (_pdfStartDate != null && _pdfEndDate != null) {
-                  await _generateInvoicesPdf(
-                    start: _pdfStartDate!,
-                    end: _pdfEndDate!,
-                  );
-                }
-              };
-        break;
-    }
-
-    VoidCallback? onPressed;
-    if (action != null) {
-      if (isPdfAction) {
-        onPressed = () async {
-          if (!_isPdfFabExpanded) {
-            setState(() => _isPdfFabExpanded = true);
-            return;
-          }
-          setState(() => _isPdfFabExpanded = false);
-          await action!();
-        };
-      } else {
-        onPressed = action;
-      }
-    }
-
-    /* debugPrint(
-      '🔍 FAB: onPressed=$onPressed, isLoading=$isLoading, label=$label',
-    ); */
-
-    final isDisabled = onPressed == null && !isLoading;
-    final backgroundColor = isDisabled ? Colors.grey : AppColors.primary;
-    final fabIcon = isLoading
-        ? const SizedBox(
-            width: 18,
-            height: 18,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: Colors.white,
-            ),
-          )
-        : Icon(icon);
-
-    if (isPdfAction && !_isPdfFabExpanded) {
-      return FloatingActionButton(
-        backgroundColor: backgroundColor,
-        foregroundColor: Colors.white,
-        onPressed: onPressed,
-        child: fabIcon,
-      );
-    }
-
-    // Mostrar el botón siempre (deshabilitado si no hay acción)
-    return FloatingActionButton.extended(
-      backgroundColor: backgroundColor,
-      foregroundColor: Colors.white,
-      icon: fabIcon,
-      label: Text(label),
-      onPressed: onPressed,
+  /// Botón de opciones de exportación junto a la tarjeta de filtros
+  /// (solo tab Tiempo Real).
+  Widget _buildRealtimeExportButton() {
+    final isLoading = _isGeneratingPdf || _isExportingProductHistory;
+    return Material(
+      color: AppColors.primary,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: isLoading ? null : _showRealtimeExportMenu,
+        child: Container(
+          width: 52,
+          height: 68,
+          alignment: Alignment.center,
+          child: isLoading
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Icon(
+                  Icons.download_outlined,
+                  color: Colors.white,
+                ),
+        ),
+      ),
     );
   }
 
@@ -449,26 +344,19 @@ class _SalesScreenState extends State<SalesScreen>
         }
       }
 
-      // Calcular en CUP puro con fallback: si precioCostoCup == 0 usar precioCosto * valorUsd
-      //
-      // FASE 3 presentaciones: se multiplica por `equivUnidadesBase`, no por
-      // `totalVendido`. El precio y el costo unitarios estan en unidades base,
-      // asi que multiplicarlos por la suma de cantidades fisicas (que mezcla
-      // cajas con unidades) daria un total mal. Con la v4, o cuando todo se
-      // vendio en la presentacion base, `equivUnidadesBase == totalVendido` y
-      // el resultado no cambia.
-      final costoTotal = productReports.fold<double>(0.0, (sum, p) {
-        final cu = p.precioCostoCup > 0
-            ? p.precioCostoCup
-            : p.precioCosto * p.valorUsd;
-        return sum + cu * p.equivUnidadesBase;
-      });
-      // Ingresos CUP = precio unitario * equivalente en unidades base
+      // Totales SQL: ya traen costo por presentación × cantidad y venta real.
+      final costoTotal = productReports.fold<double>(
+        0.0,
+        (sum, p) => sum + p.costoReportado,
+      );
       final ventaTotalCup = productReports.fold<double>(
         0.0,
-        (sum, p) => sum + p.precioVentaCup * p.equivUnidadesBase,
+        (sum, p) => sum + p.ingresosReportados,
       );
-      final gananciaTotal = ventaTotalCup - costoTotal;
+      final gananciaTotal = productReports.fold<double>(
+        0.0,
+        (sum, p) => sum + p.gananciaReportada,
+      );
       final gananciasReales = (ventaTotal - descuentoTotal) - costoTotal;
 
       final pdf = pw.Document();
@@ -1528,14 +1416,10 @@ class _SalesScreenState extends State<SalesScreen>
         ),
       );
 
-    // Ganancia en CUP puro con fallback: si precioCostoCup == 0 usar precioCosto * valorUsd
-    // FASE 3: por equivUnidadesBase, no por totalVendido (ver PDF de resumen).
-    final totalGanancia = sorted.fold<double>(0.0, (sum, p) {
-      final cu = p.precioCostoCup > 0
-          ? p.precioCostoCup
-          : p.precioCosto * p.valorUsd;
-      return sum + (p.precioVentaCup - cu) * p.equivUnidadesBase;
-    });
+    final totalGanancia = sorted.fold<double>(
+      0.0,
+      (sum, p) => sum + p.gananciaReportada,
+    );
     final totalGananciaColor = totalGanancia < 0
         ? PdfColor.fromHex('#DC2626')
         : PdfColor.fromHex('#15803D');
@@ -1563,11 +1447,7 @@ class _SalesScreenState extends State<SalesScreen>
           ],
         ),
         ...sorted.map((p) {
-          final costoUnitPdf = p.precioCostoCup > 0
-              ? p.precioCostoCup
-              : p.precioCosto * p.valorUsd;
-          final gananciaLinea =
-              (p.precioVentaCup - costoUnitPdf) * p.equivUnidadesBase;
+          final gananciaLinea = p.gananciaReportada;
           final gananciaColor = gananciaLinea < 0
               ? PdfColor.fromHex('#DC2626')
               : gananciaLinea > 0
@@ -1808,10 +1688,6 @@ class _SalesScreenState extends State<SalesScreen>
     final tabController = _tabController;
     if (tabController == null) return;
     if (tabController.indexIsChanging || !tabController.indexIsChanging) {
-      setState(() {
-        _isPdfFabExpanded = false;
-      });
-
       switch (_logicalTabIndex) {
         case 2: // Suppliers
           break;
@@ -2068,19 +1944,15 @@ class _SalesScreenState extends State<SalesScreen>
       final Map<int, SupplierSalesReport> groupedReports = {};
 
       for (final report in _productSalesReports) {
-        // FASE 3 presentaciones: el dinero y la cantidad agregada del proveedor
-        // van en unidades BASE (`equivUnidadesBase`), no con la suma de
-        // cantidades fisicas. Sumar 2 cajas + 5 unidades = 7 no significa nada.
-        final ingresos =
-            (report.precioVentaCup.round() * report.equivUnidadesBase)
-                .roundToDouble();
+        // Dinero desde totales SQL (costo por presentación × cantidad).
+        // Cantidad agregada del proveedor en u. base.
+        final ingresos = report.ingresosReportados;
         final unitCostCup = _resolveReportCostCup(report);
-        final costo = (unitCostCup.round() * report.equivUnidadesBase)
-            .roundToDouble();
+        final costo = report.costoReportado;
         // Sin tasa no inventamos ganancia: el costo USD de elaborados existe
         // pero no se puede pasar a CUP.
         final ganancia = unitCostCup > 0 || report.precioCosto <= 0
-            ? ingresos - costo
+            ? report.gananciaReportada
             : 0.0;
         final cantidad = report.equivUnidadesBase;
 
@@ -2198,6 +2070,11 @@ class _SalesScreenState extends State<SalesScreen>
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           IconButton(
+            icon: const Icon(Icons.support_agent, color: Colors.white),
+            onPressed: () => AdminAiAssistantSheet.show(context),
+            tooltip: 'Asistente IA',
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
             onPressed: _loadSalesData,
             tooltip: 'Actualizar',
@@ -2222,7 +2099,6 @@ class _SalesScreenState extends State<SalesScreen>
       body: (_isLoadingProducts || _isLoadingVendors)
           ? _buildLoadingState()
           : TabBarView(controller: _tabController, children: tabViews),
-      floatingActionButton: _buildGeneratePdfFab(),
       endDrawer: const AdminDrawer(),
       bottomNavigationBar: AdminBottomNavigation(
         currentIndex: 1,
@@ -2297,7 +2173,14 @@ class _SalesScreenState extends State<SalesScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildPeriodSelector(showDateBasisFilter: true),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: _buildPeriodSelector(showDateBasisFilter: true)),
+              const SizedBox(width: 8),
+              _buildRealtimeExportButton(),
+            ],
+          ),
           if (_missingExchangeRate) ...[
             const SizedBox(height: 12),
             _buildMissingExchangeRateWarning(),
@@ -4626,15 +4509,12 @@ class _SalesScreenState extends State<SalesScreen>
     setState(() => _isExportingProductHistory = true);
     try {
       final pdf = pw.Document();
-      // FASE 3 presentaciones: el dinero se calcula con `equivUnidadesBase` y
-      // la columna Cantidad muestra el desglose ("2 Cajas + 5 Unidades") con el
-      // equivalente en una columna aparte. Con la v4 (o cuando todo se vendio
-      // en la base) equiv == totalVendido y el PDF sale igual que antes.
+      // Dinero desde totales SQL; cantidad con desglose + equiv en u. base.
       final rows = _sortedProductSalesReports.map((report) {
         final salePrice = report.precioVentaCup.roundToDouble();
         final unitCost = report.precioCostoCup.roundToDouble();
-        final revenue = salePrice * report.equivUnidadesBase;
-        final totalCost = unitCost * report.equivUnidadesBase;
+        final revenue = report.ingresosReportados;
+        final totalCost = report.costoReportado;
         return [
           report.nombreProducto,
           salePrice.toStringAsFixed(0),
@@ -4645,7 +4525,7 @@ class _SalesScreenState extends State<SalesScreen>
           revenue.toStringAsFixed(2),
           unitCost.toStringAsFixed(0),
           totalCost.toStringAsFixed(2),
-          (revenue - totalCost).toStringAsFixed(2),
+          report.gananciaReportada.toStringAsFixed(2),
         ];
       }).toList();
       final totalQuantity = _productSalesReports.fold<double>(
@@ -4654,13 +4534,11 @@ class _SalesScreenState extends State<SalesScreen>
       );
       final totalRevenue = _productSalesReports.fold<double>(
         0,
-        (sum, report) =>
-            sum + report.precioVentaCup.round() * report.equivUnidadesBase,
+        (sum, report) => sum + report.ingresosReportados,
       );
       final totalCost = _productSalesReports.fold<double>(
         0,
-        (sum, report) =>
-            sum + report.precioCostoCup.round() * report.equivUnidadesBase,
+        (sum, report) => sum + report.costoReportado,
       );
       rows.add([
         'TOTALES',
@@ -4684,7 +4562,7 @@ class _SalesScreenState extends State<SalesScreen>
             pw.Text(
               '${DateFormat('dd/MM/yyyy').format(_startDate)} - '
               '${DateFormat('dd/MM/yyyy').format(_endDate)} · '
-              '${_useCurrentProductPrices ? 'Precios actuales' : 'Precios históricos'}',
+              '${_useCurrentProductPrices ? 'Precios de lista actuales' : 'Precios cobrados'}',
             ),
             pw.SizedBox(height: 12),
             pw.TableHelper.fromTextArray(
@@ -4752,7 +4630,9 @@ class _SalesScreenState extends State<SalesScreen>
       sheet.appendRow([
         excel.TextCellValue('Método de cálculo'),
         excel.TextCellValue(
-          _useCurrentProductPrices ? 'Precios actuales' : 'Precios históricos',
+          _useCurrentProductPrices
+              ? 'Precios de lista actuales'
+              : 'Precios cobrados',
         ),
       ]);
       sheet.appendRow([]);
@@ -4775,8 +4655,8 @@ class _SalesScreenState extends State<SalesScreen>
       for (final report in _sortedProductSalesReports) {
         final salePrice = report.precioVentaCup.roundToDouble();
         final unitCost = report.precioCostoCup.roundToDouble();
-        final revenue = salePrice * report.equivUnidadesBase;
-        final cost = unitCost * report.equivUnidadesBase;
+        final revenue = report.ingresosReportados;
+        final cost = report.costoReportado;
         totalQuantity += report.equivUnidadesBase;
         totalRevenue += revenue;
         totalCost += cost;
@@ -4792,7 +4672,7 @@ class _SalesScreenState extends State<SalesScreen>
           excel.DoubleCellValue(revenue),
           excel.DoubleCellValue(unitCost),
           excel.DoubleCellValue(cost),
-          excel.DoubleCellValue(revenue - cost),
+          excel.DoubleCellValue(report.gananciaReportada),
         ]);
       }
       sheet.appendRow([]);
@@ -5404,8 +5284,8 @@ class _SalesScreenState extends State<SalesScreen>
                   ),
                   label: Text(
                     _useCurrentProductPrices
-                        ? 'Precios actuales'
-                        : 'Precios históricos',
+                        ? 'Precios de lista actuales'
+                        : 'Precios cobrados',
                   ),
                 ),
               ],
@@ -5489,16 +5369,14 @@ class _SalesScreenState extends State<SalesScreen>
                         final costoUnitarioCup = _resolveReportCostCup(report);
                         final sinTasa =
                             _reportHasUsdCostWithoutCupRate(report);
-                        // FASE 3 presentaciones: el dinero se calcula con el
-                        // equivalente en unidades base, no con la suma de
-                        // cantidades fisicas.
-                        final ingresosCup =
-                            precioVentaInt * report.equivUnidadesBase;
-                        final totalCostoCup =
-                            costoUnitarioCup * report.equivUnidadesBase;
+                        // Dinero = totales SQL (ya ponderan costo/precio por
+                        // presentación × cantidad). Unitarios son por u. base
+                        // (totales/equiv) tras el parche 48.
+                        final ingresosCup = report.ingresosReportados;
+                        final totalCostoCup = report.costoReportado;
                         final ganancias = sinTasa
                             ? 0.0
-                            : ingresosCup - totalCostoCup;
+                            : report.gananciaReportada;
 
                         return DataRow(
                           onSelectChanged: (_) =>
@@ -5676,7 +5554,7 @@ class _SalesScreenState extends State<SalesScreen>
                         ),
                         DataCell(
                           Text(
-                            '\$${_productSalesReports.fold(0.0, (sum, r) => sum + r.precioVentaCup.round() * r.totalVendido).toStringAsFixed(0)}',
+                            '\$${_productSalesReports.fold(0.0, (sum, r) => sum + r.ingresosReportados).toStringAsFixed(0)}',
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               color: AppColors.success,
@@ -5686,7 +5564,7 @@ class _SalesScreenState extends State<SalesScreen>
                         const DataCell(Text('-')), // No average cost
                         DataCell(
                           Text(
-                            '\$${_productSalesReports.fold(0.0, (sum, r) => sum + r.precioCostoCup.round() * r.totalVendido).toStringAsFixed(0)}',
+                            '\$${_productSalesReports.fold(0.0, (sum, r) => sum + r.costoReportado).toStringAsFixed(0)}',
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               color: AppColors.warning,
@@ -5698,11 +5576,7 @@ class _SalesScreenState extends State<SalesScreen>
                             builder: (context) {
                               final totalGan = _productSalesReports.fold(
                                 0.0,
-                                (sum, r) =>
-                                    sum +
-                                    (r.precioVentaCup.round() -
-                                            r.precioCostoCup.round()) *
-                                        r.totalVendido,
+                                (sum, r) => sum + r.gananciaReportada,
                               );
                               return Text(
                                 '\$${totalGan.toStringAsFixed(0)}',

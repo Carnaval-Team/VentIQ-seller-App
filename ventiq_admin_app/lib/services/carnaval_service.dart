@@ -1540,10 +1540,14 @@ class CarnavalService {
   /// Mantiene los OrderDetails de Carnaval para consulta histórica y
   /// devuelve el stock correspondiente en Inventtia. El stock de Carnaval se
   /// sincroniza automáticamente desde Inventtia.
+  ///
+  /// RPC real: `fn_cancelar_orden_carnaval_v2`
+  /// (`ventiq_admin_app/lib/sql/fn_cancelar_orden_carnaval_v2.sql`).
+  /// No existe `fn_cancelar_orden_carnaval_con_devolucion_v2` en repo ni en BD.
   static Future<bool> cancelOrder(int orderId, {String? changedBy}) async {
     try {
       final response = await _supabase.rpc(
-        'fn_cancelar_orden_carnaval_con_devolucion_v2',
+        'fn_cancelar_orden_carnaval_v2',
         params: {
           'p_order_id': orderId,
           if (changedBy != null && changedBy.trim().isNotEmpty)

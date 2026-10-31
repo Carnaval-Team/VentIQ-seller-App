@@ -89,6 +89,30 @@ class _PreorderScreenState extends State<PreorderScreen> {
     return _ingredientesCached(idProducto);
   }
 
+  /// Llena [_esElaboradoCache] para varios productos con una sola consulta.
+  /// Offline o ante error no hace nada: [_esElaboradoCached] resuelve por id
+  /// con la lógica offline-aware de siempre.
+  Future<void> _precargarEsElaborado(List<int> ids) async {
+    final faltan = ids.where((id) => !_esElaboradoCache.containsKey(id)).toSet();
+    if (faltan.isEmpty) return;
+    if (await _userPreferencesService.shouldUseLocalData()) return;
+    try {
+      final rows = await Supabase.instance.client
+          .from('app_dat_producto')
+          .select('id, es_elaborado, es_servicio')
+          .inFilter('id', faltan.toList());
+      for (final r in rows) {
+        final id = (r['id'] as num?)?.toInt();
+        if (id == null) continue;
+        _esElaboradoCache[id] = Future.value(
+          r['es_elaborado'] == true || r['es_servicio'] == true,
+        );
+      }
+    } catch (e) {
+      debugPrint('⚠️ Precarga es_elaborado falló, se resuelve por id: $e');
+    }
+  }
+
   Future<bool> _esElaboradoCached(int idProducto) => _esElaboradoCache
       .putIfAbsent(
         idProducto,
@@ -976,6 +1000,17 @@ class _PreorderScreenState extends State<PreorderScreen> {
         await _userPreferencesService.shouldStayFullyOffline();
     final useOfflinePath = isOfflineModeEnabled || stayFullyOffline;
 
+    // La configuración de tienda se pide EN PARALELO con el chequeo de stock
+    // (antes se esperaba a que terminara el chequeo para empezar a pedirla).
+    final storeConfigFuture = () async {
+      final storeId = await UserPreferencesService().getIdTienda();
+      if (storeId == null) return null;
+      return StoreConfigService.getStoreConfig(storeId);
+    }().catchError((Object e) {
+      print('⚠️ Error cargando configuración de tienda: $e');
+      return null;
+    });
+
     // Deshabilitar botón y mostrar indicador de carga mientras se verifica inventario
     _limpiarCacheEnvio();
     setState(() {
@@ -1034,19 +1069,17 @@ class _PreorderScreenState extends State<PreorderScreen> {
     // Cargar la configuración completa antes de decidir cómo crear la orden.
     bool noSolicitarCliente = false;
     bool solicitarImagenOperacion = false;
+    bool permiteVenderSinDisponibilidad = false;
     try {
-      final userPrefs = UserPreferencesService();
-      final storeId = await userPrefs.getIdTienda();
-      if (storeId == null) {
-        throw StateError('No se pudo identificar la tienda');
-      }
-      final storeConfig = await StoreConfigService.getStoreConfig(storeId);
+      final storeConfig = await storeConfigFuture;
       if (storeConfig == null) {
         throw StateError('No se pudo cargar la configuración de la tienda');
       }
       noSolicitarCliente = storeConfig['no_solicitar_cliente'] == true;
       solicitarImagenOperacion =
           storeConfig['solicitar_imagen_operacion'] == true;
+      permiteVenderSinDisponibilidad =
+          storeConfig['permite_vender_aun_sin_disponibilidad'] == true;
     } catch (e) {
       if (!mounted) return;
       AppSnackBar.showPersistent(
@@ -1074,7 +1107,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
           '🔌 Modo offline + no_solicitar_cliente - Creando orden localmente',
         );
         currentOrder.isOfflineOrder = true;
-        await _processElaboratedProducts(currentOrder);
+        await _processElaboratedProducts(
+          currentOrder,
+          permiteVenderSinDisponibilidad: permiteVenderSinDisponibilidad,
+        );
         await _submitOrderDirect(currentOrder, offline: true);
       } else {
         print(
@@ -1093,14 +1129,20 @@ class _PreorderScreenState extends State<PreorderScreen> {
     } else if (noSolicitarCliente && !solicitarImagenOperacion && !tienePagoPendiente) {
       // MODO DIRECTO: No se requieren datos del cliente, crear orden inmediatamente
       print('⚡ No se solicita cliente - Creando orden directamente');
-      await _processElaboratedProducts(currentOrder);
+      await _processElaboratedProducts(
+        currentOrder,
+        permiteVenderSinDisponibilidad: permiteVenderSinDisponibilidad,
+      );
       await _submitOrderDirect(currentOrder, offline: false);
     } else {
       // MODO NORMAL: Elaborar productos y continuar al checkout
       print(
         '🌐 Modo online - Procesando elaboración y continuando al checkout',
       );
-      await _processElaboratedProducts(currentOrder);
+      await _processElaboratedProducts(
+        currentOrder,
+        permiteVenderSinDisponibilidad: permiteVenderSinDisponibilidad,
+      );
 
       // Navigate to checkout screen
       Navigator.push(
@@ -2372,7 +2414,13 @@ class _PreorderScreenState extends State<PreorderScreen> {
   }
 
   /// Procesa productos elaborados en la orden
-  Future<void> _processElaboratedProducts(Order order) async {
+  ///
+  /// [permiteVenderSinDisponibilidad]: si el llamador ya cargó la
+  /// configuración de tienda, se pasa aquí y no se vuelve a pedir.
+  Future<void> _processElaboratedProducts(
+    Order order, {
+    bool? permiteVenderSinDisponibilidad,
+  }) async {
     try {
       setState(() {
         _elaboratingProducts = true;
@@ -2485,13 +2533,14 @@ class _PreorderScreenState extends State<PreorderScreen> {
         // Obtener ID de tienda
         final idTienda = await _userPreferencesService.getIdTienda();
         if (idTienda != null) {
-          // Verificar configuración de tienda
-          final permiteVenderSinDisponibilidad =
+          // Verificar configuración de tienda (reutiliza la ya cargada)
+          final permiteSinDisp =
+              permiteVenderSinDisponibilidad ??
               await StoreConfigService.getPermiteVenderAunSinDisponibilidad(
                 idTienda,
               );
 
-          if (permiteVenderSinDisponibilidad) {
+          if (permiteSinDisp) {
             debugPrint(
               '⚙️ Configuración permite vender sin disponibilidad - Saltando verificación de ingredientes',
             );
@@ -2708,6 +2757,12 @@ class _PreorderScreenState extends State<PreorderScreen> {
     debugPrint('🔄 Descomponiendo producto $productId con cantidad $quantity');
 
     final ingredients = await _recetaCached(productId);
+    // Una sola consulta para saber cuáles ingredientes son a su vez
+    // elaborados (antes: un SELECT por ingrediente).
+    await _precargarEsElaborado([
+      for (final i in ingredients)
+        if (i['producto_id'] is int) i['producto_id'] as int,
+    ]);
 
     if (ingredients.isEmpty) {
       debugPrint(
