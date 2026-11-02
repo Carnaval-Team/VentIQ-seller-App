@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/notification_model.dart';
 import '../services/notification_service.dart';
 import '../services/turno_service.dart';
+import '../theme/ventiq_home_theme.dart';
 
 /// Widget de notificaciones que se muestra en la parte superior
 class NotificationWidget extends StatefulWidget {
@@ -52,16 +53,10 @@ class _NotificationWidgetState extends State<NotificationWidget> {
                 top: 8,
                 child: Container(
                   padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF44336), // Rojo
+                  decoration: const BoxDecoration(
+                    color: VentiqHomeTheme.danger,
                     shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.2),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
+                    boxShadow: VentiqHomeTheme.shadowCard,
                   ),
                   constraints: const BoxConstraints(
                     minWidth: 18,
@@ -72,7 +67,7 @@ class _NotificationWidgetState extends State<NotificationWidget> {
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 10,
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w800,
                     ),
                     textAlign: TextAlign.center,
                   ),
@@ -115,14 +110,17 @@ class _NotificationsPanelState extends State<NotificationsPanel> {
       maxChildSize: 0.95,
       builder: (context, scrollController) {
         return Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-            boxShadow: [
+          decoration: BoxDecoration(
+            color: VentiqHomeTheme.card,
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(VentiqHomeTheme.radiusBlock),
+            ),
+            border: Border.all(color: VentiqHomeTheme.border),
+            boxShadow: const [
               BoxShadow(
-                color: Colors.black26,
-                blurRadius: 10,
-                offset: Offset(0, -2),
+                color: Color(0x142B3A67),
+                blurRadius: 24,
+                offset: Offset(0, -8),
               ),
             ],
           ),
@@ -134,13 +132,13 @@ class _NotificationsPanelState extends State<NotificationsPanel> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.grey[300],
+                  color: VentiqHomeTheme.border,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
               // Header
               _buildHeader(),
-              const Divider(height: 1),
+              const Divider(height: 1, color: VentiqHomeTheme.border),
               // Lista de notificaciones
               Expanded(
                 child: StreamBuilder<List<NotificationModel>>(
@@ -168,7 +166,10 @@ class _NotificationsPanelState extends State<NotificationsPanel> {
                       padding: const EdgeInsets.symmetric(vertical: 8),
                       itemCount: notifications.length,
                       separatorBuilder:
-                          (context, index) => const Divider(height: 1),
+                          (context, index) => const Divider(
+                            height: 1,
+                            color: VentiqHomeTheme.border,
+                          ),
                       itemBuilder: (context, index) {
                         return NotificationItem(
                           notification: notifications[index],
@@ -199,18 +200,31 @@ class _NotificationsPanelState extends State<NotificationsPanel> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
         children: [
-          const Icon(
-            Icons.notifications_active,
-            color: Color(0xFF2196F3), // Azul
-            size: 28,
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: VentiqHomeTheme.primary.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.notifications_active,
+              color: VentiqHomeTheme.primary,
+              size: 22,
+            ),
           ),
           const SizedBox(width: 12),
-          const Text(
-            'Notificaciones',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF1976D2), // Azul oscuro
+          Flexible(
+            child: Text(
+              'Notificaciones',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.2,
+                color: VentiqHomeTheme.textPrimary,
+              ),
             ),
           ),
           const Spacer(),
@@ -224,22 +238,39 @@ class _NotificationsPanelState extends State<NotificationsPanel> {
 
               return FilterChip(
                 label: Text('No leídas ($unreadCount)'),
+                labelStyle: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color:
+                      _showOnlyUnread
+                          ? VentiqHomeTheme.primary
+                          : VentiqHomeTheme.textSecondary,
+                ),
                 selected: _showOnlyUnread,
                 onSelected: (value) {
                   setState(() {
                     _showOnlyUnread = value;
                   });
                 },
-                selectedColor: const Color(0xFF2196F3).withOpacity(0.2),
-                checkmarkColor: const Color(0xFF2196F3),
+                backgroundColor: VentiqHomeTheme.card,
+                selectedColor: VentiqHomeTheme.primary.withValues(alpha: 0.12),
+                checkmarkColor: VentiqHomeTheme.primary,
+                side: BorderSide(
+                  color:
+                      _showOnlyUnread
+                          ? VentiqHomeTheme.primary.withValues(alpha: 0.30)
+                          : VentiqHomeTheme.border,
+                ),
+                visualDensity: VisualDensity.compact,
               );
             },
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 4),
           // Botón marcar todas como leídas
           IconButton(
-            icon: const Icon(Icons.done_all, color: Color(0xFF4CAF50)),
+            icon: const Icon(Icons.done_all, color: VentiqHomeTheme.success),
             tooltip: 'Marcar todas como leídas',
+            visualDensity: VisualDensity.compact,
             onPressed: () async {
               await _notificationService.markAllAsRead();
               if (mounted) {
@@ -248,7 +279,7 @@ class _NotificationsPanelState extends State<NotificationsPanel> {
                     content: Text(
                       '✅ Todas las notificaciones marcadas como leídas',
                     ),
-                    backgroundColor: Color(0xFF4CAF50),
+                    backgroundColor: VentiqHomeTheme.success,
                     duration: Duration(seconds: 2),
                   ),
                 );
@@ -266,30 +297,40 @@ class _NotificationsPanelState extends State<NotificationsPanel> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            _showOnlyUnread
-                ? Icons.notifications_off_outlined
-                : Icons.notifications_none,
-            size: 80,
-            color: Colors.grey[400],
+          Container(
+            padding: const EdgeInsets.all(22),
+            decoration: BoxDecoration(
+              color: VentiqHomeTheme.primary.withValues(alpha: 0.07),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              _showOnlyUnread
+                  ? Icons.notifications_off_outlined
+                  : Icons.notifications_none,
+              size: 42,
+              color: VentiqHomeTheme.primary.withValues(alpha: 0.55),
+            ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 18),
           Text(
             _showOnlyUnread
                 ? 'No hay notificaciones sin leer'
                 : 'No hay notificaciones',
-            style: TextStyle(
-              fontSize: 18,
-              color: Colors.grey[600],
-              fontWeight: FontWeight.w500,
+            style: const TextStyle(
+              fontSize: 16,
+              color: VentiqHomeTheme.textPrimary,
+              fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Text(
             _showOnlyUnread
                 ? 'Todas tus notificaciones están al día'
                 : 'Aquí aparecerán tus notificaciones',
-            style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+            style: const TextStyle(
+              fontSize: 13,
+              color: VentiqHomeTheme.textSecondary,
+            ),
           ),
         ],
       ),
@@ -318,7 +359,7 @@ class _NotificationsPanelState extends State<NotificationsPanel> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('🗑️ Notificación eliminada'),
-          backgroundColor: Colors.grey[700],
+          backgroundColor: VentiqHomeTheme.textPrimary,
           duration: const Duration(seconds: 2),
           action: SnackBarAction(
             label: 'Deshacer',
@@ -365,7 +406,7 @@ class _NotificationItemState extends State<NotificationItem> {
       direction: DismissDirection.endToStart,
       onDismissed: (_) => widget.onDismiss(),
       background: Container(
-        color: const Color(0xFFF44336), // Rojo
+        color: VentiqHomeTheme.danger,
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 20),
         child: const Icon(Icons.delete_outline, color: Colors.white, size: 28),
@@ -386,20 +427,20 @@ class _NotificationItemState extends State<NotificationItem> {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           color:
               widget.notification.leida
-                  ? Colors.white
-                  : color.withOpacity(0.05),
+                  ? VentiqHomeTheme.card
+                  : VentiqHomeTheme.primary.withValues(alpha: 0.04),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Icono
               Container(
-                width: 48,
-                height: 48,
+                width: 46,
+                height: 46,
                 decoration: BoxDecoration(
-                  color: color.withOpacity(0.15),
+                  color: color.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(icon, color: color, size: 24),
+                child: Icon(icon, color: color, size: 23),
               ),
               const SizedBox(width: 12),
               // Contenido
@@ -417,9 +458,9 @@ class _NotificationItemState extends State<NotificationItem> {
                               fontSize: 15,
                               fontWeight:
                                   widget.notification.leida
-                                      ? FontWeight.w500
-                                      : FontWeight.bold,
-                              color: const Color(0xFF212121),
+                                      ? FontWeight.w600
+                                      : FontWeight.w800,
+                              color: VentiqHomeTheme.textPrimary,
                             ),
                             maxLines: _isExpanded ? null : 2,
                             overflow:
@@ -434,15 +475,16 @@ class _NotificationItemState extends State<NotificationItem> {
                               vertical: 2,
                             ),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFF44336),
-                              borderRadius: BorderRadius.circular(4),
+                              color: VentiqHomeTheme.danger,
+                              borderRadius: BorderRadius.circular(6),
                             ),
                             child: const Text(
                               'URGENTE',
                               style: TextStyle(
                                 color: Colors.white,
                                 fontSize: 9,
-                                fontWeight: FontWeight.bold,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.4,
                               ),
                             ),
                           ),
@@ -455,7 +497,7 @@ class _NotificationItemState extends State<NotificationItem> {
                         widget.notification.mensaje,
                         style: TextStyle(
                           fontSize: 14,
-                          color: Colors.grey[700],
+                          color: VentiqHomeTheme.textSecondary,
                           height: 1.3,
                         ),
                         maxLines: 3,
@@ -465,7 +507,7 @@ class _NotificationItemState extends State<NotificationItem> {
                         widget.notification.mensaje,
                         style: TextStyle(
                           fontSize: 14,
-                          color: Colors.grey[700],
+                          color: VentiqHomeTheme.textSecondary,
                           height: 1.3,
                         ),
                       ),
@@ -482,7 +524,9 @@ class _NotificationItemState extends State<NotificationItem> {
                         Icon(
                           Icons.access_time,
                           size: 14,
-                          color: Colors.grey[500],
+                          color: VentiqHomeTheme.textSecondary.withValues(
+                            alpha: 0.8,
+                          ),
                         ),
                         const SizedBox(width: 4),
                         Text(
@@ -490,9 +534,9 @@ class _NotificationItemState extends State<NotificationItem> {
                             widget.notification.createdAt,
                             locale: 'es',
                           ),
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontSize: 12,
-                            color: Colors.grey[600],
+                            color: VentiqHomeTheme.textSecondary,
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -500,14 +544,14 @@ class _NotificationItemState extends State<NotificationItem> {
                         Icon(
                           _isExpanded ? Icons.expand_less : Icons.expand_more,
                           size: 18,
-                          color: color,
+                          color: VentiqHomeTheme.primary,
                         ),
                         Text(
                           _isExpanded ? 'Ver menos' : 'Ver más',
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontSize: 11,
-                            color: color,
-                            fontWeight: FontWeight.w500,
+                            color: VentiqHomeTheme.primary,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                         const Spacer(),
@@ -515,8 +559,8 @@ class _NotificationItemState extends State<NotificationItem> {
                           Container(
                             width: 8,
                             height: 8,
-                            decoration: BoxDecoration(
-                              color: color,
+                            decoration: const BoxDecoration(
+                              color: VentiqHomeTheme.primary,
                               shape: BoxShape.circle,
                             ),
                           ),
@@ -542,15 +586,15 @@ class _NotificationItemState extends State<NotificationItem> {
                               ),
                             ),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF4CAF50), // Verde
+                              backgroundColor: VentiqHomeTheme.success,
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 16,
                                 vertical: 12,
                               ),
-                              elevation: 2,
+                              elevation: 0,
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
+                                borderRadius: BorderRadius.circular(12),
                               ),
                             ),
                           ),
@@ -604,7 +648,9 @@ class _NotificationItemState extends State<NotificationItem> {
         builder:
             (context) => const Center(
               child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4CAF50)),
+                valueColor: const AlwaysStoppedAnimation<Color>(
+                  VentiqHomeTheme.success,
+                ),
               ),
             ),
       );
@@ -678,7 +724,7 @@ class _NotificationItemState extends State<NotificationItem> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('✅ Orden recibida exitosamente'),
-            backgroundColor: Color(0xFF4CAF50),
+            backgroundColor: VentiqHomeTheme.success,
             duration: Duration(seconds: 3),
           ),
         );
@@ -705,7 +751,7 @@ class _NotificationItemState extends State<NotificationItem> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('❌ $message'),
-        backgroundColor: const Color(0xFFF44336),
+        backgroundColor: VentiqHomeTheme.danger,
         duration: const Duration(seconds: 4),
       ),
     );

@@ -21,6 +21,7 @@ import '../utils/navigation_helper.dart';
 import '../services/update_service.dart';
 import '../services/subscription_guard_service.dart';
 import '../models/subscription.dart';
+import '../theme/ventiq_home_theme.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
@@ -226,7 +227,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               content: Text(
                 '📶 Conexión disponible - Puede desactivar modo offline',
               ),
-              backgroundColor: Colors.blue,
+              backgroundColor: VentiqHomeTheme.primary,
               duration: Duration(seconds: 3),
             ),
           );
@@ -375,7 +376,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('🗑️ Impresora guardada eliminada'),
-            backgroundColor: Colors.orange,
+            backgroundColor: VentiqHomeTheme.warning,
             duration: Duration(seconds: 2),
           ),
         );
@@ -386,7 +387,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error al eliminar impresora guardada: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: VentiqHomeTheme.danger,
           ),
         );
       }
@@ -410,7 +411,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('❌ No se pudo identificar la tienda'),
-            backgroundColor: Colors.red,
+            backgroundColor: VentiqHomeTheme.danger,
           ),
         );
       }
@@ -430,7 +431,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                 ? '🍽️ Modo Restaurante activado — La opción "Mesas y Comensales" ya está disponible'
                 : '🏪 Modo Restaurante desactivado — Volviendo a venta de mostrador',
           ),
-          backgroundColor: value ? Colors.green : Colors.blueGrey,
+          backgroundColor:
+              value ? VentiqHomeTheme.success : VentiqHomeTheme.textSecondary,
           duration: const Duration(seconds: 3),
         ),
       );
@@ -439,7 +441,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('❌ Error guardando la configuración'),
-          backgroundColor: Colors.red,
+          backgroundColor: VentiqHomeTheme.danger,
         ),
       );
     }
@@ -474,7 +476,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('⚠️ Error inicializando servicios inteligentes: $e'),
-            backgroundColor: Colors.orange,
+            backgroundColor: VentiqHomeTheme.warning,
             duration: const Duration(seconds: 5),
           ),
         );
@@ -522,7 +524,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               content: Text(
                 '🔌 Modo offline activado automáticamente por pérdida de conexión',
               ),
-              backgroundColor: Colors.orange,
+              backgroundColor: VentiqHomeTheme.warning,
               duration: Duration(seconds: 5),
             ),
           );
@@ -539,7 +541,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               content: Text(
                 '📶 Modo offline desactivado automáticamente - Conexión restaurada',
               ),
-              backgroundColor: Colors.green,
+              backgroundColor: VentiqHomeTheme.success,
               duration: Duration(seconds: 4),
             ),
           );
@@ -556,7 +558,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               content: Text(
                 '📶 Conexión restaurada — sincronizando pendientes',
               ),
-              backgroundColor: Colors.green,
+              backgroundColor: VentiqHomeTheme.success,
               duration: Duration(seconds: 3),
             ),
           );
@@ -567,7 +569,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('🔄 Sincronización automática iniciada'),
-              backgroundColor: Colors.blue,
+              backgroundColor: VentiqHomeTheme.primary,
               duration: Duration(seconds: 2),
             ),
           );
@@ -578,7 +580,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('🔐 Reautenticando usuario...'),
-              backgroundColor: Colors.orange,
+              backgroundColor: VentiqHomeTheme.warning,
               duration: Duration(seconds: 2),
             ),
           );
@@ -588,7 +590,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('✅ Usuario reautenticado correctamente'),
-              backgroundColor: Colors.green,
+              backgroundColor: VentiqHomeTheme.success,
               duration: Duration(seconds: 3),
             ),
           );
@@ -600,7 +602,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               content: Text(
                 '⚠️ Error en reautenticación - Puede requerir login manual',
               ),
-              backgroundColor: Colors.orange,
+              backgroundColor: VentiqHomeTheme.warning,
               duration: Duration(seconds: 5),
             ),
           );
@@ -610,7 +612,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('❌ ${event.message}'),
-              backgroundColor: Colors.red,
+              backgroundColor: VentiqHomeTheme.danger,
               duration: const Duration(seconds: 4),
             ),
           );
@@ -648,7 +650,8 @@ class _SettingsScreenState extends State<SettingsScreen>
               ? '✅ Impresión habilitada - Las órdenes se imprimirán automáticamente'
               : '❌ Impresión deshabilitada - Las órdenes no se imprimirán',
         ),
-        backgroundColor: value ? Colors.green : Colors.orange,
+        backgroundColor:
+            value ? VentiqHomeTheme.success : VentiqHomeTheme.warning,
         duration: const Duration(seconds: 2),
       ),
     );
@@ -668,7 +671,8 @@ class _SettingsScreenState extends State<SettingsScreen>
               ? '💵 USD habilitado en impresiones'
               : '💵 USD deshabilitado en impresiones',
         ),
-        backgroundColor: value ? Colors.green : Colors.orange,
+        backgroundColor:
+            value ? VentiqHomeTheme.success : VentiqHomeTheme.warning,
         duration: const Duration(seconds: 2),
       ),
     );
@@ -686,7 +690,8 @@ class _SettingsScreenState extends State<SettingsScreen>
         content: Text(
           value ? 'SKU de producto visible' : 'SKU de producto oculto',
         ),
-        backgroundColor: value ? Colors.green : Colors.orange,
+        backgroundColor:
+            value ? VentiqHomeTheme.success : VentiqHomeTheme.warning,
         duration: const Duration(seconds: 2),
       ),
     );
@@ -707,7 +712,8 @@ class _SettingsScreenState extends State<SettingsScreen>
               ? '📝 Textos estáticos activados - Los nombres no se moverán'
               : '🔄 Textos dinámicos activados - Los nombres se moverán si son largos',
         ),
-        backgroundColor: value ? Colors.blue : Colors.green,
+        backgroundColor:
+            value ? VentiqHomeTheme.primary : VentiqHomeTheme.success,
         duration: const Duration(seconds: 3),
       ),
     );
@@ -728,7 +734,8 @@ class _SettingsScreenState extends State<SettingsScreen>
               ? '📱 Modo ahorro de datos activado - Las imágenes no se cargarán'
               : '📶 Modo ahorro de datos desactivado - Las imágenes se cargarán normalmente',
         ),
-        backgroundColor: value ? Colors.blue : Colors.green,
+        backgroundColor:
+            value ? VentiqHomeTheme.primary : VentiqHomeTheme.success,
         duration: const Duration(seconds: 3),
       ),
     );
@@ -764,7 +771,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: Colors.orange,
+        backgroundColor: VentiqHomeTheme.warning,
         duration: const Duration(seconds: 3),
       ),
     );
@@ -808,7 +815,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('🔌 Modo offline activado - Datos listos sin conexión'),
-          backgroundColor: Colors.green,
+          backgroundColor: VentiqHomeTheme.success,
           duration: Duration(seconds: 3),
         ),
       );
@@ -822,7 +829,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('❌ Error activando modo offline: $e'),
-          backgroundColor: Colors.red,
+          backgroundColor: VentiqHomeTheme.danger,
           duration: const Duration(seconds: 4),
         ),
       );
@@ -844,7 +851,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   'Solo el administrador puede desactivar el modo offline '
                   'en este dispositivo',
                 ),
-                backgroundColor: Colors.orange,
+                backgroundColor: VentiqHomeTheme.warning,
                 duration: Duration(seconds: 4),
               ),
             );
@@ -862,7 +869,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(onlineError),
-              backgroundColor: Colors.orange,
+              backgroundColor: VentiqHomeTheme.warning,
               duration: const Duration(seconds: 4),
             ),
           );
@@ -943,7 +950,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   ? '🌐 Modo offline desactivado por el admin — preparación full-offline eliminada, sync con el servidor habilitado'
                   : '🌐 Modo offline desactivado - Sincronización automática iniciada',
             ),
-            backgroundColor: Colors.blue,
+            backgroundColor: VentiqHomeTheme.primary,
             duration: const Duration(seconds: 3),
           ),
         );
@@ -959,7 +966,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('❌ Error desactivando modo offline: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: VentiqHomeTheme.danger,
             duration: const Duration(seconds: 4),
           ),
         );
@@ -1097,20 +1104,29 @@ class _SettingsScreenState extends State<SettingsScreen>
     if (_isLoadingSubscription) {
       return ListTile(
         leading: Container(
-          padding: const EdgeInsets.all(8),
+          width: 38,
+          height: 38,
           decoration: BoxDecoration(
-            color: const Color(0xFF4A90E2).withOpacity(0.1),
-            borderRadius: BorderRadius.circular(8),
+            color: VentiqHomeTheme.primary.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(VentiqHomeTheme.radiusTile),
           ),
-          child: const SizedBox(
-            width: 20,
-            height: 20,
-            child: CircularProgressIndicator(strokeWidth: 2),
+          child: const Center(
+            child: SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: VentiqHomeTheme.primary,
+              ),
+            ),
           ),
         ),
-        title: const Text('Suscripción'),
-        subtitle: const Text('Verificando estado...'),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        title: const Text('Suscripción', style: _tileTitleStyle),
+        subtitle: const Text(
+          'Verificando estado...',
+          style: _tileSubtitleStyle,
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       );
     }
 
@@ -1142,6 +1158,8 @@ class _SettingsScreenState extends State<SettingsScreen>
 
     return _buildSettingsTile(
       icon: isActive ? Icons.verified : Icons.warning,
+      iconColor:
+          isActive ? VentiqHomeTheme.success : VentiqHomeTheme.warning,
       title: isActive ? 'Suscripción Activa' : 'Suscripción Inactiva',
       subtitle: subtitle,
       trailing: Row(
@@ -1153,16 +1171,18 @@ class _SettingsScreenState extends State<SettingsScreen>
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: Colors.orange.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                color: VentiqHomeTheme.warning.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(VentiqHomeTheme.radiusChip),
+                border: Border.all(
+                  color: VentiqHomeTheme.warning.withValues(alpha: 0.30),
+                ),
               ),
               child: Text(
                 '${subscription.diasRestantes}d',
                 style: const TextStyle(
                   fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.orange,
+                  fontWeight: FontWeight.w700,
+                  color: VentiqHomeTheme.warning,
                 ),
               ),
             ),
@@ -1172,21 +1192,27 @@ class _SettingsScreenState extends State<SettingsScreen>
               margin: const EdgeInsets.only(left: 6),
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: Colors.deepPurple.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.deepPurple.withOpacity(0.3)),
+                color: VentiqHomeTheme.primary.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(VentiqHomeTheme.radiusChip),
+                border: Border.all(
+                  color: VentiqHomeTheme.primary.withValues(alpha: 0.30),
+                ),
               ),
               child: Text(
                 'Revalidar ${license.daysUntilForcedReconnect}d',
                 style: const TextStyle(
                   fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.deepPurple,
+                  fontWeight: FontWeight.w700,
+                  color: VentiqHomeTheme.primary,
                 ),
               ),
             ),
           const SizedBox(width: 8),
-          const Icon(Icons.chevron_right, color: Colors.grey),
+          const Icon(
+            Icons.chevron_right,
+            color: VentiqHomeTheme.textSecondary,
+            size: 20,
+          ),
         ],
       ),
       onTap: () => _navigateToSubscriptionDetail(),
@@ -1202,16 +1228,19 @@ class _SettingsScreenState extends State<SettingsScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: VentiqHomeTheme.surface,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF4A90E2),
+        backgroundColor: VentiqHomeTheme.primary,
+        foregroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
         elevation: 0,
         title: const Text(
           'Configuración',
           style: TextStyle(
             color: Colors.white,
             fontSize: 18,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.2,
           ),
         ),
         centerTitle: true,
@@ -1232,37 +1261,32 @@ class _SettingsScreenState extends State<SettingsScreen>
                         ),
                         backgroundColor:
                             _isOfflineModeEnabled
-                                ? Colors.grey[600]
-                                : Colors.green,
+                                ? VentiqHomeTheme.textSecondary
+                                : VentiqHomeTheme.success,
                         duration: const Duration(seconds: 2),
                       ),
                     );
                   },
                   child: Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
+                      horizontal: 8,
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
                       color:
                           _isOfflineModeEnabled
-                              ? Colors.grey[100]
-                              : Colors.green[50],
-                      borderRadius: BorderRadius.circular(12),
+                              ? Colors.white.withValues(alpha: 0.18)
+                              : Colors.white,
+                      borderRadius: BorderRadius.circular(
+                        VentiqHomeTheme.radiusChip,
+                      ),
                       border: Border.all(
                         color:
                             _isOfflineModeEnabled
-                                ? Colors.grey[400]!
-                                : Colors.green[400]!,
+                                ? Colors.white.withValues(alpha: 0.35)
+                                : Colors.transparent,
                         width: 0.8,
                       ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.08),
-                          blurRadius: 1,
-                          offset: const Offset(0, 0.5),
-                        ),
-                      ],
                     ),
                     child: FittedBox(
                       fit: BoxFit.scaleDown,
@@ -1273,22 +1297,23 @@ class _SettingsScreenState extends State<SettingsScreen>
                             _isOfflineModeEnabled
                                 ? Icons.cloud_off
                                 : Icons.cloud_done,
-                            size: 12,
+                            size: 13,
                             color:
                                 _isOfflineModeEnabled
-                                    ? Colors.grey[600]
-                                    : Colors.green[600],
+                                    ? Colors.white
+                                    : VentiqHomeTheme.primary,
                           ),
-                          const SizedBox(width: 3),
+                          const SizedBox(width: 4),
                           Text(
                             _isOfflineModeEnabled ? 'Offline' : 'Online',
                             style: TextStyle(
-                              fontSize: 8,
-                              fontWeight: FontWeight.bold,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.3,
                               color:
                                   _isOfflineModeEnabled
-                                      ? Colors.grey[600]
-                                      : Colors.green[600],
+                                      ? Colors.white
+                                      : VentiqHomeTheme.primary,
                             ),
                           ),
                         ],
@@ -1311,7 +1336,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       body: Stack(
         children: [
           ListView(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
             children: [
               // Sección de cuenta
               // _buildSectionHeader('Cuenta'),
@@ -1517,26 +1542,51 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
+  // ── Estilos del rediseño ───────────────────────────────────────────────
+  // Misma familia que el Home nuevo: superficie clara, tarjetas blancas con
+  // borde suave, iconos en contenedor primary al 10 % y textos de token.
+
+  static const TextStyle _tileTitleStyle = TextStyle(
+    fontSize: 15,
+    fontWeight: FontWeight.w600,
+    color: VentiqHomeTheme.textPrimary,
+  );
+
+  static const TextStyle _tileSubtitleStyle = TextStyle(
+    fontSize: 13,
+    height: 1.25,
+    color: VentiqHomeTheme.textSecondary,
+  );
+
+  /// Contenedor redondeado del icono de una fila (primary al 10 % por defecto).
+  Widget _settingsIcon(IconData icon, {Color color = VentiqHomeTheme.primary}) {
+    return Container(
+      width: 38,
+      height: 38,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(VentiqHomeTheme.radiusTile),
+      ),
+      child: Icon(icon, color: color, size: 20),
+    );
+  }
+
   Widget _buildSectionHeader(String title) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8, left: 4),
-      child: Text(
-        title,
-        style: const TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.w600,
-          color: Color(0xFF1F2937),
-        ),
-      ),
+      padding: const EdgeInsets.only(bottom: 10, left: 4, top: 2),
+      child: Text(title.toUpperCase(), style: VentiqHomeTheme.rotuloBloque),
     );
   }
 
   Widget _buildSettingsCard(List<Widget> children) {
     return Container(
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[300]!, width: 1),
+        color: VentiqHomeTheme.card,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: VentiqHomeTheme.border, width: 1),
+        boxShadow: VentiqHomeTheme.shadowCard,
       ),
       child: Column(children: children),
     );
@@ -1548,151 +1598,91 @@ class _SettingsScreenState extends State<SettingsScreen>
     required String subtitle,
     required VoidCallback onTap,
     Widget? trailing,
+    Color? iconColor,
   }) {
     return ListTile(
-      leading: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: const Color(0xFF4A90E2).withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Icon(icon, color: const Color(0xFF4A90E2), size: 20),
-      ),
-      title: Text(
-        title,
-        style: const TextStyle(
-          fontSize: 15,
-          fontWeight: FontWeight.w500,
-          color: Color(0xFF1F2937),
-        ),
-      ),
-      subtitle: Text(
-        subtitle,
-        style: TextStyle(fontSize: 13, color: Colors.grey[600]),
-      ),
-      trailing: trailing ?? const Icon(Icons.chevron_right, color: Colors.grey),
+      leading: _settingsIcon(icon, color: iconColor ?? VentiqHomeTheme.primary),
+      title: Text(title, style: _tileTitleStyle),
+      subtitle: Text(subtitle, style: _tileSubtitleStyle),
+      trailing:
+          trailing ??
+          const Icon(
+            Icons.chevron_right,
+            color: VentiqHomeTheme.textSecondary,
+            size: 20,
+          ),
       onTap: onTap,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
     );
   }
 
   Widget _buildPrintUsdSettingsTile() {
     return ListTile(
-      leading: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: const Color(0xFF10B981).withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: const Icon(
-          Icons.attach_money,
-          color: Color(0xFF10B981),
-          size: 20,
-        ),
-      ),
+      leading: _settingsIcon(Icons.attach_money),
       title: const Text(
         'Mostrar USD en impresiones',
-        style: TextStyle(
-          fontSize: 15,
-          fontWeight: FontWeight.w500,
-          color: Color(0xFF1F2937),
-        ),
+        style: _tileTitleStyle,
       ),
       subtitle: Text(
         _isPrintUsdEnabled
             ? 'Se mostrará CUP + USD en tickets y vales'
             : 'Solo se mostrará CUP en tickets y vales',
-        style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+        style: _tileSubtitleStyle,
       ),
       trailing: Switch(
         value: _isPrintUsdEnabled,
         onChanged: _onPrintUsdSettingChanged,
-        activeColor: const Color(0xFF10B981),
+        activeColor: VentiqHomeTheme.primary,
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
     );
   }
 
   Widget _buildDivider() {
-    return Divider(
+    return const Divider(
       height: 1,
       thickness: 1,
-      color: Colors.grey[200],
-      indent: 60,
+      color: VentiqHomeTheme.border,
+      indent: 70,
+      endIndent: 16,
     );
   }
 
   Widget _buildPrintSettingsTile() {
     return ListTile(
-      leading: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: const Color(0xFF4A90E2).withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: const Icon(
-          Icons.print_outlined,
-          color: Color(0xFF4A90E2),
-          size: 20,
-        ),
-      ),
-      title: const Text(
-        'Habilitar Impresión',
-        style: TextStyle(
-          fontSize: 15,
-          fontWeight: FontWeight.w500,
-          color: Color(0xFF1F2937),
-        ),
-      ),
+      leading: _settingsIcon(Icons.print_outlined),
+      title: const Text('Habilitar Impresión', style: _tileTitleStyle),
       subtitle: Text(
         _isPrintEnabled
             ? 'Las órdenes se imprimirán automáticamente'
             : 'Impresión deshabilitada',
-        style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+        style: _tileSubtitleStyle,
       ),
       trailing: Switch(
         value: _isPrintEnabled,
         onChanged: _onPrintSettingChanged,
-        activeColor: const Color(0xFF4A90E2),
+        activeColor: VentiqHomeTheme.primary,
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
     );
   }
 
   Widget _buildShowSkuSettingsTile() {
     return ListTile(
-      leading: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: const Color(0xFF4A90E2).withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: const Icon(
-          Icons.tag_outlined,
-          color: Color(0xFF4A90E2),
-          size: 20,
-        ),
-      ),
-      title: const Text(
-        'Mostrar SKU de Producto',
-        style: TextStyle(
-          fontSize: 15,
-          fontWeight: FontWeight.w500,
-          color: Color(0xFF1F2937),
-        ),
-      ),
+      leading: _settingsIcon(Icons.tag_outlined),
+      title: const Text('Mostrar SKU de Producto', style: _tileTitleStyle),
       subtitle: Text(
         _isShowSkuEnabled
             ? 'El código SKU será visible en los productos'
             : 'El código SKU no se mostrará en los productos',
-        style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+        style: _tileSubtitleStyle,
       ),
       trailing: Switch(
         value: _isShowSkuEnabled,
         onChanged: _onShowSkuSettingChanged,
-        activeColor: const Color(0xFF6B7280),
+        activeColor: VentiqHomeTheme.primary,
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
     );
   }
 
@@ -1713,7 +1703,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                 ),
                 TextButton(
                   onPressed: () => Navigator.pop(ctx, true),
-                  style: TextButton.styleFrom(foregroundColor: Colors.red),
+                  style: TextButton.styleFrom(
+                    foregroundColor: VentiqHomeTheme.danger,
+                  ),
                   child: const Text('Olvidar'),
                 ),
               ],
@@ -1723,119 +1715,87 @@ class _SettingsScreenState extends State<SettingsScreen>
     }
 
     return ListTile(
-      leading: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color:
-              _hasSavedPrinter
-                  ? const Color(0xFF10B981).withOpacity(0.1)
-                  : Colors.grey.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Icon(
-          _hasSavedPrinter ? Icons.print : Icons.print_disabled,
-          color: _hasSavedPrinter ? const Color(0xFF10B981) : Colors.grey,
-          size: 20,
-        ),
+      leading: _settingsIcon(
+        _hasSavedPrinter ? Icons.print : Icons.print_disabled,
+        color:
+            _hasSavedPrinter
+                ? VentiqHomeTheme.success
+                : VentiqHomeTheme.textSecondary,
       ),
-      title: const Text(
-        'Impresora del Turno',
-        style: TextStyle(
-          fontSize: 15,
-          fontWeight: FontWeight.w500,
-          color: Color(0xFF1F2937),
-        ),
-      ),
+      title: const Text('Impresora del Turno', style: _tileTitleStyle),
       subtitle: Text(
         _hasSavedPrinter && _savedPrinterDescription != null
             ? '$_savedPrinterDescription (pulsa para olvidar)'
             : 'No hay impresora recordada para este turno',
-        style: TextStyle(
-          fontSize: 13,
-          color: _hasSavedPrinter ? const Color(0xFF10B981) : Colors.grey[600],
+        style: _tileSubtitleStyle.copyWith(
+          color:
+              _hasSavedPrinter
+                  ? VentiqHomeTheme.success
+                  : VentiqHomeTheme.textSecondary,
         ),
       ),
       trailing:
           _hasSavedPrinter
               ? IconButton(
-                icon: const Icon(Icons.delete_outline, color: Colors.red),
+                icon: const Icon(
+                  Icons.delete_outline,
+                  color: VentiqHomeTheme.danger,
+                ),
                 tooltip: 'Eliminar impresora guardada',
                 onPressed: confirmAndClear,
               )
               : null,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       onTap: _hasSavedPrinter ? confirmAndClear : null,
     );
   }
 
   Widget _buildStaticTextSettingsTile() {
     return ListTile(
-      leading: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: const Color(0xFF4A90E2).withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: const Icon(
-          Icons.text_fields_outlined,
-          color: Color(0xFF4A90E2),
-          size: 20,
-        ),
-      ),
-      title: const Text(
-        'Mostrar Textos Estáticos',
-        style: TextStyle(
-          fontSize: 15,
-          fontWeight: FontWeight.w500,
-          color: Color(0xFF1F2937),
-        ),
-      ),
+      leading: _settingsIcon(Icons.text_fields_outlined),
+      title: const Text('Mostrar Textos Estáticos', style: _tileTitleStyle),
       subtitle: Text(
         _isStaticTextEnabled
             ? 'Los nombres de productos no se moverán'
             : 'Los nombres largos se moverán de izquierda a derecha',
-        style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+        style: _tileSubtitleStyle,
       ),
       trailing: Switch(
         value: _isStaticTextEnabled,
         onChanged: _onStaticTextSettingChanged,
-        activeColor: const Color(0xFF4A90E2),
+        activeColor: VentiqHomeTheme.primary,
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
     );
   }
 
   Widget _buildFluidModeSettingsTile() {
     return ListTile(
-      leading: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: Colors.grey.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: const Icon(Icons.speed_outlined, color: Colors.grey, size: 20),
+      leading: _settingsIcon(
+        Icons.speed_outlined,
+        color: VentiqHomeTheme.textSecondary,
       ),
       title: const Text(
         'Modo Fluido',
         style: TextStyle(
           fontSize: 15,
-          fontWeight: FontWeight.w500,
-          color: Colors.grey,
+          fontWeight: FontWeight.w600,
+          color: VentiqHomeTheme.textSecondary,
         ),
       ),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
+          const Text(
             'Navegación tradicional por pantallas separadas',
-            style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+            style: _tileSubtitleStyle,
           ),
           const SizedBox(height: 4),
-          Text(
+          const Text(
             'Estará disponible en una próxima versión',
             style: TextStyle(
               fontSize: 12,
-              color: Colors.orange[700],
+              color: VentiqHomeTheme.warning,
               fontStyle: FontStyle.italic,
             ),
           ),
@@ -1844,72 +1804,40 @@ class _SettingsScreenState extends State<SettingsScreen>
       trailing: Switch(
         value: false,
         onChanged: null, // Deshabilitado
-        activeColor: Colors.grey,
+        activeColor: VentiqHomeTheme.textSecondary,
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
     );
   }
 
   Widget _buildDataUsageSettingsTile() {
     return ListTile(
-      leading: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: Colors.orange.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: const Icon(Icons.data_saver_on, color: Colors.orange, size: 20),
-      ),
-      title: const Text(
-        'Limitar uso de datos',
-        style: TextStyle(
-          fontSize: 15,
-          fontWeight: FontWeight.w500,
-          color: Color(0xFF1F2937),
-        ),
-      ),
+      leading: _settingsIcon(Icons.data_saver_on),
+      title: const Text('Limitar uso de datos', style: _tileTitleStyle),
       subtitle: Text(
         _isLimitDataUsageEnabled
             ? 'Modo ahorro activado - No se cargarán imágenes'
             : 'Carga completa de imágenes',
-        style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+        style: _tileSubtitleStyle,
       ),
       trailing: Switch(
         value: _isLimitDataUsageEnabled,
         onChanged: _onLimitDataUsageChanged,
-        activeColor: Colors.orange,
+        activeColor: VentiqHomeTheme.primary,
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
     );
   }
 
   Widget _buildModoRestauranteTile() {
     return ListTile(
-      leading: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: const Color(0xFFE65100).withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: const Icon(
-          Icons.restaurant_menu,
-          color: Color(0xFFE65100),
-          size: 20,
-        ),
-      ),
-      title: const Text(
-        'Modo Restaurante',
-        style: TextStyle(
-          fontSize: 15,
-          fontWeight: FontWeight.w500,
-          color: Color(0xFF1F2937),
-        ),
-      ),
+      leading: _settingsIcon(Icons.restaurant_menu),
+      title: const Text('Modo Restaurante', style: _tileTitleStyle),
       subtitle: Text(
         _isModoRestauranteEnabled
             ? 'Mesas y comensales activos — el checkout pide mesa en lugar de cliente'
             : 'Activar para gestionar mesas y cuentas por comensal',
-        style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+        style: _tileSubtitleStyle,
       ),
       trailing:
           _isLoadingModoRestaurante
@@ -1921,47 +1849,35 @@ class _SettingsScreenState extends State<SettingsScreen>
               : Switch(
                 value: _isModoRestauranteEnabled,
                 onChanged: _onModoRestauranteChanged,
-                activeColor: const Color(0xFFE65100),
+                activeColor: VentiqHomeTheme.primary,
               ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
     );
   }
 
   Widget _buildOfflineModeSettingsTile() {
+    final Color accent =
+        _isOfflineModeEnabled
+            ? VentiqHomeTheme.warning
+            : VentiqHomeTheme.primary;
+
     return ListTile(
-      leading: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: Colors.blue.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: const Icon(Icons.cloud_off, color: Colors.blue, size: 20),
-      ),
-      title: const Text(
-        'Modo Offline',
-        style: TextStyle(
-          fontSize: 15,
-          fontWeight: FontWeight.w500,
-          color: Color(0xFF1F2937),
-        ),
-      ),
+      leading: _settingsIcon(Icons.cloud_off, color: accent),
+      title: const Text('Modo Offline', style: _tileTitleStyle),
       subtitle: Text(
         _isTogglingOfflineMode
             ? 'Procesando cambio de modo...'
             : (_isOfflineModeEnabled
                 ? 'Activo: sin sync ni servidor hasta desactivar'
                 : 'Sincronizar datos para trabajar offline'),
-        style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+        style: _tileSubtitleStyle,
       ),
       trailing:
           _isTogglingOfflineMode
               ? const SizedBox(
                 width: 24,
                 height: 24,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.blue,
-                ),
+                child: CircularProgressIndicator(strokeWidth: 2),
               )
               : Switch(
                 value: _isOfflineModeEnabled,
@@ -1969,9 +1885,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                 // toggles rápidos que dejen trabajos de sync a medias.
                 onChanged:
                     _isTogglingOfflineMode ? null : _onOfflineModeChanged,
-                activeColor: Colors.blue,
+                activeColor: VentiqHomeTheme.primary,
               ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
     );
   }
 
@@ -1981,7 +1897,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         leading: Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: Colors.grey.withOpacity(0.1),
+            color: VentiqHomeTheme.textSecondary.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(8),
           ),
           child: const SizedBox(
@@ -1995,12 +1911,12 @@ class _SettingsScreenState extends State<SettingsScreen>
           style: TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w500,
-            color: Color(0xFF1F2937),
+            color: VentiqHomeTheme.textPrimary,
           ),
         ),
         subtitle: Text(
           'Consultando turno...',
-          style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+          style: TextStyle(fontSize: 13, color: VentiqHomeTheme.textSecondary),
         ),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       );
@@ -2012,22 +1928,26 @@ class _SettingsScreenState extends State<SettingsScreen>
         leading: Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: Colors.grey.withOpacity(0.1),
+            color: VentiqHomeTheme.textSecondary.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(8),
           ),
-          child: Icon(Icons.access_time, color: Colors.grey[600], size: 20),
+          child: Icon(
+            Icons.access_time,
+            color: VentiqHomeTheme.textSecondary,
+            size: 20,
+          ),
         ),
         title: const Text(
           'Turno actual',
           style: TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w500,
-            color: Color(0xFF1F2937),
+            color: VentiqHomeTheme.textPrimary,
           ),
         ),
         subtitle: Text(
           'No hay turno abierto',
-          style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+          style: TextStyle(fontSize: 13, color: VentiqHomeTheme.textSecondary),
         ),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       );
@@ -2079,7 +1999,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       leading: Container(
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
-          color: sourceColor.withOpacity(0.1),
+          color: sourceColor.withValues(alpha: 0.10),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Icon(Icons.access_time, color: sourceColor, size: 20),
@@ -2089,7 +2009,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         style: const TextStyle(
           fontSize: 15,
           fontWeight: FontWeight.w500,
-          color: Color(0xFF1F2937),
+          color: VentiqHomeTheme.textPrimary,
         ),
       ),
       subtitle: Column(
@@ -2098,32 +2018,35 @@ class _SettingsScreenState extends State<SettingsScreen>
           if (isOnlineSynced)
             const Text(
               'Sin órdenes pendientes de sincronización',
-              style: TextStyle(fontSize: 12, color: Colors.green),
+              style: TextStyle(
+                fontSize: 12,
+                color: VentiqHomeTheme.success,
+              ),
             ),
           if (fechaApertura != null)
             Text(
               'Apertura: ${_formatTurnoDate(fechaApertura)}',
-              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              style: TextStyle(fontSize: 12, color: VentiqHomeTheme.textSecondary),
             ),
           if (fechaCierre != null)
             Text(
               'Cierre: ${_formatTurnoDate(fechaCierre)}',
-              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              style: TextStyle(fontSize: 12, color: VentiqHomeTheme.textSecondary),
             ),
           if (syncedAt != null)
             Text(
               'Sincronizado: ${_formatTurnoDate(syncedAt)}',
-              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              style: TextStyle(fontSize: 12, color: VentiqHomeTheme.textSecondary),
             ),
           if (efectivoInicial != null)
             Text(
               'Efectivo inicial: \$${efectivoInicial.toMoneyString(2)}',
-              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              style: TextStyle(fontSize: 12, color: VentiqHomeTheme.textSecondary),
             ),
           if (usuario != null && usuario.isNotEmpty)
             Text(
               'Usuario: $usuario',
-              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              style: TextStyle(fontSize: 12, color: VentiqHomeTheme.textSecondary),
             ),
         ],
       ),
@@ -2133,9 +2056,11 @@ class _SettingsScreenState extends State<SettingsScreen>
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: sourceColor.withOpacity(0.1),
+              color: sourceColor.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: sourceColor.withOpacity(0.3)),
+              border: Border.all(
+                  color: sourceColor.withValues(alpha: 0.30),
+                ),
             ),
             child: Text(
               source,
@@ -2147,7 +2072,10 @@ class _SettingsScreenState extends State<SettingsScreen>
             ),
           ),
           if (status == UserPreferencesService.offlineTurnoStatusClosedPending)
-            Icon(Icons.chevron_right, color: Colors.grey[500]),
+            Icon(
+              Icons.chevron_right,
+              color: VentiqHomeTheme.textSecondary,
+            ),
         ],
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -2187,12 +2115,12 @@ class _SettingsScreenState extends State<SettingsScreen>
       leading: Container(
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
-          color: Colors.blue.withOpacity(0.1),
+          color: VentiqHomeTheme.primary.withValues(alpha: 0.10),
           borderRadius: BorderRadius.circular(8),
         ),
         child: const Icon(
           Icons.cloud_upload_outlined,
-          color: Colors.blue,
+          color: VentiqHomeTheme.primary,
           size: 20,
         ),
       ),
@@ -2201,16 +2129,19 @@ class _SettingsScreenState extends State<SettingsScreen>
         style: TextStyle(
           fontSize: 15,
           fontWeight: FontWeight.w500,
-          color: Color(0xFF1F2937),
+          color: VentiqHomeTheme.textPrimary,
         ),
       ),
       subtitle: Text(
         closedPending > 0
             ? '$subtitle ($closedPending turno${closedPending == 1 ? '' : 's'} cerrado${closedPending == 1 ? '' : 's'})'
             : subtitle,
-        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+        style: TextStyle(fontSize: 12, color: VentiqHomeTheme.textSecondary),
       ),
-      trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+      trailing: const Icon(
+        Icons.chevron_right,
+        color: VentiqHomeTheme.textSecondary,
+      ),
       onTap:
           _pendingOfflineTurnosCount > 0
               ? _showPendingTurnosDialog
@@ -2270,15 +2201,15 @@ class _SettingsScreenState extends State<SettingsScreen>
   Color _turnoSourceColor(String source) {
     switch (source) {
       case 'SINCRONIZADO':
-        return Colors.green;
+        return VentiqHomeTheme.success;
       case 'CIERRE PEND.':
-        return Colors.orange;
+        return VentiqHomeTheme.warning;
       case 'OFFLINE':
-        return Colors.orange;
+        return VentiqHomeTheme.warning;
       case 'SYNC':
-        return Colors.blue;
+        return VentiqHomeTheme.primary;
       default:
-        return Colors.green;
+        return VentiqHomeTheme.success;
     }
   }
 
@@ -2298,34 +2229,32 @@ class _SettingsScreenState extends State<SettingsScreen>
   Widget _buildLogoutButton() {
     return Container(
       width: double.infinity,
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.red[300]!, width: 1),
+        color: VentiqHomeTheme.card,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: VentiqHomeTheme.danger.withValues(alpha: 0.28),
+          width: 1,
+        ),
+        boxShadow: VentiqHomeTheme.shadowCard,
       ),
       child: ListTile(
-        leading: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: Colors.red.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: const Icon(Icons.logout, color: Colors.red, size: 20),
-        ),
+        leading: _settingsIcon(Icons.logout, color: VentiqHomeTheme.danger),
         title: const Text(
           'Cerrar Sesión',
           style: TextStyle(
             fontSize: 15,
-            fontWeight: FontWeight.w500,
-            color: Colors.red,
+            fontWeight: FontWeight.w700,
+            color: VentiqHomeTheme.danger,
           ),
         ),
-        subtitle: Text(
+        subtitle: const Text(
           'Salir de la aplicación',
-          style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+          style: _tileSubtitleStyle,
         ),
         onTap: _showLogoutDialog,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       ),
     );
   }
@@ -2454,7 +2383,10 @@ class _SettingsScreenState extends State<SettingsScreen>
               children: [
                 Icon(
                   isObligatory ? Icons.warning : Icons.system_update,
-                  color: isObligatory ? Colors.orange : Colors.blue,
+                  color:
+                      isObligatory
+                          ? VentiqHomeTheme.warning
+                          : VentiqHomeTheme.primary,
                 ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -2480,8 +2412,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                   const Text(
                     'Esta actualización es obligatoria y debe instalarse para continuar usando la aplicación.',
                     style: TextStyle(
-                      color: Colors.orange,
-                      fontWeight: FontWeight.w500,
+                      color: VentiqHomeTheme.warning,
+                      fontWeight: FontWeight.w600,
                     ),
                   )
                 else
@@ -2499,7 +2431,10 @@ class _SettingsScreenState extends State<SettingsScreen>
               ElevatedButton(
                 onPressed: () => _downloadUpdate(),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: isObligatory ? Colors.orange : Colors.blue,
+                  backgroundColor:
+                      isObligatory
+                          ? VentiqHomeTheme.warning
+                          : VentiqHomeTheme.primary,
                   foregroundColor: Colors.white,
                 ),
                 child: const Text('Descargar'),
@@ -2520,7 +2455,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           (context) => AlertDialog(
             title: const Row(
               children: [
-                Icon(Icons.check_circle, color: Colors.green),
+                Icon(Icons.check_circle, color: VentiqHomeTheme.success),
                 SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -2561,7 +2496,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           (context) => AlertDialog(
             title: const Row(
               children: [
-                Icon(Icons.error, color: Colors.red),
+                Icon(Icons.error, color: VentiqHomeTheme.danger),
                 SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -2583,7 +2518,10 @@ class _SettingsScreenState extends State<SettingsScreen>
                 const SizedBox(height: 8),
                 Text(
                   'Error: $error',
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: VentiqHomeTheme.textSecondary,
+                  ),
                 ),
               ],
             ),
@@ -2645,7 +2583,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('📱 Descarga iniciada - Instala la nueva versión'),
-            backgroundColor: Colors.blue,
+            backgroundColor: VentiqHomeTheme.primary,
             duration: Duration(seconds: 4),
           ),
         );
@@ -2667,7 +2605,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           (context) => AlertDialog(
             title: const Row(
               children: [
-                Icon(Icons.download, color: Colors.blue),
+                Icon(Icons.download, color: VentiqHomeTheme.primary),
                 SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -2690,11 +2628,11 @@ class _SettingsScreenState extends State<SettingsScreen>
                 const Text('Copia este enlace y ábrelo en tu navegador:'),
                 const SizedBox(height: 8),
                 Container(
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: Colors.grey[100],
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(color: Colors.grey[300]!),
+                    color: VentiqHomeTheme.surface,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: VentiqHomeTheme.border),
                   ),
                   child: SelectableText(
                     UpdateService.downloadUrl,
@@ -2724,7 +2662,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text('📋 Enlace copiado al portapapeles'),
-                          backgroundColor: Colors.green,
+                          backgroundColor: VentiqHomeTheme.success,
                           duration: Duration(seconds: 2),
                         ),
                       );
@@ -2734,7 +2672,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   }
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
+                  backgroundColor: VentiqHomeTheme.primary,
                   foregroundColor: Colors.white,
                 ),
                 child: const Text('Copiar Enlace'),
@@ -2770,7 +2708,10 @@ class _SettingsScreenState extends State<SettingsScreen>
                 const Text('Opciones de almacenamiento:'),
                 const SizedBox(height: 16),
                 ListTile(
-                  leading: const Icon(Icons.delete_outline, color: Colors.red),
+                  leading: const Icon(
+                    Icons.delete_outline,
+                    color: VentiqHomeTheme.danger,
+                  ),
                   title: const Text('Limpiar todas las órdenes'),
                   subtitle: Text(
                     '${_orderService.totalOrders} órdenes guardadas',
@@ -2788,8 +2729,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                         : Icons.cloud_done_outlined,
                     color:
                         _pendingOfflineTurnosCount > 0
-                            ? Colors.orange
-                            : Colors.green,
+                            ? VentiqHomeTheme.warning
+                            : VentiqHomeTheme.success,
                   ),
                   title: Text(
                     _pendingOfflineTurnosCount > 0
@@ -2814,7 +2755,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   ListTile(
                     leading: const Icon(
                       Icons.visibility_outlined,
-                      color: Color(0xFF4A90E2),
+                      color: VentiqHomeTheme.primary,
                     ),
                     title: Text(
                       closedPending == 1
@@ -2826,7 +2767,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                     trailing: const Icon(
                       Icons.chevron_right,
-                      color: Colors.grey,
+                      color: VentiqHomeTheme.textSecondary,
                     ),
                     onTap: () {
                       Navigator.pop(context);
@@ -2867,11 +2808,13 @@ class _SettingsScreenState extends State<SettingsScreen>
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('✅ Todas las órdenes han sido eliminadas'),
-                      backgroundColor: Colors.green,
+                      backgroundColor: VentiqHomeTheme.success,
                     ),
                   );
                 },
-                style: TextButton.styleFrom(foregroundColor: Colors.red),
+                style: TextButton.styleFrom(
+                  foregroundColor: VentiqHomeTheme.danger,
+                ),
                 child: const Text('Eliminar Todo'),
               ),
             ],
@@ -2887,7 +2830,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           (context) => AlertDialog(
             title: Row(
               children: [
-                Icon(Icons.sync, color: Colors.orange[700]),
+                Icon(Icons.sync, color: VentiqHomeTheme.warning),
                 const SizedBox(width: 8),
                 const Text('Sincronizar Datos'),
               ],
@@ -2936,13 +2879,19 @@ class _SettingsScreenState extends State<SettingsScreen>
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.orange[50],
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.orange[200]!),
+                    color: VentiqHomeTheme.warning.withValues(alpha: 0.07),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: VentiqHomeTheme.warning.withValues(alpha: 0.25),
+                    ),
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.wifi, color: Colors.orange[700], size: 20),
+                      Icon(
+                        Icons.wifi,
+                        color: VentiqHomeTheme.warning,
+                        size: 20,
+                      ),
                       const SizedBox(width: 8),
                       const Expanded(
                         child: Text(
@@ -2963,7 +2912,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               ElevatedButton(
                 onPressed: () => Navigator.pop(context, true),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange[700],
+                  backgroundColor: VentiqHomeTheme.primary,
                   foregroundColor: Colors.white,
                 ),
                 child: const Text('Sincronizar'),
@@ -2979,7 +2928,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          Icon(icon, size: 20, color: Colors.grey[600]),
+          Icon(icon, size: 20, color: VentiqHomeTheme.primary),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -2989,13 +2938,11 @@ class _SettingsScreenState extends State<SettingsScreen>
                   title,
                   style: const TextStyle(
                     fontSize: 14,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w600,
+                    color: VentiqHomeTheme.textPrimary,
                   ),
                 ),
-                Text(
-                  subtitle,
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                ),
+                Text(subtitle, style: _tileSubtitleStyle),
               ],
             ),
           ),
@@ -3024,26 +2971,15 @@ class _SettingsScreenState extends State<SettingsScreen>
           ),
           title: Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF4A90E2).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(
-                  Icons.download_outlined,
-                  color: Color(0xFF4A90E2),
-                  size: 24,
-                ),
-              ),
+              _settingsIcon(Icons.download_outlined),
               const SizedBox(width: 12),
               const Expanded(
                 child: Text(
                   'Descargar Inventtia Caja',
                   style: TextStyle(
                     fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1F2937),
+                    fontWeight: FontWeight.w700,
+                    color: VentiqHomeTheme.textPrimary,
                   ),
                 ),
               ),
@@ -3054,7 +2990,10 @@ class _SettingsScreenState extends State<SettingsScreen>
             children: [
               const Text(
                 'Enlace directo para descargar Inventtia Caja:',
-                style: TextStyle(fontSize: 14, color: Color(0xFF6B7280)),
+                style: TextStyle(
+                  fontSize: 14,
+                  color: VentiqHomeTheme.textSecondary,
+                ),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
@@ -3062,13 +3001,13 @@ class _SettingsScreenState extends State<SettingsScreen>
                 'Inventtia Caja $_appVersion',
                 style: const TextStyle(
                   fontSize: 12,
-                  color: Color(0xFF9CA3AF),
-                  fontWeight: FontWeight.w500,
+                  color: VentiqHomeTheme.textSecondary,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
               const SizedBox(height: 12),
               ClipRRect(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(12),
                 child: Image.asset(
                   'assets/Lk1KNR.png',
                   width: 180,
@@ -3079,7 +3018,10 @@ class _SettingsScreenState extends State<SettingsScreen>
               const SizedBox(height: 12),
               const Text(
                 'O comparte el enlace directo:',
-                style: TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: VentiqHomeTheme.textSecondary,
+                ),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 8),
@@ -3088,8 +3030,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   fontSize: 13,
-                  color: Color(0xFF4A90E2),
-                  fontWeight: FontWeight.w500,
+                  color: VentiqHomeTheme.primary,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ],
@@ -3100,7 +3042,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               icon: const Icon(Icons.share, size: 20),
               label: const Text('Compartir link'),
               style: TextButton.styleFrom(
-                foregroundColor: const Color(0xFF4A90E2),
+                foregroundColor: VentiqHomeTheme.primary,
                 padding: const EdgeInsets.symmetric(
                   horizontal: 24,
                   vertical: 12,
@@ -3110,7 +3052,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
               style: TextButton.styleFrom(
-                foregroundColor: const Color(0xFF4A90E2),
+                foregroundColor: VentiqHomeTheme.primary,
                 padding: const EdgeInsets.symmetric(
                   horizontal: 24,
                   vertical: 12,
@@ -3118,7 +3060,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               ),
               child: const Text(
                 'Cerrar',
-                style: TextStyle(fontWeight: FontWeight.w500),
+                style: TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
           ],
@@ -3135,7 +3077,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       applicationIcon: Container(
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
-          color: const Color(0xFF4A90E2),
+          color: VentiqHomeTheme.primary,
           borderRadius: BorderRadius.circular(12),
         ),
         child: const Icon(Icons.inventory_2, color: Colors.white, size: 32),
@@ -3178,30 +3120,29 @@ class _SettingsScreenState extends State<SettingsScreen>
     if (status == null) {
       return ListTile(
         leading: Container(
-          padding: const EdgeInsets.all(8),
+          width: 38,
+          height: 38,
           decoration: BoxDecoration(
-            color: Colors.grey.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(8),
+            color: VentiqHomeTheme.primary.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(VentiqHomeTheme.radiusTile),
           ),
-          child: const SizedBox(
-            width: 20,
-            height: 20,
-            child: CircularProgressIndicator(strokeWidth: 2),
+          child: const Center(
+            child: SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: VentiqHomeTheme.primary,
+              ),
+            ),
           ),
         ),
         title: const Text(
           'Estado de Sincronización',
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w500,
-            color: Color(0xFF1F2937),
-          ),
+          style: _tileTitleStyle,
         ),
-        subtitle: const Text(
-          'Cargando estado...',
-          style: TextStyle(fontSize: 13, color: Colors.grey),
-        ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        subtitle: const Text('Cargando estado...', style: _tileSubtitleStyle),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       );
     }
 
@@ -3214,54 +3155,40 @@ class _SettingsScreenState extends State<SettingsScreen>
 
     if (status.isOfflineModeEnabled) {
       icon = Icons.cloud_off;
-      iconColor = Colors.orange;
+      iconColor = VentiqHomeTheme.warning;
       title = 'Modo Offline Activo';
       subtitle = 'Trabajando sin conexión';
     } else if (smartStatus.isConnected && smartStatus.isAutoSyncRunning) {
       icon = Icons.sync;
-      iconColor = Colors.green;
+      iconColor = VentiqHomeTheme.success;
       title = 'Sincronización Automática';
       final syncCount = smartStatus.syncStats['syncCount'] ?? 0;
       subtitle = 'Ejecutándose - $syncCount sincronizaciones';
     } else if (smartStatus.isConnected) {
       icon = Icons.wifi;
-      iconColor = Colors.blue;
+      iconColor = VentiqHomeTheme.primary;
       title = 'Conectado';
       subtitle = 'Listo para sincronizar';
     } else {
       icon = Icons.wifi_off;
-      iconColor = Colors.red;
+      iconColor = VentiqHomeTheme.danger;
       title = 'Sin Conexión';
       subtitle = 'Verificando conectividad...';
     }
 
     return ListTile(
-      leading: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: iconColor.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Icon(icon, color: iconColor, size: 20),
-      ),
-      title: Text(
-        title,
-        style: const TextStyle(
-          fontSize: 15,
-          fontWeight: FontWeight.w500,
-          color: Color(0xFF1F2937),
-        ),
-      ),
-      subtitle: Text(
-        subtitle,
-        style: TextStyle(fontSize: 13, color: Colors.grey[600]),
-      ),
+      leading: _settingsIcon(icon, color: iconColor),
+      title: Text(title, style: _tileTitleStyle),
+      subtitle: Text(subtitle, style: _tileSubtitleStyle),
       trailing: IconButton(
-        icon: const Icon(Icons.info_outline, color: Colors.grey),
+        icon: const Icon(
+          Icons.info_outline,
+          color: VentiqHomeTheme.textSecondary,
+        ),
         onPressed: () => _showSmartSyncDetails(status),
         tooltip: 'Ver detalles',
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
     );
   }
 
@@ -3273,7 +3200,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           (context) => AlertDialog(
             title: const Row(
               children: [
-                Icon(Icons.info_outline, color: Colors.blue),
+                Icon(Icons.info_outline, color: VentiqHomeTheme.primary),
                 SizedBox(width: 8),
                 Text('Estado de Sincronización'),
               ],
@@ -3318,7 +3245,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                           status.smartOfflineStatus.syncStats['lastSyncTime'],
                         ),
                       ),
-                      style: TextStyle(color: Colors.grey[600]),
+                      style: const TextStyle(
+                        color: VentiqHomeTheme.textSecondary,
+                      ),
                     ),
                   ],
 
@@ -3332,7 +3261,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                       _formatDateTime(
                         status.smartOfflineStatus.lastAutoActivation!,
                       ),
-                      style: TextStyle(color: Colors.grey[600]),
+                      style: const TextStyle(
+                        color: VentiqHomeTheme.textSecondary,
+                      ),
                     ),
                   ],
 
@@ -3340,9 +3271,11 @@ class _SettingsScreenState extends State<SettingsScreen>
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.blue[50],
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.blue[200]!),
+                      color: VentiqHomeTheme.primary.withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: VentiqHomeTheme.primary.withValues(alpha: 0.18),
+                      ),
                     ),
                     child: const Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -3396,13 +3329,19 @@ class _SettingsScreenState extends State<SettingsScreen>
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(fontSize: 14)),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 14,
+              color: VentiqHomeTheme.textSecondary,
+            ),
+          ),
           Text(
             value,
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: Colors.grey[700],
+              fontWeight: FontWeight.w600,
+              color: VentiqHomeTheme.textPrimary,
             ),
           ),
         ],
@@ -3456,7 +3395,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               Text('🔄 Iniciando sincronización...'),
             ],
           ),
-          backgroundColor: Colors.blue,
+          backgroundColor: VentiqHomeTheme.primary,
           duration: Duration(seconds: 2),
         ),
       );
@@ -3506,7 +3445,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('❌ Error en sincronización: $e'),
-          backgroundColor: Colors.red,
+          backgroundColor: VentiqHomeTheme.danger,
           duration: const Duration(seconds: 4),
         ),
       );
@@ -3521,16 +3460,16 @@ class _SettingsScreenState extends State<SettingsScreen>
     Color bg;
     String title;
     if (result.success) {
-      bg = Colors.green;
+      bg = VentiqHomeTheme.success;
       title = '✅ Sincronización completada';
     } else if (result.hasProgress) {
-      bg = Colors.orange.shade800;
+      bg = VentiqHomeTheme.warning;
       title =
           result.interrupted
               ? '⚠️ Sincronización interrumpida'
               : '⚠️ Sincronización parcial';
     } else {
-      bg = Colors.red;
+      bg = VentiqHomeTheme.danger;
       title = '❌ Sincronización fallida';
     }
 
@@ -3588,7 +3527,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     Text(
                       'Motivo: ${result.abortReason}',
                       style: TextStyle(
-                        color: Colors.orange.shade900,
+                        color: VentiqHomeTheme.warning,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -3596,7 +3535,10 @@ class _SettingsScreenState extends State<SettingsScreen>
                   ],
                   Text(
                     'Duración: ${result.duration.inSeconds}s',
-                    style: const TextStyle(fontSize: 13, color: Colors.black54),
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: VentiqHomeTheme.textSecondary,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   if (result.syncedItems.isNotEmpty) ...[
@@ -3616,7 +3558,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     const SizedBox(height: 4),
                     Text(
                       result.errors.map((e) => '• $e').join('\n'),
-                      style: TextStyle(color: Colors.red.shade800),
+                      style: TextStyle(color: VentiqHomeTheme.danger),
                     ),
                     const SizedBox(height: 12),
                   ],
@@ -3628,7 +3570,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     const SizedBox(height: 4),
                     Text(
                       result.skippedItems.map((e) => '• $e').join('\n'),
-                      style: TextStyle(color: Colors.orange.shade900),
+                      style: TextStyle(color: VentiqHomeTheme.warning),
                     ),
                   ],
                   if (result.syncedItems.isEmpty &&
@@ -3716,7 +3658,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                                 ? Icons.lock_open
                                 : Icons.lock_outline,
                             color:
-                                status == 'open' ? Colors.green : Colors.orange,
+                                status == 'open'
+                                    ? VentiqHomeTheme.success
+                                    : VentiqHomeTheme.warning,
                           ),
                           title: Text('Turno $displayId'),
                           subtitle: Text(
@@ -3732,7 +3676,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                   tooltip: 'Ver cierre guardado',
                                   icon: const Icon(
                                     Icons.visibility_outlined,
-                                    color: Color(0xFF4A90E2),
+                                    color: VentiqHomeTheme.primary,
                                   ),
                                   onPressed: () {
                                     Navigator.pop(context);
@@ -3746,7 +3690,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                   tooltip: 'Cerrar turno',
                                   icon: const Icon(
                                     Icons.point_of_sale,
-                                    color: Colors.orange,
+                                    color: VentiqHomeTheme.warning,
                                   ),
                                   onPressed: () async {
                                     await _cerrarTurnoPendiente(localId);
@@ -3757,7 +3701,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                 tooltip: 'Sincronizar',
                                 icon: const Icon(
                                   Icons.sync,
-                                  color: Color(0xFF4A90E2),
+                                  color: VentiqHomeTheme.primary,
                                 ),
                                 onPressed: () async {
                                   await _syncSingleTurno(localId);
@@ -3916,8 +3860,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                           style: TextStyle(
                             color:
                                 diferencia >= 0
-                                    ? Colors.green[700]
-                                    : Colors.red,
+                                    ? VentiqHomeTheme.success
+                                    : VentiqHomeTheme.danger,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -3965,7 +3909,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   onSync?.call();
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF4A90E2),
+                  backgroundColor: VentiqHomeTheme.primary,
                   foregroundColor: Colors.white,
                 ),
                 child: const Text('Sincronizar'),
@@ -3996,7 +3940,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             'Este turno no es el activo en este dispositivo/sesión. '
             'Solo se puede completar el cierre del turno actualmente abierto.',
           ),
-          backgroundColor: Colors.orange,
+          backgroundColor: VentiqHomeTheme.warning,
           duration: Duration(seconds: 4),
         ),
       );
@@ -4035,7 +3979,10 @@ class _SettingsScreenState extends State<SettingsScreen>
               ? 'Sincronización del turno completada'
               : 'Error: ${result['message'] ?? 'No especificado'}',
         ),
-        backgroundColor: result['success'] == true ? Colors.green : Colors.red,
+        backgroundColor:
+            result['success'] == true
+                ? VentiqHomeTheme.success
+                : VentiqHomeTheme.danger,
       ),
     );
     await _refreshDataSection();
@@ -5385,10 +5332,10 @@ class _SyncDialogState extends State<_SyncDialog> {
               decoration: BoxDecoration(
                 color:
                     _hasError
-                        ? Colors.red.withOpacity(0.1)
+                        ? VentiqHomeTheme.danger.withValues(alpha: 0.10)
                         : _isCompleted
-                        ? Colors.green.withOpacity(0.1)
-                        : Colors.blue.withOpacity(0.1),
+                        ? VentiqHomeTheme.success.withValues(alpha: 0.10)
+                        : VentiqHomeTheme.primary.withValues(alpha: 0.10),
                 shape: BoxShape.circle,
               ),
               child: Icon(
@@ -5400,10 +5347,10 @@ class _SyncDialogState extends State<_SyncDialog> {
                 size: 48,
                 color:
                     _hasError
-                        ? Colors.red
+                        ? VentiqHomeTheme.danger
                         : _isCompleted
-                        ? Colors.green
-                        : Colors.blue,
+                        ? VentiqHomeTheme.success
+                        : VentiqHomeTheme.primary,
               ),
             ),
             const SizedBox(height: 24),
@@ -5415,7 +5362,11 @@ class _SyncDialogState extends State<_SyncDialog> {
                   : _isCompleted
                   ? '¡Completado!'
                   : 'Sincronizando Datos',
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: VentiqHomeTheme.textPrimary,
+              ),
             ),
             const SizedBox(height: 16),
 
@@ -5423,7 +5374,10 @@ class _SyncDialogState extends State<_SyncDialog> {
             Text(
               _currentTask,
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+              style: const TextStyle(
+                fontSize: 14,
+                color: VentiqHomeTheme.textSecondary,
+              ),
             ),
             const SizedBox(height: 8),
             if (!_isCompleted && !_hasError)
@@ -5433,7 +5387,10 @@ class _SyncDialogState extends State<_SyncDialog> {
                     : 'Paso ${_currentIndex + 1} de ${_tasks.length}'
                         ' · Faltan ${_tasks.length - _currentIndex}',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: VentiqHomeTheme.textSecondary,
+                ),
               ),
             const SizedBox(height: 16),
 
@@ -5441,18 +5398,20 @@ class _SyncDialogState extends State<_SyncDialog> {
             if (!_isCompleted && !_hasError) ...[
               LinearProgressIndicator(
                 value: _progress,
-                backgroundColor: Colors.grey[200],
-                valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
+                backgroundColor: VentiqHomeTheme.border,
+                valueColor: const AlwaysStoppedAnimation<Color>(
+                  VentiqHomeTheme.primary,
+                ),
                 minHeight: 8,
                 borderRadius: BorderRadius.circular(4),
               ),
               const SizedBox(height: 8),
               Text(
                 '${(_progress * 100).toInt()}% completado',
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 12,
-                  color: Colors.grey[600],
-                  fontWeight: FontWeight.w500,
+                  color: VentiqHomeTheme.textSecondary,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ],
@@ -5463,8 +5422,9 @@ class _SyncDialogState extends State<_SyncDialog> {
               constraints: const BoxConstraints(maxHeight: 220),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.grey[50],
-                borderRadius: BorderRadius.circular(8),
+                color: VentiqHomeTheme.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: VentiqHomeTheme.border),
               ),
               child: SingleChildScrollView(
                 child: Column(
@@ -5497,12 +5457,12 @@ class _SyncDialogState extends State<_SyncDialog> {
                                 size: 16,
                                 color:
                                     isFailed
-                                        ? Colors.orange
+                                        ? VentiqHomeTheme.warning
                                         : isCompleted
-                                        ? Colors.green
+                                        ? VentiqHomeTheme.success
                                         : isCurrent
-                                        ? Colors.blue
-                                        : Colors.grey,
+                                        ? VentiqHomeTheme.primary
+                                        : VentiqHomeTheme.textSecondary,
                               ),
                               const SizedBox(width: 8),
                               Expanded(
@@ -5512,21 +5472,21 @@ class _SyncDialogState extends State<_SyncDialog> {
                                     fontSize: 12,
                                     color:
                                         isCompleted || isCurrent || isFailed
-                                            ? Colors.black87
-                                            : Colors.grey,
+                                            ? VentiqHomeTheme.textPrimary
+                                            : VentiqHomeTheme.textSecondary,
                                     fontWeight:
                                         isCurrent
-                                            ? FontWeight.w600
+                                            ? FontWeight.w700
                                             : FontWeight.normal,
                                   ),
                                 ),
                               ),
                               if (!isCompleted && !isCurrent && !isFailed)
-                                Text(
+                                const Text(
                                   'Pendiente',
                                   style: TextStyle(
                                     fontSize: 10,
-                                    color: Colors.grey[500],
+                                    color: VentiqHomeTheme.textSecondary,
                                   ),
                                 ),
                             ],
@@ -6197,10 +6157,10 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
               decoration: BoxDecoration(
                 color:
                     _hasError
-                        ? Colors.red.withOpacity(0.1)
+                        ? VentiqHomeTheme.danger.withValues(alpha: 0.10)
                         : _isCompleted
-                        ? Colors.green.withOpacity(0.1)
-                        : Colors.orange.withOpacity(0.1),
+                        ? VentiqHomeTheme.success.withValues(alpha: 0.10)
+                        : VentiqHomeTheme.warning.withValues(alpha: 0.10),
                 shape: BoxShape.circle,
               ),
               child: Icon(
@@ -6212,10 +6172,10 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
                 size: 48,
                 color:
                     _hasError
-                        ? Colors.red
+                        ? VentiqHomeTheme.danger
                         : _isCompleted
-                        ? Colors.green
-                        : Colors.orange,
+                        ? VentiqHomeTheme.success
+                        : VentiqHomeTheme.warning,
               ),
             ),
 
@@ -6230,8 +6190,8 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
                   : 'Sincronizando Datos Offline',
               style: const TextStyle(
                 fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF1F2937),
+                fontWeight: FontWeight.w800,
+                color: VentiqHomeTheme.textPrimary,
               ),
               textAlign: TextAlign.center,
             ),
@@ -6241,7 +6201,10 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
             // Subtítulo/tarea actual
             Text(
               _currentTask,
-              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+              style: const TextStyle(
+                fontSize: 14,
+                color: VentiqHomeTheme.textSecondary,
+              ),
               textAlign: TextAlign.center,
             ),
 
@@ -6251,13 +6214,18 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
             if (!_isCompleted && !_hasError) ...[
               LinearProgressIndicator(
                 value: _progress,
-                backgroundColor: Colors.grey[200],
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.orange),
+                backgroundColor: VentiqHomeTheme.border,
+                valueColor: const AlwaysStoppedAnimation<Color>(
+                  VentiqHomeTheme.primary,
+                ),
               ),
               const SizedBox(height: 8),
               Text(
                 '${(_progress * 100).toInt()}%',
-                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: VentiqHomeTheme.textSecondary,
+                ),
               ),
             ],
 
@@ -6265,6 +6233,12 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
             const SizedBox(height: 16),
             Container(
               constraints: const BoxConstraints(maxHeight: 200),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: VentiqHomeTheme.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: VentiqHomeTheme.border),
+              ),
               child: ListView.builder(
                 shrinkWrap: true,
                 itemCount: _tasks.length,
@@ -6288,10 +6262,10 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
                           size: 16,
                           color:
                               isCompleted
-                                  ? Colors.green
+                                  ? VentiqHomeTheme.success
                                   : isCurrent
-                                  ? Colors.orange
-                                  : Colors.grey,
+                                  ? VentiqHomeTheme.primary
+                                  : VentiqHomeTheme.textSecondary,
                         ),
                         const SizedBox(width: 8),
                         Expanded(
@@ -6301,11 +6275,11 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
                               fontSize: 12,
                               color:
                                   isCompleted || isCurrent
-                                      ? Colors.black87
-                                      : Colors.grey,
+                                      ? VentiqHomeTheme.textPrimary
+                                      : VentiqHomeTheme.textSecondary,
                               fontWeight:
                                   isCurrent
-                                      ? FontWeight.w500
+                                      ? FontWeight.w700
                                       : FontWeight.normal,
                             ),
                           ),

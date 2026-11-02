@@ -10,6 +10,7 @@ import '../services/store_config_service.dart';
 import '../services/servicentro_service.dart';
 import '../services/comanda_service.dart';
 import '../services/sales_mode_service.dart';
+import '../theme/ventiq_home_theme.dart';
 import '../utils/global_navigator.dart';
 
 class AppDrawer extends StatefulWidget {
@@ -180,6 +181,15 @@ Future<void> _promptLogoutOrSwitchUser(BuildContext context) async {
 }
 
 class _AppDrawerState extends State<AppDrawer> {
+  /// Separador suave entre entradas del menú (misma familia que el Home).
+  static const Divider _kSoftDivider = Divider(
+    height: 1,
+    thickness: 1,
+    color: VentiqHomeTheme.border,
+    indent: 68,
+    endIndent: 20,
+  );
+
   String _userName = '';
   String _userEmail = '';
   bool _isLoading = true;
@@ -348,6 +358,7 @@ class _AppDrawerState extends State<AppDrawer> {
   @override
   Widget build(BuildContext context) {
     return Drawer(
+      backgroundColor: VentiqHomeTheme.surface,
       child: Column(
         children: [
           // Header
@@ -356,19 +367,23 @@ class _AppDrawerState extends State<AppDrawer> {
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [Color(0xFF4A90E2), Color(0xFF357ABD)],
+                colors: VentiqHomeTheme.heroGradient,
               ),
             ),
             child: SafeArea(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 12.0),
+                padding: const EdgeInsets.fromLTRB(18.0, 20.0, 16.0, 16.0),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    const CircleAvatar(
+                    CircleAvatar(
                       radius: 26,
-                      backgroundColor: Colors.white24,
-                      child: Icon(Icons.person, size: 30, color: Colors.white),
+                      backgroundColor: Colors.white.withValues(alpha: 0.16),
+                      child: const Icon(
+                        Icons.person,
+                        size: 30,
+                        color: Colors.white,
+                      ),
                     ),
                     const SizedBox(width: 14),
                     Expanded(
@@ -380,9 +395,9 @@ class _AppDrawerState extends State<AppDrawer> {
                             'Inventtia® Caja',
                             style: TextStyle(
                               color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 0.5,
+                              fontSize: 19,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -0.2,
                             ),
                           ),
                           const SizedBox(height: 6),
@@ -415,28 +430,29 @@ class _AppDrawerState extends State<AppDrawer> {
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 14,
-                                fontWeight: FontWeight.w600,
+                                fontWeight: FontWeight.w700,
                               ),
                               overflow: TextOverflow.ellipsis,
                               maxLines: 1,
                             ),
-                            const SizedBox(height: 2),
+                            const SizedBox(height: 3),
                             Text(
                               _userEmail,
-                              style: const TextStyle(
-                                color: Colors.white70,
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.78),
                                 fontSize: 12,
                               ),
                               overflow: TextOverflow.ellipsis,
                               maxLines: 1,
                             ),
-                            const SizedBox(height: 4),
-                            const Text(
+                            const SizedBox(height: 6),
+                            Text(
                               'Gestión de Ventas',
                               style: TextStyle(
-                                color: Colors.white60,
+                                color: Colors.white.withValues(alpha: 0.62),
                                 fontSize: 10,
-                                fontStyle: FontStyle.italic,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 0.6,
                               ),
                             ),
                           ],
@@ -451,7 +467,7 @@ class _AppDrawerState extends State<AppDrawer> {
           // Opciones del menú
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.symmetric(vertical: 8),
+              padding: const EdgeInsets.fromLTRB(8, 10, 8, 8),
               children: [
                 // Gerente/supervisor: solo gestión de inventario/productos
                 if (_inventoryOnly) ...[
@@ -469,7 +485,7 @@ class _AppDrawerState extends State<AppDrawer> {
                       );
                     },
                   ),
-                  const Divider(height: 1),
+                  _kSoftDivider,
                   _buildDrawerItem(
                     context,
                     icon: Icons.money_off,
@@ -480,7 +496,7 @@ class _AppDrawerState extends State<AppDrawer> {
                       Navigator.pushNamed(context, '/egreso');
                     },
                   ),
-                  const Divider(height: 1),
+                  _kSoftDivider,
                   _buildDrawerItem(
                     context,
                     icon: Icons.settings,
@@ -491,7 +507,7 @@ class _AppDrawerState extends State<AppDrawer> {
                       Navigator.pushNamed(context, '/settings');
                     },
                   ),
-                  const Divider(height: 1),
+                  _kSoftDivider,
                   if (_closedPendingCount > 0) ...[
                     _buildDrawerItem(
                       context,
@@ -505,7 +521,7 @@ class _AppDrawerState extends State<AppDrawer> {
                         Navigator.pushNamed(context, '/cierre-pendiente');
                       },
                     ),
-                    const Divider(height: 1),
+                    _kSoftDivider,
                   ],
                 ] else ...[
                   // Servicentro: solo combustibles (sin catálogo / mesas).
@@ -524,7 +540,7 @@ class _AppDrawerState extends State<AppDrawer> {
                         );
                       },
                     ),
-                    const Divider(height: 1),
+                    _kSoftDivider,
                   ] else ...[
                     // Modo restaurante: el item de mesas va primero como entrada
                     // principal de la operación. La "Venta de Productos" se
@@ -547,7 +563,7 @@ class _AppDrawerState extends State<AppDrawer> {
                           );
                         },
                       ),
-                      const Divider(height: 1),
+                      _kSoftDivider,
                     ],
 
                     // Cocina (KDS). Solo si el usuario tiene cocinas asignadas:
@@ -564,7 +580,7 @@ class _AppDrawerState extends State<AppDrawer> {
                           Navigator.pushNamed(context, '/kds');
                         },
                       ),
-                      const Divider(height: 1),
+                      _kSoftDivider,
                       _buildDrawerItem(
                         context,
                         icon: Icons.outdoor_grill_outlined,
@@ -575,7 +591,7 @@ class _AppDrawerState extends State<AppDrawer> {
                           Navigator.pushNamed(context, '/produccion');
                         },
                       ),
-                      const Divider(height: 1),
+                      _kSoftDivider,
                     ],
 
                     _buildDrawerItem(
@@ -600,7 +616,7 @@ class _AppDrawerState extends State<AppDrawer> {
                         );
                       },
                     ),
-                    const Divider(height: 1),
+                    _kSoftDivider,
                   ],
 
                   _buildDrawerItem(
@@ -613,7 +629,7 @@ class _AppDrawerState extends State<AppDrawer> {
                       Navigator.pushNamed(context, '/apertura');
                     },
                   ),
-                  const Divider(height: 1),
+                  _kSoftDivider,
 
                   _buildDrawerItem(
                     context,
@@ -625,7 +641,7 @@ class _AppDrawerState extends State<AppDrawer> {
                       Navigator.pushNamed(context, '/egreso');
                     },
                   ),
-                  const Divider(height: 1),
+                  _kSoftDivider,
 
                   _buildDrawerItem(
                     context,
@@ -637,7 +653,7 @@ class _AppDrawerState extends State<AppDrawer> {
                       Navigator.pushNamed(context, '/venta-total');
                     },
                   ),
-                  const Divider(height: 1),
+                  _kSoftDivider,
 
                   _buildDrawerItem(
                     context,
@@ -649,7 +665,7 @@ class _AppDrawerState extends State<AppDrawer> {
                       Navigator.pushNamed(context, '/cierre');
                     },
                   ),
-                  const Divider(height: 1),
+                  _kSoftDivider,
                   if (_closedPendingCount > 0) ...[
                     _buildDrawerItem(
                       context,
@@ -663,7 +679,7 @@ class _AppDrawerState extends State<AppDrawer> {
                         Navigator.pushNamed(context, '/cierre-pendiente');
                       },
                     ),
-                    const Divider(height: 1),
+                    _kSoftDivider,
                   ],
 
                   _buildDrawerItem(
@@ -676,7 +692,7 @@ class _AppDrawerState extends State<AppDrawer> {
                       Navigator.pushNamed(context, '/shift-workers');
                     },
                   ),
-                  const Divider(height: 1),
+                  _kSoftDivider,
 
                   if (_canManageInventory) ...[
                     _buildDrawerItem(
@@ -689,7 +705,7 @@ class _AppDrawerState extends State<AppDrawer> {
                         Navigator.pushNamed(context, '/admin-home');
                       },
                     ),
-                    const Divider(height: 1),
+                    _kSoftDivider,
                   ],
                   _buildDrawerItem(
                     context,
@@ -701,7 +717,7 @@ class _AppDrawerState extends State<AppDrawer> {
                       Navigator.pushNamed(context, '/settings');
                     },
                   ),
-                  const Divider(height: 1),
+                  _kSoftDivider,
                 ],
 
                 // Entrada oculta: solo visible para superadmins. Diagnóstico de
@@ -717,7 +733,7 @@ class _AppDrawerState extends State<AppDrawer> {
                       Navigator.pushNamed(context, '/offline-data-viewer');
                     },
                   ),
-                  const Divider(height: 1),
+                  _kSoftDivider,
                 ],
 
                 _buildDrawerItem(
@@ -742,17 +758,25 @@ class _AppDrawerState extends State<AppDrawer> {
 
           // Footer
           Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              border: Border(top: BorderSide(color: Colors.grey[300]!)),
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 16),
+            decoration: const BoxDecoration(
+              color: VentiqHomeTheme.card,
+              border: Border(top: BorderSide(color: VentiqHomeTheme.border)),
             ),
             child: Row(
               children: [
-                Icon(Icons.info_outline, size: 16, color: Colors.grey[600]),
+                const Icon(
+                  Icons.info_outline,
+                  size: 16,
+                  color: VentiqHomeTheme.textSecondary,
+                ),
                 const SizedBox(width: 8),
                 Text(
                   'Inventtia® Caja $_appVersion',
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: VentiqHomeTheme.textSecondary,
+                  ),
                 ),
               ],
             ),
@@ -769,29 +793,44 @@ class _AppDrawerState extends State<AppDrawer> {
     required String subtitle,
     required VoidCallback onTap,
   }) {
-    return ListTile(
-      leading: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: const Color(0xFF4A90E2).withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+      child: ListTile(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
         ),
-        child: Icon(icon, color: const Color(0xFF4A90E2), size: 24),
-      ),
-      title: Text(
-        title,
-        style: const TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.w600,
-          color: Color(0xFF1F2937),
+        selectedTileColor: VentiqHomeTheme.primary.withValues(alpha: 0.10),
+        tileColor: Colors.transparent,
+        leading: Container(
+          width: 38,
+          height: 38,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: VentiqHomeTheme.primary.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, color: VentiqHomeTheme.primary, size: 20),
         ),
+        title: Text(
+          title,
+          style: const TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            color: VentiqHomeTheme.textPrimary,
+          ),
+        ),
+        subtitle: Text(
+          subtitle,
+          style: const TextStyle(
+            fontSize: 12,
+            color: VentiqHomeTheme.textSecondary,
+          ),
+        ),
+        onTap: onTap,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+        horizontalTitleGap: 12,
+        minVerticalPadding: 9,
       ),
-      subtitle: Text(
-        subtitle,
-        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-      ),
-      onTap: onTap,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
     );
   }
 }

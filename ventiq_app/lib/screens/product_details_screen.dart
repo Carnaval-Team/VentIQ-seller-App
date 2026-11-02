@@ -7,16 +7,14 @@ import '../services/product_detail_service.dart';
 import '../services/promotion_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/price_change_service.dart';
-import '../services/currency_service.dart';
 import '../services/preview_rebalanceo_service.dart';
 import '../utils/price_utils.dart';
 import '../utils/presentacion_cadena_local.dart';
 import '../utils/desarme_bulto_local.dart';
 import '../utils/promotion_rules.dart';
-import '../widgets/bottom_navigation.dart';
+import '../theme/ventiq_home_theme.dart';
 import '../widgets/elaborated_product_chip.dart';
 import '../utils/connection_error_handler.dart';
-import '../utils/navigation_helper.dart';
 import '../widgets/notification_widget.dart';
 import 'package_product_screen.dart';
 
@@ -71,10 +69,6 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   bool _isLimitDataUsageEnabled = false; // Para el modo de ahorro de datos
   bool _isConnectionError = false; // Para detectar errores de conexión
   bool _showRetryWidget = false; // Para mostrar el widget de reconexión
-
-  // USD rate data
-  double _usdRate = 0.0;
-  bool _isLoadingUsdRate = false;
 
   // Presentaciones data
   List<ProductPresentation> _productPresentations = [];
@@ -159,7 +153,6 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     // Cargar detalles completos del producto
     _loadProductDetails();
     _loadPromotionData();
-    _loadUsdRate();
     _loadProductPresentations();
     _loadFractionStep();
     _loadDataUsageSettings();
@@ -407,7 +400,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                   const SizedBox(height: 8),
                   Text(
                     'Precio actual: \$${currentPrice.toMoneyString(2)}',
-                    style: TextStyle(color: Colors.grey[700]),
+                    style: TextStyle(color: VentiqHomeTheme.textSecondary),
                   ),
                   if (hasCustom && originalPrice != currentPrice)
                     Text(
@@ -465,7 +458,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                     decoration: BoxDecoration(
                       color: Colors.grey[50],
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.grey[200]!),
+                      border: Border.all(color: VentiqHomeTheme.border),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -475,7 +468,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
-                            color: Colors.grey[700],
+                            color: VentiqHomeTheme.textSecondary,
                           ),
                         ),
                         const SizedBox(height: 6),
@@ -644,218 +637,20 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
             if (productData == null) continue;
 
             if (productData['detalles_completos'] != null) {
-              // Construir Product desde detalles completos
               final detallesRaw = productData['detalles_completos'];
               if (detallesRaw is! Map) continue;
               final detalles = Map<String, dynamic>.from(detallesRaw);
-              final productoInfoRaw = detalles['producto'];
-              if (productoInfoRaw is! Map) continue;
-              final productoInfo = Map<String, dynamic>.from(productoInfoRaw);
-              final inventarioList = List<dynamic>.from(
-                detalles['inventario'] as List? ?? [],
+
+              // Un solo parser para online y offline. Antes esta pantalla
+              // reconstruia las variantes a mano (~140 lineas duplicadas).
+              foundProduct = ProductDetailService.productoDesdeRespuestaDetalle(
+                detalles,
+                fallbackStock:
+                    (productData['cantidad'] as num?)?.toDouble() ??
+                    widget.product.cantidadReal.toDouble(),
               );
-
-              // Crear variantes desde el inventario (igual que en modo normal)
-              final variantes = <ProductVariant>[];
-
-              for (int i = 0; i < inventarioList.length; i++) {
-                final itemRaw = inventarioList[i];
-
-                // Validar que el item no sea null
-                if (itemRaw is! Map) continue;
-                final item = Map<String, dynamic>.from(itemRaw);
-
-                final varianteData =
-                    item['variante'] is Map
-                        ? Map<String, dynamic>.from(item['variante'] as Map)
-                        : null;
-                final presentacionData =
-                    item['presentacion'] is Map
-                        ? Map<String, dynamic>.from(item['presentacion'] as Map)
-                        : null;
-                final ubicacionData =
-                    item['ubicacion'] is Map
-                        ? Map<String, dynamic>.from(item['ubicacion'] as Map)
-                        : null;
-                final cantidadDisponible =
-                    (item['cantidad_disponible'] as num?)?.toDouble() ?? 0.0;
-                final reservadoCarnavalItem =
-                    (item['reservado_carnaval'] as num?)?.toDouble() ?? 0;
-                final enOrdenesCarnavalItem =
-                    (item['en_ordenes_carnaval'] as num?)?.toDouble() ?? 0;
-
-                // Construir nombre de variante (igual que en ProductDetailService)
-                String variantName = 'Variante ${i + 1}';
-                String variantDescription = '';
-
-                if (varianteData != null) {
-                  final opcion =
-                      varianteData['opcion'] is Map
-                          ? Map<String, dynamic>.from(
-                            varianteData['opcion'] as Map,
-                          )
-                          : null;
-                  final atributo =
-                      varianteData['atributo'] is Map
-                          ? Map<String, dynamic>.from(
-                            varianteData['atributo'] as Map,
-                          )
-                          : null;
-
-                  if (opcion != null && atributo != null) {
-                    final valor = opcion['valor'] as String? ?? '';
-                    final label = atributo['label'] as String? ?? '';
-                    variantName = '$label: $valor';
-                    variantDescription = 'Variante de $label con valor $valor';
-                  }
-                }
-
-                // Agregar presentación al nombre (igual que en modo normal)
-                if (presentacionData != null) {
-                  final presentacionNombre =
-                      presentacionData['denominacion'] as String? ?? '';
-                  final cantidad =
-                      (presentacionData['cantidad'] as num?)?.toInt() ?? 1;
-                  if (presentacionNombre.isNotEmpty) {
-                    variantName += ' - $presentacionNombre';
-                    if (cantidad > 1) {
-                      variantDescription +=
-                          ' (Presentación: $cantidad unidades)';
-                    }
-                  }
-                }
-
-                // Extraer precio
-                double precio =
-                    (productoInfo['precio_actual'] as num?)?.toDouble() ?? 0.0;
-                if (item['precio'] != null) {
-                  precio = (item['precio'] as num).toDouble();
-                } else if (varianteData != null &&
-                    varianteData['precio'] != null) {
-                  precio = (varianteData['precio'] as num).toDouble();
-                } else if (presentacionData != null &&
-                    presentacionData['precio'] != null) {
-                  precio = (presentacionData['precio'] as num).toDouble();
-                }
-
-                // Extraer metadata de inventario (igual que en modo normal)
-                final almacenData =
-                    ubicacionData?['almacen'] is Map
-                        ? Map<String, dynamic>.from(
-                          ubicacionData!['almacen'] as Map,
-                        )
-                        : null;
-                final inventoryMetadata = {
-                  'id_inventario': item['id_inventario'],
-                  'id_variante': varianteData?['id'],
-                  'id_opcion_variante':
-                      varianteData?['opcion'] is Map
-                          ? (varianteData!['opcion'] as Map)['id']
-                          : null,
-                  'id_presentacion': presentacionData?['id'],
-                  'id_ubicacion': ubicacionData?['id'],
-                  'sku_producto': item['sku_producto'],
-                  'sku_ubicacion': ubicacionData?['sku_codigo'],
-                  'cantidad_disponible': cantidadDisponible,
-                  'ubicacion_nombre':
-                      (() {
-                        for (final v in [
-                          item['ubicacion_nombre'],
-                          item['denominacion_ubicacion'],
-                          item['ubicacion_label'],
-                          ubicacionData?['denominacion'],
-                        ]) {
-                          final s = v?.toString();
-                          if (s != null && s.isNotEmpty) return s;
-                        }
-                        return null;
-                      })(),
-                  'almacen_nombre':
-                      (() {
-                        for (final v in [
-                          item['almacen_nombre'],
-                          almacenData?['denominacion'],
-                        ]) {
-                          final s = v?.toString();
-                          if (s != null && s.isNotEmpty) return s;
-                        }
-                        return null;
-                      })(),
-                };
-
-                variantes.add(
-                  ProductVariant(
-                    id: i + 1, // ID secuencial
-                    nombre: variantName,
-                    precio: precio,
-                    cantidad: cantidadDisponible,
-                    descripcion:
-                        variantDescription.isNotEmpty
-                            ? variantDescription
-                            : null,
-                    inventoryMetadata: inventoryMetadata,
-                    reservadoCarnaval: reservadoCarnavalItem,
-                    enOrdenesCarnaval: enOrdenesCarnavalItem,
-                  ),
-                );
-              }
-
-              final categoriaRaw = productoInfo['categoria'];
-              final categoriaNombre =
-                  categoriaRaw is Map
-                      ? (categoriaRaw['denominacion'] as String? ??
-                          'Sin categoría')
-                      : 'Sin categoría';
-
-              // Stock: preferir suma de inventario; si viene vacío (sync admin
-              // sin almacenes de vendedor), usar cantidad del listado cacheado.
-              final invSum = inventarioList.fold<double>(0, (sum, inv) {
-                if (inv is! Map) return sum;
-                return sum +
-                    ((inv['cantidad_disponible'] as num?)?.toDouble() ?? 0);
-              });
-              final cachedCantidad =
-                  (productData['cantidad'] as num?)?.toDouble() ??
-                  widget.product.cantidad.toDouble();
-              final totalReservado = variantes.fold<double>(
-                0,
-                (sum, v) => sum + v.reservadoCarnaval.toDouble(),
-              );
-              final totalEnOrdenes = variantes.fold<double>(
-                0,
-                (sum, v) => sum + v.enOrdenesCarnaval.toDouble(),
-              );
-              final totalCantidad = invSum > 0 ? invSum : cachedCantidad;
-
-              foundProduct = Product(
-                id: (productoInfo['id'] as num).toInt(),
-                denominacion:
-                    productoInfo['denominacion'] as String? ?? 'Sin nombre',
-                descripcion: productoInfo['descripcion'] as String?,
-                foto: productoInfo['foto'] as String?,
-                precio:
-                    (productoInfo['precio_actual'] as num?)?.toDouble() ?? 0.0,
-                cantidad: totalCantidad,
-                categoria: categoriaNombre,
-                esRefrigerado: productoInfo['es_refrigerado'] as bool? ?? false,
-                esFragil: productoInfo['es_fragil'] as bool? ?? false,
-                esPeligroso: productoInfo['es_peligroso'] as bool? ?? false,
-                esVendible: true,
-                esComprable: true,
-                esInventariable: true,
-                esPorLotes: false,
-                esElaborado: productoInfo['es_elaborado'] as bool? ?? false,
-                esServicio: productoInfo['es_servicio'] as bool? ?? false,
-                variantes: variantes,
-                reservadoCarnaval: totalReservado,
-                enOrdenesCarnaval: totalEnOrdenes,
-              );
-
-              print('✅ Detalles del producto cargados desde cache offline');
+              print('Detalles del producto cargados desde cache offline');
               print('  - Producto: ${foundProduct.denominacion}');
-              print(
-                '  - Stock inventario: $invSum | cache listado: $cachedCantidad | usado: $totalCantidad',
-              );
               print('  - Variantes: ${foundProduct.variantes.length}');
               break;
             }
@@ -880,37 +675,6 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
           fallbackStock: widget.product.cantidadReal.toDouble(),
         );
         print('✅ Detalles del producto cargados desde Supabase');
-      }
-
-      // Verificar si el stock real total (descontando reservas) es <= 0
-      // Venta por unidades: con saldo 0 pero bultos desarmables SÍ se vende.
-      if (detailedProduct.cantidadReal <= 0 &&
-          _sinStockNiDesarmable &&
-          !detailedProduct.esElaborado &&
-          !detailedProduct.esServicio) {
-        if (mounted) {
-          showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder:
-                (ctx) => AlertDialog(
-                  title: const Text('Sin stock disponible'),
-                  content: const Text(
-                    'Este producto no tiene stock disponible (todo está reservado).',
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () {
-                        Navigator.of(ctx).pop();
-                        Navigator.of(context).pop();
-                      },
-                      child: const Text('Volver'),
-                    ),
-                  ],
-                ),
-          );
-        }
-        return;
       }
 
       setState(() {
@@ -1000,26 +764,6 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
       );
     } catch (e) {
       print('❌ Error cargando promociones: $e');
-    }
-  }
-
-  Future<void> _loadUsdRate() async {
-    setState(() {
-      _isLoadingUsdRate = true;
-    });
-
-    try {
-      final rate = await CurrencyService.getUsdRate();
-      setState(() {
-        _usdRate = rate;
-        _isLoadingUsdRate = false;
-      });
-    } catch (e) {
-      print('❌ Error loading USD rate: $e');
-      setState(() {
-        _usdRate = 0.0;
-        _isLoadingUsdRate = false;
-      });
     }
   }
 
@@ -1202,7 +946,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
           style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w500,
-            color: Colors.grey[700],
+            color: VentiqHomeTheme.textSecondary,
           ),
         ),
         Flexible(
@@ -1332,7 +1076,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
               isRecargo ? 'Precio venta: ' : 'Precio base: ',
               style: TextStyle(
                 fontSize: 12,
-                color: isRecargo ? widget.categoryColor : Colors.grey[600],
+                color:
+                    isRecargo
+                        ? widget.categoryColor
+                        : VentiqHomeTheme.textSecondary,
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -1340,7 +1087,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
               '\$${prices['precio_venta']!.toMoneyString(2)}',
               style: TextStyle(
                 fontSize: isRecargo ? 16 : 14,
-                color: isRecargo ? widget.categoryColor : Colors.grey[600],
+                color:
+                    isRecargo
+                        ? widget.categoryColor
+                        : VentiqHomeTheme.textSecondary,
                 fontWeight: isRecargo ? FontWeight.w600 : FontWeight.w500,
                 decoration: isRecargo ? null : TextDecoration.lineThrough,
               ),
@@ -1356,7 +1106,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
               'Precio oferta: ',
               style: TextStyle(
                 fontSize: 12,
-                color: isRecargo ? Colors.grey[600] : widget.categoryColor,
+                color:
+                    isRecargo
+                        ? VentiqHomeTheme.textSecondary
+                        : widget.categoryColor,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -1365,7 +1118,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
               style: TextStyle(
                 fontSize: isRecargo ? 14 : 16,
                 fontWeight: FontWeight.w600,
-                color: isRecargo ? Colors.grey[600] : widget.categoryColor,
+                color:
+                    isRecargo
+                        ? VentiqHomeTheme.textSecondary
+                        : widget.categoryColor,
                 height: 1.2,
               ),
             ),
@@ -1393,7 +1149,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
           'Original: \$${originalBasePrice.toMoneyString(2)}',
           style: TextStyle(
             fontSize: 11,
-            color: Colors.grey[600],
+            color: VentiqHomeTheme.textSecondary,
             decoration: TextDecoration.lineThrough,
           ),
         ),
@@ -1582,96 +1338,65 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
         !widget.product.esElaborado &&
         !widget.product.esServicio) {
       return const Scaffold(
-        backgroundColor: Colors.white,
+        backgroundColor: VentiqHomeTheme.surface,
         body: Center(child: CircularProgressIndicator()),
       );
     }
     return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF4A90E2),
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back,
-            color: Color.fromARGB(255, 255, 255, 255),
-            size: 28,
-          ),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Flexible(
-              child: Text(
-                currentProduct.denominacion,
-                style: const TextStyle(
-                  color: Color.fromARGB(255, 255, 255, 255),
-                  fontSize: 18,
-                  fontWeight: FontWeight.w500,
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            // const SizedBox(width: 8),
-            // ElaboratedProductChip(
-            //   productId: currentProduct.id,
-            //   productName: currentProduct.denominacion,
-            // ),
-          ],
-        ),
-        centerTitle: true,
-        actions: [
-          if (_isLimitDataUsageEnabled)
-            IconButton(
-              icon: const Icon(
-                Icons.data_saver_on,
-                color: Colors.orange,
-                size: 24,
-              ),
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      '📱 Modo ahorro de datos activado - Las imágenes no se cargan para ahorrar datos',
-                    ),
-                    backgroundColor: Colors.orange,
-                    duration: Duration(seconds: 2),
-                  ),
-                );
-              },
-              tooltip: 'Modo ahorro de datos activado',
-            ),
-          const NotificationWidget(),
-        ],
-      ),
-      bottomNavigationBar: AppBottomNavigation(
-        currentIndex: 0, // No tab selected since this is a detail screen
-        onTap: _onBottomNavTap,
-      ),
+      backgroundColor: VentiqHomeTheme.surface,
       body: Column(
         children: [
           Expanded(
             child:
                 _isLoadingDetails
-                    ? const Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          CircularProgressIndicator(color: Color(0xFF4A90E2)),
-                          SizedBox(height: 16),
-                          Text(
-                            'Cargando detalles del producto...',
-                            style: TextStyle(fontSize: 16, color: Colors.grey),
+                    // Primer frame con el producto inyectado: hero + nombre +
+                    // progreso, en vez de una pantalla en blanco con un spinner.
+                    ? CustomScrollView(
+                      slivers: <Widget>[
+                        _buildHeroSliver(context),
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: <Widget>[
+                                const LinearProgressIndicator(
+                                  minHeight: 3,
+                                  color: VentiqHomeTheme.primary,
+                                ),
+                                const SizedBox(height: 12),
+                                Text(
+                                  'Cargando stock, presentaciones y variantes…',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: VentiqHomeTheme.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     )
                     : _errorMessage != null
                     ? _showRetryWidget
-                        ? ConnectionRetryWidget(
-                          message: _errorMessage!,
-                          onRetry: _loadProductDetails,
+                        ? Column(
+                          children: <Widget>[
+                            Expanded(
+                              child: ConnectionRetryWidget(
+                                message: _errorMessage!,
+                                onRetry: _loadProductDetails,
+                              ),
+                            ),
+                            SafeArea(
+                              top: false,
+                              child: TextButton.icon(
+                                onPressed: () => Navigator.pop(context),
+                                icon: const Icon(Icons.arrow_back, size: 18),
+                                label: const Text('Volver'),
+                              ),
+                            ),
+                          ],
                         )
                         : Center(
                           child: Column(
@@ -1688,7 +1413,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                                 style: TextStyle(
                                   fontSize: 18,
                                   fontWeight: FontWeight.w600,
-                                  color: Colors.grey[800],
+                                  color: VentiqHomeTheme.textPrimary,
                                 ),
                               ),
                               const SizedBox(height: 8),
@@ -1696,7 +1421,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                                 _errorMessage!,
                                 style: TextStyle(
                                   fontSize: 14,
-                                  color: Colors.grey[600],
+                                  color: VentiqHomeTheme.textSecondary,
                                 ),
                                 textAlign: TextAlign.center,
                               ),
@@ -1704,285 +1429,205 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                               ElevatedButton(
                                 onPressed: _loadProductDetails,
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF4A90E2),
+                                  backgroundColor: VentiqHomeTheme.primary,
                                   foregroundColor: Colors.white,
                                 ),
                                 child: const Text('Reintentar'),
                               ),
+                              const SizedBox(height: 8),
+                              TextButton.icon(
+                                onPressed: () => Navigator.pop(context),
+                                icon: const Icon(Icons.arrow_back, size: 18),
+                                label: const Text('Volver'),
+                              ),
                             ],
                           ),
                         )
-                    : SingleChildScrollView(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Sección superior: Imagen y información del producto
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // Imagen del producto
-                              Container(
-                                width: 120,
-                                height: 120,
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: Colors.grey[300]!,
-                                    width: 1,
-                                  ),
-                                ),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(11),
-                                  child:
-                                      _isLimitDataUsageEnabled
-                                          ? Image.asset(
-                                            'assets/no_image.png',
-                                            fit: BoxFit.cover,
-                                            errorBuilder: (
-                                              context,
-                                              error,
-                                              stackTrace,
-                                            ) {
-                                              return Container(
-                                                color: Colors.grey[100],
-                                                child: Column(
-                                                  mainAxisAlignment:
-                                                      MainAxisAlignment.center,
-                                                  children: [
-                                                    const Icon(
-                                                      Icons.inventory_2,
-                                                      color: Colors.grey,
-                                                      size: 32,
-                                                    ),
-                                                    const SizedBox(height: 4),
-                                                    Text(
-                                                      'Sin imagen',
-                                                      style: TextStyle(
-                                                        fontSize: 10,
-                                                        color: Colors.grey[600],
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              );
-                                            },
-                                          )
-                                          : _hasValidProductImage(
-                                            currentProduct.foto,
-                                          )
-                                          ? Image.network(
-                                            _compressImageUrl(
-                                              currentProduct.foto!,
-                                            ),
-                                            fit: BoxFit.cover,
-                                            errorBuilder: (
-                                              context,
-                                              error,
-                                              stackTrace,
-                                            ) {
-                                              return Container(
-                                                color: Colors.grey[100],
-                                                child: Column(
-                                                  mainAxisAlignment:
-                                                      MainAxisAlignment.center,
-                                                  children: [
-                                                    const Icon(
-                                                      Icons.inventory_2,
-                                                      color: Colors.grey,
-                                                      size: 32,
-                                                    ),
-                                                    const SizedBox(height: 4),
-                                                    Text(
-                                                      'Sin imagen',
-                                                      style: TextStyle(
-                                                        fontSize: 10,
-                                                        color: Colors.grey[600],
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              );
-                                            },
-                                            loadingBuilder: (
-                                              context,
-                                              child,
-                                              loadingProgress,
-                                            ) {
-                                              if (loadingProgress == null)
-                                                return child;
-                                              return Container(
-                                                color: Colors.grey[100],
-                                                child: const Center(
-                                                  child:
-                                                      CircularProgressIndicator(
-                                                        strokeWidth: 2,
-                                                      ),
-                                                ),
-                                              );
-                                            },
-                                          )
-                                          : Container(
-                                            color: Colors.grey[100],
-                                            child: Column(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment.center,
-                                              children: [
-                                                const Icon(
-                                                  Icons.inventory_2,
-                                                  color: Colors.grey,
-                                                  size: 32,
-                                                ),
-                                                const SizedBox(height: 4),
-                                                Text(
-                                                  'Sin imagen',
-                                                  style: TextStyle(
-                                                    fontSize: 10,
-                                                    color: Colors.grey[600],
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              // Información del producto
-                              Expanded(
+                    : LayoutBuilder(
+                      builder: (
+                        BuildContext context,
+                        BoxConstraints constraints,
+                      ) {
+                        // Web / TPV grande: imagen sticky a la izquierda y
+                        // ficha + controles en la columna derecha (§8).
+                        final bool wide = constraints.maxWidth >= 900;
+                        final Widget scroll = CustomScrollView(
+                          slivers: <Widget>[
+                            _buildHeroSliver(context, expandido: !wide),
+                            SliverToBoxAdapter(
+                              child: Padding(
+                                padding: const EdgeInsets.all(16),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    // Denominación con chip de producto elaborado
+                                  children: <Widget>[
+                                    // Sección superior: Imagen y información del producto
                                     Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
+                                        // Información del producto
                                         Expanded(
-                                          child: Text(
-                                            currentProduct.denominacion,
-                                            style: const TextStyle(
-                                              fontSize: 18,
-                                              fontWeight: FontWeight.w600,
-                                              color: Color(0xFF1F2937),
-                                              height: 1.2,
-                                            ),
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              // Denominación con chip de producto elaborado
+                                              Row(
+                                                children: [
+                                                  Expanded(
+                                                    child: Text(
+                                                      currentProduct
+                                                          .denominacion,
+                                                      style: const TextStyle(
+                                                        fontSize: 18,
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                        color: Color(
+                                                          0xFF1F2937,
+                                                        ),
+                                                        height: 1.2,
+                                                      ),
+                                                      maxLines: 2,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 8),
+                                                  ElaboratedProductChip(
+                                                    productId:
+                                                        currentProduct.id,
+                                                    productName:
+                                                        currentProduct
+                                                            .denominacion,
+                                                    // Flags ya resueltos por el detalle:
+                                                    // el chip no hace red al montarse.
+                                                    esElaborado:
+                                                        currentProduct
+                                                            .esElaborado,
+                                                    esServicio:
+                                                        currentProduct
+                                                            .esServicio,
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 4),
+                                              // Categoría
+                                              Text(
+                                                currentProduct.categoria,
+                                                style: TextStyle(
+                                                  fontSize: 14,
+                                                  color:
+                                                      VentiqHomeTheme
+                                                          .textSecondary,
+                                                  height: 1.2,
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                              const SizedBox(height: 8),
+                                              // Precio del producto con descuento
+                                              _buildPriceSection(
+                                                currentProduct,
+                                                variant: _getGlobalPriceVariant(
+                                                  currentProduct,
+                                                ),
+                                                showEditButton:
+                                                    currentProduct
+                                                        .variantes
+                                                        .isEmpty,
+                                              ),
+                                            ],
                                           ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        ElaboratedProductChip(
-                                          productId: currentProduct.id,
-                                          productName:
-                                              currentProduct.denominacion,
                                         ),
                                       ],
                                     ),
-                                    const SizedBox(height: 4),
-                                    // Categoría
-                                    Text(
-                                      currentProduct.categoria,
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        color: Colors.grey[600],
-                                        height: 1.2,
+                                    const SizedBox(height: 24),
+                                    // Controles de venta ANTES de las ubicaciones: el
+                                    // vendedor ve el stepper sin tener que elegir almacén
+                                    // primero (§8 del plan).
+                                    if (currentProduct.variantes.isEmpty &&
+                                        selectedQuantity > 0)
+                                      _buildSelectedProductItem(
+                                        currentProduct.denominacion,
+                                        selectedQuantity,
+                                        _getEffectiveBasePrice(currentProduct),
+                                        _getLocationName(currentProduct, null),
+                                        isVariant: false,
+                                        originalPrice: _getOriginalBasePrice(
+                                          currentProduct,
+                                        ),
                                       ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
+                                    if (currentProduct.variantes.isNotEmpty)
+                                      ...variantQuantities.entries
+                                          .where((entry) => entry.value > 0)
+                                          .map(
+                                            (
+                                              entry,
+                                            ) => _buildSelectedProductItem(
+                                              '${currentProduct.denominacion} - ${entry.key.nombre}',
+                                              entry.value,
+                                              _getEffectiveBasePrice(
+                                                currentProduct,
+                                                entry.key,
+                                              ),
+                                              _getLocationName(
+                                                currentProduct,
+                                                entry.key,
+                                              ),
+                                              isVariant: true,
+                                              variant:
+                                                  entry
+                                                      .key, // FASE 4: factor POR VARIANTE
+                                              originalPrice:
+                                                  _getOriginalBasePrice(
+                                                    currentProduct,
+                                                    entry.key,
+                                                  ),
+                                            ),
+                                          ),
                                     const SizedBox(height: 8),
-                                    // Precio del producto con descuento
-                                    _buildPriceSection(
-                                      currentProduct,
-                                      variant: _getGlobalPriceVariant(
-                                        currentProduct,
-                                      ),
-                                      showEditButton:
-                                          currentProduct.variantes.isEmpty,
-                                    ),
+                                    // Ubicaciones plegadas: se abren solas solo cuando
+                                    // hay más de una con stock (el caso en que hay que
+                                    // elegir). Con una sola, el vendedor ya está listo.
+                                    if (currentProduct.variantes.isNotEmpty)
+                                      _buildUbicacionesPlegadas(),
+                                    const SizedBox(height: 16),
                                   ],
                                 ),
                               ),
-                            ],
-                          ),
-                          const SizedBox(height: 24),
-                          // Sección de ubicaciones (agrupadas por almacén-ubicación)
-                          if (currentProduct.variantes.isNotEmpty) ...[
-                            Text(
-                              'UBICACIONES:',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.grey[800],
-                                letterSpacing: 0.5,
-                              ),
                             ),
-                            const SizedBox(height: 8),
-                            // Lista de ubicaciones con variantes agrupadas
-                            ...locationGroups.entries.map((locationEntry) {
-                              return _buildLocationGroup(
-                                locationEntry.key,
-                                locationEntry.value,
-                              );
-                            }).toList(),
-                            const SizedBox(height: 16),
                           ],
-                          // Productos seleccionados (directamente sin wrapper)
-                          if (currentProduct.variantes.isEmpty &&
-                              selectedQuantity > 0)
-                            _buildSelectedProductItem(
-                              currentProduct.denominacion,
-                              selectedQuantity,
-                              _getEffectiveBasePrice(currentProduct),
-                              _getLocationName(currentProduct, null),
-                              isVariant: false,
-                              originalPrice: _getOriginalBasePrice(
-                                currentProduct,
-                              ),
-                            ),
-                          if (currentProduct.variantes.isNotEmpty)
-                            ...variantQuantities.entries
-                                .where((entry) => entry.value > 0)
-                                .map(
-                                  (entry) => _buildSelectedProductItem(
-                                    '${currentProduct.denominacion} - ${entry.key.nombre}',
-                                    entry.value,
-                                    _getEffectiveBasePrice(
-                                      currentProduct,
-                                      entry.key,
-                                    ),
-                                    _getLocationName(currentProduct, entry.key),
-                                    isVariant: true,
-                                    variant:
-                                        entry
-                                            .key, // FASE 4: factor POR VARIANTE
-                                    originalPrice: _getOriginalBasePrice(
-                                      currentProduct,
-                                      entry.key,
-                                    ),
-                                  ),
-                                ),
-                          const SizedBox(height: 16),
-                        ],
-                      ),
+                        );
+
+                        if (!wide) return scroll;
+
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: <Widget>[
+                            Expanded(flex: 5, child: _buildPanelImagenWide()),
+                            Expanded(flex: 6, child: scroll),
+                          ],
+                        );
+                      },
                     ),
           ),
           // Fila fija con total y botón de agregar
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: VentiqHomeTheme.card,
               border: Border(
-                top: BorderSide(color: Colors.grey[200]!, width: 1),
+                top: BorderSide(color: VentiqHomeTheme.border, width: 1),
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.06),
-                  blurRadius: 8,
-                  offset: const Offset(0, -2),
-                ),
-              ],
+              boxShadow: VentiqHomeTheme.shadowCard,
             ),
             child: Row(
               children: [
+                // Stepper siempre visible: con la variante auto-seleccionada se
+                // ajusta la cantidad sin tener que buscar el control en el
+                // cuerpo del detalle (§8 del plan).
+                _buildStepperBarra(),
+                const SizedBox(width: 8),
                 // Total de productos seleccionados
                 Expanded(
                   child: Column(
@@ -1991,14 +1636,18 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                     children: [
                       Text(
                         'TOTAL: ${PriceUtils.formatQuantity(_getTotalEquivalentUnits())} unidad${_getTotalEquivalentUnits() == 1 ? '' : 'es'}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
-                          color: Colors.grey[700],
+                          color: VentiqHomeTheme.textSecondary,
                         ),
                       ),
                       Text(
                         '\$${totalPrice.toMoneyString(2)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
@@ -2011,7 +1660,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                 const SizedBox(width: 12),
                 // Botón de agregar
                 SizedBox(
-                  width: 120,
+                  width: 110,
                   height: 50,
                   child: ElevatedButton(
                     onPressed:
@@ -2037,6 +1686,311 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Cabecera colapsable con el hero de imagen del producto (§8 del plan).
+  ///
+  /// Sustituye al `AppBar` plano: la foto ocupa el alto de la cabecera y se
+  /// colapsa al hacer scroll. La miniatura de `ProductoTile` comparte el tag
+  /// `prod-{id}` para que la transición desde el listado sea continua.
+  ///
+  /// [expandido] = `false` en la columna derecha de escritorio: la imagen ya se
+  /// muestra en el panel izquierdo, así que allí solo queda una barra compacta
+  /// con el nombre y las acciones.
+  Widget _buildHeroSliver(BuildContext context, {bool expandido = true}) {
+    if (!expandido) {
+      return SliverAppBar(
+        pinned: true,
+        toolbarHeight: 56,
+        backgroundColor: VentiqHomeTheme.card,
+        foregroundColor: VentiqHomeTheme.textPrimary,
+        elevation: 0,
+        scrolledUnderElevation: 2,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, size: 26),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          currentProduct.denominacion,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        ),
+        actions: _heroAcciones(context),
+      );
+    }
+
+    final double altoExpandido = (MediaQuery.sizeOf(context).height * 0.32)
+        .clamp(220.0, 320.0);
+
+    return SliverAppBar(
+      pinned: true,
+      expandedHeight: altoExpandido,
+      backgroundColor: widget.categoryColor,
+      foregroundColor: Colors.white,
+      elevation: 0,
+      scrolledUnderElevation: 2,
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back, size: 28),
+        onPressed: () => Navigator.pop(context),
+      ),
+      actions: _heroAcciones(context),
+      flexibleSpace: FlexibleSpaceBar(
+        collapseMode: CollapseMode.parallax,
+        titlePadding: const EdgeInsetsDirectional.only(
+          start: 56,
+          bottom: 14,
+          end: 16,
+        ),
+        title: Text(
+          currentProduct.denominacion,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            shadows: <Shadow>[Shadow(color: Color(0x99000000), blurRadius: 6)],
+          ),
+        ),
+        background: Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            _buildHeroImagen(currentProduct),
+            // Velo: garantiza contraste del título sobre cualquier foto.
+            const DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  stops: <double>[0, 0.55, 1],
+                  colors: <Color>[
+                    Color(0x66000000),
+                    Color(0x22000000),
+                    Color(0xB3000000),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeroImagen(Product producto) {
+    final String? foto = producto.foto;
+    final bool usarFoto =
+        !_isLimitDataUsageEnabled && _hasValidProductImage(foto);
+    if (!usarFoto) return _heroFallback(producto);
+
+    return Hero(
+      tag: 'prod-${producto.id}',
+      child: Image.network(
+        _compressImageUrl(foto!),
+        fit: BoxFit.cover,
+        loadingBuilder: (
+          BuildContext context,
+          Widget child,
+          ImageChunkEvent? p,
+        ) {
+          return p == null ? child : _heroFallback(producto);
+        },
+        errorBuilder: (_, __, ___) => _heroFallback(producto),
+      ),
+    );
+  }
+
+  Widget _heroFallback(Product producto) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[
+            widget.categoryColor,
+            widget.categoryColor.withValues(alpha: 0.65),
+          ],
+        ),
+      ),
+      child: Center(
+        child: Icon(
+          producto.esElaborado
+              ? Icons.restaurant_menu_rounded
+              : Icons.inventory_2_rounded,
+          size: 84,
+          color: Colors.white.withValues(alpha: 0.35),
+        ),
+      ),
+    );
+  }
+
+  /// Acciones de la cabecera (modo ahorro de datos + campana). Compartidas por
+  /// la cabecera expandida y la compacta de escritorio.
+  List<Widget> _heroAcciones(BuildContext context) {
+    return <Widget>[
+      if (_isLimitDataUsageEnabled)
+        IconButton(
+          icon: const Icon(Icons.data_saver_on, color: Colors.orange, size: 24),
+          onPressed: () {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  '📱 Modo ahorro de datos activado - Las imágenes no se cargan para ahorrar datos',
+                ),
+                backgroundColor: Colors.orange,
+                duration: Duration(seconds: 2),
+              ),
+            );
+          },
+          tooltip: 'Modo ahorro de datos activado',
+        ),
+      const NotificationWidget(),
+    ];
+  }
+
+  /// Panel de imagen fijo de la columna izquierda en pantallas ≥ 900 px.
+  Widget _buildPanelImagenWide() {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Center(
+          child: AspectRatio(
+            aspectRatio: 1,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: _buildHeroImagen(currentProduct),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Cantidad de la línea activa (la auto-seleccionada o el producto base).
+  double _cantidadEnBarra() {
+    if (selectedVariant != null) {
+      return variantQuantities[selectedVariant!] ?? 0;
+    }
+    return selectedQuantity;
+  }
+
+  /// Sube/baja la cantidad desde la barra inferior fija.
+  ///
+  /// En variantes permite llegar a 0 (la línea desaparece del cuerpo); en un
+  /// producto sin variantes se queda en mínimo 1.
+  void _cambiarCantidadBarra(double delta) {
+    setState(() {
+      if (selectedVariant != null) {
+        final double actual = variantQuantities[selectedVariant!] ?? 0;
+        variantQuantities[selectedVariant!] = (actual + delta).clamp(
+          0.0,
+          double.infinity,
+        );
+      } else {
+        selectedQuantity = (selectedQuantity + delta).clamp(
+          1.0,
+          double.infinity,
+        );
+      }
+    });
+  }
+
+  Widget _buildStepperBarra() {
+    final double cantidad = _cantidadEnBarra();
+    return Container(
+      height: 44,
+      decoration: BoxDecoration(
+        color: VentiqHomeTheme.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: VentiqHomeTheme.border, width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          IconButton(
+            tooltip: 'Quitar uno',
+            onPressed: cantidad > 0 ? () => _cambiarCantidadBarra(-1) : null,
+            icon: const Icon(Icons.remove, size: 18),
+            constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+            padding: EdgeInsets.zero,
+          ),
+          SizedBox(
+            width: 24,
+            child: Text(
+              PriceUtils.formatQuantity(cantidad),
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+                color: VentiqHomeTheme.textPrimary,
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Añadir uno',
+            onPressed: () => _cambiarCantidadBarra(1),
+            icon: const Icon(Icons.add, size: 18),
+            constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+            padding: EdgeInsets.zero,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Ubicaciones **plegadas** (§8 del plan): el detalle ya deja una variante
+  /// seleccionada, así que la lista de almacenes es una acción secundaria.
+  ///
+  /// Se abre sola solo cuando hay más de una ubicación con stock, que es el
+  /// caso en el que el vendedor tiene que elegir. Con una sola, ocupa pantalla
+  /// sin aportar nada.
+  Widget _buildUbicacionesPlegadas() {
+    final int conStock =
+        locationGroups.values
+            .where((List<ProductVariant> v) => _getLocationStock(v) > 0)
+            .length;
+
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: Container(
+        decoration: BoxDecoration(
+          color: VentiqHomeTheme.card,
+          borderRadius: BorderRadius.circular(VentiqHomeTheme.radiusBlock),
+          border: Border.all(color: VentiqHomeTheme.border, width: 1),
+        ),
+        child: ExpansionTile(
+          key: PageStorageKey<String>('ubicaciones-${widget.product.id}'),
+          initiallyExpanded: conStock > 1,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+          childrenPadding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+          title: Row(
+            children: <Widget>[
+              const Icon(Icons.warehouse_outlined, size: 18),
+              const SizedBox(width: 6),
+              Text(
+                'UBICACIONES',
+                style: VentiqHomeTheme.rotuloBloque.copyWith(fontSize: 12),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '${locationGroups.length}',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: VentiqHomeTheme.textSecondary,
+                ),
+              ),
+            ],
+          ),
+          children: <Widget>[
+            for (final MapEntry<String, List<ProductVariant>> entry
+                in locationGroups.entries)
+              _buildLocationGroup(entry.key, entry.value),
+          ],
+        ),
       ),
     );
   }
@@ -2211,7 +2165,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                 isSelected ? locationColor.withOpacity(0.1) : Colors.grey[50],
             borderRadius: BorderRadius.circular(6),
             border: Border.all(
-              color: isSelected ? locationColor : Colors.grey[300]!,
+              color: isSelected ? locationColor : VentiqHomeTheme.border,
               width: isSelected ? 1.5 : 1,
             ),
           ),
@@ -2226,12 +2180,12 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                   color:
                       isSelected
                           ? locationColor.withOpacity(0.1)
-                          : Colors.grey[100],
+                          : VentiqHomeTheme.surface,
                   border: Border.all(
                     color:
                         isSelected
                             ? locationColor.withOpacity(0.3)
-                            : Colors.grey[300]!,
+                            : VentiqHomeTheme.border,
                     width: 1,
                   ),
                 ),
@@ -2256,7 +2210,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                         color:
                             isSelected
                                 ? locationColor
-                                : const Color(0xFF1F2937),
+                                : VentiqHomeTheme.textPrimary,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -2286,7 +2240,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                             'Stock: ${variant.cantidadReal}',
                             style: TextStyle(
                               fontSize: 10,
-                              color: Colors.grey[600],
+                              color: VentiqHomeTheme.textSecondary,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
@@ -2363,16 +2317,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[300]!, width: 1),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        color: VentiqHomeTheme.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: VentiqHomeTheme.border, width: 1),
+        boxShadow: VentiqHomeTheme.shadowCard,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2387,7 +2335,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                   style: const TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFF1F2937),
+                    color: VentiqHomeTheme.textPrimary,
                     height: 1.3,
                   ),
                   maxLines: 2,
@@ -2446,7 +2394,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                             : 'Base: \$${price.toMoneyString(2)}',
                         style: TextStyle(
                           fontSize: 11,
-                          color: Colors.grey[600],
+                          color: VentiqHomeTheme.textSecondary,
                           fontWeight: FontWeight.w400,
                           decoration:
                               isRecargo ? null : TextDecoration.lineThrough,
@@ -2482,7 +2430,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                   'Original: \$${originalPriceValue!.toMoneyString(2)}',
                   style: TextStyle(
                     fontSize: 11,
-                    color: Colors.grey[600],
+                    color: VentiqHomeTheme.textSecondary,
                     decoration: TextDecoration.lineThrough,
                   ),
                 ),
@@ -2508,14 +2456,14 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
-                  color: Colors.grey[800],
+                  color: VentiqHomeTheme.textPrimary,
                 ),
               ),
               // Controles de cantidad mejorados
               Container(
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.grey[300]!, width: 1),
+                  border: Border.all(color: VentiqHomeTheme.border, width: 1),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -2588,7 +2536,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                           color: Colors.grey[50],
                           border: Border.symmetric(
                             vertical: BorderSide(
-                              color: Colors.grey[300]!,
+                              color: VentiqHomeTheme.border,
                               width: 1,
                             ),
                           ),
@@ -2599,7 +2547,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
-                              color: Color(0xFF1F2937),
+                              color: VentiqHomeTheme.textPrimary,
                             ),
                           ),
                         ),
@@ -2701,27 +2649,31 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w500,
-              color: Colors.grey[800],
+              color: VentiqHomeTheme.textPrimary,
             ),
           ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: Colors.grey[100],
+              color: VentiqHomeTheme.surface,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.grey[300]!, width: 1),
+              border: Border.all(color: VentiqHomeTheme.border, width: 1),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.inventory_2, size: 16, color: Colors.grey[600]),
+                Icon(
+                  Icons.inventory_2,
+                  size: 16,
+                  color: VentiqHomeTheme.textSecondary,
+                ),
                 const SizedBox(width: 6),
                 Text(
                   'Unidad (1.0)',
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
-                    color: Colors.grey[700],
+                    color: VentiqHomeTheme.textSecondary,
                   ),
                 ),
               ],
@@ -2774,7 +2726,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
           style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w500,
-            color: Colors.grey[800],
+            color: VentiqHomeTheme.textPrimary,
           ),
         ),
         // Expanded para que el dropdown ocupe el espacio disponible entre
@@ -2785,7 +2737,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.grey[300]!, width: 1),
+              border: Border.all(color: VentiqHomeTheme.border, width: 1),
             ),
             child: DropdownButtonHideUnderline(
               child: DropdownButton<ProductPresentation>(
@@ -2817,7 +2769,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                                 color:
                                     presentation.esBase
                                         ? Colors.orange[700]
-                                        : Colors.grey[700],
+                                        : VentiqHomeTheme.textSecondary,
                               ),
                             ),
                           ],
@@ -3163,57 +3115,57 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
       print('   ${entry.key}: ${entry.value.length} variantes');
     }
 
-    // Si solo hay una ubicación, seleccionar automáticamente la primera variante
-    _autoSelectSingleLocation();
+    // Dejar una variante seleccionada desde el primer frame: sin esto, con
+    // variantes el vendedor veía «UBICACIONES» sin ningún control de venta y
+    // tenía que tocar a ciegas una variante para que apareciera el stepper.
+    _autoSeleccionarMejorVariante();
   }
 
-  /// Selecciona automáticamente la primera variante si solo hay una ubicación
-  void _autoSelectSingleLocation() {
-    if (locationGroups.length == 1) {
-      final singleLocationEntry = locationGroups.entries.first;
-      final locationKey = singleLocationEntry.key;
-      final variants = singleLocationEntry.value;
+  /// Auto-selecciona la variante con más stock para que los controles de venta
+  /// estén disponibles de inmediato.
+  ///
+  /// - Con una ubicación: la primera variante (comportamiento anterior).
+  /// - Con varias: la ubicación con más stock y, dentro, la variante con más
+  ///   saldo. El vendedor puede cambiarla después en «UBICACIONES».
+  void _autoSeleccionarMejorVariante() {
+    if (locationGroups.isEmpty) return;
 
-      if (variants.isNotEmpty) {
-        final firstVariant = variants.first;
+    MapEntry<String, List<ProductVariant>> mejor = locationGroups.entries.first;
+    double mejorStock = _getLocationStock(mejor.value);
 
-        print('🎯 Solo una ubicación disponible: $locationKey');
-        print(
-          '🎯 Seleccionando automáticamente variante: ${firstVariant.nombre}',
-        );
-
-        // Seleccionar la primera variante automáticamente
-        // Usar addPostFrameCallback para asegurar que el setState se ejecute correctamente
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          setState(() {
-            selectedVariant = firstVariant;
-            // Establecer cantidad inicial de 1 para la variante seleccionada
-            variantQuantities[firstVariant] = 1;
-            // Si el saldo propio de la presentación es 0, avisar que ese 1
-            // saldrá de abrir un bulto.
-            _avisarDesarmePendiente(
-              1,
-              (firstVariant.inventoryMetadata?['id_presentacion'] as num?)
-                  ?.toInt(),
-            );
-            print(
-              '🔄 setState ejecutado - selectedVariant: ${selectedVariant?.nombre}',
-            );
-            print(
-              '🔄 variantQuantities actualizado: ${variantQuantities.entries.where((e) => e.value > 0).map((e) => '${e.key.nombre}: ${e.value}').toList()}',
-            );
-          });
-        });
-
-        print(
-          '🎯 Variante seleccionada automáticamente: ${firstVariant.nombre} con cantidad 1',
-        );
+    for (final MapEntry<String, List<ProductVariant>> entry in locationGroups
+        .entries
+        .skip(1)) {
+      final double stock = _getLocationStock(entry.value);
+      if (stock > mejorStock) {
+        mejor = entry;
+        mejorStock = stock;
       }
-    } else {
-      print(
-        '🏪 Múltiples ubicaciones disponibles (${locationGroups.length}), mostrando opciones al usuario',
-      );
     }
+
+    if (mejor.value.isEmpty) return;
+
+    ProductVariant elegida = mejor.value.first;
+    for (final ProductVariant v in mejor.value.skip(1)) {
+      if (v.cantidadReal > elegida.cantidadReal) elegida = v;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        selectedVariant = elegida;
+        variantQuantities[elegida] = 1;
+        _avisarDesarmePendiente(
+          1,
+          (elegida.inventoryMetadata?['id_presentacion'] as num?)?.toInt(),
+        );
+      });
+    });
+
+    debugPrint(
+      '🎯 Auto-selección: ${mejor.key} · ${elegida.nombre} '
+      '(stock ${elegida.cantidadReal})',
+    );
   }
 
   /// Genera un color único para cada ubicación basado en el color de la categoría
@@ -3883,6 +3835,9 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
 
       // Mostrar mensaje de éxito y navegar a categorías
       if (totalItemsAdded > 0) {
+        // El stock cambió: que reabrir el detalle no muestre la caché vieja.
+        _productDetailService.invalidarDetalle(currentProduct.id);
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Column(
@@ -3977,67 +3932,6 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
         ),
       );
     }
-  }
-
-  void _onBottomNavTap(int index) {
-    switch (index) {
-      case 0: // Home → /mesas si modo restaurante (sin cuenta activa), /categories si no
-        NavigationHelper.goHome(context);
-        break;
-      case 1: // Carrito: preorden, o la cuenta de mesa abierta en restaurante
-        NavigationHelper.goCarrito(context);
-        break;
-      case 2: // Órdenes
-        Navigator.popUntil(context, (route) => route.isFirst);
-        Navigator.pushNamed(context, '/orders');
-        break;
-      case 3: // Configuración
-        Navigator.popUntil(context, (route) => route.isFirst);
-        Navigator.pushNamed(context, '/settings');
-        break;
-    }
-  }
-
-  Widget _buildUsdRateChip() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF4A90E2).withOpacity(0.3)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.attach_money, size: 16, color: Color(0xFF4A90E2)),
-          const SizedBox(width: 4),
-          _isLoadingUsdRate
-              ? const SizedBox(
-                width: 12,
-                height: 12,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Color(0xFF4A90E2),
-                ),
-              )
-              : Text(
-                'USD: ${_usdRate.toStringAsFixed(0)}',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF2C3E50),
-                ),
-              ),
-        ],
-      ),
-    );
   }
 
   void _showPendingOrdersDialog() {

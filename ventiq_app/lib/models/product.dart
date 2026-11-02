@@ -64,6 +64,15 @@ class Product {
   /// presentacion, cantidad_final, ...}]. Null si el backend no lo envía.
   final List<Map<String, dynamic>>? stockMixto;
 
+  /// Cuántas presentaciones tiene cargadas el producto
+  /// (`app_dat_producto_presentacion`). Lo necesita el alta rápida del Home:
+  /// con más de una presentación hay que pasar por el detalle para elegir.
+  ///
+  /// `0` significa "sin presentaciones cargadas" (se vende por la unidad base)
+  /// o "no se sabe" en un `Product` construido a mano. En ambos casos el
+  /// llamador puede tratar el producto como de presentación única.
+  final int presentacionesCount;
+
   /// Este plato se prepara en una cocina, no se toma de la barra.
   bool get vaACocina => idCocina != null;
 
@@ -163,6 +172,7 @@ class Product {
     this.stockTexto,
     this.stockEquivalenteBase,
     this.stockMixto,
+    this.presentacionesCount = 0,
   });
 
   factory Product.fromJson(Map<String, dynamic> json) {
@@ -205,6 +215,10 @@ class Product {
           (json['stock_mixto'] as List<dynamic>?)
               ?.map((e) => Map<String, dynamic>.from(e as Map))
               .toList(),
+      presentacionesCount:
+          json['presentaciones_count'] ??
+          (json['presentaciones'] as List<dynamic>?)?.length ??
+          0,
     );
   }
 
@@ -245,6 +259,7 @@ class Product {
       'stock_texto': stockTexto,
       'stock_equivalente_base': stockEquivalenteBase,
       'stock_mixto': stockMixto,
+      'presentaciones_count': presentacionesCount,
     };
   }
 }

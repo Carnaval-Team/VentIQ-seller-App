@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
+import '../models/home_catalogo.dart' show claveNombre;
 import '../models/product.dart';
 import '../widgets/cocina_chip.dart';
 import '../services/product_service.dart';
@@ -34,11 +35,22 @@ class ProductsScreen extends StatefulWidget {
   final String categoryName;
   final Color categoryColor;
 
+  /// Si viene, la pantalla enseña **solo** esa subcategoría.
+  ///
+  /// Lo usa el drawer del Home al pedir "ver listado completo" desde una
+  /// subcategoría: sin esto habría que abrir el listado entero de la categoría y
+  /// dejar al vendedor buscando la sección que ya había elegido.
+  ///
+  /// Se compara por nombre y no por id porque esta pantalla ya agrupa por
+  /// `subcategoria_nombre`; el id no llega hasta aquí.
+  final String? subcategoriaNombre;
+
   const ProductsScreen({
     Key? key,
     required this.categoryId,
     required this.categoryName,
     required this.categoryColor,
+    this.subcategoriaNombre,
   }) : super(key: key);
 
   @override
@@ -170,6 +182,18 @@ class _ProductsScreenState extends State<ProductsScreen> {
           filteredProductsBySubcategory[subcategory] = filteredProducts;
         }
       });
+    }
+
+    // Filtro por subcategoría (lo pide el drawer del Home). Se compara con
+    // `claveNombre` para que "Bebidas frías" y "Bebidas Frías" sean lo mismo.
+    final String? soloSub = widget.subcategoriaNombre;
+    if (soloSub != null && soloSub.trim().isNotEmpty) {
+      final String clave = claveNombre(soloSub);
+      filteredProductsBySubcategory = Map<String, List<Product>>.fromEntries(
+        filteredProductsBySubcategory.entries
+            .where((MapEntry<String, List<Product>> e) =>
+                claveNombre(e.key) == clave),
+      );
     }
 
     // Debug logging
