@@ -290,6 +290,9 @@ class TurnoService {
           .eq('id_tpv', idTpv)
           .eq('id_vendedor', idSeller)
           .eq('estado', 1)
+          // Un turno con cierre ya solicitado (cola offline de otro
+          // dispositivo) tampoco es vendible, aunque estado siga en 1.
+          .isFilter('cierre_solicitado_at', null)
           .order('fecha_apertura', ascending: false, nullsFirst: false)
           .limit(1);
 
@@ -306,6 +309,16 @@ class TurnoService {
           idTpv: idTpv is int ? idTpv : int.tryParse('$idTpv'),
           idVendedor: idSeller is int ? idSeller : int.tryParse('$idSeller'),
         );
+        // 3ra fuente: marcador local persistente de cierre (cubre el caso
+        // en que la entrada de cola se perdió o no matcheó).
+        if (serverId != null &&
+            await _userPrefs.hasClosedTurnoMarker(serverId)) {
+          print(
+            '🔒 Turno $serverId abierto en servidor pero con marcador local '
+            'de cierre — no se expone como abierto',
+          );
+          return null;
+        }
         if (localCierre != null) {
           print(
             '🔒 Turno $serverId abierto en servidor pero con cierre local '
@@ -396,6 +409,36 @@ class TurnoService {
       print('⚠️ No se pudo resolver creado_por del turno TPV $idTpv: $e');
     }
     return null;
+  }
+
+  /// Marca en servidor `cierre_solicitado_at` en cuanto se encola un cierre.
+  /// estado permanece 1 para que el sync del cierre completo siga siendo
+  /// viable (fn_cerrar_turno_offline), pero ventas online y otros
+  /// dispositivos ya no lo ven como vendible.
+  /// Best-effort: si falla (sin red, columna aún no creada), el cierre
+  /// completo queda en la cola local como antes.
+  static Future<bool> marcarCierreSolicitadoEnServidor({
+    required int serverTurnoId,
+    required DateTime fechaCierre,
+  }) async {
+    try {
+      await _supabase
+          .from('app_dat_caja_turno')
+          .update({
+            'cierre_solicitado_at': fechaCierre.toUtc().toIso8601String(),
+          })
+          .eq('id', serverTurnoId)
+          .eq('estado', 1)
+          .isFilter('cierre_solicitado_at', null);
+      print('🔖 cierre_solicitado_at marcado en turno $serverTurnoId');
+      return true;
+    } catch (e) {
+      print(
+        '⚠️ No se pudo marcar cierre_solicitado_at '
+        'en turno $serverTurnoId: $e',
+      );
+      return false;
+    }
   }
 
   /// Turno para mostrar en UI cuando puede haber cierre reciente en cache.

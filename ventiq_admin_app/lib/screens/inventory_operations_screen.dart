@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/inventory_service.dart';
 import '../services/user_preferences_service.dart';
@@ -9,6 +10,8 @@ import '../services/permissions_service.dart';
 import '../services/printer_manager.dart';
 import '../services/wifi_printer_service.dart';
 import '../services/export_service.dart';
+import '../services/store_service.dart';
+import '../services/currency_service.dart';
 import '../utils/ticket_text_utils.dart';
 import '../utils/operation_client_utils.dart';
 import '../utils/stock_mixto_formatter.dart';
@@ -1917,6 +1920,10 @@ class InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                     // Show print button for all operations
                     const SizedBox(height: 24),
                     _buildPrintButton(operation),
+
+                    // Exportar factura PDF con columnas configurables
+                    const SizedBox(height: 10),
+                    _buildInvoiceButton(operation),
                   ],
                 ),
               ),
@@ -5315,6 +5322,235 @@ class InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
           ),
         );
       }
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // FACTURA DE OPERACIÓN (formato factura cliente, columnas configurables)
+  // ══════════════════════════════════════════════════════════════════════════
+
+  static const List<(String, String)> _invoiceColumnOpts = [
+    ('sku', 'SKU'),
+    ('denominacion', 'Denominación'),
+    ('descripcion', 'Descripción'),
+    ('cantidad', 'Cantidad'),
+    ('precio_cup', 'Precio Unitario CUP'),
+    ('precio_usd', 'Precio Unitario USD'),
+    ('subtotal_cup', 'Subtotal CUP'),
+    ('subtotal_usd', 'Subtotal USD'),
+  ];
+
+  Widget _buildInvoiceButton(Map<String, dynamic> operation) {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        onPressed: () => _showInvoiceColumnsDialog(operation),
+        icon: const Icon(Icons.receipt_long_outlined),
+        label: const Text('Exportar factura PDF'),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF10B981),
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Diálogo para elegir las columnas de la tabla de productos de la factura.
+  Future<void> _showInvoiceColumnsDialog(
+    Map<String, dynamic> operation,
+  ) async {
+    final selected = <String>{
+      'denominacion',
+      'cantidad',
+      'precio_cup',
+      'subtotal_cup',
+    };
+    final columns = await showDialog<List<String>>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: const Text('Columnas de la factura'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final (key, label) in _invoiceColumnOpts)
+                  CheckboxListTile(
+                    dense: true,
+                    title: Text(label),
+                    value: selected.contains(key),
+                    onChanged: (v) => setDlg(() {
+                      if (v == true) {
+                        selected.add(key);
+                      } else {
+                        selected.remove(key);
+                      }
+                    }),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: selected.isEmpty
+                  ? null
+                  : () {
+                      final ordered = [
+                        for (final (key, _) in _invoiceColumnOpts)
+                          if (selected.contains(key)) key,
+                      ];
+                      Navigator.pop(ctx, ordered);
+                    },
+              child: const Text('Generar'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (columns == null || columns.isEmpty || !mounted) return;
+    await _exportOperationInvoice(operation, columns);
+  }
+
+  /// Construye las filas de la tabla y llama al generador de la factura.
+  Future<void> _exportOperationInvoice(
+    Map<String, dynamic> operation,
+    List<String> columns,
+  ) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const AlertDialog(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: Color(0xFF4A90E2)),
+            SizedBox(height: 16),
+            Text('Generando factura PDF...'),
+          ],
+        ),
+      ),
+    );
+    try {
+      final items = _extractPrintableItems(operation);
+      final precioEsBase = _linePrecioEsUnidadBase(operation);
+      final opDate = DateTime.parse(operation['created_at']);
+
+      // Datos de la tienda (mismo select que la factura de cliente)
+      String storeName = 'Inventtia';
+      String storeAddress = '';
+      String storeLocation = '';
+      String storePhone = '';
+      String? logoUrl;
+      final storeId = await StoreService.getCurrentStoreId();
+      if (storeId != null) {
+        final storeData = await Supabase.instance.client
+            .from('app_dat_tienda')
+            .select('denominacion, direccion, ubicacion, imagen_url, phone')
+            .eq('id', storeId)
+            .maybeSingle();
+        if (storeData != null) {
+          storeName = storeData['denominacion'] as String? ?? storeName;
+          storeAddress = storeData['direccion'] as String? ?? '';
+          storeLocation = storeData['ubicacion'] as String? ?? '';
+          storePhone = storeData['phone'] as String? ?? '';
+          logoUrl = storeData['imagen_url'] as String?;
+        }
+      }
+      final logoBytes = await _downloadImageBytes(logoUrl);
+
+      // Tasa USD→CUP en la fecha de la operación (sólo si hacen falta columnas USD)
+      double? usdRate;
+      if (columns.any((c) => c.endsWith('_usd'))) {
+        final timelines = await CurrencyService.loadUsdToCupRateTimelines();
+        usdRate =
+            CurrencyService.resolveUsdToCupRateAt(opDate, timelines) ??
+            await CurrencyService.getEffectiveUsdToCupRate();
+      }
+
+      final numFormatter = (double v) => v.toStringAsFixed(2);
+      String _money(double v) => '\$${numFormatter(v)}';
+
+      double totalCup = 0.0;
+      double totalUsd = 0.0;
+      final rows = <Map<String, String>>[];
+      for (final item in items) {
+        final cantTxt = _getCantidadTexto(item).replaceFirst('Cant: ', '');
+        final presTxt = _getPresentacionTexto(item);
+        final denom = _getProductName(item) +
+            (presTxt.isNotEmpty ? ' · $presTxt' : '');
+        final precioCup = _itemDisplayUnitPrice(
+          item,
+          precioEsUnidadBase: precioEsBase,
+        );
+        final subCup = _itemLineTotal(item, precioEsUnidadBase: precioEsBase);
+        totalCup += subCup;
+        if (usdRate != null && usdRate > 0) totalUsd += subCup / usdRate;
+        rows.add({
+          'sku': (item['sku_producto'] ?? item['sku'] ?? '').toString(),
+          'denominacion': denom,
+          'descripcion': (item['descripcion'] ?? '').toString(),
+          'cantidad': cantTxt,
+          'precio_cup': _money(precioCup),
+          'precio_usd':
+              usdRate != null && usdRate > 0 ? _money(precioCup / usdRate) : '—',
+          'subtotal_cup': _money(subCup),
+          'subtotal_usd':
+              usdRate != null && usdRate > 0 ? _money(subCup / usdRate) : '—',
+        });
+      }
+
+      if (mounted) Navigator.pop(context); // cerrar progreso
+
+      await ExportService().exportOperationInvoicePdf(
+        context: context,
+        operationId: operation['id'].toString(),
+        operationDate: opDate,
+        storeName: storeName,
+        storeAddress: storeAddress,
+        storeLocation: storeLocation,
+        storePhone: storePhone,
+        logoBytes: logoBytes,
+        columns: columns,
+        rows: rows,
+        totals: {
+          if (columns.contains('subtotal_cup')) 'subtotal_cup': totalCup,
+          if (columns.contains('subtotal_usd') && usdRate != null)
+            'subtotal_usd': totalUsd,
+        },
+        usdRate: usdRate,
+      );
+    } catch (e) {
+      if (mounted) {
+        try {
+          Navigator.pop(context);
+        } catch (_) {}
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al generar la factura: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<Uint8List?> _downloadImageBytes(String? url) async {
+    if (url == null || url.isEmpty) return null;
+    try {
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode == 200) return response.bodyBytes;
+      return null;
+    } catch (e) {
+      print('No se pudo descargar el logo de la tienda: $e');
+      return null;
     }
   }
 

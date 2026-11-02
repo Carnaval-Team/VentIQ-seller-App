@@ -66,8 +66,111 @@ class EvaluacionDesarme {
   bool get esImposible => estrategia == 'imposible';
 }
 
+/// Disponibilidad neta de una presentación: lo que se puede vender de ella
+/// contando el stock propio, el convertible desde otras presentaciones y
+/// descontando lo ya reservado en la orden actual.
+class DisponibilidadPresentacion {
+  /// Saldo físico propio en la fila de inventario.
+  final double stockPropio;
+
+  /// Máximo servible = (stock total en base - reservado base) / factorRel.
+  /// Nunca es menor que 0.
+  final double disponible;
+
+  const DisponibilidadPresentacion({
+    required this.stockPropio,
+    required this.disponible,
+  });
+
+  /// true si hay disponible aunque el saldo propio no alcance (hay que
+  /// desarmar otra presentación para servir esta).
+  bool get requiereDesarme => disponible > stockPropio + 0.000001;
+}
+
 class DesarmeBultoLocal {
   DesarmeBultoLocal._();
+
+  /// Convierte reservas {idPresentacion: cantidad} a unidades base.
+  /// Ids fuera de la cadena se ignoran (factor desconocido).
+  static double reservasEnBase(
+    List<PresentacionLocal> cadena,
+    Map<int, double> reservas,
+  ) {
+    var total = 0.0;
+    reservas.forEach((id, qty) {
+      for (final p in cadena) {
+        if (p.idPresentacion == id) {
+          total += qty * p.factorRel;
+          return;
+        }
+      }
+    });
+    return _redondear(total);
+  }
+
+  /// Disponibilidad neta por presentación aplicando "consumo acumulado en
+  /// base": todo el stock del producto se trata como un solo pozo en unidades
+  /// base (las conversiones entre presentaciones son fungibles al vender, el
+  /// servidor ejecuta el rebalanceo real) y se descuenta lo ya elegido.
+  ///
+  /// [reservadoBase] sale de [reservasEnBase] sobre lo que ya está en la
+  /// orden (carrito). Incluye presentaciones sin fila de inventario: su
+  /// `stockPropio` es 0 pero `disponible` puede ser > 0 si hay bultos que
+  /// desarmar.
+  static Map<int, DisponibilidadPresentacion> disponiblesPorPresentacion({
+    required List<PresentacionLocal> cadena,
+    required Map<int, double> stocks,
+    double reservadoBase = 0,
+  }) {
+    var baseTotal = 0.0;
+    for (final p in cadena) {
+      baseTotal += (stocks[p.idPresentacion] ?? 0) * p.factorRel;
+    }
+    final libre = _redondear(math.max(0.0, baseTotal - reservadoBase));
+    final out = <int, DisponibilidadPresentacion>{};
+    for (final p in cadena) {
+      final propio = _redondear(stocks[p.idPresentacion] ?? 0);
+      final disp = p.factorRel <= 0 ? propio : _redondear(libre / p.factorRel);
+      out[p.idPresentacion] = DisponibilidadPresentacion(
+        stockPropio: propio,
+        disponible: math.max(0, disp),
+      );
+    }
+    return out;
+  }
+
+  /// Versión para payloads que traen el desglose ya calculado (filas con
+  /// `id_presentacion`, `cantidad`/`equivalente_base` y `factor_rel`), como
+  /// `stock_desglose` del catálogo. `reservas` = {idPresentacion: cantidad}.
+  static Map<int, double> disponiblesDesdeDesglose(
+    List<dynamic> desglose, {
+    Map<int, double> reservas = const {},
+  }) {
+    final factores = <int, double>{};
+    final propios = <int, double>{};
+    var baseTotal = 0.0;
+    for (final f in desglose) {
+      if (f is! Map) continue;
+      final id = (f['id_presentacion'] as num?)?.toInt();
+      if (id == null) continue;
+      final factor = (f['factor_rel'] as num?)?.toDouble();
+      final cant = (f['cantidad'] as num?)?.toDouble() ?? 0;
+      factores[id] = (factor == null || factor <= 0) ? 1 : factor;
+      propios[id] = (propios[id] ?? 0) + cant;
+      baseTotal += cant * factores[id]!;
+    }
+    var reservadoBase = 0.0;
+    reservas.forEach((id, qty) {
+      final f = factores[id];
+      if (f != null) reservadoBase += qty * f;
+    });
+    final libre = math.max(0.0, baseTotal - reservadoBase);
+    return {
+      for (final e in factores.entries)
+        e.key: _redondear(libre / e.value),
+    };
+  }
+
 
   /// Evalúa vender [cantidadPedida] de [idPresentacionPedida].
   ///

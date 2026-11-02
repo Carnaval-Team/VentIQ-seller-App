@@ -1589,19 +1589,25 @@ class AutoSyncService {
       final row =
           await Supabase.instance.client
               .from('app_dat_caja_turno')
-              .select('fecha_cierre')
+              .select('fecha_cierre, cierre_solicitado_at')
               .eq('id', serverId)
               .maybeSingle();
-      if (row != null && row['fecha_cierre'] != null) {
+      if (row != null &&
+          (row['fecha_cierre'] != null ||
+              row['cierre_solicitado_at'] != null)) {
         print(
-          '  🧹 Turno $serverId abierto con fecha_cierre residual '
-          '(${row['fecha_cierre']}); limpiando',
+          '  🧹 Turno $serverId abierto con marcadores de cierre residuales '
+          '(fecha_cierre=${row['fecha_cierre']}, '
+          'cierre_solicitado_at=${row['cierre_solicitado_at']}); limpiando',
         );
         await Supabase.instance.client
             .from('app_dat_caja_turno')
-            .update({'fecha_cierre': null})
+            .update({'fecha_cierre': null, 'cierre_solicitado_at': null})
             .eq('id', serverId);
       }
+      // La fila está confirmada abierta: el marcador local de cierre no debe
+      // taparla (cubre filas reutilizadas al reabrir).
+      await _userPreferencesService.clearClosedTurnoMarker(serverId);
     } catch (e) {
       print('  ⚠️ No se pudo verificar/limpiar fecha_cierre residual: $e');
     }

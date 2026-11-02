@@ -2978,6 +2978,12 @@ class _CierreScreenState extends State<CierreScreen> {
           await _userPrefs.finalizeTurnoAfterOnlineClose(
             serverTurnoId: serverTurnoId,
           );
+          if (serverTurnoId != null) {
+            await _userPrefs.saveClosedTurnoMarker(
+              serverTurnoId,
+              fechaCierre: DateTime.now().toIso8601String(),
+            );
+          }
           print('🧹 Turno online cerrado — resúmenes conservados en cache');
 
           await _clearInventoryCounts();
@@ -3325,6 +3331,28 @@ class _CierreScreenState extends State<CierreScreen> {
         'post markClosed en _createOfflineCierre',
       );
 
+      // 3ra fuente de verdad al vender: marcador local persistente de que
+      // este turno (server_id) ya fue cerrado, aunque la entrada de cola
+      // se pierda o no matchee en getTurnoAbierto.
+      final serverTurnoIdRaw =
+          openTurno['server_id_turno'] ??
+          (openTurno['apertura'] is Map
+              ? ((openTurno['apertura'] as Map)['server_id_turno'] ??
+                  (openTurno['apertura'] as Map)['id'])
+              : null);
+      final serverTurnoId =
+          serverTurnoIdRaw is int
+              ? serverTurnoIdRaw
+              : (serverTurnoIdRaw is num
+                  ? serverTurnoIdRaw.toInt()
+                  : int.tryParse('$serverTurnoIdRaw'));
+      if (serverTurnoId != null) {
+        await _userPrefs.saveClosedTurnoMarker(
+          serverTurnoId,
+          fechaCierre: cierreData['fecha_cierre'] as String,
+        );
+      }
+
       await _clearInventoryCounts();
       PrinterManager().clearSavedPrinter();
 
@@ -3337,6 +3365,15 @@ class _CierreScreenState extends State<CierreScreen> {
       final hasNetwork = await ConnectivityService().performImmediateCheck();
       final tryServerSync =
           allowImmediateServerSync && !isOfflineMode && hasNetwork;
+
+      // Marcador remoto inmediato: aunque el cuadre completo quede en cola,
+      // otros dispositivos/clientes ya no ven el turno como vendible.
+      if (serverTurnoId != null && hasNetwork) {
+        await TurnoService.marcarCierreSolicitadoEnServidor(
+          serverTurnoId: serverTurnoId,
+          fechaCierre: nowServerCorrected,
+        );
+      }
 
       if (tryServerSync) {
         print(

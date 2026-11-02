@@ -1,9 +1,26 @@
 {
-  "current_version": "2.9.5",
-  "build": 294,
+  "current_version": "2.9.6",
+  "build": 295,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.9.6",
+      "date": "2026-10-29",
+      "title": "Reporte de ventas con precios cobrados y filas por precio/costo",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Etiquetas claras: precios cobrados vs lista actual",
+          "description": "El interruptor del reporte distingue 'Precios cobrados' (lo que realmente se facturó) de 'Precios de lista actuales' (revalorización con la tarifa vigente hoy)."
+        },
+        {
+          "type": "improvement",
+          "title": "Incluye todo lo de la 2.9.5",
+          "description": "Esta versión incorpora los cambios de la 2.9.5: inventario por lotes (FEFO), movimientos con presentación y exportación de inventario renovada."
+        }
+      ]
+    },
     {
       "version": "2.9.5",
       "date": "2026-10-27",

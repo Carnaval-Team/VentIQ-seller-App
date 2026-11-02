@@ -237,12 +237,14 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
     final obsCtrl = TextEditingController();
     DateTime selectedDate = DateTime.now();
 
+    var isLoading = false;
+    var errorMessage = '';
+
     showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
-          var isLoading = false;
-          var errorMessage = '';
           return AlertDialog(
             title: const Text('Recargar Saldo'),
             content: SingleChildScrollView(
@@ -251,6 +253,7 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
                 children: [
                   TextField(
                     controller: montoCtrl,
+                    enabled: !isLoading,
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
                     ),
@@ -262,17 +265,20 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
                   ),
                   const SizedBox(height: 12),
                   InkWell(
-                    onTap: () async {
-                      final picked = await showDatePicker(
-                        context: ctx,
-                        initialDate: selectedDate,
-                        firstDate: DateTime(2020),
-                        lastDate: DateTime.now().add(const Duration(days: 365)),
-                      );
-                      if (picked != null) {
-                        setDialogState(() => selectedDate = picked);
-                      }
-                    },
+                    onTap: isLoading
+                        ? null
+                        : () async {
+                            final picked = await showDatePicker(
+                              context: ctx,
+                              initialDate: selectedDate,
+                              firstDate: DateTime(2020),
+                              lastDate:
+                                  DateTime.now().add(const Duration(days: 365)),
+                            );
+                            if (picked != null) {
+                              setDialogState(() => selectedDate = picked);
+                            }
+                          },
                     child: InputDecorator(
                       decoration: const InputDecoration(
                         labelText: 'Fecha de Pago *',
@@ -285,6 +291,7 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
                   const SizedBox(height: 12),
                   TextField(
                     controller: obsCtrl,
+                    enabled: !isLoading,
                     maxLines: 2,
                     decoration: const InputDecoration(
                       labelText: 'Observación',
@@ -304,13 +311,14 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(ctx),
+                onPressed: isLoading ? null : () => Navigator.pop(ctx),
                 child: const Text('Cancelar'),
               ),
               _buildSubmitButton(
                 isLoading: isLoading,
                 label: 'Recargar',
                 onPressed: () async {
+                  if (isLoading) return;
                   final monto = double.tryParse(montoCtrl.text) ?? 0;
                   if (monto <= 0) {
                     setDialogState(
@@ -795,15 +803,16 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
     final obsCtrl = TextEditingController();
     DateTime selectedDate = DateTime.now();
     final List<({Uint8List bytes, String nombre, String mimeType})> fotos = [];
+    var isLoading = false;
+    var errorMessage = '';
+    var selectedTipoId =
+        _tiposExtraccion.isNotEmpty ? _tiposExtraccion.first.id : null;
 
     showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
-          var isLoading = false;
-          var errorMessage = '';
-          var selectedTipoId = _tiposExtraccion.isNotEmpty ? _tiposExtraccion.first.id : null;
-
           return AlertDialog(
             title: const Text('Nueva extracción'),
             content: SingleChildScrollView(
@@ -840,6 +849,7 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
                     const SizedBox(height: 12),
                     TextField(
                       controller: numFacturaCtrl,
+                      enabled: !isLoading,
                       decoration: const InputDecoration(
                         labelText: 'Número / Referencia *',
                         border: OutlineInputBorder(),
@@ -848,6 +858,7 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
                     const SizedBox(height: 12),
                     TextField(
                       controller: valorCtrl,
+                      enabled: !isLoading,
                       keyboardType: const TextInputType.numberWithOptions(
                         decimal: true,
                       ),
@@ -874,13 +885,16 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
                                 ),
                               )
                               .toList(),
-                      onChanged: (value) {
-                        setDialogState(() => selectedTipoId = value);
-                      },
+                      onChanged: isLoading
+                          ? null
+                          : (value) {
+                              setDialogState(() => selectedTipoId = value);
+                            },
                     ),
                     const SizedBox(height: 12),
                     TextField(
                       controller: obsCtrl,
+                      enabled: !isLoading,
                       maxLines: 2,
                       decoration: const InputDecoration(
                         labelText: 'Observaciones (opcional)',
@@ -890,18 +904,21 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
                     ),
                     const SizedBox(height: 12),
                     InkWell(
-                      onTap: () async {
-                        final picked = await showDatePicker(
-                          context: ctx,
-                          initialDate: selectedDate,
-                          firstDate: DateTime(2020),
-                          lastDate: DateTime.now().add(
-                            const Duration(days: 365),
-                          ),
-                        );
-                        if (picked != null)
-                          setDialogState(() => selectedDate = picked);
-                      },
+                      onTap: isLoading
+                          ? null
+                          : () async {
+                              final picked = await showDatePicker(
+                                context: ctx,
+                                initialDate: selectedDate,
+                                firstDate: DateTime(2020),
+                                lastDate: DateTime.now().add(
+                                  const Duration(days: 365),
+                                ),
+                              );
+                              if (picked != null) {
+                                setDialogState(() => selectedDate = picked);
+                              }
+                            },
                       child: InputDecorator(
                         decoration: const InputDecoration(
                           labelText: 'Fecha de Procesamiento *',
@@ -924,18 +941,21 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
                         ),
                         const Spacer(),
                         TextButton.icon(
-                          onPressed: () async {
-                            final picked = await FilePickerService.pickFile();
-                            if (picked != null) {
-                              setDialogState(() {
-                                fotos.add((
-                                  bytes: picked.bytes,
-                                  nombre: picked.nombre,
-                                  mimeType: picked.mimeType,
-                                ));
-                              });
-                            }
-                          },
+                          onPressed: isLoading
+                              ? null
+                              : () async {
+                                  final picked =
+                                      await FilePickerService.pickFile();
+                                  if (picked != null) {
+                                    setDialogState(() {
+                                      fotos.add((
+                                        bytes: picked.bytes,
+                                        nombre: picked.nombre,
+                                        mimeType: picked.mimeType,
+                                      ));
+                                    });
+                                  }
+                                },
                           icon: const Icon(Icons.attach_file, size: 16),
                           label: Text('Adjuntar ${fotos.length + 1}'),
                         ),
@@ -1010,25 +1030,27 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
                                   ),
                                 ),
                               ),
-                              Positioned(
-                                top: 4,
-                                right: 4,
-                                child: GestureDetector(
-                                  onTap: () =>
-                                      setDialogState(() => fotos.removeAt(i)),
-                                  child: Container(
-                                    decoration: const BoxDecoration(
-                                      color: Colors.black54,
-                                      shape: BoxShape.circle,
+                              if (!isLoading)
+                                Positioned(
+                                  top: 4,
+                                  right: 4,
+                                  child: GestureDetector(
+                                    onTap: () => setDialogState(
+                                      () => fotos.removeAt(i),
                                     ),
-                                    child: const Icon(
-                                      Icons.close,
-                                      color: Colors.white,
-                                      size: 20,
+                                    child: Container(
+                                      decoration: const BoxDecoration(
+                                        color: Colors.black54,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(
+                                        Icons.close,
+                                        color: Colors.white,
+                                        size: 20,
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
                             ],
                           ),
                         );
@@ -1095,13 +1117,14 @@ class _DepositosBancariosScreenState extends State<DepositosBancariosScreen>
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(ctx),
+                onPressed: isLoading ? null : () => Navigator.pop(ctx),
                 child: const Text('Cancelar'),
               ),
               _buildSubmitButton(
                 isLoading: isLoading,
                 label: 'Registrar extracción',
                 onPressed: () async {
+                  if (isLoading) return;
                   final numFactura = numFacturaCtrl.text.trim();
                   final valor = double.tryParse(valorCtrl.text) ?? 0;
                   if (numFactura.isEmpty ||

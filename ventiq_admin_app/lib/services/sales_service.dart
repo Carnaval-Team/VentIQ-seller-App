@@ -102,9 +102,9 @@ class ProductSalesReport {
 
   /// Cuantos precios distintos se agregaron en esta fila.
   ///
-  /// Es el dato que explica por que la v4 partia el producto en varias filas
-  /// indistinguibles: >1 significa que hubo cambios de precio en el periodo y
-  /// que [precioVentaCup] es el **promedio ponderado**, no un precio de lista.
+  /// Con v5/por_turno_v2 (archivo 48) cada fila ya es un solo precio+costo
+  /// (como v4), así que suele ser 1. Si fuera >1, [precioVentaCup] sería
+  /// promedio ponderado.
   final int nPreciosDistintos;
 
   /// La fila trae desglose por presentacion (v5) o no (v4).
@@ -112,6 +112,12 @@ class ProductSalesReport {
 
   /// El precio unitario es un promedio de varios precios del periodo.
   bool get precioEsPromedio => nPreciosDistintos > 1;
+
+  /// Dinero de la fila: preferir totales SQL (ya suman costo/precio por
+  /// presentación × cantidad). No recalcular con `precio × qty` a ciegas.
+  double get ingresosReportados => ingresosTotales;
+  double get costoReportado => costoTotalVendido;
+  double get gananciaReportada => gananciaTotal;
 
   ProductSalesReport({
     required this.idTienda,
@@ -438,18 +444,15 @@ class SalesService {
       final filtro = (!porTurnos && filtroFecha == 'completado')
           ? 'completado'
           : 'creacion';
-      // FASE 3 presentaciones: la v5 devuelve UNA fila por producto.
-      //
-      // La v4 agrupa por presentacion Y por precio pero no expone ninguno de
-      // los dos, asi que partia el mismo producto en varias filas
-      // indistinguibles en la UI (medido: 1.377 filas para 671 productos, 420
-      // productos partidos, todos por cambios de precio en el periodo).
-      //
-      // La v5 la envuelve, compacta, y agrega el desglose por presentacion mas
-      // `equiv_unidades_base`. La v4 sigue viva y sin tocar para las apps que
-      // no se han actualizado; ver presentaciones_inventario/29_reporte_ventas_v5.sql.
+      // FASE 3 presentaciones:
+      // - v5: 1 fila/producto + desglose + equiv; unitarios = totales/equiv
+      //   (parche 48). Dinero fiable en ingresos_totales / costo_total_vendido.
+      // - por_turno_v2: mismo contrato que v5, con la MISMA ventana temporal
+      //   que fn_reporte_ventas_por_turno (tab TPVs), para que las sumas
+      //   cuadren. Costo = precio_promedio de ESA presentacion × cantidad.
+      // Ver presentaciones_inventario/48_reporte_ventas_equiv_y_turno_v2.sql.
       final rpcName = porTurnos
-          ? 'fn_reporte_ventas_con_proveedor_por_turno'
+          ? 'fn_reporte_ventas_con_proveedor_por_turno_v2'
           : useCurrentPrices
               ? 'fn_reporte_ventas_con_proveedor_precios_actuales'
               : 'fn_reporte_ventas_con_proveedor5';
@@ -466,7 +469,24 @@ class SalesService {
       if (desde != null) params['p_fecha_desde'] = desde;
       if (hasta != null) params['p_fecha_hasta'] = hasta;
 
-      final response = await _supabase.rpc(rpcName, params: params);
+      dynamic response;
+      try {
+        response = await _supabase.rpc(rpcName, params: params);
+      } catch (e) {
+        // newa/prod sin el archivo 48 todavía: cae a la v1 de turnos.
+        if (porTurnos) {
+          print(
+            '⚠️ [getProductSalesReport] $rpcName no disponible ($e). '
+            'Fallback a fn_reporte_ventas_con_proveedor_por_turno',
+          );
+          response = await _supabase.rpc(
+            'fn_reporte_ventas_con_proveedor_por_turno',
+            params: params,
+          );
+        } else {
+          rethrow;
+        }
+      }
 
       sw.stop();
       print('   ⏱ Respuesta en ${sw.elapsedMilliseconds} ms');
@@ -490,15 +510,17 @@ class SalesService {
       int parseErrors = 0;
       for (final item in response) {
         try {
-          final r = ProductSalesReport.fromJson(item);
+          final r = ProductSalesReport.fromJson(
+            Map<String, dynamic>.from(item as Map),
+          );
           reports.add(r);
           print(
             '   🔹 ${r.nombreProducto}'
             ' | precio_cup=${r.precioVentaCup}'
             ' | cant=${r.totalVendido}'
-            ' | local=${r.precioVentaCup.truncate() * r.totalVendido.truncate()}'
+            ' | equiv=${r.equivUnidadesBase}'
             ' | ingresos_sql=${r.ingresosTotales}'
-            ' | costo_cup=${r.precioCostoCup}',
+            ' | costo_sql=${r.costoTotalVendido}',
           );
         } catch (e) {
           parseErrors++;
