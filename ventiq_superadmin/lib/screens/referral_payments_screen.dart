@@ -33,6 +33,7 @@ class _ReferralPaymentsScreenState extends State<ReferralPaymentsScreen> {
   List<Map<String, dynamic>> _selectedOrders = [];
 
   bool _excludeZeroPayments = true;
+  Set<int> _excludedProductIds = {};
 
   final NumberFormat _moneyFmt = NumberFormat('#,##0.00');
 
@@ -55,10 +56,8 @@ class _ReferralPaymentsScreenState extends State<ReferralPaymentsScreen> {
   Future<void> _loadInitial() async {
     setState(() => _isLoading = true);
     try {
-      final rates = await ReferralPaymentsService.getCurrencyRates();
-      _valorUsd = rates['usd'] ?? 1;
-      _valorEuro = rates['euro'] ?? 1;
-      await _reloadReferrers();
+      // Tasas + referidores + órdenes + exclusiones en paralelo (vía dashboard).
+      await _reloadReferrers(refreshRates: true);
     } catch (e) {
       print('❌ Error _loadInitial: $e');
     } finally {
@@ -66,55 +65,37 @@ class _ReferralPaymentsScreenState extends State<ReferralPaymentsScreen> {
     }
   }
 
-  Future<void> _reloadReferrers() async {
-    final referrers = await ReferralPaymentsService.getReferrers();
-    final rows = <_ReferrerRow>[];
+  Future<void> _reloadReferrers({bool refreshRates = false}) async {
+    final dashboard = await ReferralPaymentsService.loadReferrerDashboard(
+      from: _fromDate,
+      to: _toDate,
+      pctNacional: _pctNacional,
+      pctInternacional: _pctInternacional,
+      valorUsd: refreshRates ? null : _valorUsd,
+      valorEuro: refreshRates ? null : _valorEuro,
+    );
 
-    for (final u in referrers) {
-      final code = u['referal_code'] as String?;
-      if (code == null || code.isEmpty) continue;
+    final rows = dashboard.referrers
+        .map(
+          (d) => _ReferrerRow(
+            user: d.user,
+            referralCode: d.referralCode,
+            referredCount: d.referredCount,
+            summary: d.summary,
+            orders: d.orders,
+          ),
+        )
+        .toList();
 
-      final referredCount =
-          await ReferralPaymentsService.countReferredUsers(code);
-      final orders = await ReferralPaymentsService.getOrdersByReferralCode(
-        referalCode: code,
-        from: _fromDate,
-        to: _toDate,
-      );
-      // Solo Completado para listado y comisiones (nunca Cancelado).
-      final completedOrders = orders
-          .where(ReferralPaymentsService.isCompletedOrder)
-          .toList();
-      final summary = ReferralPaymentsService.computeSummary(
-        orders: completedOrders,
-        pctNacional: _pctNacional,
-        pctInternacional: _pctInternacional,
-        valorUsd: _valorUsd,
-        valorEuro: _valorEuro,
-      );
-      rows.add(_ReferrerRow(
-        user: u,
-        referralCode: code,
-        referredCount: referredCount,
-        summary: summary,
-        orders: completedOrders,
-      ));
-    }
-
-    // Orden principal: cantidad a pagar (desc). Desempate: cantidad de referidos (desc).
-    rows.sort((a, b) {
-      final byAmount = b.summary.comisionCup.compareTo(a.summary.comisionCup);
-      if (byAmount != 0) return byAmount;
-      return b.referredCount.compareTo(a.referredCount);
-    });
-
-    // Filtrar referrers con pagos en cero si la opción está activada
     final filteredRows = _excludeZeroPayments
         ? rows.where((row) => row.summary.comisionCup > 0).toList()
         : rows;
 
     if (mounted) {
       setState(() {
+        _valorUsd = dashboard.valorUsd;
+        _valorEuro = dashboard.valorEuro;
+        _excludedProductIds = dashboard.excludedProductIds;
         _referrers = filteredRows;
         if (_selected != null) {
           final match = filteredRows.firstWhere(
@@ -201,6 +182,59 @@ class _ReferralPaymentsScreenState extends State<ReferralPaymentsScreen> {
     }
   }
 
+  Future<void> _openExclusionsManager() async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => _ExclusionsDialog(
+        onChanged: () async {
+          await _onFiltersChanged();
+        },
+      ),
+    );
+  }
+
+  Future<void> _openOrderDetail(Map<String, dynamic> order) async {
+    final orderId = (order['id'] as num?)?.toInt();
+    if (orderId == null) return;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    List<ReferralOrderLine> lines = [];
+    try {
+      lines = await ReferralPaymentsService.getOrderLines(
+        orderId,
+        excludedProductIds: _excludedProductIds,
+      );
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al cargar detalle: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => _OrderDetailDialog(
+        order: order,
+        lines: lines,
+        moneyFmt: _moneyFmt,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -208,6 +242,11 @@ class _ReferralPaymentsScreenState extends State<ReferralPaymentsScreen> {
       appBar: AppBar(
         title: const Text('Pago a Referidos'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.block),
+            tooltip: 'Productos excluidos',
+            onPressed: _isLoading ? null : _openExclusionsManager,
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Recargar',
@@ -279,6 +318,11 @@ class _ReferralPaymentsScreenState extends State<ReferralPaymentsScreen> {
             onPressed: _isLoading ? null : _onFiltersChanged,
           ),
           _buildExcludeZeroCheckbox(),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.block, size: 18),
+            label: const Text('Productos excluidos'),
+            onPressed: _isLoading ? null : _openExclusionsManager,
+          ),
           _buildRatesChip(),
         ],
       ),
@@ -839,9 +883,16 @@ class _ReferralPaymentsScreenState extends State<ReferralPaymentsScreen> {
   Widget _buildOrderTile(Map<String, dynamic> o) {
     final isIntl = ReferralPaymentsService.isInternationalOrder(o);
     final color = isIntl ? AppColors.warning : AppColors.success;
-    final total = (o['total'] as num?)?.toDouble() ?? 0;
-    final tUsd = (o['totalUsd'] as num?)?.toDouble() ?? 0;
-    final tEuro = (o['totalEuro'] as num?)?.toDouble() ?? 0;
+    final hasExclusions = o['_has_exclusions'] == true;
+    final eligibleCup = (o['_eligible_total'] as num?)?.toDouble() ??
+        (o['total'] as num?)?.toDouble() ??
+        0;
+    final eligibleUsd = (o['_eligible_totalUsd'] as num?)?.toDouble() ??
+        (o['totalUsd'] as num?)?.toDouble() ??
+        0;
+    final eligibleEuro = (o['_eligible_totalEuro'] as num?)?.toDouble() ??
+        (o['totalEuro'] as num?)?.toDouble() ??
+        0;
     final moneda = (o['moneda'] as String? ?? 'CUP').toUpperCase();
     final metodo = o['metodo_pago'] as String? ?? '—';
     final fecha = o['created_at']?.toString() ?? '';
@@ -852,73 +903,103 @@ class _ReferralPaymentsScreenState extends State<ReferralPaymentsScreen> {
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
-        side: BorderSide(color: AppColors.info),
+        side: BorderSide(
+          color: hasExclusions ? AppColors.warning : AppColors.info,
+        ),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: color.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(6),
+      child: InkWell(
+        onTap: () => _openOrderDetail(o),
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      isIntl ? 'Internacional' : 'Nacional',
+                      style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: color),
+                    ),
                   ),
-                  child: Text(
-                    isIntl ? 'Internacional' : 'Nacional',
-                    style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        color: color),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  '#${o['id']}',
-                  style: const TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.w700),
-                ),
-                const Spacer(),
-                Text(fecha,
+                  if (hasExclusions) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: AppColors.warning.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Text(
+                        'Con exclusiones',
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.warning,
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(width: 8),
+                  Text(
+                    '#${o['id']}',
                     style: const TextStyle(
-                        fontSize: 11, color: AppColors.textSecondary)),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '$metodo • $moneda',
-                    style: const TextStyle(
-                        fontSize: 12, color: AppColors.textPrimary),
-                    overflow: TextOverflow.ellipsis,
+                        fontSize: 12, fontWeight: FontWeight.w700),
                   ),
-                ),
-                Text(
-                  status,
-                  style: const TextStyle(
-                      fontSize: 11,
-                      color: AppColors.textSecondary,
-                      fontWeight: FontWeight.w600),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                _smallTotal('CUP', total),
-                const SizedBox(width: 8),
-                _smallTotal('USD', tUsd),
-                const SizedBox(width: 8),
-                _smallTotal('EUR', tEuro),
-              ],
-            ),
-          ],
+                  const Spacer(),
+                  const Icon(Icons.chevron_right,
+                      size: 18, color: AppColors.textSecondary),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '$metodo • $moneda',
+                      style: const TextStyle(
+                          fontSize: 12, color: AppColors.textPrimary),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Text(
+                    status,
+                    style: const TextStyle(
+                        fontSize: 11,
+                        color: AppColors.textSecondary,
+                        fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(
+                fecha,
+                style: const TextStyle(
+                    fontSize: 11, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  _smallTotal('CUP', eligibleCup),
+                  const SizedBox(width: 8),
+                  _smallTotal('USD', eligibleUsd),
+                  const SizedBox(width: 8),
+                  _smallTotal('EUR', eligibleEuro),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -975,4 +1056,563 @@ class _ReferrerRow {
         ),
         orders: const [],
       );
+}
+
+class _OrderDetailDialog extends StatelessWidget {
+  final Map<String, dynamic> order;
+  final List<ReferralOrderLine> lines;
+  final NumberFormat moneyFmt;
+
+  const _OrderDetailDialog({
+    required this.order,
+    required this.lines,
+    required this.moneyFmt,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final orderTotal = (order['total'] as num?)?.toDouble() ?? 0;
+    final orderUsd = (order['totalUsd'] as num?)?.toDouble() ?? 0;
+    final orderEuro = (order['totalEuro'] as num?)?.toDouble() ?? 0;
+
+    double sumAllCup = 0;
+    double sumEligibleCup = 0;
+    double sumEligibleUsd = 0;
+    double sumEligibleEuro = 0;
+    for (final line in lines) {
+      sumAllCup += line.lineCup;
+      if (!line.isExcluded) {
+        sumEligibleCup += line.lineCup;
+        sumEligibleUsd += line.lineUsd;
+        sumEligibleEuro += line.lineEuro;
+      }
+    }
+
+    final excludedCount = lines.where((l) => l.isExcluded).length;
+
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 640, maxHeight: 720),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 8, 8),
+              child: Row(
+                children: [
+                  const Icon(Icons.receipt_long, color: AppColors.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Orden #${order['id']}',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        Text(
+                          '${order['created_at'] ?? ''} • ${order['metodo_pago'] ?? '—'} • ${(order['moneda'] as String? ?? 'CUP').toUpperCase()}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _chip('Total orden CUP', moneyFmt.format(orderTotal)),
+                  _chip('Total orden USD', moneyFmt.format(orderUsd)),
+                  _chip('Total orden EUR', moneyFmt.format(orderEuro)),
+                  _chip(
+                    'Acumula CUP',
+                    moneyFmt.format(sumEligibleCup),
+                    highlight: true,
+                  ),
+                  if (excludedCount > 0)
+                    _chip(
+                      'Excluidos',
+                      '$excludedCount producto(s)',
+                      warning: true,
+                    ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: lines.isEmpty
+                  ? const Center(child: Text('Sin líneas de producto.'))
+                  : ListView.separated(
+                      padding: const EdgeInsets.all(12),
+                      itemCount: lines.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (context, index) {
+                        final line = lines[index];
+                        return _buildLineCard(line);
+                      },
+                    ),
+            ),
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Suma líneas: ${moneyFmt.format(sumAllCup)} CUP'
+                      '${excludedCount > 0 ? '  |  Comisionable: ${moneyFmt.format(sumEligibleCup)} CUP / ${moneyFmt.format(sumEligibleUsd)} USD / ${moneyFmt.format(sumEligibleEuro)} EUR' : ''}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Cerrar'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _chip(String label, String value,
+      {bool highlight = false, bool warning = false}) {
+    final color = warning
+        ? AppColors.warning
+        : highlight
+            ? AppColors.primary
+            : AppColors.textSecondary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.25)),
+      ),
+      child: Text(
+        '$label: $value',
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: color,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLineCard(ReferralOrderLine line) {
+    final muted = line.isExcluded;
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: muted
+            ? AppColors.warning.withOpacity(0.06)
+            : AppColors.surfaceVariant,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: muted
+              ? AppColors.warning.withOpacity(0.35)
+              : AppColors.info.withOpacity(0.2),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  line.productName,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: muted
+                        ? AppColors.textSecondary
+                        : AppColors.textPrimary,
+                    decoration:
+                        muted ? TextDecoration.lineThrough : null,
+                  ),
+                ),
+              ),
+              if (line.isExcluded)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppColors.warning.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Text(
+                    'Excluido',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.warning,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Cant: ${line.quantity % 1 == 0 ? line.quantity.toInt() : line.quantity}'
+            '  •  P.unit CUP ${moneyFmt.format(line.unitPriceCup)}'
+            '${line.extra > 0 ? '  •  Extra ${moneyFmt.format(line.extra)}' : ''}',
+            style: const TextStyle(
+              fontSize: 11,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              _lineAmt('CUP', line.lineCup, muted),
+              const SizedBox(width: 8),
+              _lineAmt('USD', line.lineUsd, muted),
+              const SizedBox(width: 8),
+              _lineAmt('EUR', line.lineEuro, muted),
+              if (muted) ...[
+                const Spacer(),
+                const Text(
+                  'No acumula',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.warning,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _lineAmt(String label, double value, bool muted) {
+    return Text(
+      '$label ${moneyFmt.format(value)}',
+      style: TextStyle(
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        color: muted ? AppColors.textSecondary : AppColors.textPrimary,
+        decoration: muted ? TextDecoration.lineThrough : null,
+      ),
+    );
+  }
+}
+
+class _ExclusionsDialog extends StatefulWidget {
+  final Future<void> Function() onChanged;
+
+  const _ExclusionsDialog({required this.onChanged});
+
+  @override
+  State<_ExclusionsDialog> createState() => _ExclusionsDialogState();
+}
+
+class _ExclusionsDialogState extends State<_ExclusionsDialog> {
+  final TextEditingController _searchCtrl = TextEditingController();
+  bool _loading = true;
+  bool _searching = false;
+  bool _busy = false;
+  List<Map<String, dynamic>> _excluded = [];
+  List<Map<String, dynamic>> _searchResults = [];
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final rows = await ReferralPaymentsService.getExcludedProducts();
+      if (mounted) {
+        setState(() {
+          _excluded = rows;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error =
+              'No se pudo cargar. ¿Aplicaste sql_updates/referral_excluded_products.sql?\n$e';
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _search() async {
+    setState(() => _searching = true);
+    try {
+      final rows =
+          await ReferralPaymentsService.searchProducts(_searchCtrl.text);
+      final excludedIds =
+          _excluded.map((e) => (e['product_id'] as num).toInt()).toSet();
+      if (mounted) {
+        setState(() {
+          _searchResults = rows
+              .where((p) => !excludedIds.contains((p['id'] as num).toInt()))
+              .toList();
+          _searching = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _searching = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error buscando: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _add(int productId) async {
+    setState(() => _busy = true);
+    try {
+      await ReferralPaymentsService.addExcludedProduct(productId);
+      await _load();
+      await widget.onChanged();
+      if (mounted) {
+        setState(() {
+          _searchResults =
+              _searchResults.where((p) => (p['id'] as num).toInt() != productId).toList();
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al excluir: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _remove(int productId) async {
+    setState(() => _busy = true);
+    try {
+      await ReferralPaymentsService.removeExcludedProduct(productId);
+      await _load();
+      await widget.onChanged();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al quitar exclusión: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 560, maxHeight: 680),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 8, 8),
+              child: Row(
+                children: [
+                  const Icon(Icons.block, color: AppColors.warning),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Productos excluidos del pago a referidos',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                'Estos productos no acumulan para la comisión. Siguen apareciendo en el detalle de la orden marcados como excluidos.',
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _searchCtrl,
+                      decoration: InputDecoration(
+                        isDense: true,
+                        hintText: 'Buscar producto para excluir…',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        prefixIcon: const Icon(Icons.search, size: 18),
+                      ),
+                      onSubmitted: (_) => _search(),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: _busy || _searching ? null : _search,
+                    child: _searching
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Buscar'),
+                  ),
+                ],
+              ),
+            ),
+            if (_searchResults.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 140,
+                child: ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: _searchResults.length,
+                  itemBuilder: (context, index) {
+                    final p = _searchResults[index];
+                    final id = (p['id'] as num).toInt();
+                    return ListTile(
+                      dense: true,
+                      title: Text(p['name']?.toString() ?? 'Producto #$id'),
+                      subtitle: Text('ID $id'),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.add_circle_outline,
+                            color: AppColors.warning),
+                        tooltip: 'Excluir',
+                        onPressed: _busy ? null : () => _add(id),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+            const Divider(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                'Excluidos actuales (${_excluded.length})',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _error != null
+                      ? Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Text(
+                            _error!,
+                            style: const TextStyle(color: Colors.red),
+                          ),
+                        )
+                      : _excluded.isEmpty
+                          ? const Center(
+                              child: Text(
+                                'Ningún producto excluido.',
+                                style: TextStyle(color: AppColors.textSecondary),
+                              ),
+                            )
+                          : ListView.separated(
+                              padding: const EdgeInsets.all(12),
+                              itemCount: _excluded.length,
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(height: 4),
+                              itemBuilder: (context, index) {
+                                final row = _excluded[index];
+                                final id = (row['product_id'] as num).toInt();
+                                return ListTile(
+                                  dense: true,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                    side: BorderSide(
+                                      color: AppColors.warning.withOpacity(0.3),
+                                    ),
+                                  ),
+                                  title: Text(row['name']?.toString() ?? 'Producto #$id'),
+                                  subtitle: Text('ID $id'),
+                                  trailing: IconButton(
+                                    icon: const Icon(Icons.delete_outline,
+                                        color: Colors.red),
+                                    tooltip: 'Quitar exclusión',
+                                    onPressed: _busy ? null : () => _remove(id),
+                                  ),
+                                );
+                              },
+                            ),
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cerrar'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

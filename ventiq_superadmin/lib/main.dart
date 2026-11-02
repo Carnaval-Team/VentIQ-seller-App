@@ -19,6 +19,7 @@ import 'screens/licencias_screen.dart';
 import 'screens/renovaciones_screen.dart';
 import 'screens/configuracion_screen.dart';
 import 'screens/consignacion_screen.dart';
+import 'screens/fondo_inversion_screen.dart';
 import 'screens/carnaval_store_mapping_screen.dart';
 import 'screens/carnaval_inventtia_products_screen.dart';
 import 'screens/pago_proveedores_screen.dart';
@@ -53,6 +54,7 @@ import 'screens/flow_planes_screen.dart';
 import 'screens/flow_config_screen.dart';
 import 'screens/flow_categorias_screen.dart';
 import 'screens/versiones_screen.dart';
+import 'screens/costos_nomenclador_screen.dart';
 import 'widgets/route_guard.dart';
 import 'services/auth_service.dart';
 
@@ -142,6 +144,11 @@ class VentIQSuperAdminApp extends StatelessWidget {
             (context) => const RouteGuard(
               route: '/consignacion',
               child: ConsignacionScreen(),
+            ),
+        '/fondo-inversion':
+            (context) => const RouteGuard(
+              route: '/fondo-inversion',
+              child: FondoInversionScreen(),
             ),
         '/carnaval-tiendas':
             (context) => const RouteGuard(
@@ -314,6 +321,12 @@ class VentIQSuperAdminApp extends StatelessWidget {
         '/versiones':
             (context) =>
                 const RouteGuard(route: '/versiones', child: VersionesScreen()),
+        // Nomencladores globales de costo (tipos + naturalezas).
+        '/costos-nomenclador':
+            (context) => const RouteGuard(
+              route: '/costos-nomenclador',
+              child: CostosNomencladorScreen(),
+            ),
       },
     );
   }

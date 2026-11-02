@@ -418,6 +418,19 @@ class SupplierPaymentService {
     }
   }
 
+  /// Líneas con precio costo (misma lógica que pago a proveedores).
+  /// Usado también por pago a Inventtia / agentes.
+  static Future<List<Map<String, dynamic>>> getCostPaymentLines({
+    required DateTime fechaInicio,
+    required DateTime fechaFin,
+    int? proveedorId,
+  }) =>
+      _fetchPaymentLines(
+        fechaInicio: fechaInicio,
+        fechaFin: fechaFin,
+        proveedorId: proveedorId,
+      );
+
   /// Órdenes Carnaval creadas en el rango, excluyendo canceladas/devueltas
   /// (Carnaval status y estado actual Inventtia 3/4/5).
   static Future<List<Map<String, dynamic>>> _fetchPaymentLines({

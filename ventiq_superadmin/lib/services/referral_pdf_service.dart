@@ -362,9 +362,16 @@ class ReferralPdfService {
               ['ID', 'Fecha', 'Método/Moneda', 'Tipo', 'Status', 'Total CUP', 'Total USD', 'Total EUR'],
               ...orders.map((order) {
                 final isIntl = isInternationalOrder(order);
-                final total = (order['total'] as num?)?.toDouble() ?? 0;
-                final tUsd = (order['totalUsd'] as num?)?.toDouble() ?? 0;
-                final tEuro = (order['totalEuro'] as num?)?.toDouble() ?? 0;
+                // Usa importes comisionables (sin productos excluidos) si existen.
+                final total = (order['_eligible_total'] as num?)?.toDouble() ??
+                    (order['total'] as num?)?.toDouble() ??
+                    0;
+                final tUsd = (order['_eligible_totalUsd'] as num?)?.toDouble() ??
+                    (order['totalUsd'] as num?)?.toDouble() ??
+                    0;
+                final tEuro = (order['_eligible_totalEuro'] as num?)?.toDouble() ??
+                    (order['totalEuro'] as num?)?.toDouble() ??
+                    0;
                 final metodo = order['metodo_pago'] as String? ?? '—';
                 final moneda = (order['moneda'] as String? ?? 'CUP').toUpperCase();
                 final fecha = order['created_at']?.toString() ?? '';

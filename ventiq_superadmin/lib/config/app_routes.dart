@@ -200,6 +200,11 @@ class AppRoutes {
       label: 'Versiones de las apps',
       group: 'Aplicaciones',
     ),
+    AppRoute(
+      route: '/costos-nomenclador',
+      label: 'Nomencladores de costo',
+      group: 'Finanzas',
+    ),
     AppRoute(route: '/roles', label: 'Gestión de Roles', group: 'Sistema'),
     AppRoute(route: '/configuracion', label: 'Configuración', group: 'Sistema'),
   ];
