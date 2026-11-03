@@ -3,6 +3,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/user_preferences_service.dart';
 import '../services/turno_service.dart';
 import '../models/expense.dart';
+import '../theme/ventiq_home_theme.dart';
+import '../utils/navigation_helper.dart';
 import '../utils/price_utils.dart';
 
 class SalesMonitorFAB extends StatefulWidget {
@@ -16,6 +18,7 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
     with TickerProviderStateMixin {
   bool _isExpanded = false;
   bool _isLoading = false;
+  bool _isOfflineMode = false;
   Map<String, dynamic>? _currentSales;
   late AnimationController _animationController;
   late Animation<double> _expandAnimation;
@@ -61,7 +64,13 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
     setState(() {
       _isLoading = true;
     });
-    
+
+    try {
+      _isOfflineMode = await UserPreferencesService().isOfflineModeEnabled();
+    } catch (_) {
+      _isOfflineMode = false;
+    }
+
     await _loadExpenses();
     await _loadSalesData();
   }
@@ -69,25 +78,29 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
   Future<void> _loadSalesData() async {
     try {
       final userPrefs = UserPreferencesService();
-      
+
       // Verificar si el modo offline está activado
       final isOfflineModeEnabled = await userPrefs.isOfflineModeEnabled();
-      
+
       if (isOfflineModeEnabled) {
-        print('🔌 SalesMonitor - Modo offline activado, cargando desde cache...');
+        print(
+          '🔌 SalesMonitor - Modo offline activado, cargando desde cache...',
+        );
         await _loadSalesDataOffline();
         return;
       }
 
       // Modo online: cargar desde servidor
       print('🌐 SalesMonitor - Modo online, cargando desde servidor...');
-      
+
       final idTpv = await userPrefs.getIdTpv();
       final userID = await userPrefs.getUserId();
 
       if (idTpv != null) {
-        print('🧪 Loading sales data with fn_resumen_diario_cierre_v2 - TPV: $idTpv');
-        
+        print(
+          '🧪 Loading sales data with fn_resumen_diario_cierre_v2 - TPV: $idTpv',
+        );
+
         // FASE 3 presentaciones: v2. La original devolvia productos_vendidos
         // como integer y REDONDEABA (tres lineas de 0,5 kg daban 2). La v2 lo
         // devuelve numeric y agrega productos_vendidos_base (equivalente en
@@ -97,20 +110,25 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
           'fn_resumen_diario_cierre_v2',
           params: {'id_tpv_param': idTpv, 'id_usuario_param': userID},
         );
-        
+
         print('📈 Sales Monitor Response: $resumenCierreResponse');
         print('📈 Tipo de respuesta: ${resumenCierreResponse.runtimeType}');
-        
+
         if (resumenCierreResponse != null) {
           Map<String, dynamic> data;
-          
+
           // Manejar tanto List como Map de respuesta
-          if (resumenCierreResponse is List && resumenCierreResponse.isNotEmpty) {
+          if (resumenCierreResponse is List &&
+              resumenCierreResponse.isNotEmpty) {
             data = resumenCierreResponse[0] as Map<String, dynamic>;
-            print('📈 SalesMonitor datos extraídos de lista: ${data.keys.toList()}');
+            print(
+              '📈 SalesMonitor datos extraídos de lista: ${data.keys.toList()}',
+            );
           } else if (resumenCierreResponse is Map<String, dynamic>) {
             data = resumenCierreResponse;
-            print('📈 SalesMonitor datos recibidos como mapa: ${data.keys.toList()}');
+            print(
+              '📈 SalesMonitor datos recibidos como mapa: ${data.keys.toList()}',
+            );
           } else {
             print('⚠️ Formato de respuesta no reconocido en SalesMonitor');
             setState(() {
@@ -119,7 +137,7 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
             });
             return;
           }
-          
+
           setState(() {
             _currentSales = data;
             _isLoading = false;
@@ -148,32 +166,32 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
   Future<void> _loadSalesDataOffline() async {
     try {
       print('📱 SalesMonitor - Cargando datos desde cache offline...');
-      
+
       final userPrefs = UserPreferencesService();
-      
+
       // Obtener resumen de cierre actualizado con órdenes offline
       final resumenCierre = await userPrefs.getResumenCierreWithOfflineOrders();
-      
+
       if (resumenCierre != null) {
         print('✅ SalesMonitor - Resumen de cierre cargado desde cache offline');
         print('📊 Datos disponibles: ${resumenCierre.keys.toList()}');
-        
+
         setState(() {
           _currentSales = resumenCierre;
           _isLoading = false;
         });
-        
+
         print('💰 SalesMonitor - Datos cargados desde cache offline:');
         print('  - Ventas totales: \$${resumenCierre['ventas_totales']}');
         print('  - Productos vendidos: ${resumenCierre['productos_vendidos']}');
-        
+
         // Mostrar información de órdenes offline si las hay
-        if (resumenCierre['ordenes_offline'] != null && resumenCierre['ordenes_offline'] > 0) {
+        if (resumenCierre['ordenes_offline'] != null &&
+            resumenCierre['ordenes_offline'] > 0) {
           print('📱 SalesMonitor - Órdenes offline incluidas:');
           print('  - Órdenes offline: ${resumenCierre['ordenes_offline']}');
           print('  - Ventas offline: \$${resumenCierre['ventas_offline']}');
         }
-        
       } else {
         print('⚠️ SalesMonitor - No hay resumen de cierre en cache');
         setState(() {
@@ -181,7 +199,6 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
           _isLoading = false;
         });
       }
-      
     } catch (e) {
       print('❌ SalesMonitor - Error cargando datos offline: $e');
       setState(() {
@@ -194,17 +211,21 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
   Future<void> _loadExpenses() async {
     try {
       final userPrefs = UserPreferencesService();
-      
+
       // Verificar si el modo offline está activado
       final isOfflineModeEnabled = await userPrefs.isOfflineModeEnabled();
-      
+
       List<Expense> expenses = [];
-      
+
       if (isOfflineModeEnabled) {
-        print('🔌 SalesMonitor - Modo offline activado, cargando egresos desde cache...');
+        print(
+          '🔌 SalesMonitor - Modo offline activado, cargando egresos desde cache...',
+        );
         expenses = await _loadExpensesOffline();
       } else {
-        print('🌐 SalesMonitor - Modo online, obteniendo egresos desde servidor...');
+        print(
+          '🌐 SalesMonitor - Modo online, obteniendo egresos desde servidor...',
+        );
         expenses = await TurnoService.getEgresosEnriquecidos();
       }
 
@@ -244,31 +265,36 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
   Future<List<Expense>> _loadExpensesOffline() async {
     try {
       print('📱 SalesMonitor - Cargando egresos desde cache offline...');
-      
+
       final userPrefs = UserPreferencesService();
-      
+
       // Obtener egresos desde cache específico
       final egresosData = await userPrefs.getEgresosCache();
-      
+
       if (egresosData.isNotEmpty) {
-        final expenses = egresosData.map((expenseJson) {
-          return Expense(
-            idEgreso: expenseJson['id_egreso'] ?? 0,
-            montoEntrega: (expenseJson['monto_entrega'] ?? 0.0).toDouble(),
-            motivoEntrega: expenseJson['motivo_entrega'] ?? 'Sin motivo',
-            nombreRecibe: expenseJson['nombre_recibe'] ?? 'Sin nombre',
-            nombreAutoriza: expenseJson['nombre_autoriza'] ?? 'Sin autorización',
-            fechaEntrega: expenseJson['fecha_entrega'] != null 
-                ? DateTime.parse(expenseJson['fecha_entrega'])
-                : DateTime.now(),
-            idMedioPago: expenseJson['id_medio_pago'],
-            turnoEstado: expenseJson['turno_estado'] ?? 1,
-            medioPago: expenseJson['medio_pago'],
-            esDigital: expenseJson['es_digital'] ?? false,
-          );
-        }).toList();
-        
-        print('✅ SalesMonitor - Egresos cargados desde cache offline: ${expenses.length}');
+        final expenses =
+            egresosData.map((expenseJson) {
+              return Expense(
+                idEgreso: expenseJson['id_egreso'] ?? 0,
+                montoEntrega: (expenseJson['monto_entrega'] ?? 0.0).toDouble(),
+                motivoEntrega: expenseJson['motivo_entrega'] ?? 'Sin motivo',
+                nombreRecibe: expenseJson['nombre_recibe'] ?? 'Sin nombre',
+                nombreAutoriza:
+                    expenseJson['nombre_autoriza'] ?? 'Sin autorización',
+                fechaEntrega:
+                    expenseJson['fecha_entrega'] != null
+                        ? DateTime.parse(expenseJson['fecha_entrega'])
+                        : DateTime.now(),
+                idMedioPago: expenseJson['id_medio_pago'],
+                turnoEstado: expenseJson['turno_estado'] ?? 1,
+                medioPago: expenseJson['medio_pago'],
+                esDigital: expenseJson['es_digital'] ?? false,
+              );
+            }).toList();
+
+        print(
+          '✅ SalesMonitor - Egresos cargados desde cache offline: ${expenses.length}',
+        );
         return expenses;
       } else {
         print('ℹ️ SalesMonitor - No hay egresos en cache offline');
@@ -284,37 +310,117 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
   Widget build(BuildContext context) {
     return Stack(
       alignment: Alignment.bottomRight,
-      children: [
+      children: <Widget>[
         // Panel expandible
         AnimatedBuilder(
           animation: _expandAnimation,
-          builder: (context, child) {
+          builder: (BuildContext context, Widget? child) {
             return Transform.scale(
-              scale: _expandAnimation.value,
+              scale: _expandAnimation.value.clamp(0.0, 1.05),
               alignment: Alignment.bottomRight,
               child: Opacity(
-                opacity: _expandAnimation.value,
+                opacity: _expandAnimation.value.clamp(0.0, 1.0),
                 child:
                     _isExpanded ? _buildSalesPanel() : const SizedBox.shrink(),
               ),
             );
           },
         ),
-        // Botón flotante
-        FloatingActionButton(
-          heroTag: 'salesMonitorFab',
-          onPressed: _toggleExpansion,
-          backgroundColor: const Color(0xFF4A90E2),
-          child: AnimatedRotation(
-            turns: _isExpanded ? 0.125 : 0.0,
-            duration: const Duration(milliseconds: 300),
-            child: Icon(
-              _isExpanded ? Icons.close : Icons.trending_up,
-              color: Colors.white,
+        _buildBotonFlotante(),
+      ],
+    );
+  }
+
+  /// Botón «Mis ventas»: píldora con degradado de marca, etiqueta siempre
+  /// visible y, cuando ya hay datos cargados, el total del turno en un badge.
+  Widget _buildBotonFlotante() {
+    final double? total =
+        (_currentSales?['ventas_totales'] as num?)?.toDouble();
+
+    return Semantics(
+      button: true,
+      label: _isExpanded ? 'Cerrar Mis ventas' : 'Abrir Mis ventas',
+      child: Material(
+        color: Colors.transparent,
+        elevation: 6,
+        shadowColor: VentiqHomeTheme.primary.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(26),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(26),
+          onTap: _toggleExpansion,
+          child: Ink(
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: <Color>[
+                  VentiqHomeTheme.primaryLight,
+                  VentiqHomeTheme.primary,
+                ],
+              ),
+              borderRadius: BorderRadius.circular(26),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  AnimatedRotation(
+                    turns: _isExpanded ? 0.125 : 0.0,
+                    duration: const Duration(milliseconds: 260),
+                    child: Icon(
+                      _isExpanded
+                          ? Icons.close_rounded
+                          : Icons.insights_rounded,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _isExpanded ? 'Cerrar' : 'Mis ventas',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                  if (!_isExpanded && total != null) ...<Widget>[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.22),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        '\$${PriceUtils.formatAmount(total)}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
+                  if (!_isExpanded && _isOfflineMode) ...<Widget>[
+                    const SizedBox(width: 6),
+                    const Icon(
+                      Icons.cloud_off_rounded,
+                      color: Colors.white70,
+                      size: 15,
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
         ),
-      ],
+      ),
     );
   }
 
@@ -347,66 +453,136 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
 
   Widget _buildSalesPanel() {
     return Container(
-      margin: const EdgeInsets.only(right: 16, bottom: 80),
-      width: 320,
+      margin: const EdgeInsets.only(right: 16, bottom: 78),
+      width: 340,
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.15),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        color: VentiqHomeTheme.card,
+        borderRadius: BorderRadius.circular(VentiqHomeTheme.radiusBlock),
+        border: Border.all(color: VentiqHomeTheme.border),
+        boxShadow: VentiqHomeTheme.shadowBuscador,
       ),
+      clipBehavior: Clip.antiAlias,
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        children: [
-          // Header
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(
-              color: Color(0xFF4A90E2),
-              borderRadius: BorderRadius.only(
-                topLeft: Radius.circular(16),
-                topRight: Radius.circular(16),
+        children: <Widget>[
+          _buildPanelHeader(),
+          if (_isLoading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 40),
+              child: CircularProgressIndicator(
+                color: VentiqHomeTheme.primary,
+                strokeWidth: 2.6,
               ),
+            )
+          else
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              child: _buildSalesContent(),
             ),
-            child: Row(
-              children: [
-                const Icon(Icons.analytics, color: Colors.white, size: 24),
-                const SizedBox(width: 8),
+        ],
+      ),
+    );
+  }
+
+  /// Cabecera con degradado de marca: título, estado del turno, total grande y
+  /// refresco. El total vive aquí (no en una tarjeta) porque es el dato que el
+  /// vendedor quiere ver de un vistazo.
+  Widget _buildPanelHeader() {
+    final double total =
+        (_currentSales?['ventas_totales'] as num?)?.toDouble() ?? 0;
+    final int operaciones =
+        (_currentSales?['operaciones_totales'] as num?)?.toInt() ?? 0;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: VentiqHomeTheme.heroGradient,
+        ),
+      ),
+      child: Row(
+        children: <Widget>[
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.insights_rounded,
+              color: Colors.white,
+              size: 21,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
                 const Text(
-                  'Mis Ventas',
+                  'Mis ventas',
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
+                    fontSize: 15.5,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.2,
                   ),
                 ),
-                const Spacer(),
-                IconButton(
-                  onPressed: _loadSalesData,
-                  icon: const Icon(
-                    Icons.refresh,
-                    color: Colors.white,
-                    size: 20,
-                  ),
+                const SizedBox(height: 2),
+                Row(
+                  children: <Widget>[
+                    Icon(
+                      _isOfflineMode
+                          ? Icons.cloud_off_rounded
+                          : Icons.schedule_rounded,
+                      size: 12,
+                      color: Colors.white.withValues(alpha: 0.8),
+                    ),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        _isOfflineMode
+                            ? 'Offline · $operaciones operaciones'
+                            : 'Turno en curso · $operaciones operaciones',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.82),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
-
-          const Divider(height: 1),
-          // Contenido
-          if (_isLoading)
-            const Padding(
-              padding: EdgeInsets.all(32),
-              child: CircularProgressIndicator(color: Color(0xFF4A90E2)),
-            )
-          else
-            _buildSalesContent(),
+          if (_currentSales != null) ...<Widget>[
+            Text(
+              '\$${PriceUtils.formatAmount(total)}',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.4,
+              ),
+            ),
+            const SizedBox(width: 2),
+          ],
+          IconButton(
+            tooltip: 'Actualizar',
+            onPressed: _isLoading ? null : _loadDataSequentially,
+            icon: const Icon(
+              Icons.refresh_rounded,
+              color: Colors.white,
+              size: 19,
+            ),
+          ),
         ],
       ),
     );
@@ -414,125 +590,335 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
 
   Widget _buildSalesContent() {
     if (_currentSales == null) {
-      return const Padding(
-        padding: EdgeInsets.all(32),
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(20, 26, 20, 26),
         child: Column(
-          children: [
-            Icon(Icons.info_outline, color: Colors.grey, size: 48),
-            SizedBox(height: 8),
-            Text(
-              'No hay ventas registradas',
+          children: <Widget>[
+            Container(
+              width: 58,
+              height: 58,
+              decoration: BoxDecoration(
+                color: VentiqHomeTheme.surface,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.receipt_long_outlined,
+                color: VentiqHomeTheme.textSecondary.withValues(alpha: 0.7),
+                size: 28,
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Aún no hay ventas en este turno',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey, fontSize: 14),
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w800,
+                color: VentiqHomeTheme.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Cuando registres ventas verás aquí el resumen del turno.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.35,
+                color: VentiqHomeTheme.textSecondary,
+              ),
             ),
           ],
         ),
       );
     }
 
+    final Map<String, dynamic> ventas = _currentSales!;
+    final double total = (ventas['ventas_totales'] as num?)?.toDouble() ?? 0;
+    final int operaciones =
+        (ventas['operaciones_totales'] as num?)?.toInt() ?? 0;
+    final double ticketPromedio = operaciones > 0 ? total / operaciones : 0;
+    final double efectivoReal =
+        (ventas['efectivo_real'] as num?)?.toDouble() ?? 0;
+    final double efectivo = efectivoReal - _egresosEfectivo;
+    final double transferencia = total - efectivoReal + _egresosEfectivo;
+    final double egresosTotales = _egresosEfectivo + _egresosTransferencias;
+
     return Padding(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
       child: Column(
-        children: [
-          // Métricas principales
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
           Row(
-            children: [
+            children: <Widget>[
               Expanded(
                 child: _buildMetricCard(
                   'Operaciones',
-                  '${_currentSales!['operaciones_totales'] ?? 0}',
-                  Icons.shopping_cart,
-                  const Color(0xFF10B981),
+                  '$operaciones',
+                  Icons.receipt_long_rounded,
+                  VentiqHomeTheme.primary,
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
                 child: _buildMetricCard(
-                  'Total',
-                  '\$${PriceUtils.formatAmount(_currentSales!['ventas_totales'] ?? 0.0)}',
-                  Icons.attach_money,
-                  const Color(0xFF4A90E2),
+                  'Ticket promedio',
+                  '\$${PriceUtils.formatAmount(ticketPromedio)}',
+                  Icons.local_offer_rounded,
+                  VentiqHomeTheme.accent,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _buildPaymentBreakdown(efectivo, transferencia),
+          if (egresosTotales > 0) ...<Widget>[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: VentiqHomeTheme.danger.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: VentiqHomeTheme.danger.withValues(alpha: 0.18),
+                ),
+              ),
+              child: Row(
+                children: <Widget>[
+                  const Icon(
+                    Icons.south_west_rounded,
+                    size: 16,
+                    color: VentiqHomeTheme.danger,
+                  ),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Egresos del turno',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: VentiqHomeTheme.textPrimary,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    '\$${PriceUtils.formatAmount(egresosTotales)}',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: VentiqHomeTheme.danger,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          Row(
+            children: <Widget>[
+              const Icon(
+                Icons.inventory_2_outlined,
+                size: 15,
+                color: VentiqHomeTheme.textSecondary,
+              ),
+              const SizedBox(width: 6),
+              const Expanded(
+                child: Text(
+                  'Productos vendidos',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: VentiqHomeTheme.textPrimary,
+                  ),
+                ),
+              ),
+              Flexible(
+                child: Text(
+                  _textoProductosVendidos(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.right,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: VentiqHomeTheme.textSecondary,
+                  ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 12),
-          // Desglose por método de pago
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.grey[50],
-              borderRadius: BorderRadius.circular(8),
+          _buildAccionesRapidas(),
+        ],
+      ),
+    );
+  }
+
+  /// Desglose por medio de pago con barra proporcional: de un vistazo se ve si
+  /// el turno está cargado a efectivo o a transferencia.
+  Widget _buildPaymentBreakdown(double efectivo, double transferencia) {
+    final double totalMedios = efectivo.abs() + transferencia.abs();
+    final double fraccionEfectivo =
+        totalMedios > 0 ? efectivo.abs() / totalMedios : 0;
+    final double fraccionTransferencia =
+        totalMedios > 0 ? transferencia.abs() / totalMedios : 0;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: VentiqHomeTheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: VentiqHomeTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const Text(
+            'DESGLOSE POR PAGO',
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.2,
+              color: VentiqHomeTheme.textSecondary,
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Desglose por Pago',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF374151),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Efectivo:', style: TextStyle(fontSize: 13)),
-                    Text(
-                      '\$${PriceUtils.formatAmount((_currentSales!['efectivo_real'] ?? 0.0) - _egresosEfectivo)}',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: Color(0xFF10B981),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Transferencia:',
-                      style: TextStyle(fontSize: 13),
-                    ),
-                    Text(
-                      '\$${PriceUtils.formatAmount((_currentSales!['ventas_totales'] ?? 0.0) - (_currentSales!['efectivo_real'] ?? 0.0) + _egresosEfectivo)}',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: Color(0xFF4A90E2),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Productos:', style: TextStyle(fontSize: 13)),
-                    // FASE 3 presentaciones: se muestra el desglose que ya
-                    // formatea el SQL ("2 Cajas + 5 Unidades"); si no viene,
-                    // el equivalente en unidades base etiquetado como tal. El
-                    // FAB es estrecho, asi que no cabe el mixto Y el equiv.
-                    Text(
-                      _textoProductosVendidos(),
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: Color(0xFF6B7280),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+          ),
+          const SizedBox(height: 10),
+          _buildMedioPagoRow(
+            'Efectivo',
+            efectivo,
+            fraccionEfectivo,
+            VentiqHomeTheme.success,
+          ),
+          const SizedBox(height: 9),
+          _buildMedioPagoRow(
+            'Transferencia',
+            transferencia,
+            fraccionTransferencia,
+            VentiqHomeTheme.primary,
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildMedioPagoRow(
+    String etiqueta,
+    double monto,
+    double fraccion,
+    Color color,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                etiqueta,
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: VentiqHomeTheme.textPrimary,
+                ),
+              ),
+            ),
+            Text(
+              '\$${PriceUtils.formatAmount(monto)}',
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w800,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 5),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: LinearProgressIndicator(
+            value: fraccion.clamp(0.0, 1.0),
+            minHeight: 5,
+            backgroundColor: VentiqHomeTheme.border,
+            valueColor: AlwaysStoppedAnimation<Color>(color),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Atajos que convierten el panel en algo accionable: ver órdenes, ir al
+  /// carrito o cerrar la caja sin salir de la pantalla en la que está.
+  Widget _buildAccionesRapidas() {
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: () {
+              _cerrarPanel();
+              Navigator.pushNamed(context, '/orders');
+            },
+            icon: const Icon(Icons.receipt_long_rounded, size: 15),
+            label: const Text('Órdenes'),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+              textStyle: const TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: () {
+              _cerrarPanel();
+              NavigationHelper.goCarrito(context);
+            },
+            icon: const Icon(Icons.shopping_cart_outlined, size: 15),
+            label: const Text('Carrito'),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+              textStyle: const TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: FilledButton.icon(
+            onPressed: () {
+              _cerrarPanel();
+              Navigator.pushNamed(context, '/cierre');
+            },
+            icon: const Icon(Icons.point_of_sale_rounded, size: 15),
+            label: const Text('Cierre'),
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+              textStyle: const TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _cerrarPanel() {
+    if (!_isExpanded) return;
+    setState(() {
+      _isExpanded = false;
+    });
+    _animationController.reverse();
   }
 
   Widget _buildMetricCard(
@@ -544,23 +930,43 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.2)),
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
       ),
       child: Column(
-        children: [
-          Icon(icon, color: color, size: 24),
-          const SizedBox(height: 4),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(icon, color: color, size: 15),
+              const SizedBox(width: 5),
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: VentiqHomeTheme.textSecondary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
           Text(
             value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.3,
               color: color,
             ),
           ),
-          Text(title, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
         ],
       ),
     );

@@ -19,6 +19,9 @@ class Category {
   final int? categoriaTiendaId;
   final DateTime? categoriaTiendaCreatedAt;
   final bool visibleVendedor; // Si la categoría es visible para los vendedores
+  // Home del TPV: viven en `app_dat_categoria_tienda` (config por tienda).
+  final bool especial; // true = tarjeta destacada; false = se agrupa bajo "Tienda"
+  final int ordenHome; // orden de las especiales en el Home (menor primero)
 
   Category({
     required this.id,
@@ -41,6 +44,8 @@ class Category {
     this.categoriaTiendaId,
     this.categoriaTiendaCreatedAt,
     this.visibleVendedor = true,
+    this.especial = false,
+    this.ordenHome = 0,
   });
 
   factory Category.fromJson(Map<String, dynamic> json) {
@@ -67,6 +72,9 @@ class Category {
           ? DateTime.parse(json['categoria_tienda_created_at']) 
           : null,
       visibleVendedor: json['visible_vendedor'] ?? true,
+      especial: json['especial'] == true || json['especial'] == 1,
+      ordenHome:
+          json['orden_home'] is num ? (json['orden_home'] as num).toInt() : 0,
     );
   }
 
@@ -92,6 +100,8 @@ class Category {
       'categoria_tienda_id': categoriaTiendaId,
       'categoria_tienda_created_at': categoriaTiendaCreatedAt?.toIso8601String(),
       'visible_vendedor': visibleVendedor,
+      'especial': especial,
+      'orden_home': ordenHome,
     };
   }
 
@@ -116,6 +126,8 @@ class Category {
     int? categoriaTiendaId,
     DateTime? categoriaTiendaCreatedAt,
     bool? visibleVendedor,
+    bool? especial,
+    int? ordenHome,
   }) {
     return Category(
       id: id ?? this.id,
@@ -138,6 +150,8 @@ class Category {
       categoriaTiendaId: categoriaTiendaId ?? this.categoriaTiendaId,
       categoriaTiendaCreatedAt: categoriaTiendaCreatedAt ?? this.categoriaTiendaCreatedAt,
       visibleVendedor: visibleVendedor ?? this.visibleVendedor,
+      especial: especial ?? this.especial,
+      ordenHome: ordenHome ?? this.ordenHome,
     );
   }
 }

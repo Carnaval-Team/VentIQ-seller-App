@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../services/admin_inventory_service.dart';
@@ -7,6 +7,7 @@ import '../../services/user_preferences_service.dart';
 import '../../utils/presentacion_cadena_local.dart';
 import '../../utils/presentation_selection.dart';
 import '../../widgets/captura_mixta_presentacion.dart';
+import '../../theme/ventiq_home_theme.dart';
 
 /// Transferencia entre layouts/ubicaciones (offline-first).
 class AdminTransferScreen extends StatefulWidget {
@@ -120,9 +121,9 @@ class _AdminTransferScreenState extends State<AdminTransferScreen> {
 
     final qty = double.tryParse(_qtyCtrl.text.replaceAll(',', '.')) ?? 0;
     if (qty <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cantidad inválida')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Cantidad inválida')));
       return;
     }
 
@@ -184,16 +185,17 @@ class _AdminTransferScreenState extends State<AdminTransferScreen> {
       await _service.registerTransfer(
         idLayoutOrigen: _origenId!,
         idLayoutDestino: _destinoId!,
-        productos: _lines
-            .map(
-              (l) => {
-                'id_producto': l['id_producto'],
-                'id_variante': l['id_variante'],
-                'id_presentacion': l['id_presentacion'],
-                'cantidad': l['cantidad'],
-              },
-            )
-            .toList(),
+        productos:
+            _lines
+                .map(
+                  (l) => {
+                    'id_producto': l['id_producto'],
+                    'id_variante': l['id_variante'],
+                    'id_presentacion': l['id_presentacion'],
+                    'cantidad': l['cantidad'],
+                  },
+                )
+                .toList(),
         entregadoPor: _entregadoCtrl.text.trim(),
         transportadoPor: _transportadoCtrl.text.trim(),
         recibidoPor: _recibidoCtrl.text.trim(),
@@ -210,9 +212,9 @@ class _AdminTransferScreenState extends State<AdminTransferScreen> {
       );
       String layoutLabel(int? id) {
         final hit = _layouts.cast<Map<String, dynamic>?>().firstWhere(
-              (l) => (l?['id'] as num?)?.toInt() == id,
-              orElse: () => null,
-            );
+          (l) => (l?['id'] as num?)?.toInt() == id,
+          orElse: () => null,
+        );
         return hit?['label']?.toString() ??
             hit?['denominacion']?.toString() ??
             '$id';
@@ -253,20 +255,21 @@ class _AdminTransferScreenState extends State<AdminTransferScreen> {
         labelText: label,
         border: const OutlineInputBorder(),
       ),
-      items: _layouts
-          .map(
-            (l) => DropdownMenuItem<int>(
-              value: (l['id'] as num?)?.toInt(),
-              child: Text(
-                l['label']?.toString() ??
-                    l['denominacion']?.toString() ??
-                    '#${l['id']}',
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          )
-          .where((i) => i.value != null)
-          .toList(),
+      items:
+          _layouts
+              .map(
+                (l) => DropdownMenuItem<int>(
+                  value: (l['id'] as num?)?.toInt(),
+                  child: Text(
+                    l['label']?.toString() ??
+                        l['denominacion']?.toString() ??
+                        '#${l['id']}',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              )
+              .where((i) => i.value != null)
+              .toList(),
       onChanged: onChanged,
     );
   }
@@ -276,208 +279,218 @@ class _AdminTransferScreenState extends State<AdminTransferScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Transferencia'),
-        backgroundColor: Colors.blue[700],
+        backgroundColor: VentiqHomeTheme.primary,
         foregroundColor: Colors.white,
         actions: [
           IconButton(
             tooltip: 'Actualizar layouts',
-            onPressed: _loadingLayouts
-                ? null
-                : () async {
-                    setState(() => _loadingLayouts = true);
-                    await _service.syncLayoutsFromServer();
-                    await _bootstrap();
-                  },
+            onPressed:
+                _loadingLayouts
+                    ? null
+                    : () async {
+                      setState(() => _loadingLayouts = true);
+                      await _service.syncLayoutsFromServer();
+                      await _bootstrap();
+                    },
             icon: const Icon(Icons.sync),
           ),
         ],
       ),
-      body: _loadingLayouts
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                if (_layouts.isEmpty)
-                  Card(
-                    color: Colors.orange.shade50,
-                    child: const Padding(
-                      padding: EdgeInsets.all(12),
-                      child: Text(
-                        'No hay layouts en cache. Conéctate y pulsa sync '
-                        '(o Preparar dispositivo offline) para descargarlos.',
+      body:
+          _loadingLayouts
+              ? const Center(child: CircularProgressIndicator())
+              : ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  if (_layouts.isEmpty)
+                    Card(
+                      color: VentiqHomeTheme.warning.withValues(alpha: 0.08),
+                      child: const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: Text(
+                          'No hay layouts en cache. Conéctate y pulsa sync '
+                          '(o Preparar dispositivo offline) para descargarlos.',
+                        ),
                       ),
                     ),
+                  _layoutDropdown(
+                    label: 'Origen',
+                    value: _origenId,
+                    onChanged: (v) => setState(() => _origenId = v),
                   ),
-                _layoutDropdown(
-                  label: 'Origen',
-                  value: _origenId,
-                  onChanged: (v) => setState(() => _origenId = v),
-                ),
-                const SizedBox(height: 12),
-                _layoutDropdown(
-                  label: 'Destino',
-                  value: _destinoId,
-                  onChanged: (v) => setState(() => _destinoId = v),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _entregadoCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Entregado por',
-                    border: OutlineInputBorder(),
+                  const SizedBox(height: 12),
+                  _layoutDropdown(
+                    label: 'Destino',
+                    value: _destinoId,
+                    onChanged: (v) => setState(() => _destinoId = v),
                   ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _transportadoCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Transportado por',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _recibidoCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Recibido por',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _obsCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Observaciones',
-                    border: OutlineInputBorder(),
-                  ),
-                  maxLines: 2,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Productos',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _searchCtrl,
-                  decoration: InputDecoration(
-                    labelText: 'Buscar producto',
-                    border: const OutlineInputBorder(),
-                    suffixIcon: _searching
-                        ? const Padding(
-                            padding: EdgeInsets.all(12),
-                            child: SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          )
-                        : const Icon(Icons.search),
-                  ),
-                  onChanged: _search,
-                ),
-                if (_searchResults.isNotEmpty)
-                  ..._searchResults.map(
-                    (p) => ListTile(
-                      title: Text(p['denominacion']?.toString() ?? ''),
-                      subtitle: Text('Stock: ${p['cantidad'] ?? 0}'),
-                      onTap: () => setState(() {
-                        _selected = p;
-                        _lineasMixtas = [];
-                        _tieneCadena =
-                            PresentacionCadenaLocal.resolver(p).isNotEmpty;
-                        _searchCtrl.text =
-                            p['denominacion']?.toString() ?? '';
-                        _searchResults = [];
-                      }),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _entregadoCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Entregado por',
+                      border: OutlineInputBorder(),
                     ),
                   ),
-                if (_selected != null) ...[
-                  const SizedBox(height: 8),
-                  // FASE 2: un campo por presentacion. avisarRebalanceo porque
-                  // la extraccion del origen puede abrir un empaque.
-                  CapturaMixtaPresentacion(
-                    key: ValueKey('trf_${_selected!['id']}'),
-                    producto: _selected!,
-                    avisarRebalanceo: true,
-                    onChanged: (lineas) =>
-                        setState(() => _lineasMixtas = lineas),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _transportadoCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Transportado por',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
-                  if (!_tieneCadena) ...[
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _recibidoCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Recibido por',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _obsCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Observaciones',
+                      border: OutlineInputBorder(),
+                    ),
+                    maxLines: 2,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Productos',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _searchCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Buscar producto',
+                      border: const OutlineInputBorder(),
+                      suffixIcon:
+                          _searching
+                              ? const Padding(
+                                padding: EdgeInsets.all(12),
+                                child: SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                              )
+                              : const Icon(Icons.search),
+                    ),
+                    onChanged: _search,
+                  ),
+                  if (_searchResults.isNotEmpty)
+                    ..._searchResults.map(
+                      (p) => ListTile(
+                        title: Text(p['denominacion']?.toString() ?? ''),
+                        subtitle: Text('Stock: ${p['cantidad'] ?? 0}'),
+                        onTap:
+                            () => setState(() {
+                              _selected = p;
+                              _lineasMixtas = [];
+                              _tieneCadena =
+                                  PresentacionCadenaLocal.resolver(
+                                    p,
+                                  ).isNotEmpty;
+                              _searchCtrl.text =
+                                  p['denominacion']?.toString() ?? '';
+                              _searchResults = [];
+                            }),
+                      ),
+                    ),
+                  if (_selected != null) ...[
                     const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _qtyCtrl,
-                            decoration: const InputDecoration(
-                              labelText: 'Cantidad',
-                              border: OutlineInputBorder(),
-                            ),
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                            ),
-                            inputFormatters: [
-                              FilteringTextInputFormatter.allow(
-                                RegExp(r'[0-9.,]'),
+                    // FASE 2: un campo por presentacion. avisarRebalanceo porque
+                    // la extraccion del origen puede abrir un empaque.
+                    CapturaMixtaPresentacion(
+                      key: ValueKey('trf_${_selected!['id']}'),
+                      producto: _selected!,
+                      avisarRebalanceo: true,
+                      onChanged:
+                          (lineas) => setState(() => _lineasMixtas = lineas),
+                    ),
+                    if (!_tieneCadena) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _qtyCtrl,
+                              decoration: const InputDecoration(
+                                labelText: 'Cantidad',
+                                border: OutlineInputBorder(),
                               ),
-                            ],
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              inputFormatters: [
+                                FilteringTextInputFormatter.allow(
+                                  RegExp(r'[0-9.,]'),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        FilledButton(
+                          const SizedBox(width: 8),
+                          FilledButton(
+                            onPressed: _addLine,
+                            child: const Text('Agregar'),
+                          ),
+                        ],
+                      ),
+                    ] else ...[
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
                           onPressed: _addLine,
                           child: const Text('Agregar'),
                         ),
-                      ],
-                    ),
-                  ] else ...[
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton(
-                        onPressed: _addLine,
-                        child: const Text('Agregar'),
                       ),
-                    ),
+                    ],
                   ],
-                ],
-                const SizedBox(height: 12),
-                ..._lines.asMap().entries.map((e) {
-                  final i = e.key;
-                  final l = e.value;
-                  final cant = (l['cantidad'] as num?)?.toDouble() ?? 0;
-                  final pres = l['presentacion_nombre']?.toString();
-                  return ListTile(
-                    title: Text(l['denominacion']?.toString() ?? 'Producto'),
-                    subtitle: Text(
-                      pres == null || pres.isEmpty
-                          ? 'Cantidad: ${FormatoPresentacion.cantidad(cant)}'
-                          : '${FormatoPresentacion.cantidad(cant)} '
-                              '${FormatoPresentacion.plural(pres, cant)}',
+                  const SizedBox(height: 12),
+                  ..._lines.asMap().entries.map((e) {
+                    final i = e.key;
+                    final l = e.value;
+                    final cant = (l['cantidad'] as num?)?.toDouble() ?? 0;
+                    final pres = l['presentacion_nombre']?.toString();
+                    return ListTile(
+                      title: Text(l['denominacion']?.toString() ?? 'Producto'),
+                      subtitle: Text(
+                        pres == null || pres.isEmpty
+                            ? 'Cantidad: ${FormatoPresentacion.cantidad(cant)}'
+                            : '${FormatoPresentacion.cantidad(cant)} '
+                                '${FormatoPresentacion.plural(pres, cant)}',
+                      ),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.delete_outline),
+                        onPressed: () => setState(() => _lines.removeAt(i)),
+                      ),
+                    );
+                  }),
+                  const SizedBox(height: 24),
+                  FilledButton.icon(
+                    onPressed: _saving ? null : _save,
+                    icon:
+                        _saving
+                            ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                            : const Icon(Icons.swap_horiz),
+                    label: Text(
+                      _saving ? 'Guardando...' : 'Registrar transferencia',
                     ),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: () => setState(() => _lines.removeAt(i)),
-                    ),
-                  );
-                }),
-                const SizedBox(height: 24),
-                FilledButton.icon(
-                  onPressed: _saving ? null : _save,
-                  icon: _saving
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.swap_horiz),
-                  label: Text(
-                    _saving ? 'Guardando...' : 'Registrar transferencia',
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
     );
   }
 }

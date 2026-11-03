@@ -16,7 +16,6 @@ import 'screens/products_screen.dart';
 import 'screens/products_dashboard_screen.dart';
 import 'screens/product_detail_screen.dart';
 import 'screens/add_product_screen.dart';
-import 'screens/categories_screen.dart';
 import 'screens/inventory_screen.dart';
 import 'screens/sales_screen.dart';
 import 'screens/tpv_prices_screen.dart';
@@ -214,7 +213,10 @@ class MyApp extends StatelessWidget {
         '/products': (context) => const ProductsScreen(),
         '/precios-productos': (context) => const PreciosProductosScreen(),
         '/products-dashboard': (context) => const ProductsDashboardScreen(),
-        '/categories': (context) => const CategoriesScreen(),
+        // La ruta vieja apuntaba a una pantalla mock. La gestión real de
+        // categorías (especial/orden_home/contador) vive en Ajustes →
+        // Categorías, así que /categories la abre directamente.
+        '/categories': (context) => const SettingsScreen(),
         '/inventory': (context) => const InventoryScreen(),
         '/sales': (context) => const SalesScreen(),
         '/tpv-prices': (context) => const TpvPricesScreen(),

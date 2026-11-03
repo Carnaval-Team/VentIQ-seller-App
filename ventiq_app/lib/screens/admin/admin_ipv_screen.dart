@@ -1,8 +1,9 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../services/admin_inventory_service.dart';
 import '../../services/admin_ticket_printer_service.dart';
+import '../../theme/ventiq_home_theme.dart';
 
 /// Inventario físico / IPV lite desde cache local (conteo y exportación texto).
 class AdminIpvScreen extends StatefulWidget {
@@ -51,14 +52,15 @@ class _AdminIpvScreenState extends State<AdminIpvScreen> {
   void _applyFilter() {
     final q = _searchCtrl.text.trim().toLowerCase();
     setState(() {
-      _filtered = _all.where((p) {
-        final qty = (p['cantidad'] as num?)?.toDouble() ?? 0;
-        if (!_includeZero && qty <= 0) return false;
-        if (q.isEmpty) return true;
-        final name = p['denominacion']?.toString().toLowerCase() ?? '';
-        final sku = p['sku']?.toString().toLowerCase() ?? '';
-        return name.contains(q) || sku.contains(q);
-      }).toList();
+      _filtered =
+          _all.where((p) {
+            final qty = (p['cantidad'] as num?)?.toDouble() ?? 0;
+            if (!_includeZero && qty <= 0) return false;
+            if (q.isEmpty) return true;
+            final name = p['denominacion']?.toString().toLowerCase() ?? '';
+            final sku = p['sku']?.toString().toLowerCase() ?? '';
+            return name.contains(q) || sku.contains(q);
+          }).toList();
     });
   }
 
@@ -75,16 +77,19 @@ class _AdminIpvScreenState extends State<AdminIpvScreen> {
       final inv = detalles['inventario'];
       if (inv is List && inv.isNotEmpty && inv.first is Map) {
         final first = Map<String, dynamic>.from(inv.first as Map);
-        final alm = first['almacen_nombre']?.toString() ??
+        final alm =
+            first['almacen_nombre']?.toString() ??
             ((first['ubicacion'] is Map
-                    ? (first['ubicacion'] as Map)['almacen']
-                    : null)
-                is Map
-                ? ((first['ubicacion'] as Map)['almacen'] as Map)['denominacion']
+                        ? (first['ubicacion'] as Map)['almacen']
+                        : null)
+                    is Map
+                ? ((first['ubicacion'] as Map)['almacen']
+                        as Map)['denominacion']
                     ?.toString()
                 : null) ??
             '';
-        final ubi = first['ubicacion_nombre']?.toString() ??
+        final ubi =
+            first['ubicacion_nombre']?.toString() ??
             first['denominacion_ubicacion']?.toString() ??
             first['ubicacion_label']?.toString() ??
             (first['ubicacion'] is Map
@@ -130,14 +135,15 @@ class _AdminIpvScreenState extends State<AdminIpvScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('IPV / Inventario'),
-        backgroundColor: Colors.blue[700],
+        backgroundColor: VentiqHomeTheme.primary,
         foregroundColor: Colors.white,
         actions: [
           IconButton(
             tooltip: 'Imprimir',
-            onPressed: _filtered.isEmpty
-                ? null
-                : () => AdminTicketPrinterService().confirmAndPrint(
+            onPressed:
+                _filtered.isEmpty
+                    ? null
+                    : () => AdminTicketPrinterService().confirmAndPrint(
                       context,
                       title: 'IPV / Inventario',
                       lines: AdminTicketPrinterService.ipvLines(_filtered),
@@ -155,85 +161,92 @@ class _AdminIpvScreenState extends State<AdminIpvScreen> {
           ),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-                  child: TextField(
-                    controller: _searchCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Buscar producto',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.search),
-                    ),
-                    onChanged: (_) => _applyFilter(),
-                  ),
-                ),
-                SwitchListTile(
-                  title: const Text('Incluir stock 0'),
-                  value: _includeZero,
-                  onChanged: (v) {
-                    setState(() => _includeZero = v);
-                    _applyFilter();
-                  },
-                ),
-                Material(
-                  color: Colors.blue.shade50,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 10,
-                    ),
-                    child: Row(
-                      children: [
-                        Text(
-                          '${_filtered.length} ítems',
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                        const Spacer(),
-                        Text('Qty total: ${totalQty.toStringAsFixed(2)}'),
-                      ],
+      body:
+          _loading
+              ? const Center(child: CircularProgressIndicator())
+              : Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                    child: TextField(
+                      controller: _searchCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Buscar producto',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.search),
+                      ),
+                      onChanged: (_) => _applyFilter(),
                     ),
                   ),
-                ),
-                Expanded(
-                  child: _filtered.isEmpty
-                      ? Center(
-                          child: Text(
-                            'Sin productos para mostrar',
-                            style: TextStyle(color: Colors.grey[600]),
+                  SwitchListTile(
+                    title: const Text('Incluir stock 0'),
+                    value: _includeZero,
+                    onChanged: (v) {
+                      setState(() => _includeZero = v);
+                      _applyFilter();
+                    },
+                  ),
+                  Material(
+                    color: VentiqHomeTheme.primary.withValues(alpha: 0.08),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
+                      child: Row(
+                        children: [
+                          Text(
+                            '${_filtered.length} ítems',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
                           ),
-                        )
-                      : ListView.separated(
-                          itemCount: _filtered.length,
-                          separatorBuilder: (_, __) => const Divider(height: 1),
-                          itemBuilder: (context, i) {
-                            final p = _filtered[i];
-                            final ubi = _ubicacionOf(p);
-                            return ListTile(
-                              dense: true,
-                              title: Text(p['denominacion']?.toString() ?? ''),
-                              subtitle: Text(
-                                [
-                                  if (p['sku'] != null) 'SKU ${p['sku']}',
-                                  if (ubi.isNotEmpty) ubi,
-                                ].join(' · '),
-                              ),
-                              trailing: Text(
-                                '${p['cantidad'] ?? 0}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 16,
+                          const Spacer(),
+                          Text('Qty total: ${totalQty.toStringAsFixed(2)}'),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child:
+                        _filtered.isEmpty
+                            ? Center(
+                              child: Text(
+                                'Sin productos para mostrar',
+                                style: TextStyle(
+                                  color: VentiqHomeTheme.textSecondary,
                                 ),
                               ),
-                            );
-                          },
-                        ),
-                ),
-              ],
-            ),
+                            )
+                            : ListView.separated(
+                              itemCount: _filtered.length,
+                              separatorBuilder:
+                                  (_, __) => const Divider(height: 1),
+                              itemBuilder: (context, i) {
+                                final p = _filtered[i];
+                                final ubi = _ubicacionOf(p);
+                                return ListTile(
+                                  dense: true,
+                                  title: Text(
+                                    p['denominacion']?.toString() ?? '',
+                                  ),
+                                  subtitle: Text(
+                                    [
+                                      if (p['sku'] != null) 'SKU ${p['sku']}',
+                                      if (ubi.isNotEmpty) ubi,
+                                    ].join(' · '),
+                                  ),
+                                  trailing: Text(
+                                    '${p['cantidad'] ?? 0}',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                  ),
+                ],
+              ),
     );
   }
 }

@@ -11,6 +11,7 @@ import 'home_seccion_titulo.dart';
 import 'tarjeta_exploracion.dart';
 import 'tienda_card.dart';
 import 'ventiq_skeleton.dart';
+import '../../tutorial/tutorial_anchor.dart';
 
 /// El contenido del Home, **sin `Scaffold` y sin servicios**.
 ///
@@ -36,6 +37,8 @@ class HomeCatalogoView extends StatelessWidget {
     this.acciones = const <Widget>[],
     this.buscador,
     this.chips,
+    this.rieles = const <Widget>[],
+    this.nombreTienda = 'Tienda',
     this.contenidoAlternativo,
   });
 
@@ -54,6 +57,14 @@ class HomeCatalogoView extends StatelessWidget {
   final Widget? buscador;
 
   final Widget? chips;
+
+  /// Rieles extra («Ofertas», «Más vendidos»). El armazón los pinta después de
+  /// la rejilla de destacadas y antes de la tarjeta «Tienda».
+  final List<Widget> rieles;
+
+  /// Nombre de la tienda para la tarjeta de agrupación (D2). Por defecto,
+  /// «Tienda»; el armazón lo resuelve de `app_dat_tienda`.
+  final String nombreTienda;
 
   /// Lo que se pinta en vez del catálogo cuando hay una búsqueda activa.
   final Widget? contenidoAlternativo;
@@ -89,6 +100,14 @@ class HomeCatalogoView extends StatelessWidget {
           SliverToBoxAdapter(child: contenidoAlternativo)
         else ...<Widget>[
           if (chips != null) SliverToBoxAdapter(child: chips),
+          // Rieles de productos justo debajo de los chips: «Ofertas» y «Más
+          // vendidos» son lo más accionable del Home y tienen que verse sin
+          // bajar por la rejilla de categorías.
+          if (rieles.isNotEmpty) ...<Widget>[
+            const SliverToBoxAdapter(child: SizedBox(height: 14)),
+            SliverToBoxAdapter(child: Column(children: rieles)),
+            const SliverToBoxAdapter(child: SizedBox(height: 8)),
+          ],
           ..._sliversCatalogo(context),
         ],
         const SliverToBoxAdapter(child: SizedBox(height: 28)),
@@ -109,9 +128,7 @@ class HomeCatalogoView extends StatelessWidget {
 
       case HomeEstado.error:
         return <Widget>[
-          SliverToBoxAdapter(
-            child: HomeEstadoError(onReintentar: onRefrescar),
-          ),
+          SliverToBoxAdapter(child: HomeEstadoError(onReintentar: onRefrescar)),
         ];
 
       case HomeEstado.listo:
@@ -152,10 +169,13 @@ class HomeCatalogoView extends StatelessWidget {
     return <Widget>[
       const SliverToBoxAdapter(child: SizedBox(height: 16)),
       SliverToBoxAdapter(
-        child: HomeSeccionTitulo(
-          rotulo: categoriasSueltas ? 'CATEGORÍAS' : 'DESTACADAS',
-          accionEtiqueta: hayTiendaAgrupada ? 'Ver tienda ›' : null,
-          onAccion: hayTiendaAgrupada ? onTapTienda : null,
+        child: TutorialAnchor(
+          id: 'home_categorias',
+          child: HomeSeccionTitulo(
+            rotulo: categoriasSueltas ? 'CATEGORÍAS' : 'DESTACADAS',
+            accionEtiqueta: hayTiendaAgrupada ? 'Ver tienda ›' : null,
+            onAccion: hayTiendaAgrupada ? onTapTienda : null,
+          ),
         ),
       ),
       const SliverToBoxAdapter(child: SizedBox(height: 12)),
@@ -171,33 +191,31 @@ class HomeCatalogoView extends StatelessWidget {
               crossAxisSpacing: VentiqHomeTheme.gridSpacing,
               mainAxisExtent: alto,
             ),
-            delegate: SliverChildBuilderDelegate(
-              (BuildContext context, int i) {
-                final HomeCategoria c = tarjetas[i];
-                return TarjetaExploracion(
-                  chip: chipDeCategoria(c),
-                  titulo: c.nombre,
-                  subtitulo: subtituloDeCategoria(c),
-                  icono: iconoCategoria(c.nombre),
-                  colores: gradienteCategoria(c.id),
-                  // La foto de la categoría (`app_dat_categoria.image`) manda
-                  // cuando existe: la tarjeta la usa de fondo con velo. Si no
-                  // hay foto, queda el degradado. Vale para las dos ramas
-                  // (destacadas y categorías sueltas).
-                  imagenUrl: c.imagen,
-                  onTap: () => onTapCategoria(c),
-                  accionEtiqueta: 'Ver todos',
-                  onAccion: () => onAbrirListado(c),
-                );
-              },
-              childCount: tarjetas.length,
-            ),
+            delegate: SliverChildBuilderDelegate((BuildContext context, int i) {
+              final HomeCategoria c = tarjetas[i];
+              return TarjetaExploracion(
+                chip: chipDeCategoria(c),
+                titulo: c.nombre,
+                subtitulo: subtituloDeCategoria(c),
+                icono: iconoCategoria(c.nombre),
+                colores: gradienteCategoria(c.id),
+                // La foto de la categoría (`app_dat_categoria.image`) manda
+                // cuando existe: la tarjeta la usa de fondo con velo. Si no
+                // hay foto, queda el degradado. Vale para las dos ramas
+                // (destacadas y categorías sueltas).
+                imagenUrl: c.imagen,
+                onTap: () => onTapCategoria(c),
+                accionEtiqueta: 'Ver todos',
+                onAccion: () => onAbrirListado(c),
+              );
+            }, childCount: tarjetas.length),
           ),
         ),
       if (hayTiendaAgrupada) ...<Widget>[
         const SliverToBoxAdapter(child: SizedBox(height: 14)),
         SliverToBoxAdapter(
           child: TiendaCard(
+            nombre: nombreTienda,
             categorias: catalogo.tienda.length,
             productos: catalogo.tienda.fold<int>(
               0,

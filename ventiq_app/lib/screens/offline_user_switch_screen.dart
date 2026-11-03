@@ -1,8 +1,9 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import '../services/auth_service.dart';
 import '../services/device_offline_prep_service.dart';
 import '../services/user_preferences_service.dart';
+import '../theme/ventiq_home_theme.dart';
 
 /// Selector local de usuario cuando el dispositivo está en full offline.
 /// No llama al servidor para login ni para cambiar entre admin/vendedor.
@@ -43,7 +44,8 @@ class _OfflineUserSwitchScreenState extends State<OfflineUserSwitchScreen> {
       _error = null;
     });
     try {
-      final storeId = await _prefs.getDeviceFullOfflineStoreId() ??
+      final storeId =
+          await _prefs.getDeviceFullOfflineStoreId() ??
           await _prefs.getOfflineInventoryStoreId();
       if (storeId == null) {
         setState(() {
@@ -89,28 +91,29 @@ class _OfflineUserSwitchScreenState extends State<OfflineUserSwitchScreen> {
     final hasUnsynced = await _prefs.hasUnsyncedOfflineData();
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Salir del dispositivo'),
-        content: Text(
-          hasUnsynced
-              ? 'Hay datos sin sincronizar. Al salir se cierra la sesión '
-                  'del servidor y se desactiva el modo full offline de este teléfono. '
-                  '¿Continuar?'
-              : 'Se cerrará la sesión del servidor y se desactivará el modo '
-                  'full offline en este dispositivo. El inventario local se conserva.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Salir del dispositivo'),
+            content: Text(
+              hasUnsynced
+                  ? 'Hay datos sin sincronizar. Al salir se cierra la sesión '
+                      'del servidor y se desactiva el modo full offline de este teléfono. '
+                      '¿Continuar?'
+                  : 'Se cerrará la sesión del servidor y se desactivará el modo '
+                      'full offline en este dispositivo. El inventario local se conserva.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: TextButton.styleFrom(foregroundColor: Colors.red),
+                child: const Text('Salir'),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Salir'),
-          ),
-        ],
-      ),
     );
     if (confirm != true) return;
 
@@ -128,7 +131,7 @@ class _OfflineUserSwitchScreenState extends State<OfflineUserSwitchScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Elegir usuario'),
-        backgroundColor: Colors.blue[700],
+        backgroundColor: VentiqHomeTheme.primary,
         foregroundColor: Colors.white,
         automaticallyImplyLeading: false,
         actions: [
@@ -141,100 +144,102 @@ class _OfflineUserSwitchScreenState extends State<OfflineUserSwitchScreen> {
           ),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Dispositivo en modo offline. Elige quién trabaja '
-                    '(sin conexión al servidor).',
-                    style: TextStyle(color: Colors.grey[700]),
-                  ),
-                  const SizedBox(height: 12),
-                  Expanded(
-                    child: _users.isEmpty
-                        ? Center(
-                            child: Text(
-                              _error ?? 'No hay usuarios offline registrados',
-                            ),
-                          )
-                        : ListView.separated(
-                            itemCount: _users.length,
-                            separatorBuilder: (_, __) =>
-                                const Divider(height: 1),
-                            itemBuilder: (context, i) {
-                              final u = _users[i];
-                              final email = u['email']?.toString() ?? '';
-                              final name =
-                                  '${u['nombres'] ?? ''} ${u['apellidos'] ?? ''}'
-                                      .trim();
-                              final role = u['entryRole']?.toString() ?? '';
-                              final selected =
-                                  _selected?['email']?.toString() == email;
-                              return ListTile(
-                                selected: selected,
-                                leading: CircleAvatar(
-                                  child: Icon(
-                                    role == 'vendedor'
-                                        ? Icons.point_of_sale
-                                        : Icons.admin_panel_settings,
-                                  ),
-                                ),
-                                title: Text(
-                                  name.isEmpty ? email : name,
-                                ),
-                                subtitle: Text('$email · $role'),
-                                onTap: () {
-                                  setState(() {
-                                    _selected = u;
-                                    _passwordCtrl.clear();
-                                    _error = null;
-                                  });
-                                },
-                              );
-                            },
-                          ),
-                  ),
-                  if (_selected != null) ...[
-                    TextField(
-                      controller: _passwordCtrl,
-                      obscureText: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Contraseña',
-                        border: OutlineInputBorder(),
-                      ),
-                      onSubmitted: (_) => _activate(),
+      body:
+          _loading
+              ? const Center(child: CircularProgressIndicator())
+              : Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'Dispositivo en modo offline. Elige quién trabaja '
+                      '(sin conexión al servidor).',
+                      style: TextStyle(color: VentiqHomeTheme.textSecondary),
                     ),
                     const SizedBox(height: 12),
-                    ElevatedButton(
-                      onPressed: _submitting ? null : _activate,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue[700],
-                        foregroundColor: Colors.white,
-                        minimumSize: const Size.fromHeight(48),
-                      ),
-                      child: _submitting
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
+                    Expanded(
+                      child:
+                          _users.isEmpty
+                              ? Center(
+                                child: Text(
+                                  _error ??
+                                      'No hay usuarios offline registrados',
+                                ),
+                              )
+                              : ListView.separated(
+                                itemCount: _users.length,
+                                separatorBuilder:
+                                    (_, __) => const Divider(height: 1),
+                                itemBuilder: (context, i) {
+                                  final u = _users[i];
+                                  final email = u['email']?.toString() ?? '';
+                                  final name =
+                                      '${u['nombres'] ?? ''} ${u['apellidos'] ?? ''}'
+                                          .trim();
+                                  final role = u['entryRole']?.toString() ?? '';
+                                  final selected =
+                                      _selected?['email']?.toString() == email;
+                                  return ListTile(
+                                    selected: selected,
+                                    leading: CircleAvatar(
+                                      child: Icon(
+                                        role == 'vendedor'
+                                            ? Icons.point_of_sale
+                                            : Icons.admin_panel_settings,
+                                      ),
+                                    ),
+                                    title: Text(name.isEmpty ? email : name),
+                                    subtitle: Text('$email · $role'),
+                                    onTap: () {
+                                      setState(() {
+                                        _selected = u;
+                                        _passwordCtrl.clear();
+                                        _error = null;
+                                      });
+                                    },
+                                  );
+                                },
                               ),
-                            )
-                          : const Text('Entrar'),
                     ),
+                    if (_selected != null) ...[
+                      TextField(
+                        controller: _passwordCtrl,
+                        obscureText: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Contraseña',
+                          border: OutlineInputBorder(),
+                        ),
+                        onSubmitted: (_) => _activate(),
+                      ),
+                      const SizedBox(height: 12),
+                      ElevatedButton(
+                        onPressed: _submitting ? null : _activate,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: VentiqHomeTheme.primary,
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size.fromHeight(48),
+                        ),
+                        child:
+                            _submitting
+                                ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                                : const Text('Entrar'),
+                      ),
+                    ],
+                    if (_error != null) ...[
+                      const SizedBox(height: 8),
+                      Text(_error!, style: const TextStyle(color: Colors.red)),
+                    ],
                   ],
-                  if (_error != null) ...[
-                    const SizedBox(height: 8),
-                    Text(_error!, style: const TextStyle(color: Colors.red)),
-                  ],
-                ],
+                ),
               ),
-            ),
     );
   }
 }

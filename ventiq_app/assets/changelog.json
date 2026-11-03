@@ -1,8 +1,85 @@
-{
-  "current_version": "2.8.0",
-  "build": 852,
+﻿{
+  "current_version": "2.9.0",
+  "build": 853,
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.9.0",
+      "date": "2026-11-03",
+      "title": "Un Home nuevo, ventas más rápidas y toda la app renovada",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Bienvenido al nuevo Home",
+          "description": "El inicio del TPV se rediseñó por completo: buscador siempre a la vista, tus categorías como tarjetas con foto y color, las destacadas que tú elijas y una tarjeta con el nombre de tu tienda. Todo pensado para vender más rápido."
+        },
+        {
+          "type": "feature",
+          "title": "Encuentra y vende en segundos",
+          "description": "Alta rápida desde el Home, la búsqueda o el listado: si un producto tiene una sola presentación y ubicación, eliges la cantidad sin entrar al detalle. Al añadir, decides si ir al carrito o seguir comprando."
+        },
+        {
+          "type": "feature",
+          "title": "El catálogo completo, a un toque",
+          "description": "Toca la pleca lateral y explora categorías, subcategorías y productos a pantalla completa, con migas de pan, gesto de atrás y búsqueda incluida. Como una app dentro de la app, pero más rápida."
+        },
+        {
+          "type": "feature",
+          "title": "Detalle de producto más claro",
+          "description": "Foto grande que se colapsa al desplazarte, controles de cantidad siempre a mano, ubicaciones plegadas y una vista de dos columnas en pantallas grandes. Todo lo importante, sin ruido."
+        },
+        {
+          "type": "feature",
+          "title": "Ofertas y Más vendidos en el inicio",
+          "description": "Dos rieles nuevos: las ofertas vigentes de tu tienda y lo que más vendes en tu caja. Se actualizan solos y también se pueden ver sin conexión."
+        },
+        {
+          "type": "feature",
+          "title": "Modo sin conexión de verdad",
+          "description": "El Home carga catálogo, categorías, subcategorías y productos desde la memoria del dispositivo. Aunque se caiga la red, puedes seguir consultando y vendiendo con los datos ya sincronizados."
+        },
+        {
+          "type": "feature",
+          "title": "Mis ventas: tu resumen del turno",
+          "description": "El botón flotante muestra el total en vivo y abre un resumen con operaciones, ticket promedio, desglose por forma de pago, egresos y accesos directos a órdenes, carrito y cierre de caja."
+        },
+        {
+          "type": "improvement",
+          "title": "Mesas más fáciles de leer",
+          "description": "Cabecera compacta con anillo de ocupación animado y tarjetas de mesa con color por estado. Se gana espacio para ver más mesas de un vistazo."
+        },
+        {
+          "type": "improvement",
+          "title": "Notificaciones que se entienden",
+          "description": "Tarjetas nuevas con tipo, hora, prioridad y contenido expandible; filtro de no leídas para ir directo a lo importante y deslizar para eliminar."
+        },
+        {
+          "type": "improvement",
+          "title": "Toda la app habla el mismo idioma visual",
+          "description": "Home, detalle de producto, preorden, órdenes, ajustes, caja, admin y el resto de pantallas comparten los mismos colores, tarjetas y botones. Se siente más profesional y es más fácil de usar."
+        },
+        {
+          "type": "improvement",
+          "title": "Más rápido al abrir productos",
+          "description": "El detalle recuerda lo que ya cargaste durante unos segundos, así volver a abrir el mismo producto es instantáneo y se piden menos datos al servidor."
+        },
+        {
+          "type": "feature",
+          "title": "Admin: categorías a tu manera",
+          "description": "Marca categorías como especiales, ordénalas como quieras y mira cuántos productos vendibles tiene cada una. El Home del TPV se adapta a lo que decidas."
+        },
+        {
+          "type": "fix",
+          "title": "Precios de elaborados y contadores siempre correctos",
+          "description": "La venta de elaborados descuenta los ingredientes de la receta y los contadores del Home coinciden exactamente con los productos que ves en cada categoría."
+        },
+        {
+          "type": "fix",
+          "title": "Correcciones que se notan",
+          "description": "Arreglado el enlace de categorías al dar de alta un producto, los nombres de subcategorías se muestran de forma coherente y la versión que se guarda al mostrar las novedades ya es la real."
+        }
+      ]
+    },
     {
       "version": "2.8.0",
       "date": "2026-10-27",

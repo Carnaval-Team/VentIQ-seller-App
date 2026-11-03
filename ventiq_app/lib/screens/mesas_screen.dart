@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/mesa.dart';
 import '../services/mesa_cuenta_service.dart';
+import '../theme/ventiq_home_theme.dart';
 import '../services/mesa_service.dart';
 import '../services/order_service.dart';
 import '../services/sales_mode_service.dart';
@@ -10,6 +11,8 @@ import '../utils/navigation_helper.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/mesa_form_dialog.dart';
+import '../tutorial/tutorial_anchor.dart';
+import '../tutorial/tutorial_flujos.dart';
 
 /// Pantalla principal del modo restaurante: grilla de mesas + métricas globales.
 ///
@@ -54,6 +57,9 @@ class _MesasScreenState extends State<MesasScreen> with WidgetsBindingObserver {
     });
     _loadAll();
     _startPolling();
+    // Un usuario de restaurante puede caer directo aquí tras el login: el
+    // tutorial también arranca desde esta pantalla (una sola vez por modo).
+    unawaited(TutorialAutoStart.intentar(context, restaurante: true));
   }
 
   @override
@@ -148,7 +154,7 @@ class _MesasScreenState extends State<MesasScreen> with WidgetsBindingObserver {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('✅ Mesa creada'),
-          backgroundColor: Colors.green,
+          backgroundColor: VentiqHomeTheme.success,
           duration: Duration(seconds: 2),
         ),
       );
@@ -166,7 +172,7 @@ class _MesasScreenState extends State<MesasScreen> with WidgetsBindingObserver {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('✅ Mesa actualizada'),
-          backgroundColor: Colors.green,
+          backgroundColor: VentiqHomeTheme.success,
           duration: Duration(seconds: 2),
         ),
       );
@@ -198,7 +204,9 @@ class _MesasScreenState extends State<MesasScreen> with WidgetsBindingObserver {
               if (!hasOpenOrders)
                 TextButton(
                   onPressed: () => Navigator.pop(ctx, true),
-                  style: TextButton.styleFrom(foregroundColor: Colors.red),
+                  style: TextButton.styleFrom(
+                    foregroundColor: VentiqHomeTheme.danger,
+                  ),
                   child: const Text('Eliminar'),
                 ),
             ],
@@ -216,7 +224,8 @@ class _MesasScreenState extends State<MesasScreen> with WidgetsBindingObserver {
                   ? '🗑️ Mesa eliminada'
                   : '⚠️ Mesa marcada como inactiva (tiene histórico)',
             ),
-            backgroundColor: hardDeleted ? Colors.green : Colors.orange,
+            backgroundColor:
+                hardDeleted ? VentiqHomeTheme.success : VentiqHomeTheme.warning,
           ),
         );
         _loadAll();
@@ -236,68 +245,120 @@ class _MesasScreenState extends State<MesasScreen> with WidgetsBindingObserver {
       builder:
           (ctx) => Container(
             decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              color: VentiqHomeTheme.card,
+              borderRadius: BorderRadius.vertical(
+                top: Radius.circular(VentiqHomeTheme.radiusBlock),
+              ),
             ),
-            padding: const EdgeInsets.all(8),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.symmetric(vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(2),
+            child: SafeArea(
+              top: false,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      color: VentiqHomeTheme.border,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.edit, color: Color(0xFF4A90E2)),
-                  title: Text('Editar "${mesa.numero}"'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _openEditDialog(mesa);
-                  },
-                ),
-                ListTile(
-                  leading: Icon(
-                    mesa.activa ? Icons.visibility_off : Icons.visibility,
-                    color: Colors.orange,
-                  ),
-                  title: Text(
-                    mesa.activa ? 'Marcar inactiva' : 'Marcar activa',
-                  ),
-                  onTap: () async {
-                    Navigator.pop(ctx);
-                    try {
-                      await _mesaService.updateMesa(
-                        idMesa: mesa.id,
-                        activa: !mesa.activa,
-                      );
-                      _loadAll();
-                    } catch (e) {
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('❌ $e'),
-                            backgroundColor: Colors.red,
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                    child: Row(
+                      children: <Widget>[
+                        const Icon(
+                          Icons.table_restaurant_rounded,
+                          size: 18,
+                          color: VentiqHomeTheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Mesa ${mesa.numero}',
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -0.2,
+                              color: VentiqHomeTheme.textPrimary,
+                            ),
                           ),
+                        ),
+                        Text(
+                          mesa.estadoTexto,
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                            color: VentiqHomeTheme.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(
+                      Icons.edit_rounded,
+                      color: VentiqHomeTheme.primary,
+                    ),
+                    title: const Text(
+                      'Editar mesa',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _openEditDialog(mesa);
+                    },
+                  ),
+                  ListTile(
+                    leading: Icon(
+                      mesa.activa
+                          ? Icons.visibility_off_rounded
+                          : Icons.visibility_rounded,
+                      color: VentiqHomeTheme.warning,
+                    ),
+                    title: Text(
+                      mesa.activa ? 'Marcar inactiva' : 'Marcar activa',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      try {
+                        await _mesaService.updateMesa(
+                          idMesa: mesa.id,
+                          activa: !mesa.activa,
                         );
+                        _loadAll();
+                      } catch (e) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('❌ $e'),
+                              backgroundColor: VentiqHomeTheme.danger,
+                            ),
+                          );
+                        }
                       }
-                    }
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.delete, color: Colors.red),
-                  title: const Text('Eliminar mesa'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _confirmDelete(mesa);
-                  },
-                ),
-                const SizedBox(height: 8),
-              ],
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(
+                      Icons.delete_outline_rounded,
+                      color: VentiqHomeTheme.danger,
+                    ),
+                    title: const Text(
+                      'Eliminar mesa',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _confirmDelete(mesa);
+                    },
+                  ),
+                  const SizedBox(height: 6),
+                ],
+              ),
             ),
           ),
     );
@@ -348,16 +409,22 @@ class _MesasScreenState extends State<MesasScreen> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: VentiqHomeTheme.surface,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF4A90E2),
+        // Mismo tono que el inicio del degradado de la cabecera: antes el
+        // AppBar era `primary` y la cabecera empezaba en `primaryDark`, y se
+        // veía la costura de dos azules.
+        backgroundColor: VentiqHomeTheme.heroGradient.first,
+        surfaceTintColor: Colors.transparent,
         elevation: 0,
+        scrolledUnderElevation: 0,
         title: const Text(
           'Mesas y Comensales',
           style: TextStyle(
             color: Colors.white,
             fontSize: 18,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.2,
           ),
         ),
         centerTitle: true,
@@ -383,7 +450,9 @@ class _MesasScreenState extends State<MesasScreen> with WidgetsBindingObserver {
         child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
-            SliverToBoxAdapter(child: _buildHeader()),
+            SliverToBoxAdapter(
+              child: TutorialAnchor(id: 'mesas_resumen', child: _buildHeader()),
+            ),
             if (_loadError != null)
               SliverToBoxAdapter(
                 child: Container(
@@ -393,14 +462,14 @@ class _MesasScreenState extends State<MesasScreen> with WidgetsBindingObserver {
                     vertical: 8,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.amber.shade50,
+                    color: VentiqHomeTheme.warning.withValues(alpha: 0.10),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
                     children: [
                       const Icon(
                         Icons.warning_amber_rounded,
-                        color: Colors.orange,
+                        color: VentiqHomeTheme.warning,
                       ),
                       const SizedBox(width: 8),
                       Expanded(child: Text(_loadError!)),
@@ -433,15 +502,26 @@ class _MesasScreenState extends State<MesasScreen> with WidgetsBindingObserver {
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 100),
                 sliver: SliverGrid(
                   gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: 170,
+                    maxCrossAxisExtent: 190,
                     mainAxisSpacing: 12,
                     crossAxisSpacing: 12,
-                    childAspectRatio: 0.82,
+                    childAspectRatio: 0.78,
                   ),
-                  delegate: SliverChildBuilderDelegate(
-                    (ctx, i) => _buildMesaCard(_mesasFiltradas[i]),
-                    childCount: _mesasFiltradas.length,
-                  ),
+                  delegate: SliverChildBuilderDelegate((ctx, i) {
+                    final Mesa mesa = _mesasFiltradas[i];
+                    final Widget tarjeta = _buildMesaCard(mesa);
+                    return _EntradaAnimada(
+                      key: ValueKey<int>(mesa.id),
+                      index: i,
+                      child:
+                          i == 0
+                              ? TutorialAnchor(
+                                id: 'mesas_primera',
+                                child: tarjeta,
+                              )
+                              : tarjeta,
+                    );
+                  }, childCount: _mesasFiltradas.length),
                 ),
               ),
           ],
@@ -449,9 +529,14 @@ class _MesasScreenState extends State<MesasScreen> with WidgetsBindingObserver {
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _openCreateDialog,
-        backgroundColor: const Color(0xFF4A90E2),
-        icon: const Icon(Icons.add, color: Colors.white),
-        label: const Text('Nueva mesa', style: TextStyle(color: Colors.white)),
+        backgroundColor: VentiqHomeTheme.primary,
+        elevation: 4,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        icon: const Icon(Icons.add_rounded, color: Colors.white),
+        label: const Text(
+          'Nueva mesa',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+        ),
       ),
       bottomNavigationBar: AppBottomNavigation(
         currentIndex: 0, // No coincide con ninguna pestaña fija; usamos Home
@@ -497,184 +582,261 @@ class _MesasScreenState extends State<MesasScreen> with WidgetsBindingObserver {
 
   // ----- subwidgets -----
 
+  /// Cabecera compacta: anillo de ocupación + resumen en una sola fila. Antes
+  /// ocupaba ~190 px (tiles grandes y chip de «mesa con más actividad»); ahora
+  /// ~100 px para que la cuadrícula de mesas gane protagonismo.
   Widget _buildHeader() {
     final resumen = _resumen;
     final top = resumen.mesaTopComensales;
+    final double fraccion =
+        resumen.total > 0 ? resumen.ocupadas / resumen.total : 0;
+
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFF4A90E2), Color(0xFF357ABD)],
+          colors: VentiqHomeTheme.heroGradient,
         ),
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
       ),
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _buildMetricChip(
-                  icon: Icons.table_bar,
-                  label: 'Total',
-                  value: _hasLoaded ? '${resumen.total}' : '—',
-                  color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: <Widget>[
+          _buildAnilloOcupacion(fraccion),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  _hasLoaded
+                      ? '${resumen.ocupadas} de ${resumen.total} mesas en uso'
+                      : 'Cargando salón…',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.2,
+                  ),
                 ),
-                const SizedBox(width: 8),
-                _buildMetricChip(
-                  icon: Icons.event_seat,
-                  label: 'Ocupadas',
-                  value: _hasLoaded ? '${resumen.ocupadas}' : '—',
-                  color: Colors.orange.shade100,
-                  valueColor: Colors.orange.shade900,
+                const SizedBox(height: 7),
+                Row(
+                  children: <Widget>[
+                    _buildHeroStat(
+                      'Libres',
+                      _hasLoaded ? '${resumen.libres}' : '—',
+                      Icons.check_circle_outline,
+                      VentiqHomeTheme.success,
+                    ),
+                    const SizedBox(width: 6),
+                    _buildHeroStat(
+                      'Ocupadas',
+                      _hasLoaded ? '${resumen.ocupadas}' : '—',
+                      Icons.local_dining,
+                      VentiqHomeTheme.warning,
+                    ),
+                    const SizedBox(width: 6),
+                    _buildHeroStat(
+                      'Cuentas',
+                      _hasLoaded ? '${resumen.ordenesPendientesTotal}' : '—',
+                      Icons.receipt_long,
+                      VentiqHomeTheme.accent,
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                _buildMetricChip(
-                  icon: Icons.check_circle_outline,
-                  label: 'Libres',
-                  value: _hasLoaded ? '${resumen.libres}' : '—',
-                  color: Colors.green.shade100,
-                  valueColor: Colors.green.shade900,
-                ),
-                const SizedBox(width: 8),
-                _buildMetricChip(
-                  icon: Icons.receipt_long,
-                  label: 'Pendientes',
-                  value: _hasLoaded ? '${resumen.ordenesPendientesTotal}' : '—',
-                  color: Colors.blue.shade100,
-                  valueColor: Colors.blue.shade900,
-                ),
+                if (top != null) ...<Widget>[
+                  const SizedBox(height: 6),
+                  Text(
+                    '🔥 ${top.numero} · ${top.comensales} cuenta(s) activa(s)',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.82),
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
-          if (top != null) ...[
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.18),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.white.withOpacity(0.3)),
+        ],
+      ),
+    );
+  }
+
+  /// Anillo de ocupación animado: el porcentaje se "llena" al entrar a la
+  /// pantalla. Compacto (62 px) para no comerse la cuadrícula.
+  Widget _buildAnilloOcupacion(double fraccion) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: fraccion.clamp(0.0, 1.0)),
+      duration: const Duration(milliseconds: 750),
+      curve: Curves.easeOutCubic,
+      builder: (BuildContext context, double value, Widget? child) {
+        return SizedBox(
+          width: 62,
+          height: 62,
+          child: Stack(
+            alignment: Alignment.center,
+            children: <Widget>[
+              SizedBox(
+                width: 62,
+                height: 62,
+                child: CircularProgressIndicator(
+                  value: value,
+                  strokeWidth: 6,
+                  strokeCap: StrokeCap.round,
+                  backgroundColor: Colors.white.withValues(alpha: 0.18),
+                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
               ),
-              child: Row(
-                children: [
-                  const Text('🔥', style: TextStyle(fontSize: 14)),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      'Mesa con más actividad: ${top.numero} — ${top.comensales} cuenta(s) activa(s)',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(
+                    '${(value * 100).round()}%',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      height: 1.0,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                  Text(
+                    'ocupado',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.78),
+                      fontSize: 8,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Stat compacto de la cabecera: icono + valor + rótulo en una píldora.
+  Widget _buildHeroStat(
+    String label,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
+        ),
+        child: Row(
+          children: <Widget>[
+            Icon(icon, size: 12, color: color),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(
+                    value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      height: 1.0,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.78),
+                      fontSize: 9,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
               ),
             ),
           ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMetricChip({
-    required IconData icon,
-    required String label,
-    required String value,
-    Color color = Colors.white,
-    Color? valueColor,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 18, color: valueColor ?? const Color(0xFF4A90E2)),
-          const SizedBox(width: 6),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 10,
-                  color: (valueColor ?? const Color(0xFF4A90E2)).withOpacity(
-                    0.8,
-                  ),
-                ),
-              ),
-              Text(
-                value,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: valueColor ?? const Color(0xFF4A90E2),
-                ),
-              ),
-            ],
-          ),
-        ],
+        ),
       ),
     );
   }
 
   Widget _buildFilters() {
     final zonas = _zonasDisponibles;
+    final int visibles = _mesasFiltradas.length;
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Buscador
+        children: <Widget>[
           TextField(
             controller: _searchController,
+            textInputAction: TextInputAction.search,
             decoration: InputDecoration(
-              hintText: 'Buscar por número o zona...',
-              prefixIcon: const Icon(Icons.search, size: 20),
+              hintText: 'Buscar por número o zona…',
+              prefixIcon: const Icon(Icons.search_rounded, size: 20),
               isDense: true,
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 12,
-                vertical: 10,
-              ),
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: BorderSide(color: Colors.grey[300]!),
+                vertical: 12,
               ),
               suffixIcon:
                   _searchController.text.isNotEmpty
                       ? IconButton(
-                        icon: const Icon(Icons.clear, size: 18),
+                        icon: const Icon(Icons.clear_rounded, size: 18),
+                        tooltip: 'Limpiar búsqueda',
                         onPressed: () => _searchController.clear(),
                       )
                       : null,
             ),
           ),
-          if (zonas.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  _buildZonaChip(null, 'Todas'),
-                  for (final z in zonas) ...[
-                    const SizedBox(width: 6),
-                    _buildZonaChip(z, z),
-                  ],
-                ],
+          const SizedBox(height: 10),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: <Widget>[
+                      _buildZonaChip(null, 'Todas'),
+                      for (final z in zonas) ...<Widget>[
+                        const SizedBox(width: 6),
+                        _buildZonaChip(z, z),
+                      ],
+                    ],
+                  ),
+                ),
               ),
-            ),
-          ],
+              const SizedBox(width: 8),
+              Text(
+                '$visibles ${visibles == 1 ? 'mesa' : 'mesas'}',
+                style: const TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: VentiqHomeTheme.textSecondary,
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -686,22 +848,24 @@ class _MesasScreenState extends State<MesasScreen> with WidgetsBindingObserver {
       label: Text(label, style: const TextStyle(fontSize: 12)),
       selected: isSelected,
       onSelected: (_) => setState(() => _zonaFiltro = value),
-      selectedColor: const Color(0xFF4A90E2),
+      selectedColor: VentiqHomeTheme.primary,
       labelStyle: TextStyle(
-        color: isSelected ? Colors.white : const Color(0xFF1F2937),
-        fontWeight: FontWeight.w500,
+        color: isSelected ? Colors.white : VentiqHomeTheme.textPrimary,
+        fontWeight: FontWeight.w700,
       ),
-      backgroundColor: Colors.white,
-      side: BorderSide(color: Colors.grey[300]!),
+      backgroundColor: VentiqHomeTheme.card,
+      side: BorderSide(
+        color: isSelected ? VentiqHomeTheme.primary : VentiqHomeTheme.border,
+      ),
+      showCheckmark: false,
+      visualDensity: VisualDensity.compact,
     );
   }
 
-  /// Tarjeta de mesa rediseñada — estilo "panel de control de restaurante":
-  ///  - Cabecera coloreada (estado) con icono + label.
-  ///  - Cuerpo grande con el número de la mesa centrado (lectura instantánea).
-  ///  - Pie con métricas (capacidad + cuentas abiertas + histórico).
-  ///  - Sombra sutil + radios suaves; el accent color pinta el borde lateral
-  ///    como "ribbon" para identificación periférica rápida.
+  /// Tarjeta de mesa: cabecera con el color del estado, número dominante y
+  /// pie con ocupación real (comensales/capacidad) e histórico. El color
+  /// transiciona con `AnimatedContainer`, así el cambio de estado que llega por
+  /// el polling se anima en vez de saltar.
   Widget _buildMesaCard(Mesa mesa) {
     // Paleta por estado
     final Color accent; // color principal del estado
@@ -710,96 +874,90 @@ class _MesasScreenState extends State<MesasScreen> with WidgetsBindingObserver {
     final IconData estadoIcon;
 
     if (!mesa.activa) {
-      accent = Colors.grey.shade500;
-      bgSoft = Colors.grey.shade50;
+      accent = VentiqHomeTheme.textSecondary;
+      bgSoft = VentiqHomeTheme.surface;
       estadoLabel = 'Inactiva';
       estadoIcon = Icons.visibility_off_outlined;
     } else if (mesa.ordenesAbiertas == 0) {
-      accent = const Color(0xFF10B981); // verde esmeralda
-      bgSoft = const Color(0xFFECFDF5);
+      accent = VentiqHomeTheme.success;
+      bgSoft = VentiqHomeTheme.success.withValues(alpha: 0.08);
       estadoLabel = 'LIBRE';
       estadoIcon = Icons.check_circle_outline;
     } else if (mesa.ordenesAbiertas == 1) {
-      accent = const Color(0xFFF59E0B); // ámbar
-      bgSoft = const Color(0xFFFFFBEB);
+      accent = VentiqHomeTheme.warning;
+      bgSoft = VentiqHomeTheme.warning.withValues(alpha: 0.08);
       estadoLabel = 'OCUPADA';
       estadoIcon = Icons.local_dining;
     } else {
-      accent = const Color(0xFFEF4444); // rojo
-      bgSoft = const Color(0xFFFEF2F2);
+      accent = VentiqHomeTheme.danger;
+      bgSoft = VentiqHomeTheme.danger.withValues(alpha: 0.08);
       estadoLabel = 'LLENA';
       estadoIcon = Icons.event_busy;
     }
 
+    final int ocupacionActual =
+        mesa.comensalesActivos > 0
+            ? mesa.comensalesActivos
+            : mesa.ordenesAbiertas;
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         onTap: () => _openMesaDetail(mesa),
         onLongPress: () => _showMesaActions(mesa),
-        child: Container(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOut,
           decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
+            color: VentiqHomeTheme.card,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: <BoxShadow>[
               BoxShadow(
-                color: accent.withOpacity(0.08),
-                blurRadius: 8,
-                offset: const Offset(0, 3),
-              ),
-              BoxShadow(
-                color: Colors.black.withOpacity(0.04),
-                blurRadius: 4,
-                offset: const Offset(0, 1),
+                color: accent.withValues(alpha: 0.12),
+                blurRadius: 12,
+                offset: const Offset(0, 5),
               ),
             ],
-            border: Border.all(color: accent.withOpacity(0.25), width: 1),
+            border: Border.all(color: accent.withValues(alpha: 0.28), width: 1),
           ),
           clipBehavior: Clip.antiAlias,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Banner superior con estado
-              Container(
+            children: <Widget>[
+              // Banner superior con estado y ocupación
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 280),
+                color: accent,
                 padding: const EdgeInsets.symmetric(
                   horizontal: 10,
                   vertical: 6,
                 ),
-                color: accent,
                 child: Row(
-                  children: [
+                  children: <Widget>[
                     Icon(estadoIcon, size: 13, color: Colors.white),
                     const SizedBox(width: 4),
                     Expanded(
                       child: Text(
                         estadoLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.5,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.6,
                         ),
                       ),
                     ),
-                    if (mesa.ordenesAbiertas > 0)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 1,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(
-                          '${mesa.ordenesAbiertas}',
-                          style: TextStyle(
-                            color: accent,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 11,
-                          ),
-                        ),
+                    Text(
+                      '$ocupacionActual/${mesa.capacidad}',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.92),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
                       ),
+                    ),
                   ],
                 ),
               ),
@@ -809,24 +967,18 @@ class _MesasScreenState extends State<MesasScreen> with WidgetsBindingObserver {
                   color: bgSoft,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 8,
-                    vertical: 6,
+                    vertical: 8,
                   ),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.table_restaurant,
-                        size: 28,
-                        color: accent.withOpacity(0.4),
-                      ),
-                      const SizedBox(height: 2),
+                    children: <Widget>[
                       Text(
                         mesa.numero,
-                        style: TextStyle(
-                          fontSize: 22,
+                        style: const TextStyle(
+                          fontSize: 26,
                           fontWeight: FontWeight.w800,
-                          color: const Color(0xFF1F2937),
-                          letterSpacing: -0.5,
+                          color: VentiqHomeTheme.textPrimary,
+                          letterSpacing: -0.8,
                           height: 1.0,
                         ),
                         maxLines: 1,
@@ -834,56 +986,98 @@ class _MesasScreenState extends State<MesasScreen> with WidgetsBindingObserver {
                       ),
                       if (mesa.zona != null && mesa.zona!.isNotEmpty)
                         Padding(
-                          padding: const EdgeInsets.only(top: 2),
+                          padding: const EdgeInsets.only(top: 3),
                           child: Text(
                             mesa.zona!,
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: Colors.grey[600],
-                              fontStyle: FontStyle.italic,
+                            style: const TextStyle(
+                              fontSize: 10.5,
+                              color: VentiqHomeTheme.textSecondary,
+                              fontWeight: FontWeight.w600,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                      if (mesa.ocupada) ...<Widget>[
+                        const SizedBox(height: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: accent.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: accent.withValues(alpha: 0.28),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              Icon(
+                                Icons.people_alt_rounded,
+                                size: 11,
+                                color: accent,
+                              ),
+                              const SizedBox(width: 3),
+                              Text(
+                                '${mesa.ordenesAbiertas} '
+                                '${mesa.ordenesAbiertas == 1 ? 'cuenta' : 'cuentas'}',
+                                style: TextStyle(
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: accent,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
               ),
-              // Pie con métricas
+              // Pie con capacidad e histórico
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  border: Border(top: BorderSide(color: Colors.grey[200]!)),
+                decoration: const BoxDecoration(
+                  color: VentiqHomeTheme.card,
+                  border: Border(
+                    top: BorderSide(color: VentiqHomeTheme.border),
+                  ),
                 ),
                 child: Row(
-                  children: [
-                    Icon(
-                      Icons.people_alt_outlined,
+                  children: <Widget>[
+                    const Icon(
+                      Icons.chair_outlined,
                       size: 12,
-                      color: Colors.grey[600],
+                      color: VentiqHomeTheme.textSecondary,
                     ),
                     const SizedBox(width: 3),
                     Text(
-                      '${mesa.capacidad}',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.grey[700],
+                      'Cap. ${mesa.capacidad}',
+                      style: const TextStyle(
+                        fontSize: 10.5,
+                        color: VentiqHomeTheme.textSecondary,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                     const Spacer(),
-                    if (mesa.ordenesCompletadasHistoricas > 0) ...[
-                      Icon(
-                        Icons.receipt_long,
+                    if (mesa.ordenesCompletadasHistoricas > 0) ...<Widget>[
+                      const Icon(
+                        Icons.receipt_long_outlined,
                         size: 11,
-                        color: Colors.grey[500],
+                        color: VentiqHomeTheme.textSecondary,
                       ),
                       const SizedBox(width: 2),
                       Text(
                         '${mesa.ordenesCompletadasHistoricas}',
-                        style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: VentiqHomeTheme.textSecondary,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ],
                   ],
@@ -900,51 +1094,122 @@ class _MesasScreenState extends State<MesasScreen> with WidgetsBindingObserver {
     final hasFilter = _zonaFiltro != null || _busqueda.isNotEmpty;
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(32),
+        padding: const EdgeInsets.all(28),
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              hasFilter ? Icons.search_off : Icons.table_restaurant_outlined,
-              size: 80,
-              color: Colors.grey[400],
+          children: <Widget>[
+            Container(
+              width: 86,
+              height: 86,
+              decoration: BoxDecoration(
+                color: VentiqHomeTheme.surface,
+                shape: BoxShape.circle,
+                border: Border.all(color: VentiqHomeTheme.border),
+              ),
+              child: Icon(
+                hasFilter
+                    ? Icons.search_off_rounded
+                    : Icons.table_restaurant_outlined,
+                size: 38,
+                color: VentiqHomeTheme.textSecondary.withValues(alpha: 0.7),
+              ),
             ),
             const SizedBox(height: 16),
             Text(
-              hasFilter
-                  ? 'No se encontraron mesas con esos filtros'
-                  : 'Aún no tienes mesas creadas',
+              hasFilter ? 'Sin resultados' : 'Aún no tienes mesas',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                color: Colors.grey[700],
+              style: const TextStyle(
+                fontSize: 16.5,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.2,
+                color: VentiqHomeTheme.textPrimary,
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             Text(
               hasFilter
-                  ? 'Prueba a limpiar los filtros'
-                  : 'Toca "Nueva mesa" para crear la primera',
+                  ? 'Prueba a cambiar la zona o a limpiar la búsqueda.'
+                  : 'Crea la primera mesa para empezar a abrir cuentas por comensal.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+              style: const TextStyle(
+                fontSize: 13,
+                height: 1.4,
+                color: VentiqHomeTheme.textSecondary,
+              ),
             ),
-            if (hasFilter) ...[
-              const SizedBox(height: 12),
-              TextButton.icon(
+            const SizedBox(height: 16),
+            if (hasFilter)
+              OutlinedButton.icon(
                 onPressed: () {
                   setState(() {
                     _zonaFiltro = null;
                     _searchController.clear();
                   });
                 },
-                icon: const Icon(Icons.clear),
+                icon: const Icon(Icons.filter_alt_off_rounded, size: 17),
                 label: const Text('Limpiar filtros'),
+              )
+            else
+              FilledButton.icon(
+                onPressed: _openCreateDialog,
+                icon: const Icon(Icons.add_rounded, size: 18),
+                label: const Text('Nueva mesa'),
               ),
-            ],
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Entrada escalonada de las tarjetas: aparecen con un fade + slide corto y un
+/// retardo por índice. Da vida a la cuadrícula sin retrasar la interacción
+/// (los toques funcionan desde el primer frame).
+class _EntradaAnimada extends StatefulWidget {
+  const _EntradaAnimada({super.key, required this.index, required this.child});
+
+  final int index;
+  final Widget child;
+
+  @override
+  State<_EntradaAnimada> createState() => _EntradaAnimadaState();
+}
+
+class _EntradaAnimadaState extends State<_EntradaAnimada>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 320),
+  );
+  late final Animation<double> _fade = CurvedAnimation(
+    parent: _controller,
+    curve: Curves.easeOut,
+  );
+  late final Animation<Offset> _slide = Tween<Offset>(
+    begin: const Offset(0, 0.06),
+    end: Offset.zero,
+  ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+
+  @override
+  void initState() {
+    super.initState();
+    final int retardo = (widget.index.clamp(0, 12)) * 35;
+    Future<void>.delayed(Duration(milliseconds: retardo), () {
+      if (mounted) _controller.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _fade,
+      child: SlideTransition(position: _slide, child: widget.child),
     );
   }
 }

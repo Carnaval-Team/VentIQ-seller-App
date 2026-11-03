@@ -11,7 +11,21 @@ class CategoryService {
   final SupabaseClient _supabase = Supabase.instance.client;
   final UserPreferencesService _userPrefs = UserPreferencesService();
 
-  /// Obtiene todas las categorías de una tienda usando el RPC get_categorias_by_tienda_complete
+  /// Obtiene todas las categorías de una tienda.
+  ///
+  /// El RPC `get_categorias_by_tienda_complete` (v1) devuelve el nomenclador
+  /// global y el vínculo con la tienda, pero NO la configuración del Home.
+  /// `especial` y `orden_home` viven en `app_dat_categoria_tienda`, así que se
+  /// leen aparte (una sola query) y se mezclan por `id_categoria`.
+  ///
+  /// ⚠️ NO se usa `get_categorias_by_tienda_complete_v2` (aunque existe en la
+  /// BD) porque hoy falla con `P0001: structure of query does not match
+  /// function result type`: su `coalesce(ct.orden_home, 0)` devuelve `integer`
+  /// y el `RETURNS TABLE` declara `orden_home smallint`. Requiere un
+  /// `::smallint` en la función (DDL pendiente, NO aplicada desde el admin).
+  ///
+  /// También se rellena [Category.productCount] con el número de productos
+  /// **vendibles** de la categoría (ver [getVendibleProductCountsByCategory]).
   Future<List<Category>> getCategoriesByStore() async {
     try {
       print('🏪 Iniciando carga de categorías desde Supabase...');
@@ -24,7 +38,7 @@ class CategoryService {
 
       print('🏪 ID Tienda: $idTienda');
 
-      // Llamar al RPC get_categorias_by_tienda_complete
+      // Llamar al RPC get_categorias_by_tienda_complete (v1)
       final response = await _supabase.rpc(
         'get_categorias_by_tienda_complete',
         params: {'p_id_tienda': idTienda},
@@ -37,6 +51,14 @@ class CategoryService {
         return [];
       }
 
+      // Config por tienda del Home (especial / orden_home) y conteo de
+      // productos vendibles. Si cualquiera falla, se sigue sin ese dato: no
+      // debe tumbar la carga de categorías.
+      final configTienda = await _getConfigCategoriaTienda(idTienda);
+      final conteoProductos = await getVendibleProductCountsByCategory(
+        idTienda: idTienda,
+      );
+
       // Convertir respuesta a lista de categorías
       final List<Category> categories = [];
       for (final item in response) {
@@ -48,10 +70,18 @@ class CategoryService {
           // Generar color basado en el nombre para consistencia visual
           final color = _generateColorFromName(item['denominacion'] ?? '');
 
+          final categoriaId = (item['id'] as num?)?.toInt();
+          final config =
+              categoriaId != null ? configTienda[categoriaId] : null;
+
           final category = Category.fromJson({
             ...item,
             'color': color,
             'icon': _getIconFromName(item['denominacion'] ?? ''),
+            'especial': config?['especial'] ?? false,
+            'orden_home': config?['orden_home'] ?? 0,
+            'productCount':
+                categoriaId != null ? (conteoProductos[categoriaId] ?? 0) : 0,
           });
 
           categories.add(category);
@@ -59,6 +89,14 @@ class CategoryService {
           print('❌ Error procesando categoría ${item['id']}: $e');
         }
       }
+
+      // Mismo criterio de orden que el Home del TPV: especiales primero,
+      // por orden_home, y luego por denominación.
+      categories.sort((a, b) {
+        if (a.especial != b.especial) return a.especial ? -1 : 1;
+        final porOrden = a.ordenHome.compareTo(b.ordenHome);
+        return porOrden != 0 ? porOrden : a.name.compareTo(b.name);
+      });
 
       print('✅ Categorías procesadas exitosamente: ${categories.length}');
       return categories;
@@ -69,6 +107,86 @@ class CategoryService {
       print('🔄 Usando datos mock como fallback');
       return _getMockCategories();
     }
+  }
+
+  /// Lee la configuración del Home de la tienda en `app_dat_categoria_tienda`.
+  ///
+  /// Devuelve `{id_categoria: {especial, orden_home}}`. No lanza: si la lectura
+  /// falla se devuelve un mapa vacío y las categorías quedan con los valores
+  /// por defecto (`especial = false`, `orden_home = 0`).
+  Future<Map<int, Map<String, dynamic>>> _getConfigCategoriaTienda(
+    int idTienda,
+  ) async {
+    try {
+      final response = await _supabase
+          .from('app_dat_categoria_tienda')
+          .select('id_categoria, especial, orden_home')
+          .eq('id_tienda', idTienda);
+
+      final config = <int, Map<String, dynamic>>{};
+      for (final row in response) {
+        final map = row as Map<String, dynamic>;
+        final idCategoria = (map['id_categoria'] as num?)?.toInt();
+        if (idCategoria != null) {
+          config[idCategoria] = map;
+        }
+      }
+      return config;
+    } catch (e) {
+      print('⚠️ No se pudo leer app_dat_categoria_tienda: $e');
+      return {};
+    }
+  }
+
+  /// Cuenta los productos **vendibles** de cada categoría de la tienda.
+  ///
+  /// Una sola consulta paginada sobre `app_dat_producto`
+  /// (`id_tienda = tienda`, `es_vendible = true`) trayendo solo
+  /// `id_categoria`, que se agrega en el cliente. No hay RPC/consulta
+  /// agregada reutilizable para el admin, así que es PostgREST puro: **no
+  /// requiere SQL nuevo** en la base.
+  ///
+  /// Nota: el Home (`get_home_catalogo_tpv`) cuenta productos a través de las
+  /// subcategorías de la categoría; aquí se cuenta por `id_categoria` directo.
+  /// Para la tienda 223 verificada ambos números coinciden. La diferencia
+  /// conocida son productos vendibles sin subcategoría asignada (144 de 9081
+  /// en toda la base): el contador del admin puede ser mayor que el del Home.
+  Future<Map<int, int>> getVendibleProductCountsByCategory({int? idTienda}) async {
+    final conteo = <int, int>{};
+    try {
+      final tiendaId = idTienda ?? await _userPrefs.getIdTienda();
+      if (tiendaId == null) return conteo;
+
+      const pageSize = 1000;
+      var offset = 0;
+
+      while (true) {
+        final response = await _supabase
+            .from('app_dat_producto')
+            .select('id_categoria')
+            .eq('id_tienda', tiendaId)
+            .eq('es_vendible', true)
+            .order('id')
+            .range(offset, offset + pageSize - 1);
+
+        for (final row in response) {
+          final map = row as Map<String, dynamic>;
+          final idCategoria = (map['id_categoria'] as num?)?.toInt();
+          if (idCategoria != null) {
+            conteo[idCategoria] = (conteo[idCategoria] ?? 0) + 1;
+          }
+        }
+
+        if (response.length < pageSize) break;
+        offset += pageSize;
+        if (offset >= 100000) break; // guarda de seguridad
+      }
+
+      print('✅ Conteo de productos vendibles: ${conteo.length} categorías');
+    } catch (e) {
+      print('⚠️ No se pudo contar productos vendibles: $e');
+    }
+    return conteo;
   }
 
   /// Genera un color consistente basado en el nombre de la categoría
@@ -245,6 +363,7 @@ class CategoryService {
     Uint8List? imageBytes,
     String? imageFileName,
     bool visibleVendedor = true,
+    bool especial = false,
   }) async {
     final categoryId = await createCategoryWithId(
       denominacion: denominacion,
@@ -253,6 +372,7 @@ class CategoryService {
       imageBytes: imageBytes,
       imageFileName: imageFileName,
       visibleVendedor: visibleVendedor,
+      especial: especial,
     );
 
     return categoryId != null;
@@ -266,6 +386,7 @@ class CategoryService {
     Uint8List? imageBytes,
     String? imageFileName,
     bool visibleVendedor = true,
+    bool especial = false,
   }) async {
     try {
       print('🆕 Creando nueva categoría: $denominacion');
@@ -304,9 +425,21 @@ class CategoryService {
 
       print('✅ Categoría creada con ID: $categoryId');
 
+      // Si nace como especial, que arranque al final del grupo del Home.
+      int? ordenInicial;
+      if (especial) {
+        try {
+          ordenInicial = await _siguienteOrdenHome(idTienda);
+        } catch (e) {
+          print('⚠️ No se pudo calcular el orden inicial del Home: $e');
+        }
+      }
+
       await _supabase.from('app_dat_categoria_tienda').insert({
         'id_categoria': categoryId,
         'id_tienda': idTienda,
+        'especial': especial,
+        if (ordenInicial != null) 'orden_home': ordenInicial,
       });
 
       print('✅ Relación categoría-tienda creada exitosamente');
@@ -317,7 +450,11 @@ class CategoryService {
     }
   }
 
-  /// Actualiza una categoría existente
+  /// Actualiza una categoría existente.
+  ///
+  /// `visibleVendedor`, `especial` y `ordenHome` son opcionales: solo se
+  /// escriben si llegan. Los dos últimos viven en `app_dat_categoria_tienda`
+  /// (config por tienda), no en el nomenclador global `app_dat_categoria`.
   Future<bool> updateCategory({
     required int categoryId,
     required String denominacion,
@@ -326,6 +463,8 @@ class CategoryService {
     Uint8List? imageBytes,
     String? imageFileName,
     bool? visibleVendedor,
+    bool? especial,
+    int? ordenHome,
   }) async {
     try {
       print('✏️ Actualizando categoría ID: $categoryId');
@@ -363,12 +502,148 @@ class CategoryService {
           .update(updateData)
           .eq('id', categoryId);
 
+      // Config del Home: `especial` / `orden_home` viven en la tabla puente.
+      if (especial != null || ordenHome != null) {
+        final configActualizada = await _updateCategoriaTienda(categoryId, {
+          if (especial != null) 'especial': especial,
+          if (ordenHome != null) 'orden_home': ordenHome,
+        });
+        if (!configActualizada) {
+          // No devolver `true` en silencio: si la puente no se actualiza, el
+          // switch del Home parecería no hacer nada (R3 del plan).
+          print(
+            '❌ No se pudo actualizar la configuración del Home de la categoría $categoryId',
+          );
+          return false;
+        }
+      }
+
       print('✅ Categoría actualizada exitosamente');
       return true;
     } catch (e) {
       print('❌ Error al actualizar categoría: $e');
       return false;
     }
+  }
+
+  /// Actualiza una fila de `app_dat_categoria_tienda` (config por tienda).
+  ///
+  /// Devuelve `false` y **registra** el error si falla o si la categoría no
+  /// está vinculada a la tienda activa; nunca lanza.
+  Future<bool> _updateCategoriaTienda(
+    int categoryId,
+    Map<String, dynamic> data, {
+    int? idTienda,
+  }) async {
+    try {
+      final tiendaId = idTienda ?? await _userPrefs.getIdTienda();
+      if (tiendaId == null) {
+        throw Exception('No se encontró ID de tienda');
+      }
+
+      final actualizadas = await _supabase
+          .from('app_dat_categoria_tienda')
+          .update(data)
+          .eq('id_categoria', categoryId)
+          .eq('id_tienda', tiendaId)
+          .select('id');
+
+      if (actualizadas.isEmpty) {
+        throw Exception(
+          'La categoría $categoryId no está vinculada a la tienda $tiendaId',
+        );
+      }
+
+      print('✅ app_dat_categoria_tienda actualizada ($categoryId): $data');
+      return true;
+    } catch (e) {
+      print(
+        '❌ Error actualizando app_dat_categoria_tienda ($categoryId): $e',
+      );
+      return false;
+    }
+  }
+
+  /// Marca/desmarca una categoría como «especial» en el Home del TPV.
+  ///
+  /// Al marcarla se le asigna el siguiente `orden_home` (al final del grupo de
+  /// especiales) para que el orden inicial sea determinista.
+  Future<bool> setEspecial(int categoryId, bool valor) async {
+    try {
+      final idTienda = await _userPrefs.getIdTienda();
+      if (idTienda == null) {
+        throw Exception('No se encontró ID de tienda');
+      }
+
+      final data = <String, dynamic>{'especial': valor};
+      if (valor) {
+        data['orden_home'] = await _siguienteOrdenHome(idTienda);
+      }
+
+      return await _updateCategoriaTienda(
+        categoryId,
+        data,
+        idTienda: idTienda,
+      );
+    } catch (e) {
+      print('❌ Error marcando la categoría $categoryId como especial: $e');
+      return false;
+    }
+  }
+
+  /// Fija el `orden_home` de una categoría especial.
+  Future<bool> setOrdenHome(int categoryId, int orden) async {
+    return _updateCategoriaTienda(categoryId, {'orden_home': orden});
+  }
+
+  /// Reordena el grupo completo de especiales.
+  ///
+  /// [orderedCategoryIds] es la lista de IDs en el orden deseado: se escribe
+  /// `orden_home = posición + 1` a cada una. Es secuencial (hay pocas
+  /// especiales por tienda) y devuelve `false` si alguna escritura falla, para
+  /// que la UI recargue el orden real desde la base.
+  Future<bool> reorderEspeciales(List<int> orderedCategoryIds) async {
+    if (orderedCategoryIds.isEmpty) return true;
+    try {
+      final idTienda = await _userPrefs.getIdTienda();
+      if (idTienda == null) {
+        throw Exception('No se encontró ID de tienda');
+      }
+
+      for (var i = 0; i < orderedCategoryIds.length; i++) {
+        final ok = await _updateCategoriaTienda(
+          orderedCategoryIds[i],
+          {'orden_home': i + 1},
+          idTienda: idTienda,
+        );
+        if (!ok) return false;
+      }
+
+      print(
+        '✅ Orden del Home actualizado: ${orderedCategoryIds.length} especiales',
+      );
+      return true;
+    } catch (e) {
+      print('❌ Error reordenando especiales: $e');
+      return false;
+    }
+  }
+
+  /// Siguiente `orden_home` libre dentro del grupo de especiales de la tienda.
+  Future<int> _siguienteOrdenHome(int idTienda) async {
+    final response = await _supabase
+        .from('app_dat_categoria_tienda')
+        .select('orden_home')
+        .eq('id_tienda', idTienda)
+        .eq('especial', true);
+
+    var maximo = 0;
+    for (final row in response) {
+      final orden =
+          ((row as Map<String, dynamic>)['orden_home'] as num?)?.toInt() ?? 0;
+      if (orden > maximo) maximo = orden;
+    }
+    return maximo + 1;
   }
 
   /// Verifica si una categoría tiene subcategorías

@@ -19,6 +19,7 @@ import '../services/smart_offline_manager.dart';
 import '../utils/navigation_helper.dart';
 import '../utils/price_utils.dart';
 import 'dart:async';
+import '../theme/ventiq_home_theme.dart';
 
 class CategoriesWebScreen extends StatefulWidget {
   const CategoriesWebScreen({super.key});
@@ -108,7 +109,8 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen>
             builder: (context) => ChangelogDialog(changelog: changelog),
           );
 
-          await _preferencesService.saveAppVersion('1.0.0');
+          // R16: guardar la versión real del changelog, no un '1.0.0' fijo.
+          await _preferencesService.saveAppVersion(changelog.version);
         }
       }
     } catch (e) {
@@ -688,7 +690,7 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen>
     final screenSize = MediaQuery.of(context).size;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA),
+      backgroundColor: VentiqHomeTheme.surface,
       appBar: AppBar(
         title: const Text(
           'Categorías - Inventtia Caja',

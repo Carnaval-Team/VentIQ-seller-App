@@ -5,6 +5,7 @@ import '../models/shift_worker.dart';
 import '../services/shift_workers_service.dart';
 import '../services/turno_service.dart';
 import '../utils/app_snackbar.dart';
+import '../theme/ventiq_home_theme.dart';
 
 class ShiftWorkersScreen extends StatefulWidget {
   const ShiftWorkersScreen({Key? key}) : super(key: key);
@@ -64,7 +65,7 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
       }
 
       final shiftId = turnoAbierto['id'] as int;
-      
+
       setState(() {
         _hasOpenShift = true;
         _currentShiftId = shiftId;
@@ -77,7 +78,7 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
       setState(() {
         _isLoading = false;
       });
-      
+
       if (mounted) {
         AppSnackBar.showPersistent(
           context,
@@ -92,8 +93,10 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
     if (_currentShiftId == null) return;
 
     try {
-      final workers = await ShiftWorkersService.getShiftWorkers(_currentShiftId!);
-      
+      final workers = await ShiftWorkersService.getShiftWorkers(
+        _currentShiftId!,
+      );
+
       setState(() {
         _shiftWorkers = workers;
         _isLoading = false;
@@ -109,9 +112,9 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: VentiqHomeTheme.surface,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF4A90E2),
+        backgroundColor: VentiqHomeTheme.primary,
         elevation: 0,
         title: const Text(
           'Trabajadores de Turno',
@@ -133,26 +136,30 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4A90E2)),
-              ),
-            )
-          : !_hasOpenShift
+      body:
+          _isLoading
+              ? const Center(
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    VentiqHomeTheme.primary,
+                  ),
+                ),
+              )
+              : !_hasOpenShift
               ? _buildNoShiftView()
               : _buildWorkersView(),
-      floatingActionButton: _hasOpenShift
-          ? FloatingActionButton.extended(
-              onPressed: _showAddWorkersDialog,
-              backgroundColor: const Color(0xFF4A90E2),
-              icon: const Icon(Icons.person_add, color: Colors.white),
-              label: const Text(
-                'Agregar Trabajadores',
-                style: TextStyle(color: Colors.white),
-              ),
-            )
-          : null,
+      floatingActionButton:
+          _hasOpenShift
+              ? FloatingActionButton.extended(
+                onPressed: _showAddWorkersDialog,
+                backgroundColor: VentiqHomeTheme.primary,
+                icon: const Icon(Icons.person_add, color: Colors.white),
+                label: const Text(
+                  'Agregar Trabajadores',
+                  style: TextStyle(color: Colors.white),
+                ),
+              )
+              : null,
     );
   }
 
@@ -181,7 +188,7 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.w600,
-                color: Color(0xFF1F2937),
+                color: VentiqHomeTheme.textPrimary,
               ),
               textAlign: TextAlign.center,
             ),
@@ -190,7 +197,7 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
               'Debes abrir un turno antes de poder gestionar trabajadores',
               style: TextStyle(
                 fontSize: 14,
-                color: Colors.grey[600],
+                color: VentiqHomeTheme.textSecondary,
               ),
               textAlign: TextAlign.center,
             ),
@@ -202,7 +209,7 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
                 });
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF4A90E2),
+                backgroundColor: VentiqHomeTheme.primary,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(
                   horizontal: 24,
@@ -235,14 +242,14 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
               Icon(
                 Icons.people_outline,
                 size: 64,
-                color: Colors.grey[400],
+                color: VentiqHomeTheme.textSecondary,
               ),
               const SizedBox(height: 16),
               Text(
                 'No hay trabajadores en este turno',
                 style: TextStyle(
                   fontSize: 16,
-                  color: Colors.grey[600],
+                  color: VentiqHomeTheme.textSecondary,
                 ),
                 textAlign: TextAlign.center,
               ),
@@ -251,7 +258,7 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
                 'Usa el botón + para agregar trabajadores',
                 style: TextStyle(
                   fontSize: 14,
-                  color: Colors.grey[500],
+                  color: VentiqHomeTheme.textSecondary,
                 ),
                 textAlign: TextAlign.center,
               ),
@@ -267,7 +274,7 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
         if (_selectedWorkerIds.isNotEmpty)
           Container(
             padding: const EdgeInsets.all(16),
-            color: const Color(0xFF4A90E2).withOpacity(0.1),
+            color: VentiqHomeTheme.primary.withOpacity(0.1),
             child: Row(
               children: [
                 Expanded(
@@ -276,7 +283,7 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF1F2937),
+                      color: VentiqHomeTheme.textPrimary,
                     ),
                   ),
                 ),
@@ -292,7 +299,7 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
               ],
             ),
           ),
-        
+
         // Lista de trabajadores
         Expanded(
           child: RefreshIndicator(
@@ -334,22 +341,24 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
       elevation: 2,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: isSelected
-            ? const BorderSide(color: Color(0xFF4A90E2), width: 2)
-            : BorderSide.none,
+        side:
+            isSelected
+                ? const BorderSide(color: VentiqHomeTheme.primary, width: 2)
+                : BorderSide.none,
       ),
       child: InkWell(
-        onTap: isActive
-            ? () {
-                setState(() {
-                  if (isSelected) {
-                    _selectedWorkerIds.remove(worker.id);
-                  } else {
-                    _selectedWorkerIds.add(worker.id!);
-                  }
-                });
-              }
-            : null,
+        onTap:
+            isActive
+                ? () {
+                  setState(() {
+                    if (isSelected) {
+                      _selectedWorkerIds.remove(worker.id);
+                    } else {
+                      _selectedWorkerIds.add(worker.id!);
+                    }
+                  });
+                }
+                : null,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -371,21 +380,25 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
                           }
                         });
                       },
-                      activeColor: const Color(0xFF4A90E2),
+                      activeColor: VentiqHomeTheme.primary,
                     ),
-                  
+
                   // Avatar
                   CircleAvatar(
-                    backgroundColor: isActive
-                        ? const Color(0xFF4A90E2).withOpacity(0.1)
-                        : Colors.grey[300],
+                    backgroundColor:
+                        isActive
+                            ? VentiqHomeTheme.primary.withOpacity(0.1)
+                            : VentiqHomeTheme.border,
                     child: Icon(
                       Icons.person,
-                      color: isActive ? const Color(0xFF4A90E2) : Colors.grey[600],
+                      color:
+                          isActive
+                              ? VentiqHomeTheme.primary
+                              : VentiqHomeTheme.textSecondary,
                     ),
                   ),
                   const SizedBox(width: 12),
-                  
+
                   // Información del trabajador
                   Expanded(
                     child: Column(
@@ -396,7 +409,7 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
-                            color: Color(0xFF1F2937),
+                            color: VentiqHomeTheme.textPrimary,
                           ),
                         ),
                         if (worker.rolTrabajador != null) ...[
@@ -407,14 +420,14 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
                               vertical: 2,
                             ),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF4A90E2).withOpacity(0.1),
+                              color: VentiqHomeTheme.primary.withOpacity(0.1),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
                               worker.rolTrabajador!,
                               style: const TextStyle(
                                 fontSize: 12,
-                                color: Color(0xFF4A90E2),
+                                color: VentiqHomeTheme.primary,
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
@@ -423,7 +436,7 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
                       ],
                     ),
                   ),
-                  
+
                   // Estado
                   Container(
                     padding: const EdgeInsets.symmetric(
@@ -431,7 +444,8 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
                       vertical: 6,
                     ),
                     decoration: BoxDecoration(
-                      color: isActive ? Colors.green[50] : Colors.grey[200],
+                      color:
+                          isActive ? Colors.green[50] : VentiqHomeTheme.border,
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Row(
@@ -440,7 +454,10 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
                         Icon(
                           isActive ? Icons.check_circle : Icons.logout,
                           size: 14,
-                          color: isActive ? Colors.green[700] : Colors.grey[600],
+                          color:
+                              isActive
+                                  ? Colors.green[700]
+                                  : VentiqHomeTheme.textSecondary,
                         ),
                         const SizedBox(width: 4),
                         Text(
@@ -448,7 +465,10 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
-                            color: isActive ? Colors.green[700] : Colors.grey[600],
+                            color:
+                                isActive
+                                    ? Colors.green[700]
+                                    : VentiqHomeTheme.textSecondary,
                           ),
                         ),
                       ],
@@ -456,11 +476,11 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
                   ),
                 ],
               ),
-              
+
               const SizedBox(height: 12),
               const Divider(height: 1),
               const SizedBox(height: 12),
-              
+
               // Horarios
               Row(
                 children: [
@@ -477,9 +497,10 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
                     child: _buildTimeInfo(
                       icon: Icons.logout,
                       label: 'Salida',
-                      time: worker.horaSalida != null
-                          ? _formatTime(worker.horaSalida!)
-                          : '--:--',
+                      time:
+                          worker.horaSalida != null
+                              ? _formatTime(worker.horaSalida!)
+                              : '--:--',
                       color: Colors.orange,
                     ),
                   ),
@@ -489,7 +510,7 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
                       icon: Icons.access_time,
                       label: 'Horas',
                       time: '${currentHours.toStringAsFixed(1)}h',
-                      color: const Color(0xFF4A90E2),
+                      color: VentiqHomeTheme.primary,
                     ),
                   ),
                 ],
@@ -518,7 +539,7 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
               label,
               style: TextStyle(
                 fontSize: 11,
-                color: Colors.grey[600],
+                color: VentiqHomeTheme.textSecondary,
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -530,7 +551,7 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
           style: const TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w600,
-            color: Color(0xFF1F2937),
+            color: VentiqHomeTheme.textPrimary,
           ),
         ),
       ],
@@ -545,7 +566,7 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
     try {
       // Obtener trabajadores disponibles
       final availableWorkers = await ShiftWorkersService.getAvailableWorkers();
-      
+
       if (availableWorkers.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -560,9 +581,10 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
 
       // Filtrar trabajadores que ya están en el turno
       final currentWorkerIds = _shiftWorkers.map((w) => w.idTrabajador).toSet();
-      final selectableWorkers = availableWorkers
-          .where((w) => !currentWorkerIds.contains(w.id))
-          .toList();
+      final selectableWorkers =
+          availableWorkers
+              .where((w) => !currentWorkerIds.contains(w.id))
+              .toList();
 
       if (selectableWorkers.isEmpty) {
         if (mounted) {
@@ -581,9 +603,8 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
       // Mostrar diálogo de selección
       final selectedIds = await showDialog<List<int>>(
         context: context,
-        builder: (context) => _WorkerSelectionDialog(
-          workers: selectableWorkers,
-        ),
+        builder:
+            (context) => _WorkerSelectionDialog(workers: selectableWorkers),
       );
 
       if (selectedIds != null && selectedIds.isNotEmpty) {
@@ -593,10 +614,7 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
       print('❌ Error mostrando diálogo: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
       }
     }
@@ -607,11 +625,12 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(
-            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-          ),
-        ),
+        builder:
+            (context) => const Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+            ),
       );
 
       final result = await ShiftWorkersService.addWorkersToShift(
@@ -625,7 +644,8 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(result['message'] ?? 'Operación completada'),
-            backgroundColor: result['success'] == true ? Colors.green : Colors.red,
+            backgroundColor:
+                result['success'] == true ? Colors.green : Colors.red,
           ),
         );
 
@@ -637,10 +657,7 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
       if (mounted) {
         Navigator.pop(context); // Cerrar loading
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
       }
     }
@@ -652,26 +669,27 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
     // Confirmar acción
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Registrar Salida'),
-        content: Text(
-          '¿Registrar salida para ${_selectedWorkerIds.length} trabajador(es)?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange,
-              foregroundColor: Colors.white,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Registrar Salida'),
+            content: Text(
+              '¿Registrar salida para ${_selectedWorkerIds.length} trabajador(es)?',
             ),
-            child: const Text('Confirmar'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Confirmar'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
 
     if (confirm != true) return;
@@ -680,11 +698,12 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(
-            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-          ),
-        ),
+        builder:
+            (context) => const Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+            ),
       );
 
       final result = await ShiftWorkersService.registerWorkersExit(
@@ -697,7 +716,8 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(result['message'] ?? 'Operación completada'),
-            backgroundColor: result['success'] == true ? Colors.green : Colors.red,
+            backgroundColor:
+                result['success'] == true ? Colors.green : Colors.red,
           ),
         );
 
@@ -712,10 +732,7 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
       if (mounted) {
         Navigator.pop(context); // Cerrar loading
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
       }
     }
@@ -761,7 +778,7 @@ class _WorkerSelectionDialogState extends State<_WorkerSelectionDialog> {
               },
               title: Text(worker.nombreCompleto),
               subtitle: worker.rol != null ? Text(worker.rol!) : null,
-              activeColor: const Color(0xFF4A90E2),
+              activeColor: VentiqHomeTheme.primary,
             );
           },
         ),
@@ -772,11 +789,12 @@ class _WorkerSelectionDialogState extends State<_WorkerSelectionDialog> {
           child: const Text('Cancelar'),
         ),
         ElevatedButton(
-          onPressed: _selectedIds.isEmpty
-              ? null
-              : () => Navigator.pop(context, _selectedIds.toList()),
+          onPressed:
+              _selectedIds.isEmpty
+                  ? null
+                  : () => Navigator.pop(context, _selectedIds.toList()),
           style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF4A90E2),
+            backgroundColor: VentiqHomeTheme.primary,
             foregroundColor: Colors.white,
           ),
           child: Text('Agregar (${_selectedIds.length})'),

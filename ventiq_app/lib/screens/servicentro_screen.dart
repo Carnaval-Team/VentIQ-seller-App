@@ -1,6 +1,7 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import '../services/servicentro_service.dart';
+import '../theme/ventiq_home_theme.dart';
 import '../services/user_preferences_service.dart';
 import '../utils/navigation_helper.dart';
 import '../utils/price_utils.dart';
@@ -57,14 +58,17 @@ class _ServicentroScreenState extends State<ServicentroScreen> {
           idTpv: idTpv,
         );
       } else {
-        final cached = await ServicentroService.getCachedProductos(idTpv: idTpv);
+        final cached = await ServicentroService.getCachedProductos(
+          idTpv: idTpv,
+        );
         result = ServicentroLoadResult(
           items: cached,
           fromCache: true,
           syncedAt: ServicentroService.lastSyncedAtSync,
-          warning: cached.isEmpty
-              ? 'No hay sesión de tienda ni cache de combustibles.'
-              : null,
+          warning:
+              cached.isEmpty
+                  ? 'No hay sesión de tienda ni cache de combustibles.'
+                  : null,
         );
       }
 
@@ -89,9 +93,10 @@ class _ServicentroScreenState extends State<ServicentroScreen> {
         _items = cached;
         _fromCache = true;
         _loading = false;
-        _warning = cached.isEmpty
-            ? e.toString()
-            : 'Mostrando cache local (error al actualizar).';
+        _warning =
+            cached.isEmpty
+                ? e.toString()
+                : 'Mostrando cache local (error al actualizar).';
       });
     }
   }
@@ -117,9 +122,8 @@ class _ServicentroScreenState extends State<ServicentroScreen> {
 
   String _formatStock(ServicentroFuelItem item) {
     final n = item.stockDisponible;
-    final um = (item.um != null && item.um!.trim().isNotEmpty)
-        ? item.um!.trim()
-        : 'L';
+    final um =
+        (item.um != null && item.um!.trim().isNotEmpty) ? item.um!.trim() : 'L';
     if (n == n.roundToDouble()) {
       return '${n.toInt()} $um';
     }
@@ -147,19 +151,20 @@ class _ServicentroScreenState extends State<ServicentroScreen> {
     if (!item.puedeVender) {
       showDialog<void>(
         context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Sin stock'),
-          content: Text(
-            '${item.denominacion} no tiene stock disponible '
-            '(${_formatStock(item)}).',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Aceptar'),
+        builder:
+            (ctx) => AlertDialog(
+              title: const Text('Sin stock'),
+              content: Text(
+                '${item.denominacion} no tiene stock disponible '
+                '(${_formatStock(item)}).',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Aceptar'),
+                ),
+              ],
             ),
-          ],
-        ),
       );
       return;
     }
@@ -176,9 +181,7 @@ class _ServicentroScreenState extends State<ServicentroScreen> {
     }
     Navigator.push<void>(
       context,
-      MaterialPageRoute(
-        builder: (_) => ServicentroCantidadScreen(fuel: item),
-      ),
+      MaterialPageRoute(builder: (_) => ServicentroCantidadScreen(fuel: item)),
     );
   }
 
@@ -217,10 +220,7 @@ class _ServicentroScreenState extends State<ServicentroScreen> {
           if (_warning != null || _fromCache)
             SliverToBoxAdapter(child: _buildBanner()),
           if (_items.isEmpty)
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: _buildEmpty(),
-            )
+            SliverFillRemaining(hasScrollBody: false, child: _buildEmpty())
           else
             SliverPadding(
               padding: const EdgeInsets.all(16),
@@ -246,9 +246,10 @@ class _ServicentroScreenState extends State<ServicentroScreen> {
     final theme = Theme.of(context);
     final isError = _items.isEmpty && _warning != null;
     return Material(
-      color: isError
-          ? theme.colorScheme.errorContainer
-          : theme.colorScheme.secondaryContainer,
+      color:
+          isError
+              ? theme.colorScheme.errorContainer
+              : theme.colorScheme.secondaryContainer,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         child: Row(
@@ -257,18 +258,20 @@ class _ServicentroScreenState extends State<ServicentroScreen> {
             Icon(
               isError ? Icons.warning_amber_rounded : Icons.cloud_off_outlined,
               size: 20,
-              color: isError
-                  ? theme.colorScheme.onErrorContainer
-                  : theme.colorScheme.onSecondaryContainer,
+              color:
+                  isError
+                      ? theme.colorScheme.onErrorContainer
+                      : theme.colorScheme.onSecondaryContainer,
             ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 _warning ?? 'Mostrando combustibles del cache local.',
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: isError
-                      ? theme.colorScheme.onErrorContainer
-                      : theme.colorScheme.onSecondaryContainer,
+                  color:
+                      isError
+                          ? theme.colorScheme.onErrorContainer
+                          : theme.colorScheme.onSecondaryContainer,
                 ),
               ),
             ),

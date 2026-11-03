@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../utils/uuid_generator.dart';
@@ -34,9 +35,7 @@ class AdminInventoryService {
   final ConnectivityService _connectivity = ConnectivityService();
 
   /// Lista productos del cache offline (Admin Lite stock/productos).
-  Future<List<Map<String, dynamic>>> listCachedProducts({
-    String? query,
-  }) async {
+  Future<List<Map<String, dynamic>>> listCachedProducts({String? query}) async {
     if (query != null && query.trim().isNotEmpty) {
       return _db.searchProducts(query.trim(), limit: 100);
     }
@@ -153,8 +152,7 @@ class AdminInventoryService {
     int? idProveedor,
   }) async {
     final storeId = await _prefs.getIdTienda();
-    final userId =
-        _supabase.auth.currentUser?.id ?? await _prefs.getUserId();
+    final userId = _supabase.auth.currentUser?.id ?? await _prefs.getUserId();
     if (storeId == null || userId == null) {
       throw Exception('Sin tienda o usuario autenticado');
     }
@@ -180,7 +178,10 @@ class AdminInventoryService {
       final presId = (p['id_presentacion'] as num?)?.toInt();
       if (id != null && qty != 0) {
         await _applyStockDeltaLocally(
-            productId: id, delta: qty, presentationId: presId);
+          productId: id,
+          delta: qty,
+          presentationId: presId,
+        );
       }
     }
 
@@ -318,8 +319,7 @@ class AdminInventoryService {
     for (final row in (rows as List)) {
       final map = Map<String, dynamic>.from(row as Map);
       final almacenId = (map['id_almacen'] as num?)?.toInt();
-      final almacenName =
-          almacenId != null ? almacenNames[almacenId] : null;
+      final almacenName = almacenId != null ? almacenNames[almacenId] : null;
       layouts.add({
         'id': map['id'],
         'denominacion': map['denominacion'],
@@ -336,10 +336,11 @@ class AdminInventoryService {
       final motives = await _supabase.rpc('fn_listar_motivos_extraccion');
       if (motives is List && motives.isNotEmpty) {
         await _db.mergeSections({
-          'extraction_motives': motives
-              .whereType<Map>()
-              .map((e) => Map<String, dynamic>.from(e))
-              .toList(),
+          'extraction_motives':
+              motives
+                  .whereType<Map>()
+                  .map((e) => Map<String, dynamic>.from(e))
+                  .toList(),
         });
       }
     } catch (e) {
@@ -349,24 +350,28 @@ class AdminInventoryService {
     return layouts.length;
   }
 
-  Future<List<Map<String, dynamic>>> listCachedSuppliers({String? query}) async {
+  Future<List<Map<String, dynamic>>> listCachedSuppliers({
+    String? query,
+  }) async {
     final section = await _db.getSection('suppliers');
     var list = <Map<String, dynamic>>[];
     if (section is List) {
-      list = section
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList();
+      list =
+          section
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
     }
     if (list.isEmpty && _connectivity.isConnected) {
       try {
         await syncCrmCacheFromServer();
         final again = await _db.getSection('suppliers');
         if (again is List) {
-          list = again
-              .whereType<Map>()
-              .map((e) => Map<String, dynamic>.from(e))
-              .toList();
+          list =
+              again
+                  .whereType<Map>()
+                  .map((e) => Map<String, dynamic>.from(e))
+                  .toList();
         }
       } catch (e) {
         print('⚠️ AdminInventory: sync proveedores: $e');
@@ -374,12 +379,13 @@ class AdminInventoryService {
     }
     final q = query?.trim().toLowerCase();
     if (q != null && q.isNotEmpty) {
-      list = list
-          .where(
-            (s) => (s['denominacion']?.toString().toLowerCase() ?? '')
-                .contains(q),
-          )
-          .toList();
+      list =
+          list
+              .where(
+                (s) => (s['denominacion']?.toString().toLowerCase() ?? '')
+                    .contains(q),
+              )
+              .toList();
     }
     list.sort(
       (a, b) => (a['denominacion']?.toString() ?? '').compareTo(
@@ -389,24 +395,28 @@ class AdminInventoryService {
     return list;
   }
 
-  Future<List<Map<String, dynamic>>> listCachedCustomers({String? query}) async {
+  Future<List<Map<String, dynamic>>> listCachedCustomers({
+    String? query,
+  }) async {
     final section = await _db.getSection('customers');
     var list = <Map<String, dynamic>>[];
     if (section is List) {
-      list = section
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList();
+      list =
+          section
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
     }
     if (list.isEmpty && _connectivity.isConnected) {
       try {
         await syncCrmCacheFromServer();
         final again = await _db.getSection('customers');
         if (again is List) {
-          list = again
-              .whereType<Map>()
-              .map((e) => Map<String, dynamic>.from(e))
-              .toList();
+          list =
+              again
+                  .whereType<Map>()
+                  .map((e) => Map<String, dynamic>.from(e))
+                  .toList();
         }
       } catch (e) {
         print('⚠️ AdminInventory: sync clientes: $e');
@@ -414,12 +424,13 @@ class AdminInventoryService {
     }
     final q = query?.trim().toLowerCase();
     if (q != null && q.isNotEmpty) {
-      list = list.where((c) {
-        final name = c['nombre_completo']?.toString().toLowerCase() ?? '';
-        final phone = c['telefono']?.toString().toLowerCase() ?? '';
-        final code = c['codigo_cliente']?.toString().toLowerCase() ?? '';
-        return name.contains(q) || phone.contains(q) || code.contains(q);
-      }).toList();
+      list =
+          list.where((c) {
+            final name = c['nombre_completo']?.toString().toLowerCase() ?? '';
+            final phone = c['telefono']?.toString().toLowerCase() ?? '';
+            final code = c['codigo_cliente']?.toString().toLowerCase() ?? '';
+            return name.contains(q) || phone.contains(q) || code.contains(q);
+          }).toList();
     }
     list.sort(
       (a, b) => (a['nombre_completo']?.toString() ?? '').compareTo(
@@ -440,30 +451,27 @@ class AdminInventoryService {
         .eq('idtienda', storeId)
         .order('denominacion');
 
-    final suppliers = (suppliersRaw as List)
-        .whereType<Map>()
-        .map((e) => Map<String, dynamic>.from(e))
-        .toList();
+    final suppliers =
+        (suppliersRaw as List)
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
 
     // Clientes no tienen id_tienda: cachear activos recientes (tope).
     final customersRaw = await _supabase
         .from('app_dat_clientes')
-        .select(
-          'id, codigo_cliente, nombre_completo, telefono, email, activo',
-        )
+        .select('id, codigo_cliente, nombre_completo, telefono, email, activo')
         .eq('activo', true)
         .order('nombre_completo')
         .limit(500);
 
-    final customers = (customersRaw as List)
-        .whereType<Map>()
-        .map((e) => Map<String, dynamic>.from(e))
-        .toList();
+    final customers =
+        (customersRaw as List)
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
 
-    await _db.mergeSections({
-      'suppliers': suppliers,
-      'customers': customers,
-    });
+    await _db.mergeSections({'suppliers': suppliers, 'customers': customers});
     return {'suppliers': suppliers.length, 'customers': customers.length};
   }
 
@@ -499,38 +507,40 @@ class AdminInventoryService {
     final section = await _db.getSection('tpv_prices');
     var list = <Map<String, dynamic>>[];
     if (section is List) {
-      list = section
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList();
+      list =
+          section
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
     }
     if (list.isEmpty && _connectivity.isConnected) {
       try {
         await syncTpvsAndPricesFromServer();
         final again = await _db.getSection('tpv_prices');
         if (again is List) {
-          list = again
-              .whereType<Map>()
-              .map((e) => Map<String, dynamic>.from(e))
-              .toList();
+          list =
+              again
+                  .whereType<Map>()
+                  .map((e) => Map<String, dynamic>.from(e))
+                  .toList();
         }
       } catch (e) {
         print('⚠️ AdminInventory: sync precios TPV: $e');
       }
     }
     if (idTpv != null) {
-      list = list
-          .where((p) => (p['id_tpv'] as num?)?.toInt() == idTpv)
-          .toList();
+      list =
+          list.where((p) => (p['id_tpv'] as num?)?.toInt() == idTpv).toList();
     }
     final q = query?.trim().toLowerCase();
     if (q != null && q.isNotEmpty) {
-      list = list.where((p) {
-        final name = p['producto_nombre']?.toString().toLowerCase() ?? '';
-        final sku = p['producto_sku']?.toString().toLowerCase() ?? '';
-        final tpv = p['tpv_nombre']?.toString().toLowerCase() ?? '';
-        return name.contains(q) || sku.contains(q) || tpv.contains(q);
-      }).toList();
+      list =
+          list.where((p) {
+            final name = p['producto_nombre']?.toString().toLowerCase() ?? '';
+            final sku = p['producto_sku']?.toString().toLowerCase() ?? '';
+            final tpv = p['tpv_nombre']?.toString().toLowerCase() ?? '';
+            return name.contains(q) || sku.contains(q) || tpv.contains(q);
+          }).toList();
     }
     list.sort((a, b) {
       final ta = a['tpv_nombre']?.toString() ?? '';
@@ -556,10 +566,11 @@ class AdminInventoryService {
         .select('id, denominacion, id_tienda')
         .eq('id_tienda', storeId)
         .order('denominacion');
-    final warehouses = (almacenesRaw as List)
-        .whereType<Map>()
-        .map((e) => Map<String, dynamic>.from(e))
-        .toList();
+    final warehouses =
+        (almacenesRaw as List)
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
     final warehouseNames = <int, String>{
       for (final w in warehouses)
         if ((w['id'] as num?) != null)
@@ -581,10 +592,8 @@ class AdminInventoryService {
         'almacen': idAlmacen != null ? warehouseNames[idAlmacen] : null,
       });
     }
-    final tpvIds = tpvs
-        .map((t) => (t['id'] as num?)?.toInt())
-        .whereType<int>()
-        .toList();
+    final tpvIds =
+        tpvs.map((t) => (t['id'] as num?)?.toInt()).whereType<int>().toList();
     final tpvNames = <int, String>{
       for (final t in tpvs)
         if ((t['id'] as num?) != null)
@@ -612,9 +621,7 @@ class AdminInventoryService {
         final desde = map['fecha_desde']?.toString() ?? '';
         final hasta = map['fecha_hasta']?.toString();
         if (desde.isNotEmpty && desde.compareTo(today) > 0) continue;
-        if (hasta != null &&
-            hasta.isNotEmpty &&
-            hasta.compareTo(today) < 0) {
+        if (hasta != null && hasta.isNotEmpty && hasta.compareTo(today) < 0) {
           continue;
         }
         prices.add({
@@ -637,10 +644,11 @@ class AdminInventoryService {
         .from('app_dat_trabajadores')
         .select('id, nombres, apellidos, id_roll, id_tienda, user_mail, uuid')
         .eq('id_tienda', storeId);
-    final trabajadorIds = (trabajadores as List)
-        .map((t) => t['id'])
-        .where((id) => id != null)
-        .toList();
+    final trabajadorIds =
+        (trabajadores as List)
+            .map((t) => t['id'])
+            .where((id) => id != null)
+            .toList();
 
     final vendors = <Map<String, dynamic>>[];
     if (trabajadorIds.isNotEmpty) {
@@ -655,16 +663,18 @@ class AdminInventoryService {
           .inFilter('id_trabajador', trabajadorIds);
 
       final registered = await _prefs.getOfflineUsersForStore(storeId);
-      final registeredEmails = registered
-          .map((u) => u['email']?.toString().toLowerCase())
-          .whereType<String>()
-          .toSet();
+      final registeredEmails =
+          registered
+              .map((u) => u['email']?.toString().toLowerCase())
+              .whereType<String>()
+              .toSet();
 
       for (final raw in (vendedores as List)) {
         final v = Map<String, dynamic>.from(raw as Map);
-        final trab = v['trabajador'] is Map
-            ? Map<String, dynamic>.from(v['trabajador'] as Map)
-            : <String, dynamic>{};
+        final trab =
+            v['trabajador'] is Map
+                ? Map<String, dynamic>.from(v['trabajador'] as Map)
+                : <String, dynamic>{};
         final idTpv = (v['id_tpv'] as num?)?.toInt();
         final email = (trab['user_mail'] ?? '').toString().trim();
         vendors.add({
@@ -678,7 +688,8 @@ class AdminInventoryService {
           'permitir_customizar_precio_venta':
               v['permitir_customizar_precio_venta'] == true,
           'tpv_nombre': idTpv != null ? tpvNames[idTpv] : null,
-          'registered_offline': email.isNotEmpty &&
+          'registered_offline':
+              email.isNotEmpty &&
               registeredEmails.contains(email.toLowerCase()),
         });
       }
@@ -702,20 +713,22 @@ class AdminInventoryService {
     final section = await _db.getSection('vendors');
     var list = <Map<String, dynamic>>[];
     if (section is List) {
-      list = section
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList();
+      list =
+          section
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
     }
     if (list.isEmpty && _connectivity.isConnected) {
       try {
         await syncTpvsAndPricesFromServer();
         final again = await _db.getSection('vendors');
         if (again is List) {
-          list = again
-              .whereType<Map>()
-              .map((e) => Map<String, dynamic>.from(e))
-              .toList();
+          list =
+              again
+                  .whereType<Map>()
+                  .map((e) => Map<String, dynamic>.from(e))
+                  .toList();
         }
       } catch (e) {
         print('⚠️ AdminInventory: sync vendors: $e');
@@ -723,13 +736,14 @@ class AdminInventoryService {
     }
     final q = query?.trim().toLowerCase();
     if (q != null && q.isNotEmpty) {
-      list = list.where((v) {
-        final name =
-            '${v['nombres'] ?? ''} ${v['apellidos'] ?? ''}'.toLowerCase();
-        final email = v['email']?.toString().toLowerCase() ?? '';
-        final tpv = v['tpv_nombre']?.toString().toLowerCase() ?? '';
-        return name.contains(q) || email.contains(q) || tpv.contains(q);
-      }).toList();
+      list =
+          list.where((v) {
+            final name =
+                '${v['nombres'] ?? ''} ${v['apellidos'] ?? ''}'.toLowerCase();
+            final email = v['email']?.toString().toLowerCase() ?? '';
+            final tpv = v['tpv_nombre']?.toString().toLowerCase() ?? '';
+            return name.contains(q) || email.contains(q) || tpv.contains(q);
+          }).toList();
     }
     list.sort((a, b) {
       final na = '${a['nombres'] ?? ''} ${a['apellidos'] ?? ''}';
@@ -755,10 +769,7 @@ class AdminInventoryService {
       final id = (l['id_almacen'] as num?)?.toInt();
       if (id == null || seen.contains(id)) continue;
       seen.add(id);
-      out.add({
-        'id': id,
-        'denominacion': l['almacen'] ?? 'Almacén $id',
-      });
+      out.add({'id': id, 'denominacion': l['almacen'] ?? 'Almacén $id'});
     }
     return out;
   }
@@ -882,17 +893,14 @@ class AdminInventoryService {
       if (storeId != null) {
         final users = await _prefs.getOfflineUsersForStore(storeId);
         final vendor = vendors.cast<Map<String, dynamic>?>().firstWhere(
-              (v) => (v?['id'] as num?)?.toInt() == vendorId,
-              orElse: () => null,
-            );
+          (v) => (v?['id'] as num?)?.toInt() == vendorId,
+          orElse: () => null,
+        );
         final email = vendor?['email']?.toString().toLowerCase();
         if (email != null && email.isNotEmpty) {
           for (final u in users) {
             if ((u['email']?.toString().toLowerCase() ?? '') == email) {
-              await _prefs.upsertOfflineUserProfile({
-                ...u,
-                'idTpv': idTpv,
-              });
+              await _prefs.upsertOfflineUserProfile({...u, 'idTpv': idTpv});
             }
           }
         }
@@ -1002,9 +1010,7 @@ class AdminInventoryService {
     final list = <Map<String, dynamic>>[];
     if (section is List) {
       list.addAll(
-        section
-            .whereType<Map>()
-            .map((e) => Map<String, dynamic>.from(e)),
+        section.whereType<Map>().map((e) => Map<String, dynamic>.from(e)),
       );
     }
 
@@ -1019,10 +1025,9 @@ class AdminInventoryService {
     });
 
     final row = {
-      'id': existingId ??
-          (idx >= 0
-              ? list[idx]['id']
-              : -DateTime.now().millisecondsSinceEpoch),
+      'id':
+          existingId ??
+          (idx >= 0 ? list[idx]['id'] : -DateTime.now().millisecondsSinceEpoch),
       'id_producto': productId,
       'id_tpv': tpvId,
       'precio_venta_cup': payload['precio_venta_cup'],
@@ -1034,8 +1039,7 @@ class AdminInventoryService {
           (idx >= 0 ? list[idx]['producto_nombre'] : null),
       'producto_sku': idx >= 0 ? list[idx]['producto_sku'] : null,
       'tpv_nombre':
-          payload['tpv_nombre'] ??
-          (idx >= 0 ? list[idx]['tpv_nombre'] : null),
+          payload['tpv_nombre'] ?? (idx >= 0 ? list[idx]['tpv_nombre'] : null),
       'pending_local': true,
     };
 
@@ -1056,8 +1060,7 @@ class AdminInventoryService {
     int estadoInicial = 2,
   }) async {
     final storeId = await _prefs.getIdTienda();
-    final userId =
-        _supabase.auth.currentUser?.id ?? await _prefs.getUserId();
+    final userId = _supabase.auth.currentUser?.id ?? await _prefs.getUserId();
     if (storeId == null || userId == null) {
       throw Exception('Sin tienda o usuario autenticado');
     }
@@ -1083,7 +1086,10 @@ class AdminInventoryService {
       final presId = (p['id_presentacion'] as num?)?.toInt();
       if (id != null && qty != 0) {
         await _applyStockDeltaLocally(
-            productId: id, delta: -qty, presentationId: presId);
+          productId: id,
+          delta: -qty,
+          presentationId: presId,
+        );
       }
     }
 
@@ -1117,8 +1123,7 @@ class AdminInventoryService {
     bool completarOperaciones = true,
   }) async {
     final storeId = await _prefs.getIdTienda();
-    final userId =
-        _supabase.auth.currentUser?.id ?? await _prefs.getUserId();
+    final userId = _supabase.auth.currentUser?.id ?? await _prefs.getUserId();
     if (storeId == null || userId == null) {
       throw Exception('Sin tienda o usuario autenticado');
     }
@@ -1157,7 +1162,8 @@ class AdminInventoryService {
       if (detalles is Map) {
         final inv = detalles['inventario'];
         if (inv is List && inv.isNotEmpty && inv.first is Map) {
-          productLayout = (inv.first['id_ubicacion'] as num?)?.toInt() ??
+          productLayout =
+              (inv.first['id_ubicacion'] as num?)?.toInt() ??
               (inv.first['ubicacion'] is Map
                   ? (inv.first['ubicacion']['id'] as num?)?.toInt()
                   : null);
@@ -1166,7 +1172,10 @@ class AdminInventoryService {
       // Solo ajustar cache visible si el stock cacheado es del layout origen.
       if (productLayout == null || productLayout == idLayoutOrigen) {
         await _applyStockDeltaLocally(
-            productId: id, delta: -qty, presentationId: presId);
+          productId: id,
+          delta: -qty,
+          presentationId: presId,
+        );
       }
     }
 
@@ -1196,8 +1205,7 @@ class AdminInventoryService {
     String observaciones = '',
     int? idCliente,
   }) async {
-    final userId =
-        _supabase.auth.currentUser?.id ?? await _prefs.getUserId();
+    final userId = _supabase.auth.currentUser?.id ?? await _prefs.getUserId();
     if (userId == null) throw Exception('Sin usuario autenticado');
     if (productos.isEmpty) throw Exception('Agrega al menos un producto');
     if (montoTotal < 0) throw Exception('Monto inválido');
@@ -1233,7 +1241,10 @@ class AdminInventoryService {
       final presId = (p['id_presentacion'] as num?)?.toInt();
       if (id != null && qty != 0) {
         await _applyStockDeltaLocally(
-            productId: id, delta: -qty, presentationId: presId);
+          productId: id,
+          delta: -qty,
+          presentationId: presId,
+        );
       }
     }
 
@@ -1405,13 +1416,14 @@ class AdminInventoryService {
 
       if (venta != null) {
         final today = DateTime.now().toIso8601String().substring(0, 10);
-        final existing = await _supabase
-            .from('app_dat_precio_venta')
-            .select('id')
-            .eq('id_producto', productId)
-            .order('created_at', ascending: false)
-            .limit(1)
-            .maybeSingle();
+        final existing =
+            await _supabase
+                .from('app_dat_precio_venta')
+                .select('id')
+                .eq('id_producto', productId)
+                .order('created_at', ascending: false)
+                .limit(1)
+                .maybeSingle();
         if (existing != null) {
           await _supabase
               .from('app_dat_precio_venta')
@@ -1487,12 +1499,13 @@ class AdminInventoryService {
 
   Future<int> _resolveAjusteTipoOperacionId() async {
     try {
-      final row = await _supabase
-          .from('app_nom_tipo_operacion')
-          .select('id')
-          .ilike('denominacion', '%ajuste%')
-          .limit(1)
-          .maybeSingle();
+      final row =
+          await _supabase
+              .from('app_nom_tipo_operacion')
+              .select('id')
+              .ilike('denominacion', '%ajuste%')
+              .limit(1)
+              .maybeSingle();
       return (row?['id'] as num?)?.toInt() ?? 0;
     } catch (_) {
       return 0;
@@ -1578,14 +1591,10 @@ class AdminInventoryService {
     }
 
     if (response is! Map) {
-      throw Exception(
-        'La respuesta del servidor no es válida: $response',
-      );
+      throw Exception('La respuesta del servidor no es válida: $response');
     }
     if (response['id_operacion'] == null) {
-      throw Exception(
-        'El servidor respondió sin id_operacion: $response',
-      );
+      throw Exception('El servidor respondió sin id_operacion: $response');
     }
 
     final opId = (response['id_operacion'] as num?)?.toInt();
@@ -1634,14 +1643,15 @@ class AdminInventoryService {
       );
     } catch (e) {
       print('⚠️ fn_admin_caja_crear_producto_offline: $e — fallback insert');
-      final insert = await _supabase
-          .from('app_dat_producto')
-          .insert({
-            'denominacion': payload['denominacion'],
-            'id_tienda': payload['id_tienda'],
-          })
-          .select('id')
-          .single();
+      final insert =
+          await _supabase
+              .from('app_dat_producto')
+              .insert({
+                'denominacion': payload['denominacion'],
+                'id_tienda': payload['id_tienda'],
+              })
+              .select('id')
+              .single();
       final productId = insert['id'] as int;
       final today = DateTime.now().toIso8601String().substring(0, 10);
       await _supabase.from('app_dat_precio_venta').insert({
@@ -1657,15 +1667,41 @@ class AdminInventoryService {
         'es_base': true,
         'precio_promedio': costo,
       });
-      final catId = (payload['id_categoria'] as num?)?.toInt();
-      if (catId != null) {
+      // R16: aquí se escribía `id_categoria` como `id_sub_categoria`, que dejaba
+      // el producto enlazado a una subcategoría inexistente/ajena. Si el payload
+      // no trae subcategoría explícita, se resuelve la primera subcategoría real
+      // de esa categoría; si no hay, no se crea el enlace (antes se silenciaba
+      // con un `catch (_)`).
+      final int? catId = (payload['id_categoria'] as num?)?.toInt();
+      int? subcatId = (payload['id_subcategoria'] as num?)?.toInt();
+      if ((subcatId == null || subcatId <= 0) && catId != null && catId > 0) {
+        try {
+          final List<dynamic> subcats = await _supabase
+              .from('app_dat_subcategorias')
+              .select('id')
+              .eq('idcategoria', catId)
+              .order('id')
+              .limit(1);
+          if (subcats.isNotEmpty) {
+            subcatId = (subcats.first['id'] as num?)?.toInt();
+          }
+        } catch (e) {
+          debugPrint(
+            '⚠️ AdminInventory: no se pudo resolver subcategoría de $catId: $e',
+          );
+        }
+      }
+      if (subcatId != null && subcatId > 0) {
         try {
           await _supabase.from('app_dat_productos_subcategorias').insert({
             'id_producto': productId,
-            'id_sub_categoria': catId,
+            'id_sub_categoria': subcatId,
           });
-        } catch (_) {
-          // Categoría opcional
+        } catch (e) {
+          debugPrint(
+            '⚠️ AdminInventory: no se pudo enlazar producto $productId '
+            'con subcategoría $subcatId: $e',
+          );
         }
       }
     }
@@ -1789,9 +1825,10 @@ class AdminInventoryService {
           'p_id_cliente': payload['id_cliente'],
         },
       );
-      final map = response is Map
-          ? Map<String, dynamic>.from(response)
-          : <String, dynamic>{};
+      final map =
+          response is Map
+              ? Map<String, dynamic>.from(response)
+              : <String, dynamic>{};
       final opId = (map['id_operacion'] as num?)?.toInt();
       if (opId == null) {
         throw Exception('Venta sin id_operacion: $response');
@@ -1841,38 +1878,46 @@ class AdminInventoryService {
       final productId = (payload['id_producto'] as num).toInt();
       final tpvId = (payload['id_tpv'] as num).toInt();
       final price = (payload['precio_venta_cup'] as num).toDouble();
-      final fechaDesde = payload['fecha_desde']?.toString() ??
+      final fechaDesde =
+          payload['fecha_desde']?.toString() ??
           DateTime.now().toIso8601String().substring(0, 10);
       final existingId = (payload['id'] as num?)?.toInt();
 
       if (existingId != null && existingId > 0) {
-        await _supabase.from('app_dat_precio_tpv').update({
-          'precio_venta_cup': price,
-          'fecha_desde': fechaDesde,
-          'es_activo': true,
-          'deleted_at': null,
-          'updated_at': DateTime.now().toIso8601String(),
-        }).eq('id', existingId);
+        await _supabase
+            .from('app_dat_precio_tpv')
+            .update({
+              'precio_venta_cup': price,
+              'fecha_desde': fechaDesde,
+              'es_activo': true,
+              'deleted_at': null,
+              'updated_at': DateTime.now().toIso8601String(),
+            })
+            .eq('id', existingId);
         return;
       }
 
-      final existing = await _supabase
-          .from('app_dat_precio_tpv')
-          .select('id')
-          .eq('id_producto', productId)
-          .eq('id_tpv', tpvId)
-          .isFilter('deleted_at', null)
-          .eq('es_activo', true)
-          .order('id', ascending: false)
-          .limit(1)
-          .maybeSingle();
+      final existing =
+          await _supabase
+              .from('app_dat_precio_tpv')
+              .select('id')
+              .eq('id_producto', productId)
+              .eq('id_tpv', tpvId)
+              .isFilter('deleted_at', null)
+              .eq('es_activo', true)
+              .order('id', ascending: false)
+              .limit(1)
+              .maybeSingle();
 
       if (existing != null) {
-        await _supabase.from('app_dat_precio_tpv').update({
-          'precio_venta_cup': price,
-          'fecha_desde': fechaDesde,
-          'updated_at': DateTime.now().toIso8601String(),
-        }).eq('id', existing['id']);
+        await _supabase
+            .from('app_dat_precio_tpv')
+            .update({
+              'precio_venta_cup': price,
+              'fecha_desde': fechaDesde,
+              'updated_at': DateTime.now().toIso8601String(),
+            })
+            .eq('id', existing['id']);
       } else {
         await _supabase.from('app_dat_precio_tpv').insert({
           'id_producto': productId,
@@ -1924,9 +1969,10 @@ class AdminInventoryService {
       );
     } catch (e) {
       print('⚠️ fn_admin_caja_tpv_update_offline: $e — fallback');
-      await _supabase.from('app_dat_tpv').update({
-        'denominacion': payload['denominacion'],
-      }).eq('id', payload['id']);
+      await _supabase
+          .from('app_dat_tpv')
+          .update({'denominacion': payload['denominacion']})
+          .eq('id', payload['id']);
     }
   }
 
@@ -1945,9 +1991,10 @@ class AdminInventoryService {
       );
     } catch (e) {
       print('⚠️ fn_admin_caja_vendor_assign_tpv_offline: $e — fallback');
-      await _supabase.from('app_dat_vendedor').update({
-        'id_tpv': payload['id_tpv'],
-      }).eq('id', payload['id_vendedor']);
+      await _supabase
+          .from('app_dat_vendedor')
+          .update({'id_tpv': payload['id_tpv']})
+          .eq('id', payload['id_vendedor']);
     }
   }
 
@@ -1967,10 +2014,13 @@ class AdminInventoryService {
       );
     } catch (e) {
       print('⚠️ fn_admin_caja_vendor_flags_offline: $e — fallback');
-      await _supabase.from('app_dat_vendedor').update({
-        'permitir_customizar_precio_venta':
-            payload['permitir_customizar_precio_venta'] == true,
-      }).eq('id', payload['id_vendedor']);
+      await _supabase
+          .from('app_dat_vendedor')
+          .update({
+            'permitir_customizar_precio_venta':
+                payload['permitir_customizar_precio_venta'] == true,
+          })
+          .eq('id', payload['id_vendedor']);
     }
   }
 }

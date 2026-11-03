@@ -11,6 +11,7 @@ import '../services/web_summary_printer_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/turno_service.dart';
 import '../services/currency_service.dart';
+import '../theme/ventiq_home_theme.dart';
 import '../utils/platform_utils.dart';
 import '../utils/price_utils.dart';
 import '../widgets/egresos_list_screen.dart';
@@ -538,16 +539,16 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: VentiqHomeTheme.surface,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF4A90E2),
+        backgroundColor: VentiqHomeTheme.primary,
         elevation: 0,
         title: const Text(
           'Venta Total',
           style: TextStyle(
             color: Colors.white,
             fontSize: 18,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w700,
           ),
         ),
         centerTitle: true,
@@ -575,28 +576,26 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                         width: double.infinity,
                         padding: const EdgeInsets.all(16),
                         decoration: const BoxDecoration(
-                          color: Colors.white,
+                          color: VentiqHomeTheme.card,
                           border: Border(
-                            bottom: BorderSide(color: Colors.grey, width: 0.2),
+                            bottom: BorderSide(
+                              color: VentiqHomeTheme.border,
+                            ),
                           ),
                         ),
                         child: Column(
                           children: [
                             Row(
                               children: [
-                                Icon(
+                                const Icon(
                                   Icons.receipt_long,
-                                  color: const Color(0xFF4A90E2),
+                                  color: VentiqHomeTheme.primary,
                                   size: 24,
                                 ),
                                 const SizedBox(width: 8),
                                 const Text(
                                   'Resumen de Ventas',
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w600,
-                                    color: Color(0xFF1F2937),
-                                  ),
+                                  style: VentiqHomeTheme.tituloSeccion,
                                 ),
                               ],
                             ),
@@ -613,7 +612,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                                           _egresosTransferenciasUsd,
                                     ),
                                     Icons.attach_money,
-                                    const Color.fromARGB(255, 160, 22, 22),
+                                    VentiqHomeTheme.danger,
                                     onTap: _showEgresosList,
                                   ),
                                 ),
@@ -626,7 +625,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                                       _totalVentasUsd,
                                     ),
                                     Icons.attach_money,
-                                    Colors.green,
+                                    VentiqHomeTheme.success,
                                     onTap: _showAllOrders,
                                   ),
                                 ),
@@ -643,7 +642,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                                       _totalTransferenciaUsd,
                                     ),
                                     Icons.credit_card,
-                                    Colors.orange,
+                                    VentiqHomeTheme.warning,
                                     onTap: _showTransferOrders,
                                   ),
                                 ),
@@ -656,7 +655,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                                       _totalEfectivoUsd - _egresosEfectivoUsd,
                                     ),
                                     Icons.account_balance_wallet,
-                                    Colors.green,
+                                    VentiqHomeTheme.success,
                                     onTap: _showCashOrders,
                                   ),
                                 ),
@@ -668,10 +667,9 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                                 alignment: Alignment.centerLeft,
                                 child: Text(
                                   'Por medio / moneda',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.grey[700],
+                                  style: VentiqHomeTheme.rotuloBloque.copyWith(
+                                    fontSize: 11,
+                                    color: VentiqHomeTheme.textSecondary,
                                   ),
                                 ),
                               ),
@@ -694,7 +692,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                                               e.key,
                                               style: const TextStyle(
                                                 fontSize: 12,
-                                                color: Color(0xFF374151),
+                                                color: VentiqHomeTheme.textSecondary,
                                               ),
                                             ),
                                           ),
@@ -704,7 +702,8 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                                                 : '\$${e.value.toMoneyString(0)} CUP',
                                             style: const TextStyle(
                                               fontSize: 12,
-                                              fontWeight: FontWeight.w600,
+                                              fontWeight: FontWeight.w700,
+                                              color: VentiqHomeTheme.textPrimary,
                                             ),
                                           ),
                                         ],
@@ -750,21 +749,36 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.lock_clock_outlined, size: 72, color: Colors.grey[400]),
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: VentiqHomeTheme.primary.withOpacity(0.07),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.lock_clock_outlined,
+                size: 48,
+                color: VentiqHomeTheme.primary,
+              ),
+            ),
             const SizedBox(height: 20),
             const Text(
               'No hay turno activo',
               style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF1F2937),
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.2,
+                color: VentiqHomeTheme.textPrimary,
               ),
             ),
             const SizedBox(height: 8),
-            Text(
+            const Text(
               'Abre un turno para consultar el resumen de ventas.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 15, color: Colors.grey[600]),
+              style: TextStyle(
+                fontSize: 14,
+                color: VentiqHomeTheme.textSecondary,
+              ),
             ),
           ],
         ),
@@ -779,28 +793,42 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
     Color color,
   ) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.3)),
+        color: VentiqHomeTheme.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: VentiqHomeTheme.border),
+        boxShadow: VentiqHomeTheme.shadowCard,
       ),
       child: Column(
         children: [
-          Icon(icon, color: color, size: 24),
+          Container(
+            padding: const EdgeInsets.all(7),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: color, size: 20),
+          ),
           const SizedBox(height: 8),
           Text(
             title,
-            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.3,
+              color: VentiqHomeTheme.textSecondary,
+            ),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 4),
           Text(
             value,
             style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
+              fontSize: 19,
+              fontWeight: FontWeight.w800,
               color: color,
+              height: 1.15,
             ),
             textAlign: TextAlign.center,
           ),
@@ -818,33 +846,44 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(16),
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withOpacity(0.3)),
+          color: VentiqHomeTheme.card,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: VentiqHomeTheme.border),
+          boxShadow: VentiqHomeTheme.shadowCard,
         ),
         child: Column(
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [Icon(icon, color: color, size: 24)],
+            Container(
+              padding: const EdgeInsets.all(7),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: color, size: 20),
             ),
             const SizedBox(height: 8),
             Text(
               title,
-              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.3,
+                color: VentiqHomeTheme.textSecondary,
+              ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 4),
             Text(
               value,
               style: TextStyle(
-                fontSize: value.contains('\n') ? 13 : 18,
-                fontWeight: FontWeight.bold,
+                fontSize: value.contains('\n') ? 13 : 19,
+                fontWeight: FontWeight.w800,
                 color: color,
+                height: 1.15,
               ),
               textAlign: TextAlign.center,
             ),
@@ -949,20 +988,34 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.receipt_outlined, size: 80, color: Colors.grey[400]),
+          Container(
+            padding: const EdgeInsets.all(22),
+            decoration: BoxDecoration(
+              color: VentiqHomeTheme.primary.withOpacity(0.07),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.receipt_outlined,
+              size: 52,
+              color: VentiqHomeTheme.primary,
+            ),
+          ),
           const SizedBox(height: 16),
-          Text(
+          const Text(
             'No hay ventas registradas',
             style: TextStyle(
               fontSize: 18,
-              fontWeight: FontWeight.w500,
-              color: Colors.grey[600],
+              fontWeight: FontWeight.w800,
+              color: VentiqHomeTheme.textPrimary,
             ),
           ),
           const SizedBox(height: 8),
-          Text(
+          const Text(
             'Los productos vendidos aparecerán aquí',
-            style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+            style: TextStyle(
+              fontSize: 14,
+              color: VentiqHomeTheme.textSecondary,
+            ),
           ),
         ],
       ),
@@ -975,8 +1028,8 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         children: [
           // Header de la lista
           Container(
-            padding: const EdgeInsets.all(16),
-            color: Colors.grey[100],
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            color: VentiqHomeTheme.surface,
             child: const Row(
               children: [
                 Expanded(
@@ -984,9 +1037,10 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                   child: Text(
                     'Orden',
                     style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF1F2937),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.4,
+                      color: VentiqHomeTheme.textSecondary,
                     ),
                   ),
                 ),
@@ -994,9 +1048,10 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                   child: Text(
                     'Cliente',
                     style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF1F2937),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.4,
+                      color: VentiqHomeTheme.textSecondary,
                     ),
                     textAlign: TextAlign.center,
                   ),
@@ -1005,9 +1060,10 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                   child: Text(
                     'Total',
                     style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF1F2937),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.4,
+                      color: VentiqHomeTheme.textSecondary,
                     ),
                     textAlign: TextAlign.center,
                   ),
@@ -1016,9 +1072,10 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                   child: Text(
                     'Acción',
                     style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF1F2937),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.4,
+                      color: VentiqHomeTheme.textSecondary,
                     ),
                     textAlign: TextAlign.center,
                   ),
@@ -1042,45 +1099,39 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           Container(
             margin: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
+              color: VentiqHomeTheme.card,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: VentiqHomeTheme.border),
+              boxShadow: VentiqHomeTheme.shadowCard,
             ),
             child: Column(
               children: [
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF4A90E2).withOpacity(0.1),
+                    color: VentiqHomeTheme.primary.withOpacity(0.08),
                     borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(12),
-                      topRight: Radius.circular(12),
+                      topLeft: Radius.circular(18),
+                      topRight: Radius.circular(18),
                     ),
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.summarize, color: const Color(0xFF4A90E2)),
+                      const Icon(
+                        Icons.summarize,
+                        color: VentiqHomeTheme.primary,
+                      ),
                       const SizedBox(width: 8),
                       const Expanded(
                         child: Text(
                           'Resumen Detallado de Productos',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF1F2937),
-                          ),
+                          style: VentiqHomeTheme.tituloSeccion,
                         ),
                       ),
                       IconButton(
                         onPressed: _imprimirResumenDetallado,
                         icon: const Icon(Icons.print),
-                        color: const Color(0xFF10B981),
+                        color: VentiqHomeTheme.primary,
                         tooltip: 'Imprimir resumen',
                       ),
                     ],
@@ -1093,16 +1144,13 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
           // Total final
           Container(
-            padding: const EdgeInsets.all(16),
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 8,
-                  offset: const Offset(0, -2),
-                ),
-              ],
+              color: VentiqHomeTheme.card,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: VentiqHomeTheme.border),
+              boxShadow: VentiqHomeTheme.shadowCard,
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1110,17 +1158,18 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                 const Text(
                   'TOTAL GENERAL:',
                   style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF1F2937),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.6,
+                    color: VentiqHomeTheme.textPrimary,
                   ),
                 ),
                 Text(
                   '\$${_totalVentas.toMoneyString(0)}',
                   style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF4A90E2),
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                    color: VentiqHomeTheme.primary,
                   ),
                 ),
               ],
@@ -1136,9 +1185,10 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey[300]!),
+        color: VentiqHomeTheme.card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: VentiqHomeTheme.border),
+        boxShadow: VentiqHomeTheme.shadowCard,
       ),
       child: Row(
         children: [
@@ -1152,14 +1202,17 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                   'Orden ${order.id}',
                   style: const TextStyle(
                     fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1F2937),
+                    fontWeight: FontWeight.w700,
+                    color: VentiqHomeTheme.textPrimary,
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   '${order.items.length} productos',
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: VentiqHomeTheme.textSecondary,
+                  ),
                 ),
               ],
             ),
@@ -1169,7 +1222,10 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           Expanded(
             child: Text(
               order.buyerName ?? 'Sin nombre',
-              style: const TextStyle(fontSize: 12, color: Color(0xFF1F2937)),
+              style: const TextStyle(
+                fontSize: 12,
+                color: VentiqHomeTheme.textPrimary,
+              ),
               textAlign: TextAlign.center,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
@@ -1182,8 +1238,8 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
               '\$${order.total.toMoneyString(0)}',
               style: const TextStyle(
                 fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF4A90E2),
+                fontWeight: FontWeight.w700,
+                color: VentiqHomeTheme.primary,
               ),
               textAlign: TextAlign.center,
             ),
@@ -1195,7 +1251,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
               child: IconButton(
                 onPressed: () => _imprimirTicketIndividual(order),
                 icon: const Icon(Icons.print),
-                color: const Color(0xFF10B981),
+                color: VentiqHomeTheme.primary,
                 tooltip: 'Imprimir ticket',
                 iconSize: 20,
               ),
@@ -1362,8 +1418,8 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
       children: [
         // Header de la tabla detallada
         Container(
-          padding: const EdgeInsets.all(12),
-          color: Colors.grey[100],
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          color: VentiqHomeTheme.surface,
           child: const Row(
             children: [
               Expanded(
@@ -1371,9 +1427,9 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                 child: Text(
                   'Producto',
                   style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1F2937),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: VentiqHomeTheme.textSecondary,
                   ),
                 ),
               ),
@@ -1381,9 +1437,9 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                 child: Text(
                   'Inicial',
                   style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1F2937),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: VentiqHomeTheme.textSecondary,
                   ),
                   textAlign: TextAlign.center,
                 ),
@@ -1392,9 +1448,9 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                 child: Text(
                   'Entra.',
                   style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1F2937),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: VentiqHomeTheme.textSecondary,
                   ),
                   textAlign: TextAlign.center,
                 ),
@@ -1403,9 +1459,9 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                 child: Text(
                   'Vend.',
                   style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1F2937),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: VentiqHomeTheme.textSecondary,
                   ),
                   textAlign: TextAlign.center,
                 ),
@@ -1414,9 +1470,9 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                 child: Text(
                   'Final',
                   style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1F2937),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: VentiqHomeTheme.textSecondary,
                   ),
                   textAlign: TextAlign.center,
                 ),
@@ -1425,9 +1481,9 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                 child: Text(
                   'Total',
                   style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1F2937),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: VentiqHomeTheme.textSecondary,
                   ),
                   textAlign: TextAlign.right,
                 ),
@@ -1477,9 +1533,12 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: Colors.grey[200]!)),
+        border: Border(bottom: BorderSide(color: VentiqHomeTheme.border)),
         // Fondo diferente para ingredientes
-        color: esIngrediente ? Colors.orange[50] : Colors.white,
+        color:
+            esIngrediente
+                ? VentiqHomeTheme.warning.withOpacity(0.06)
+                : VentiqHomeTheme.card,
       ),
       child: Row(
         children: [
@@ -1493,10 +1552,10 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                   children: [
                     // Ícono para ingredientes
                     if (esIngrediente) ...[
-                      Icon(
+                      const Icon(
                         Icons.restaurant,
                         size: 14,
-                        color: Colors.orange[700],
+                        color: VentiqHomeTheme.warning,
                       ),
                       const SizedBox(width: 4),
                     ],
@@ -1505,11 +1564,11 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                         nombre,
                         style: TextStyle(
                           fontSize: 12,
-                          fontWeight: FontWeight.w500,
+                          fontWeight: FontWeight.w600,
                           color:
                               esIngrediente
-                                  ? Colors.orange[800]
-                                  : const Color(0xFF1F2937),
+                                  ? VentiqHomeTheme.warning
+                                  : VentiqHomeTheme.textPrimary,
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
@@ -1520,20 +1579,26 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                 if (esIngrediente) ...[
                   Text(
                     'Ingrediente${unidadMedida != null ? ' ($unidadMedida)' : ''}',
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 10,
-                      color: Colors.orange[600],
+                      color: VentiqHomeTheme.warning,
                       fontStyle: FontStyle.italic,
                     ),
                   ),
                   Text(
                     '\$${item.precioUnitario.toMoneyString(2)} c/u',
-                    style: TextStyle(fontSize: 10, color: Colors.orange[600]),
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: VentiqHomeTheme.warning,
+                    ),
                   ),
                 ] else ...[
                   Text(
                     '\$${item.precioUnitario.toMoneyString(0)} c/u',
-                    style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: VentiqHomeTheme.textSecondary,
+                    ),
                   ),
                 ],
               ],
@@ -1546,8 +1611,8 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
               cantidadInicialTexto,
               style: const TextStyle(
                 fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: Colors.blue,
+                fontWeight: FontWeight.w600,
+                color: VentiqHomeTheme.primary,
               ),
               textAlign: TextAlign.center,
             ),
@@ -1559,8 +1624,8 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
               entradasTexto,
               style: const TextStyle(
                 fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: Colors.purple,
+                fontWeight: FontWeight.w600,
+                color: VentiqHomeTheme.accent,
               ),
               textAlign: TextAlign.center,
             ),
@@ -1570,10 +1635,10 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           Expanded(
             child: Text(
               cantidadMostrar.toStringAsFixed(esIngrediente ? 1 : 0),
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 12,
-                color: esIngrediente ? Colors.orange[700] : Colors.orange,
-                fontWeight: FontWeight.w500,
+                color: VentiqHomeTheme.warning,
+                fontWeight: FontWeight.w600,
               ),
               textAlign: TextAlign.center,
             ),
@@ -1585,8 +1650,8 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
               cantidadFinalTexto,
               style: const TextStyle(
                 fontSize: 12,
-                color: Colors.green,
-                fontWeight: FontWeight.w500,
+                color: VentiqHomeTheme.success,
+                fontWeight: FontWeight.w600,
               ),
               textAlign: TextAlign.center,
             ),
@@ -1598,11 +1663,11 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
               '\$${subtotal.toMoneyString(esIngrediente ? 2 : 0)}',
               style: TextStyle(
                 fontSize: 12,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
                 color:
                     esIngrediente
-                        ? Colors.orange[700]
-                        : const Color(0xFF4A90E2),
+                        ? VentiqHomeTheme.warning
+                        : VentiqHomeTheme.primary,
               ),
               textAlign: TextAlign.right,
             ),
@@ -1648,7 +1713,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           (context) => AlertDialog(
             title: Row(
               children: [
-                Icon(Icons.error, color: Colors.red),
+                const Icon(Icons.error, color: VentiqHomeTheme.danger),
                 const SizedBox(width: 8),
                 Text(title),
               ],
@@ -1671,7 +1736,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           (context) => AlertDialog(
             title: Row(
               children: [
-                Icon(Icons.check_circle, color: const Color(0xFF10B981)),
+                const Icon(Icons.check_circle, color: VentiqHomeTheme.success),
                 const SizedBox(width: 8),
                 Text(title),
               ],
@@ -1681,8 +1746,11 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
               ElevatedButton(
                 onPressed: () => Navigator.pop(context),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF10B981),
+                  backgroundColor: VentiqHomeTheme.success,
                   foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
                 child: const Text('OK'),
               ),
@@ -1824,7 +1892,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
               (context) => AlertDialog(
                 title: Row(
                   children: [
-                    Icon(Icons.summarize, color: const Color(0xFF4A90E2)),
+                    const Icon(Icons.summarize, color: VentiqHomeTheme.primary),
                     const SizedBox(width: 8),
                     const Text('Imprimir Resumen'),
                   ],
@@ -1840,8 +1908,9 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.grey[100],
-                        borderRadius: BorderRadius.circular(8),
+                        color: VentiqHomeTheme.surface,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: VentiqHomeTheme.border),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1876,8 +1945,11 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                     icon: const Icon(Icons.print),
                     label: const Text('Imprimir'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF4A90E2),
+                      backgroundColor: VentiqHomeTheme.primary,
                       foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                   ),
                 ],
@@ -2075,21 +2147,19 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF4A90E2).withOpacity(0.3)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        color: VentiqHomeTheme.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: VentiqHomeTheme.border),
+        boxShadow: VentiqHomeTheme.shadowCard,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.attach_money, size: 16, color: Color(0xFF4A90E2)),
+          const Icon(
+            Icons.attach_money,
+            size: 16,
+            color: VentiqHomeTheme.primary,
+          ),
           const SizedBox(width: 4),
           _isLoadingUsdRate
               ? const SizedBox(
@@ -2097,15 +2167,15 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                 height: 12,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
-                  color: Color(0xFF4A90E2),
+                  color: VentiqHomeTheme.primary,
                 ),
               )
               : Text(
                 'USD: \$${_usdRate.toStringAsFixed(0)}',
                 style: const TextStyle(
                   fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF2C3E50),
+                  fontWeight: FontWeight.w700,
+                  color: VentiqHomeTheme.textPrimary,
                 ),
               ),
         ],

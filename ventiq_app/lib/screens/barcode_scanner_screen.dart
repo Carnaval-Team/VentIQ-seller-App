@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../services/barcode_service.dart';
 import 'product_details_screen.dart';
+import '../theme/ventiq_home_theme.dart';
 
 class BarcodeScannerScreen extends StatefulWidget {
   const BarcodeScannerScreen({Key? key}) : super(key: key);
@@ -18,7 +19,9 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
   final BarcodeService _barcodeService = BarcodeService();
   bool isSearching = false;
   DateTime? lastScanTime;
-  static const Duration scanCooldown = Duration(seconds: 3); // 3 segundos entre escaneos
+  static const Duration scanCooldown = Duration(
+    seconds: 3,
+  ); // 3 segundos entre escaneos
 
   @override
   void initState() {
@@ -36,7 +39,7 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF4A90E2),
+        backgroundColor: VentiqHomeTheme.primary,
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
@@ -113,7 +116,7 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
                     child: Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF4A90E2).withOpacity(0.9),
+                        color: VentiqHomeTheme.primary.withOpacity(0.9),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Column(
@@ -168,7 +171,7 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
             child: ElevatedButton(
               onPressed: () => Navigator.pop(context),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF4A90E2),
+                backgroundColor: VentiqHomeTheme.primary,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(
@@ -178,10 +181,7 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
               ),
               child: const Text(
                 'Finalizar Escaneo',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
             ),
           ),
@@ -193,14 +193,19 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
   void _onBarcodeDetect(BarcodeCapture capture) {
     final List<Barcode> barcodes = capture.barcodes;
     for (final barcode in barcodes) {
-      if (barcode.rawValue != null && barcode.rawValue!.isNotEmpty && !isSearching) {
+      if (barcode.rawValue != null &&
+          barcode.rawValue!.isNotEmpty &&
+          !isSearching) {
         // Verificar si ha pasado suficiente tiempo desde el último escaneo
         final now = DateTime.now();
-        if (lastScanTime != null && now.difference(lastScanTime!) < scanCooldown) {
-          print('Escaneo ignorado - cooldown activo. Tiempo restante: ${scanCooldown.inSeconds - now.difference(lastScanTime!).inSeconds}s');
+        if (lastScanTime != null &&
+            now.difference(lastScanTime!) < scanCooldown) {
+          print(
+            'Escaneo ignorado - cooldown activo. Tiempo restante: ${scanCooldown.inSeconds - now.difference(lastScanTime!).inSeconds}s',
+          );
           return;
         }
-        
+
         lastScanTime = now;
         _searchProduct(barcode.rawValue!);
       }
@@ -235,10 +240,11 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => ProductDetailsScreen(
-              product: result.producto!,
-              categoryColor: const Color(0xFF4A90E2),
-            ),
+            builder:
+                (context) => ProductDetailsScreen(
+                  product: result.producto!,
+                  categoryColor: VentiqHomeTheme.primary,
+                ),
           ),
         );
       } else {
@@ -261,46 +267,52 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
   ) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Producto no encontrado'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Código: $barcode'),
-              // Mostrar desglose si existe
-              if (desglose != null && desglose['prefijo_pais'] != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  'Fabricante: ${desglose['codigo_fabricante'] ?? '—'}',
-                  style: const TextStyle(fontSize: 13, color: Colors.grey),
-                ),
-              ],
-              // Mostrar productos similares
-              if (similares.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                const Divider(),
-                Text(
-                  'Productos del mismo fabricante (${similares.length}):',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                ),
-                const SizedBox(height: 8),
-                ...similares.take(5).map((s) => _buildSimilarProductTile(s)),
-              ] else ...[
-                const SizedBox(height: 8),
-                const Text('No se encontraron productos similares.'),
-              ],
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Producto no encontrado'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Código: $barcode'),
+                  // Mostrar desglose si existe
+                  if (desglose != null && desglose['prefijo_pais'] != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Fabricante: ${desglose['codigo_fabricante'] ?? '—'}',
+                      style: const TextStyle(fontSize: 13, color: Colors.grey),
+                    ),
+                  ],
+                  // Mostrar productos similares
+                  if (similares.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    const Divider(),
+                    Text(
+                      'Productos del mismo fabricante (${similares.length}):',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ...similares
+                        .take(5)
+                        .map((s) => _buildSimilarProductTile(s)),
+                  ] else ...[
+                    const SizedBox(height: 8),
+                    const Text('No se encontraron productos similares.'),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('OK'),
+              ),
             ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -312,13 +324,23 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          const Icon(Icons.inventory_2_outlined, size: 18, color: Color(0xFF4A90E2)),
+          const Icon(
+            Icons.inventory_2_outlined,
+            size: 18,
+            color: VentiqHomeTheme.primary,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(nombre, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                Text(
+                  nombre,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
                 Text(
                   'Precio: \$$precio  |  Stock: $stock',
                   style: const TextStyle(fontSize: 11, color: Colors.grey),
@@ -334,16 +356,17 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
   void _showErrorDialog(String message) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Error'),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Error'),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('OK'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 

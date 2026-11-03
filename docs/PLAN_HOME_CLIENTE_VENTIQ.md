@@ -1,4 +1,4 @@
-# Plan: Home tipo «cliente» para el TPV + detalle de producto optimizado
+﻿# Plan: Home tipo «cliente» para el TPV + detalle de producto optimizado
 
 Rediseño del **home de `ventiq_app`** (web y APK) para que se vea y se sienta como el
 home de cliente de `inventtia_flow`, con **categorías especiales** configurables desde
@@ -9,12 +9,14 @@ home de cliente de `inventtia_flow`, con **categorías especiales** configurable
 Checklist de implementación. Marca `[x]` lo hecho, `[~]` parcial, `[ ]` pendiente.
 Vamos avanzando fase por fase; no saltar dependencias.
 
-> **Estado:** migraciones **aplicadas en producción y verificadas** (incluidas las 2 de la fase 4:
-> contadores del Home y venta de elaborados por receta) · limpieza de duplicados **descartada** ·
-> **Fases 1–5 completas + unificación visual del resto de la app** (198 tests en verde; incluye
-> tema global, detalle, preorden, órdenes, settings, drawer y notificaciones) · pendiente: revisión
-> visual en dispositivo y **Fase 6 (admin de categorías)**.
-> **Fecha:** 2026-11-02 (última actualización) · **Alcance:** `ventiq_app` (web + apk), `ventiq_admin_app`, `supabase/migrations`.
+> **Estado:** migraciones del Home **aplicadas en producción y verificadas** (contadores y venta de
+> elaborados por receta) · limpieza de duplicados **descartada** · **Fases 1–5 completas** (rediseño
+> visual del TPV + **paridad offline del Home nuevo**) · **Fase 6 (admin) implementada** · **Fase 7
+> cerrada** (rieles «Ofertas» y «Más vendidos», D2 «Tienda» desde `app_dat_tienda`, fluid mode
+> eliminado, mock del admin redirigido, código muerto y bugs R16) · **Fase 8 parcial** (tests de
+> layout 360/412/1280) · **230 tests en verde** · ⚠️ **2 migraciones pendientes de aplicar** (v2 del
+> admin y `fn_top_productos_tpv`/`fn_ofertas_tpv`).
+> **Fecha:** 2026-11-03 (última actualización) · **Alcance:** `ventiq_app` (web + apk), `ventiq_admin_app`, `supabase/migrations`.
 > **Decisiones abiertas:** solo **D2** (nombre fijo «Tienda»). D3/D5/D6 quedaron implementadas de hecho:
 > `orden_home`, un único `HomeShellScreen` y búsqueda inline.
 
@@ -1308,39 +1310,164 @@ manteniendo profesionalidad.
       con icono en contenedor primary, chips primary, lista con iconos semánticos por tipo, fondo de
       no leído primary al 4 %, swipe de borrado `danger`, estado vacío limpio.
 
+- [x] **Segunda pasada (2026-11-03)**: checkout, venta total y paquetes; cierre y apertura de caja;
+      listado de productos, mesas/mesa detail/cuenta de mesa y servicentro; y el azul de marca en
+      login/login web/splash. Mismo patrón: superficie, cards radio 16-18 con borde y `shadowCard`,
+      jerarquía tipográfica, badges semánticos en pastel, botones radio 12. `ThemeData` global
+      heredado por el resto de pantallas.
+- [x] **Tercera pasada (2026-11-03, en curso)**:
+  - **Mesas y Comensales** (`mesas_screen.dart`): hero con degradado de marca y **anillo de
+    ocupación animado** (`TweenAnimationBuilder` 0→% real), tres stat tiles (libres/ocupadas/
+    cuentas) y chip de «mesa con más actividad»; buscador con el input del tema y chips de zona
+    (`ChoiceChip` primary + contador de mesas visibles); tarjetas más altas (190 px, ratio 0.78) con
+    **entrada escalonada** (fade + slide, 35 ms por índice) y **color de estado animado**
+    (`AnimatedContainer`), ocupación real `comensales/capacidad` en la cabecera y pill de cuentas
+    abiertas en el cuerpo; bottom sheet de acciones con cabecera de mesa + estado y tokens; estado
+    vacío con círculo e icono y CTA. Snackbars y banner de error con tokens semánticos.
+  - **Botón flotante «Mis ventas»** (`sales_monitor_fab.dart`) en ventas de mostrador: pasa de FAB
+    redondo azul a **píldora con degradado de marca, etiqueta siempre visible y badge con el total
+    del turno** (más icono de offline cuando aplica). El panel se rediseño con cabecera degradada
+    (título, estado del turno, total grande, refresco), métricas de **Operaciones** y **Ticket
+    promedio** (derivado, solo presentación), **desglose por medio de pago con barras
+    proporcionales**, tarjeta de egresos cuando los hay, productos vendidos y **acciones rápidas**
+    (Órdenes · Carrito · Cierre) que cierran el panel antes de navegar. Animación de apertura con
+    escala/opacidad y `AnimatedSwitcher` al pasar de carga a datos.
+
+- [x] **Cuarta pasada (2026-11-03)**: barrido de tokens en las **30 vistas restantes** —cocina
+      (kds_screen, produccion_screen), egreso_screen, shift_workers_screen,
+      subscription_detail_screen, default_order_items_screen, wifi_printers_screen,
+      arcode_scanner_screen, payment_method_picker_screen, offline_data_viewer_screen,
+      offline_user_switch_screen, las **17 pantallas de lib/screens/admin/** y el widget
+      compartido cash_count_dialog—: AppBar/fondos a primary/surface, grises a
+      	extPrimary/	extSecondary/order, azules y naranjas de estado a primary/warning,
+      cards heredando el CardTheme global (radio 18 + borde), const normalizados y formato.
+      Quedan a cero los colores ad-hoc ( xFF4A90E2, Colors.grey, Colors.blue) en esas
+      pantallas. categories_screen/categories_web_screen (fallback viejo) también recibieron el
+      import del tema para sus scaffolds.
+
 **Notas**
 
-- Los cambios fueron **solo visuales** (colores, radios, bordes, sombras, paddings, tipografía);
-  no se tocaron servicios, lógica, callbacks, keys ni textos. Verificado por compilación completa.
+- Los cambios fueron **solo visuales** (colores, radios, bordes, sombras, paddings, tipografía,
+  animaciones); no se tocaron servicios, lógica, callbacks, keys ni textos. Verificado por
+  compilación completa y `test/home` en verde.
 - **No verificado en emulador** en esta sesión (el CLI de Flutter está bloqueado por el sandbox):
   hace falta una pasada visual real en móvil y web.
 - `dart format` de Dart 3.12 no es canónico con el baseline del repo; se evitó reformatear en masa
   para no mezclar ruido con el rediseño (pendiente un formateo global aparte).
 
-**Pantallas pendientes de revisar** (ver informe de la sesión): checkout, venta total, cierre,
-apertura, paquetes, mesas/cuenta, `products_screen`, servicentro, login/splash y pantallas técnicas.
+**Pantallas aún sin tocar** (prioridad sugerida): `kds_screen` y `produccion_screen` (cocina, tienen
+lenguaje propio), `egreso_screen`, `shift_workers_screen`, `subscription_detail_screen`,
+`default_order_items_screen`, `barcode_scanner_screen`, `payment_method_picker_screen`,
+`fluid_mode_screen`, `offline_*`, `wifi_printers_screen`, `categories_screen`/`categories_web_screen`
+(fallback viejo) y `lib/screens/admin/*` (app aparte).
 
-### Fase 6 — Admin
-- [ ] `models/category.dart` + `services/category_service.dart` (incluye escribir en la puente)
-- [ ] `widgets/categories_tab_view.dart`: switch, chip, reorden, contador
-- [ ] Aviso si la categoría no tiene productos vendibles
-- [ ] Probar el admin contra la base real antes de cerrar la fase
+### Fase 5.2 — Offline del Home nuevo ✅ (código y tests; pendiente probar en dispositivo)
 
-### Fase 7 — Extras y limpieza (tras validar)
-- [ ] Riel «Más vendidos» (necesita RPC de ranking por TPV)
-- [ ] Promociones vigentes como riel
-- [ ] Deprecar y borrar `fluid_mode_screen.dart` + `fluid_product_details_widget.dart` + `product_search_widget.dart`
-- [ ] Renombrar «Tienda» desde `app_dat_configuracion_tienda` (D2)
-- [ ] Arreglar o retirar la ruta mock `/categories` del admin
-- [ ] **Borrar código muerto**: `_ProductCard` + `_PropertyIcon` (`products_screen.dart:1387-1759`, ~373 líneas),
-      `_buildUsdRateChip` (`product_details_screen.dart:4001-4041`), `_getTotalItems` (`:2979-2989`),
-      estado `_selectedPresentation` (`:81`)
-- [ ] Arreglar los bugs de §R16 (`admin_inventory_service.dart:1665`, `product_details_screen.dart:3134`,
-      etiqueta `'Sin subcategoría'` vs `'General'`, changelog web con `'1.0.0'`)
+Al revisar la paridad offline se encontró que el Home viejo cargaba catálogo, subcategorías y
+productos de la caché, pero el nuevo solo caía al snapshot en `catalogo()`.
 
-### Fase 8 — QA y rollout
-- [ ] `flutter analyze` limpio en `ventiq_app` y `ventiq_admin_app`
-- [ ] Golden tests: home (360, 412, 1280) y drawer en sus 3 niveles
+- [x] **`home_offline_mapper.dart`** (nuevo, puro): mapea el cache offline (`offline_products` de
+      SQLite y `offline_data` legacy) a `HomeSubcategoria`/`HomeProducto`, agrupa homónimos por
+      `claveNombre`, deduplica por id y deriva un `id_subcategoria` estable (FNV-1a, negativo si no
+      existe real) para que el filtro cliente de `HomeController` siga cuadrando.
+- [x] **`HomeCatalogService`**: `shouldUseLocalData()` ⇒ cache local directo (sin red ni RPC de
+      elaborados); si la RPC falla ⇒ mismo cache; sin cache ⇒ listas vacías y log claro, sin
+      excepción. Online intacto; `SupabaseClient` y `ElaboratedAvailabilityService` pasan a ser
+      perezosos/inyectables para poder testear.
+- [x] **25 tests nuevos** en `test/home/offline_home_test.dart` (mapeo, agrupación, paridad
+      subcategoría↔productos, filtros, servicio con fuente fake: offline / red caída / cache vacío).
+      `test/home` completo: **223 en verde**.
+
+**Pendientes anotados (no reescritos):**
+
+1. `catalogo()` no consulta `shouldUseLocalData()` antes de la red: en full-offline con red puede
+   ignorar el snapshot (mezcla catálogo online con drawer offline) y con red colgada espera al
+   timeout antes de caer al snapshot.
+2. Sin snapshot (dispositivo preparado que nunca abrió el Home online) `catalogo()` propaga error.
+3. Ahorro de datos: solo atenúa miniaturas de producto; las tarjetas de categoría siguen
+   descargando `Image.network` (el Home viejo sí lo respetaba).
+4. La búsqueda global del shell (`ProductService.searchProducts`) no tiene fallback offline
+   (devuelve vacío, sin crash); `HomeController.productos(texto:)` offline sí funciona.
+5. Quick add offline necesita `detalles_completos` en cache; sin ellos avisa y no vende.
+6. El sync guarda `es_elaborado = es_elaborado OR es_servicio`: un servicio offline se mapea como
+   elaborado (manda al detalle en vez de añadir directo; no impide vender).
+
+### Fase 6 — Admin ✅ (código hecho; falta aplicar la migración v2 y probar writes en real)
+
+- [x] **`models/category.dart`**: `especial` (bool) y `ordenHome` (int) en constructor, `fromJson`,
+      `toJson` y `copyWith`.
+- [x] **`services/category_service.dart`**: mezcla la config por tienda de
+      `app_dat_categoria_tienda` con el listado (v1, que sí responde) y lo ordena como el Home;
+      `getVendibleProductCountsByCategory()` por PostgREST paginado (sin SQL nuevo);
+      `createCategoryWithId(especial:)`, `updateCategory(especial:, ordenHome:)` con error logueado
+      (no falla en silencio), `setEspecial`, `setOrdenHome` y `reorderEspeciales`.
+- [x] **`widgets/categories_tab_view.dart`**: contador «N productos»/«Sin productos» con aviso
+      «No aparecerá en el Home del TPV», toggle «Especial» optimista con rollback, bloque «Home del
+      TPV» en el detalle (switch, chip ESPECIAL, orden ↑/↓), bloque «Categoría especial» en
+      Alta/Edición y contador «N especiales de M categorías».
+- [x] **Compilación**: `ventiq_admin_app/test/app_compile_test.dart` (nuevo smoke) → verde.
+- [ ] **Aplicar la migración** `20261103120000_fix_get_categorias_v2_smallint.sql`: la v2 está
+      **rota en producción** (`P0001: structure of query does not match function result type`)
+      porque `coalesce(ct.orden_home, 0)` resuelve a `integer` y el `RETURNS TABLE` declara
+      `smallint`. El Home del TPV no la usa (su RPC ya castea `min(...)::smallint`); afecta al admin,
+      que mientras tanto lee la config directamente de la tabla puente.
+- [ ] Probar writes con sesión autenticada (marcar/desmarcar especial, reordenar, ver el orden en el
+      Home del TPV) y la pasada visual en móvil.
+- Nota: el contador del admin cuenta productos por `id_categoria` (9081 vendibles en total, 144 sin
+  subcategoría), así que puede ser algo mayor que el del Home, que cuenta vía subcategorías.
+
+### Fase 7 — Extras y limpieza ✅ (código completo; falta aplicar 2 migraciones)
+
+- [x] **Riel «Más vendidos»** — **RPC nueva** `fn_top_productos_tpv(p_id_tpv, p_dias, p_limit)` en
+      `supabase/migrations/20261103130000_fn_top_productos_y_ofertas_tpv.sql`: ventas propias del
+      TPV en la ventana de días (mismo camino que `fn_productos_vendidos_por_turno_v2`), filtradas al
+      almacén del TPV, con precio y descuento vigente. Cliente: `HomeExtrasService.masVendidos()` +
+      riel `RielProductos` en el Home (pintado entre destacadas y «Tienda»), tolerante: si la RPC no
+      está aplicada el riel no aparece y el Home sigue igual. Tap → carga la ficha completa con
+      `ProductDetailService` y abre el detalle con stock real.
+- [x] **«Ofertas» en vez de promociones de marketing** — revisado en Supabase: `app_mkt_promociones`
+      tiene 45 filas pero **0 vigentes** y **0 para la tienda 223**; una rail de campañas saldría
+      vacía. Lo que sí hay son **ofertas de producto** en `app_dat_precio_venta.precio_descuento` con
+      fechas (ej.: `5350 → 4800`). Decisión: el riel «Ofertas» se alimenta de
+      `fn_ofertas_tpv(p_id_tpv, p_limit)` (descuento vigente + producto vendible en el almacén del
+      TPV) con precio tachado y badge `-N%`. Si más adelante se quieren campañas, se añade un tercer
+      riel sin tocar este.
+- [x] **Deprecar y borrar el modo fluido** (D4): eliminados `fluid_mode_screen.dart`,
+      `fluid_product_details_widget.dart` y `product_search_widget.dart`; `categories_screen.dart` ya
+      no navega a `FluidModeScreen`. Sin referencias; ambas apps compilan.
+- [x] **Renombrar «Tienda» (D2)** — corregido: `app_dat_configuracion_tienda` no guarda el nombre
+      (es config de Carnaval); el dato está en `app_dat_tienda.denominacion`. El Home lo lee (con
+      fallback «Tienda») y `TiendaCard` lo pinta en título y `Semantics`.
+- [x] **Retirar (en realidad: redirigir) la ruta mock `/categories` del admin**: apuntaba a una
+      pantalla con `MockDataService`; ahora abre `SettingsScreen`, donde vive `CategoriesTabView` (la
+      gestión real). Borradas la pantalla mock y el servicio de datos mock.
+- [x] **Borrar código muerto**: `_ProductCard` + `_PropertyIcon` (~350 líneas, sin referencias) y
+      `_getTotalItems()`; estado `_selectedPresentation` (solo se escribía) y sus `debugPrint`;
+      `_buildUsdRateChip` ya se borró en la Fase 5.
+- [x] **Bugs de §R16**:
+  - `admin_inventory_service.dart` escribía `id_categoria` como `id_sub_categoria` (enlace a
+    subcategoría ajena) con `catch (_)`: ahora usa `id_subcategoria` del payload o resuelve la
+    primera subcategoría real de `app_dat_subcategorias` (`idcategoria`), y si no hay deja log.
+  - `product_details_screen.dart` localizaba la variante con `productName.contains(...)` (dos
+    variantes «Caja»/«Caja grande» escribían en la equivocada): ahora se pasa la variante y se usa
+    por identidad.
+  - Etiqueta unificada a **«General»** en `product_service.dart`; changelog web guarda
+    `changelog.version` en vez de `'1.0.0'`.
+  - Queda anotada la validación de stock del overlay web viejo (`categories_web_screen.dart`): se
+    resuelve al retirar esas pantallas.
+
+**Migraciones pendientes de aplicar (2):**
+1. `20261103120000_fix_get_categorias_v2_smallint.sql` (admin, v2 rota).
+2. `20261103130000_fn_top_productos_y_ofertas_tpv.sql` (rieles del Home). Hasta aplicarla, los rieles
+   no aparecen pero el Home funciona igual.
+
+### Fase 8 — QA y rollout (parcial)
+- [ ] `flutter analyze` limpio — sustituido por compilación completa de la app (el analizador MCP de
+      este repo no es fiable y no hay CLI en el sandbox).
+- [x] **Tests de layout del Home en 360, 412 y 1280 px** (`test/home/home_layout_test.dart`): montan el
+  widget real con datos de ejemplo y comprueban que no hay overflow/excepciones y que se pintan
+  saludo, buscador, especiales y «Tienda». No son goldens de imagen (no se pueden generar aquí); el
+  drawer ya está cubierto por `categoria_drawer_test.dart`.
 - [ ] Prueba manual en APK real: 1 mano, 360 px, teclado abierto
 - [ ] Prueba en Chrome del TPV: redimensionar, zoom 125 %
 - [ ] Modo sin conexión: home desde caché, drawer desde caché, **flag `especial` presente offline**

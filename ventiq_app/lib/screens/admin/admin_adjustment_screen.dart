@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../services/admin_inventory_service.dart';
 import '../../services/admin_ticket_printer_service.dart';
 import '../../utils/presentacion_cadena_local.dart';
 import '../../utils/presentation_selection.dart';
+import '../../theme/ventiq_home_theme.dart';
 
 /// Ajuste de inventario (offline-first).
 class AdminAdjustmentScreen extends StatefulWidget {
@@ -89,16 +90,16 @@ class _AdminAdjustmentScreenState extends State<AdminAdjustmentScreen> {
   Future<void> _save() async {
     final p = _selected;
     if (p == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Selecciona un producto')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Selecciona un producto')));
       return;
     }
     final nueva = double.tryParse(_qtyCtrl.text.replaceAll(',', '.'));
     if (nueva == null || nueva < 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cantidad inválida')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Cantidad inválida')));
       return;
     }
 
@@ -110,7 +111,8 @@ class _AdminAdjustmentScreenState extends State<AdminAdjustmentScreen> {
       final inv = detalles['inventario'];
       if (inv is List && inv.isNotEmpty) {
         final first = Map<String, dynamic>.from(inv.first as Map);
-        locationId = (first['id_ubicacion'] as num?)?.toInt() ??
+        locationId =
+            (first['id_ubicacion'] as num?)?.toInt() ??
             (first['ubicacion'] is Map
                 ? (first['ubicacion']['id'] as num?)?.toInt()
                 : null);
@@ -132,9 +134,10 @@ class _AdminAdjustmentScreenState extends State<AdminAdjustmentScreen> {
         locationId: locationId,
         cantidadAnterior: anterior,
         cantidadNueva: nueva,
-        motivo: _motivoCtrl.text.trim().isEmpty
-            ? 'Ajuste desde Caja'
-            : _motivoCtrl.text.trim(),
+        motivo:
+            _motivoCtrl.text.trim().isEmpty
+                ? 'Ajuste desde Caja'
+                : _motivoCtrl.text.trim(),
         observaciones: _obsCtrl.text.trim(),
       );
       if (!mounted) return;
@@ -151,9 +154,10 @@ class _AdminAdjustmentScreenState extends State<AdminAdjustmentScreen> {
           producto: p['denominacion']?.toString() ?? '#${p['id']}',
           anterior: anterior,
           nueva: nueva,
-          motivo: _motivoCtrl.text.trim().isEmpty
-              ? 'Ajuste desde Caja'
-              : _motivoCtrl.text.trim(),
+          motivo:
+              _motivoCtrl.text.trim().isEmpty
+                  ? 'Ajuste desde Caja'
+                  : _motivoCtrl.text.trim(),
           observaciones: _obsCtrl.text.trim(),
         ),
       );
@@ -174,7 +178,7 @@ class _AdminAdjustmentScreenState extends State<AdminAdjustmentScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Ajuste de inventario'),
-        backgroundColor: Colors.blue[700],
+        backgroundColor: VentiqHomeTheme.primary,
         foregroundColor: Colors.white,
       ),
       body: ListView(
@@ -185,16 +189,17 @@ class _AdminAdjustmentScreenState extends State<AdminAdjustmentScreen> {
             decoration: InputDecoration(
               labelText: 'Producto',
               border: const OutlineInputBorder(),
-              suffixIcon: _searching
-                  ? const Padding(
-                      padding: EdgeInsets.all(12),
-                      child: SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    )
-                  : const Icon(Icons.search),
+              suffixIcon:
+                  _searching
+                      ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                      : const Icon(Icons.search),
             ),
             onChanged: _search,
           ),
@@ -224,7 +229,7 @@ class _AdminAdjustmentScreenState extends State<AdminAdjustmentScreen> {
             const SizedBox(height: 12),
             Text(
               'Stock actual: ${_selected!['cantidad'] ?? 0}',
-              style: TextStyle(color: Colors.grey[700]),
+              style: TextStyle(color: VentiqHomeTheme.textSecondary),
             ),
 
             // ── FASE 2: en qué presentación se está contando ───────────────
@@ -238,23 +243,23 @@ class _AdminAdjustmentScreenState extends State<AdminAdjustmentScreen> {
                   border: OutlineInputBorder(),
                   helperText: 'El ajuste solo toca esta presentación',
                 ),
-                items: _cadena
-                    .map(
-                      (p) => DropdownMenuItem<int>(
-                        value: p.idPresentacion,
-                        child: Text(
-                          p.esBase
-                              ? '${p.nombre} (base)'
-                              : '${p.nombre} = '
-                                  '${FormatoPresentacion.cantidad(p.factorRel)} '
-                                  '${FormatoPresentacion.plural(_nombreBase, p.factorRel)}',
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (v) =>
-                    setState(() => _idPresentacionElegida = v),
+                items:
+                    _cadena
+                        .map(
+                          (p) => DropdownMenuItem<int>(
+                            value: p.idPresentacion,
+                            child: Text(
+                              p.esBase
+                                  ? '${p.nombre} (base)'
+                                  : '${p.nombre} = '
+                                      '${FormatoPresentacion.cantidad(p.factorRel)} '
+                                      '${FormatoPresentacion.plural(_nombreBase, p.factorRel)}',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        )
+                        .toList(),
+                onChanged: (v) => setState(() => _idPresentacionElegida = v),
               ),
             ],
           ],
@@ -268,9 +273,10 @@ class _AdminAdjustmentScreenState extends State<AdminAdjustmentScreen> {
             decoration: InputDecoration(
               // La etiqueta dice la unidad para que nadie cuente cajas creyendo
               // que anota unidades.
-              labelText: _presentacionElegida == null
-                  ? 'Cantidad nueva'
-                  : 'Cantidad nueva (${_presentacionElegida!.nombre})',
+              labelText:
+                  _presentacionElegida == null
+                      ? 'Cantidad nueva'
+                      : 'Cantidad nueva (${_presentacionElegida!.nombre})',
               border: const OutlineInputBorder(),
             ),
           ),
@@ -294,16 +300,17 @@ class _AdminAdjustmentScreenState extends State<AdminAdjustmentScreen> {
           const SizedBox(height: 24),
           ElevatedButton.icon(
             onPressed: _saving ? null : _save,
-            icon: _saving
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.save),
+            icon:
+                _saving
+                    ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                    : const Icon(Icons.save),
             label: Text(_saving ? 'Guardando...' : 'Guardar ajuste'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue[700],
+              backgroundColor: VentiqHomeTheme.primary,
               foregroundColor: Colors.white,
               minimumSize: const Size.fromHeight(48),
             ),

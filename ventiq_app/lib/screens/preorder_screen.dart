@@ -28,6 +28,7 @@ import '../widgets/bill_count_dialog.dart';
 import 'checkout_screen.dart';
 import 'orders_screen.dart';
 import 'payment_method_picker_screen.dart';
+import '../tutorial/tutorial_anchor.dart';
 
 class PreorderScreen extends StatefulWidget {
   const PreorderScreen({Key? key}) : super(key: key);
@@ -94,7 +95,8 @@ class _PreorderScreenState extends State<PreorderScreen> {
   /// Offline o ante error no hace nada: [_esElaboradoCached] resuelve por id
   /// con la lógica offline-aware de siempre.
   Future<void> _precargarEsElaborado(List<int> ids) async {
-    final faltan = ids.where((id) => !_esElaboradoCache.containsKey(id)).toSet();
+    final faltan =
+        ids.where((id) => !_esElaboradoCache.containsKey(id)).toSet();
     if (faltan.isEmpty) return;
     if (await _userPreferencesService.shouldUseLocalData()) return;
     try {
@@ -114,8 +116,8 @@ class _PreorderScreenState extends State<PreorderScreen> {
     }
   }
 
-  Future<bool> _esElaboradoCached(int idProducto) => _esElaboradoCache
-      .putIfAbsent(
+  Future<bool> _esElaboradoCached(int idProducto) =>
+      _esElaboradoCache.putIfAbsent(
         idProducto,
         () => _productDetailService.isProductElaborated(idProducto),
       );
@@ -531,7 +533,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
           ),
         ),
         // Footer con acciones
-        _buildOrderFooter(order),
+        TutorialAnchor(id: 'preorder_footer', child: _buildOrderFooter(order)),
       ],
     );
   }
@@ -822,8 +824,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
               backgroundColor: VentiqHomeTheme.card,
               body: BillCountDialog(
                 order: order,
-                expectedAmount:
-                    cashExpected > 0 ? cashExpected : order.total,
+                expectedAmount: cashExpected > 0 ? cashExpected : order.total,
                 userPreferencesService: _userPreferencesService,
                 closeOnly: true,
                 confirmLabel: 'Cerrar',
@@ -1230,7 +1231,9 @@ class _PreorderScreenState extends State<PreorderScreen> {
           setState(() {});
         });
       }
-    } else if (noSolicitarCliente && !solicitarImagenOperacion && !tienePagoPendiente) {
+    } else if (noSolicitarCliente &&
+        !solicitarImagenOperacion &&
+        !tienePagoPendiente) {
       // MODO DIRECTO: No se requieren datos del cliente, crear orden inmediatamente
       print('⚡ No se solicita cliente - Creando orden directamente');
       await _processElaboratedProducts(
@@ -1304,15 +1307,18 @@ class _PreorderScreenState extends State<PreorderScreen> {
                   (inv['cantidad_disponible'] as num?)?.toDouble() ?? 0.0;
               invSum += qty;
 
-              final ubicacion = inv['ubicacion'] is Map
-                  ? Map<String, dynamic>.from(inv['ubicacion'] as Map)
-                  : null;
-              final variante = inv['variante'] is Map
-                  ? Map<String, dynamic>.from(inv['variante'] as Map)
-                  : null;
-              final presentacion = inv['presentacion'] is Map
-                  ? Map<String, dynamic>.from(inv['presentacion'] as Map)
-                  : null;
+              final ubicacion =
+                  inv['ubicacion'] is Map
+                      ? Map<String, dynamic>.from(inv['ubicacion'] as Map)
+                      : null;
+              final variante =
+                  inv['variante'] is Map
+                      ? Map<String, dynamic>.from(inv['variante'] as Map)
+                      : null;
+              final presentacion =
+                  inv['presentacion'] is Map
+                      ? Map<String, dynamic>.from(inv['presentacion'] as Map)
+                      : null;
 
               final invUbicacionId = ubicacion?['id'] as int?;
               final invVarianteId = variante?['id'] as int?;
@@ -1326,8 +1332,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
                   invVarianteId == null ||
                   invVarianteId == idVariante;
               final presentacionMatch =
-                  idPresentacion == null ||
-                  invPresentacionId == idPresentacion;
+                  idPresentacion == null || invPresentacionId == idPresentacion;
 
               if (ubicacionMatch && varianteMatch && presentacionMatch) {
                 matched = qty;
@@ -1360,7 +1365,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
   /// `detalles_completos.inventario`; si el cache no trae nada utilizable se
   /// devuelve null y se conserva el problema original de stock.
   Future<({List<PresentacionLocal> cadena, Map<int, double> stocks})?>
-      _cadenaYStocksOffline(int idProducto) async {
+  _cadenaYStocksOffline(int idProducto) async {
     try {
       final offlineData = await _userPreferencesService.getOfflineData();
       final productsData = offlineData?['products'] as Map<String, dynamic>?;
@@ -1380,15 +1385,17 @@ class _PreorderScreenState extends State<PreorderScreen> {
           final detalles = prodData['detalles_completos'];
           if (detalles is Map) {
             final d = Map<String, dynamic>.from(detalles);
-            crudas = (d['presentaciones'] as List?)
-                ?.whereType<Map>()
-                .map((e) => Map<String, dynamic>.from(e))
-                .toList();
+            crudas =
+                (d['presentaciones'] as List?)
+                    ?.whereType<Map>()
+                    .map((e) => Map<String, dynamic>.from(e))
+                    .toList();
           }
-          crudas ??= (prodData['presentaciones'] as List?)
-              ?.whereType<Map>()
-              .map((e) => Map<String, dynamic>.from(e))
-              .toList();
+          crudas ??=
+              (prodData['presentaciones'] as List?)
+                  ?.whereType<Map>()
+                  .map((e) => Map<String, dynamic>.from(e))
+                  .toList();
           if (crudas == null || crudas.isEmpty) return null;
 
           final cadena = PresentacionCadenaLocal.resolverDesdeCrudas(crudas);
@@ -1400,9 +1407,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
             for (final invRaw in d['inventario'] as List? ?? []) {
               if (invRaw is! Map) continue;
               final inv = Map<String, dynamic>.from(invRaw);
-              final pres = inv['presentacion'] is Map
-                  ? Map<String, dynamic>.from(inv['presentacion'] as Map)
-                  : null;
+              final pres =
+                  inv['presentacion'] is Map
+                      ? Map<String, dynamic>.from(inv['presentacion'] as Map)
+                      : null;
               final idPres = (pres?['id'] as num?)?.toInt();
               final qty =
                   (inv['cantidad_disponible'] as num?)?.toDouble() ?? 0.0;
@@ -1416,7 +1424,9 @@ class _PreorderScreenState extends State<PreorderScreen> {
         }
       }
     } catch (e) {
-      print('⚠️ Error leyendo cadena/stocks offline para producto $idProducto: $e');
+      print(
+        '⚠️ Error leyendo cadena/stocks offline para producto $idProducto: $e',
+      );
     }
     return null;
   }
@@ -1428,23 +1438,25 @@ class _PreorderScreenState extends State<PreorderScreen> {
   /// Usa `get_detalle_producto`, que ya incluye la fila de la presentación
   /// base aunque esté en cero (migración get_detalle_producto_incluir_base_cero).
   Future<({List<PresentacionLocal> cadena, Map<int, double> stocks})?>
-      _cadenaYStocksOnline(int idProducto) async {
+  _cadenaYStocksOnline(int idProducto) async {
     try {
       final supabase = Supabase.instance.client;
-      final detalle =
-          await supabase.rpc('get_detalle_producto', params: {
-        'id_producto_param': idProducto,
-      });
+      final detalle = await supabase.rpc(
+        'get_detalle_producto',
+        params: {'id_producto_param': idProducto},
+      );
       if (detalle is! Map) return null;
       final d = Map<String, dynamic>.from(detalle);
 
-      final prod = d['producto'] is Map
-          ? Map<String, dynamic>.from(d['producto'] as Map)
-          : null;
-      var crudas = (prod?['presentaciones'] as List?)
-          ?.whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList();
+      final prod =
+          d['producto'] is Map
+              ? Map<String, dynamic>.from(d['producto'] as Map)
+              : null;
+      var crudas =
+          (prod?['presentaciones'] as List?)
+              ?.whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
       // get_detalle_producto no siempre anida las presentaciones: consultar
       // la tabla directamente, igual que hace ProductDetailService.
       if (crudas == null || crudas.isEmpty) {
@@ -1454,10 +1466,11 @@ class _PreorderScreenState extends State<PreorderScreen> {
               'id, cantidad, es_base, presentacion:app_nom_presentacion(id, denominacion, sku_codigo)',
             )
             .eq('id_producto', idProducto);
-        crudas = presRows
-            .whereType<Map>()
-            .map((e) => Map<String, dynamic>.from(e))
-            .toList();
+        crudas =
+            presRows
+                .whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList();
       }
       if (crudas.isEmpty) return null;
 
@@ -1468,9 +1481,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
       for (final invRaw in d['inventario'] as List? ?? []) {
         if (invRaw is! Map) continue;
         final inv = Map<String, dynamic>.from(invRaw);
-        final pres = inv['presentacion'] is Map
-            ? Map<String, dynamic>.from(inv['presentacion'] as Map)
-            : null;
+        final pres =
+            inv['presentacion'] is Map
+                ? Map<String, dynamic>.from(inv['presentacion'] as Map)
+                : null;
         final idPres = (pres?['id'] as num?)?.toInt();
         final qty = (inv['cantidad_disponible'] as num?)?.toDouble() ?? 0.0;
         if (idPres != null) {
@@ -1480,7 +1494,9 @@ class _PreorderScreenState extends State<PreorderScreen> {
 
       return (cadena: cadena, stocks: stocks);
     } catch (e) {
-      print('⚠️ Error leyendo cadena/stocks online para producto $idProducto: $e');
+      print(
+        '⚠️ Error leyendo cadena/stocks online para producto $idProducto: $e',
+      );
       return null;
     }
   }
@@ -1525,7 +1541,8 @@ class _PreorderScreenState extends State<PreorderScreen> {
           (conteoPorProducto[i.producto.id] ?? 0) + 1;
     }
     final productosMultilinea = {
-      for (final e in conteoPorProducto.entries) if (e.value > 1) e.key,
+      for (final e in conteoPorProducto.entries)
+        if (e.value > 1) e.key,
     };
 
     // Online: todas las consultas de red se lanzan EN PARALELO antes de
@@ -1653,8 +1670,8 @@ class _PreorderScreenState extends State<PreorderScreen> {
             // una RPC por item.
             final idAlmacenVenta =
                 (item.producto.esServicio && !item.producto.esElaborado)
-                ? null
-                : await _almacenVentaCached(item.producto.id);
+                    ? null
+                    : await _almacenVentaCached(item.producto.id);
             final ingredientes = await _ingredientesCached(
               item.producto.id,
               idAlmacen: idAlmacenVenta,
@@ -1820,9 +1837,8 @@ class _PreorderScreenState extends State<PreorderScreen> {
                         item.inventoryData?['id_opcion_variante'] as int?,
                   },
                 );
-                final estrategia = preview is Map
-                    ? preview['estrategia']?.toString()
-                    : null;
+                final estrategia =
+                    preview is Map ? preview['estrategia']?.toString() : null;
                 // 'abrir' = desarmar bultos; 'empaquetar' = juntar unidades
                 // en la presentación pedida (vender Caja teniendo Latas).
                 cubreConDesarme =
@@ -1835,9 +1851,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
                   );
                 }
               } catch (e) {
-                print(
-                  '⚠️ fn_preview_rebalanceo falló para ${item.nombre}: $e',
-                );
+                print('⚠️ fn_preview_rebalanceo falló para ${item.nombre}: $e');
               }
             }
 
@@ -1947,11 +1961,12 @@ class _PreorderScreenState extends State<PreorderScreen> {
     required double reservadoBase,
   }) {
     if (idPresentacionPedida != null) {
-      final disp = DesarmeBultoLocal.disponiblesPorPresentacion(
-        cadena: cadena,
-        stocks: stocks,
-        reservadoBase: reservadoBase,
-      )[idPresentacionPedida];
+      final disp =
+          DesarmeBultoLocal.disponiblesPorPresentacion(
+            cadena: cadena,
+            stocks: stocks,
+            reservadoBase: reservadoBase,
+          )[idPresentacionPedida];
       if (disp != null) return cantidadPedida <= disp.disponible;
     }
     final eval = DesarmeBultoLocal.evaluar(
@@ -2324,10 +2339,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
   }
 
   /// Crea la orden directamente sin pasar por CheckoutScreen (cuando no_solicitar_cliente=true)
-  Future<void> _submitOrderDirect(
-    Order order, {
-    bool offline = false,
-  }) async {
+  Future<void> _submitOrderDirect(Order order, {bool offline = false}) async {
     setState(() {
       _elaboratingProducts = true;
     });
@@ -2363,7 +2375,8 @@ class _PreorderScreenState extends State<PreorderScreen> {
       );
 
       // Full offline / modo offline: guardar pendiente local, sin RPC.
-      final useOffline = offline ||
+      final useOffline =
+          offline ||
           await _userPreferencesService.shouldStayFullyOffline() ||
           await _userPreferencesService.isOfflineModeEnabled();
 
@@ -2443,8 +2456,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
     for (final item in order.items) {
       final itemTotal = item.subtotal;
       subtotal += itemTotal;
-      final paymentMethodId =
-          item.paymentMethod?.id.toString() ?? 'sin_metodo';
+      final paymentMethodId = item.paymentMethod?.id.toString() ?? 'sin_metodo';
       if (!paymentBreakdown.containsKey(paymentMethodId)) {
         paymentBreakdown[paymentMethodId] = {
           'id_medio_pago': item.paymentMethod?.id,
@@ -2481,28 +2493,30 @@ class _PreorderScreenState extends State<PreorderScreen> {
       'buyer_name': order.buyerName ?? 'Cliente',
       'buyer_phone': order.buyerPhone ?? '',
       'extra_contacts': '',
-      'items': order.items.map((item) {
-        return {
-          'id_producto': item.producto.id,
-          'denominacion': item.producto.denominacion,
-          'cantidad': item.cantidad,
-          'precio_unitario': item.precioUnitario,
-          'subtotal': item.subtotal,
-          'id_medio_pago': item.paymentMethod?.id,
-          'metodo_pago': item.paymentMethod?.denominacion,
-          'inventory_metadata': item.inventoryData,
-          // FASE 4: igual que en checkout_screen — la cantidad está en la
-          // presentación elegida, así que la preorden pendiente debe llevarla.
-          'id_presentacion': item.idPresentacion,
-          'presentacion_nombre': item.presentacionNombre,
-          'presentacion_factor': item.presentacionFactor,
-        };
-      }).toList(),
+      'items':
+          order.items.map((item) {
+            return {
+              'id_producto': item.producto.id,
+              'denominacion': item.producto.denominacion,
+              'cantidad': item.cantidad,
+              'precio_unitario': item.precioUnitario,
+              'subtotal': item.subtotal,
+              'id_medio_pago': item.paymentMethod?.id,
+              'metodo_pago': item.paymentMethod?.denominacion,
+              'inventory_metadata': item.inventoryData,
+              // FASE 4: igual que en checkout_screen — la cantidad está en la
+              // presentación elegida, así que la preorden pendiente debe llevarla.
+              'id_presentacion': item.idPresentacion,
+              'presentacion_nombre': item.presentacionNombre,
+              'presentacion_factor': item.presentacionFactor,
+            };
+          }).toList(),
       'desglose_pagos': paymentBreakdown.values.toList(),
     };
 
     final openTurno = await _userPreferencesService.getOfflineTurno();
-    final localTurnoId = openTurno?['local_id']?.toString() ??
+    final localTurnoId =
+        openTurno?['local_id']?.toString() ??
         openTurno?['local_turno_id']?.toString();
     if (localTurnoId != null) {
       pending['local_turno_id'] = localTurnoId;
@@ -2522,7 +2536,8 @@ class _PreorderScreenState extends State<PreorderScreen> {
           item.cantidad,
           inventoryId: (inventoryMetadata['id_inventario'] as num?)?.toInt(),
           locationId: (inventoryMetadata['id_ubicacion'] as num?)?.toInt(),
-          presentationId: item.idPresentacion ??
+          presentationId:
+              item.idPresentacion ??
               (inventoryMetadata['id_presentacion'] as num?)?.toInt(),
         );
       } else {

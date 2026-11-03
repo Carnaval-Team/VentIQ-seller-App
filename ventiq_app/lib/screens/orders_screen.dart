@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -3491,8 +3491,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
       context,
       MaterialPageRoute(
         builder:
-            (context) => Scaffold(
-              backgroundColor: Colors.white,
+            (context) => Scaffold(backgroundColor: VentiqHomeTheme.surface,
               body: BillCountDialog(
                 order: order,
                 expectedAmount: cashExpected,

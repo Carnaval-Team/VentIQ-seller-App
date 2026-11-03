@@ -72,7 +72,6 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
 
   // Presentaciones data
   List<ProductPresentation> _productPresentations = [];
-  ProductPresentation? _selectedPresentation;
   bool _isLoadingPresentations = false;
   Map<String, ProductPresentation?> _selectedPresentationsByProduct = {};
   bool _canCustomizeSalePrice = false;
@@ -873,30 +872,23 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
           final basePresentations =
               presentations.where((p) => p.esBase).toList();
           if (basePresentations.isNotEmpty) {
-            _selectedPresentation = basePresentations.first;
             _selectedPresentationsByProduct[productKey] =
                 basePresentations.first;
             debugPrint(
-              '✅ Presentación base seleccionada: ${_selectedPresentation!.presentacion.denominacion}',
-            );
-            debugPrint(
-              '🎯 Presentación seleccionada (base): idPresentacion=${_selectedPresentation!.idPresentacion}, cantidad=${_selectedPresentation!.cantidad}',
+              '✅ Presentación base seleccionada: '
+              '${basePresentations.first.presentacion.denominacion}',
             );
           } else {
-            _selectedPresentation = presentations.first;
             _selectedPresentationsByProduct[productKey] = presentations.first;
             debugPrint(
-              '✅ Primera presentación seleccionada: ${_selectedPresentation!.presentacion.denominacion}',
-            );
-            debugPrint(
-              '🎯 Presentación seleccionada (primera): idPresentacion=${_selectedPresentation!.idPresentacion}, cantidad=${_selectedPresentation!.cantidad}',
+              '✅ Primera presentación seleccionada: '
+              '${presentations.first.presentacion.denominacion}',
             );
           }
         } else {
           debugPrint(
             '⚠️ No hay presentaciones configuradas, usando presentación por defecto',
           );
-          _selectedPresentation = null;
           _selectedPresentationsByProduct[productKey] = null;
         }
         _agregarVariantesPresentacionesSinStock();
@@ -908,7 +900,6 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
       setState(() {
         _productPresentations = [];
         _isLoadingPresentations = false;
-        _selectedPresentation = null;
       });
     }
   }
@@ -2264,9 +2255,16 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                             !currentProduct.esServicio) ...[
                           Text(
                             () {
-                              final idPres = (variant.inventoryMetadata?['id_presentacion'] as num?)?.toInt();
-                              final d = idPres == null ? null : _disponibilidadPorPresentacion()[idPres];
-                              if (d != null && d.disponible > variant.cantidadReal) {
+                              final idPres =
+                                  (variant.inventoryMetadata?['id_presentacion']
+                                          as num?)
+                                      ?.toInt();
+                              final d =
+                                  idPres == null
+                                      ? null
+                                      : _disponibilidadPorPresentacion()[idPres];
+                              if (d != null &&
+                                  d.disponible > variant.cantidadReal) {
                                 return 'Stock: ${variant.cantidadReal} · ${FormatoPresentacion.cantidad(d.disponible)} disp · desarma';
                               }
                               return 'Stock: ${variant.cantidadReal}';
@@ -2969,20 +2967,6 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     return totalPrice;
   }
 
-  // Método para obtener el total de items (productos/presentaciones seleccionadas)
-  // Mantenido para compatibilidad futura - cuenta las presentaciones, no las unidades
-  double _getTotalItems() {
-    double total = 0.0;
-    if (currentProduct.variantes.isEmpty) {
-      total = selectedQuantity;
-    } else {
-      for (var quantity in variantQuantities.values) {
-        total += quantity;
-      }
-    }
-    return total;
-  }
-
   // Método para obtener el total de unidades equivalentes considerando presentaciones
   double _getTotalEquivalentUnits() {
     double total = 0.0;
@@ -3059,7 +3043,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                   ),
                 ),
                 onSubmitted: (value) {
-                  _updateQuantityFromDialog(productName, value);
+                  _updateQuantityFromDialog(productName, value, variant);
                   Navigator.of(context).pop();
                 },
               ),
@@ -3072,7 +3056,11 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
             ),
             ElevatedButton(
               onPressed: () {
-                _updateQuantityFromDialog(productName, quantityController.text);
+                _updateQuantityFromDialog(
+                  productName,
+                  quantityController.text,
+                  variant,
+                );
                 Navigator.of(context).pop();
               },
               style: ElevatedButton.styleFrom(
@@ -3087,7 +3075,11 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     );
   }
 
-  void _updateQuantityFromDialog(String productName, String quantityText) {
+  void _updateQuantityFromDialog(
+    String productName,
+    String quantityText, [
+    ProductVariant? variant,
+  ]) {
     final double? newQuantity = double.tryParse(quantityText);
     if (newQuantity == null || newQuantity < 0) return;
 
@@ -3123,18 +3115,15 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
       if (currentProduct.variantes.isEmpty) {
         // Producto sin variantes
         selectedQuantity = newQuantity;
-      } else {
-        // Buscar la variante correspondiente
-        for (var variant in currentProduct.variantes) {
-          if (productName.contains(variant.nombre)) {
-            final maxQty =
-                currentProduct.esElaborado || currentProduct.esServicio
-                    ? newQuantity
-                    : newQuantity.clamp(0.0, maxQuantityForVariant(variant));
-            variantQuantities[variant] = maxQty;
-            break;
-          }
-        }
+      } else if (variant != null) {
+        // R16: la variante se identifica por identidad, no por
+        // `nombre.contains(...)`: dos variantes con nombres solapados
+        // ("Caja" y "Caja grande") escribían la cantidad en la equivocada.
+        final maxQty =
+            currentProduct.esElaborado || currentProduct.esServicio
+                ? newQuantity
+                : newQuantity.clamp(0.0, maxQuantityForVariant(variant));
+        variantQuantities[variant] = maxQty;
       }
     });
   }
@@ -3467,7 +3456,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     var total = 0.0;
     for (final item in items) {
       if (item.producto.id != currentProduct.id) continue;
-      final idPres = item.idPresentacion ??
+      final idPres =
+          item.idPresentacion ??
           (item.inventoryData?['id_presentacion'] as num?)?.toInt();
       var factor = 1.0;
       if (idPres != null) {
@@ -3524,13 +3514,14 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
 
     for (final entry in porVariante.entries) {
       final filas = entry.value;
-      final conFila = filas
-          .map(
-            (v) =>
-                (v.inventoryMetadata?['id_presentacion'] as num?)?.toInt(),
-          )
-          .whereType<int>()
-          .toSet();
+      final conFila =
+          filas
+              .map(
+                (v) =>
+                    (v.inventoryMetadata?['id_presentacion'] as num?)?.toInt(),
+              )
+              .whereType<int>()
+              .toSet();
       final plantilla = filas.first;
 
       for (final pres in _productPresentations) {
@@ -3547,22 +3538,24 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
         var nombreBase = plantilla.nombre;
         final presPlantilla =
             plantilla.inventoryMetadata?['presentacion_nombre']?.toString();
-        if (presPlantilla != null &&
-            nombreBase.endsWith(' - $presPlantilla')) {
-          nombreBase =
-              nombreBase.substring(0, nombreBase.length - presPlantilla.length - 3);
+        if (presPlantilla != null && nombreBase.endsWith(' - $presPlantilla')) {
+          nombreBase = nombreBase.substring(
+            0,
+            nombreBase.length - presPlantilla.length - 3,
+          );
         }
-        final nombreFinal = nombreBase == plantilla.nombre
-            ? pres.presentacion.denominacion
-            : '$nombreBase - ${pres.presentacion.denominacion}';
+        final nombreFinal =
+            nombreBase == plantilla.nombre
+                ? pres.presentacion.denominacion
+                : '$nombreBase - ${pres.presentacion.denominacion}';
         final sintetica = ProductVariant(
           id: nextId++,
           nombre: nombreFinal,
-            precio: plantilla.precio,
-            cantidad: 0,
-            descripcion:
-                'Sin stock propio: se sirve desarmando otras presentaciones',
-            inventoryMetadata: meta,
+          precio: plantilla.precio,
+          cantidad: 0,
+          descripcion:
+              'Sin stock propio: se sirve desarmando otras presentaciones',
+          inventoryMetadata: meta,
         );
         variantes.add(sintetica);
         variantQuantities.putIfAbsent(sintetica, () => 0);

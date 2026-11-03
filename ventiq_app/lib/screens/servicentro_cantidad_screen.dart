@@ -1,9 +1,10 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/payment_method.dart' as pm;
 import '../models/product.dart';
 import '../services/bank_sms_service.dart';
+import '../theme/ventiq_home_theme.dart';
 import '../services/order_service.dart';
 import '../services/payment_method_service.dart';
 import '../services/servicentro_service.dart';
@@ -44,7 +45,9 @@ class _ServicentroCantidadScreenState extends State<ServicentroCantidadScreen> {
   ServicentroFuelItem get _fuel => widget.fuel;
   double get _precio => _fuel.precioVenta;
   String get _um =>
-      (_fuel.um != null && _fuel.um!.trim().isNotEmpty) ? _fuel.um!.trim() : 'L';
+      (_fuel.um != null && _fuel.um!.trim().isNotEmpty)
+          ? _fuel.um!.trim()
+          : 'L';
 
   Color get _accent {
     return Color(ServicentroFuelItem.parseColor(_fuel.color).argb);
@@ -85,9 +88,10 @@ class _ServicentroCantidadScreenState extends State<ServicentroCantidadScreen> {
           _paymentMethods = [];
           _selectedPayment = null;
           _loadingPayments = false;
-          _error = useLocal
-              ? 'Sin métodos de pago en cache. Sincroniza online primero.'
-              : 'Sin métodos de pago disponibles.';
+          _error =
+              useLocal
+                  ? 'Sin métodos de pago en cache. Sincroniza online primero.'
+                  : 'Sin métodos de pago disponibles.';
         });
         return;
       }
@@ -198,8 +202,8 @@ class _ServicentroCantidadScreenState extends State<ServicentroCantidadScreen> {
     }
 
     final montoIngresado = _parsePositive(_montoCtrl.text);
-    final monto = montoIngresado ??
-        double.parse((litros * _precio).toStringAsFixed(2));
+    final monto =
+        montoIngresado ?? double.parse((litros * _precio).toStringAsFixed(2));
     if (monto <= 0) {
       setState(() => _error = 'El monto resultante debe ser mayor que cero.');
       return;
@@ -222,18 +226,19 @@ class _ServicentroCantidadScreenState extends State<ServicentroCantidadScreen> {
         setState(() => _submitting = false);
         await showDialog<void>(
           context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Turno requerido'),
-            content: const Text(
-              'Debes abrir un turno antes de registrar una venta.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Entendido'),
+          builder:
+              (ctx) => AlertDialog(
+                title: const Text('Turno requerido'),
+                content: const Text(
+                  'Debes abrir un turno antes de registrar una venta.',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Entendido'),
+                  ),
+                ],
               ),
-            ],
-          ),
         );
         return;
       }
@@ -242,8 +247,7 @@ class _ServicentroCantidadScreenState extends State<ServicentroCantidadScreen> {
       _orderService.cancelCurrentOrder();
 
       // Mismo camino que el catálogo: detalle + inventoryData + descuento stock.
-      final product =
-          await ServicentroService.resolveProductForSale(_fuel);
+      final product = await ServicentroService.resolveProductForSale(_fuel);
       final stockReal = product.cantidadReal.toDouble();
       if (stockReal <= 0) {
         if (!mounted) return;
@@ -257,8 +261,7 @@ class _ServicentroCantidadScreenState extends State<ServicentroCantidadScreen> {
         if (!mounted) return;
         setState(() {
           _submitting = false;
-          _error =
-              'Stock insuficiente. Disponible: $stockReal $_um.';
+          _error = 'Stock insuficiente. Disponible: $stockReal $_um.';
         });
         return;
       }
@@ -267,8 +270,9 @@ class _ServicentroCantidadScreenState extends State<ServicentroCantidadScreen> {
         liters: litros,
         amount: monto,
       );
-      final inventoryData =
-          await ServicentroService.inventoryDataFromProduct(product);
+      final inventoryData = await ServicentroService.inventoryDataFromProduct(
+        product,
+      );
       final idUbicacion = (inventoryData['id_ubicacion'] as num?)?.toInt();
       if (idUbicacion == null) {
         if (!mounted) return;
@@ -287,8 +291,9 @@ class _ServicentroCantidadScreenState extends State<ServicentroCantidadScreen> {
         producto: product,
         variante: selectedVariant,
         cantidad: litros,
-        ubicacionAlmacen:
-            await ServicentroService.ubicacionFromProduct(product),
+        ubicacionAlmacen: await ServicentroService.ubicacionFromProduct(
+          product,
+        ),
         inventoryData: inventoryData,
         precioUnitario: precio,
         precioBase: precio,
@@ -323,9 +328,7 @@ class _ServicentroCantidadScreenState extends State<ServicentroCantidadScreen> {
       if (!mounted) return;
       await Navigator.push<void>(
         context,
-        MaterialPageRoute(
-          builder: (_) => CheckoutScreen(order: checkoutOrder),
-        ),
+        MaterialPageRoute(builder: (_) => CheckoutScreen(order: checkoutOrder)),
       );
 
       if (mounted) {
@@ -434,21 +437,19 @@ class _ServicentroCantidadScreenState extends State<ServicentroCantidadScreen> {
             _buildPaymentSelector(theme, hasPayment),
             if (_error != null) ...[
               const SizedBox(height: 16),
-              Text(
-                _error!,
-                style: TextStyle(color: theme.colorScheme.error),
-              ),
+              Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
             ],
             const SizedBox(height: 28),
             FilledButton.icon(
               onPressed: (_submitting || _loadingPayments) ? null : _confirmar,
-              icon: _submitting
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.payments_outlined),
+              icon:
+                  _submitting
+                      ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                      : const Icon(Icons.payments_outlined),
               label: Text(_submitting ? 'Preparando…' : 'Cobrar'),
               style: FilledButton.styleFrom(
                 minimumSize: const Size.fromHeight(52),
@@ -512,9 +513,7 @@ class _ServicentroCantidadScreenState extends State<ServicentroCantidadScreen> {
             pickerSubtitle: widget.fuel.denominacion,
             height: 48,
             accentColor:
-                hasPayment
-                    ? const Color(0xFF10B981)
-                    : const Color(0xFF4A90E2),
+                hasPayment ? const Color(0xFF10B981) : VentiqHomeTheme.primary,
             onSelected: (method) {
               setState(() {
                 _selectedPayment = method;

@@ -1,17 +1,16 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/user_preferences_service.dart';
 import '../utils/price_utils.dart';
+import '../theme/ventiq_home_theme.dart';
 
 /// Diálogo para contar billetes de CUP y USD y calcular el monto total en CUP
 /// usando el tipo de cambio de la tienda. Devuelve el total en CUP al cerrar.
 class CashCountDialog extends StatefulWidget {
   final UserPreferencesService userPreferencesService;
 
-  const CashCountDialog({
-    Key? key,
-    required this.userPreferencesService,
-  }) : super(key: key);
+  const CashCountDialog({Key? key, required this.userPreferencesService})
+    : super(key: key);
 
   @override
   State<CashCountDialog> createState() => _CashCountDialogState();
@@ -24,7 +23,8 @@ class _CashCountDialogState extends State<CashCountDialog> {
   String? _selectedCurrency;
 
   final Map<String, List<Map<String, dynamic>>> _denominationsByCurrency = {};
-  final Map<String, Map<int, TextEditingController>> _controllersByCurrency = {};
+  final Map<String, Map<int, TextEditingController>> _controllersByCurrency =
+      {};
   final Map<String, Map<int, int>> _countsByCurrency = {};
 
   double _totalCup = 0.0;
@@ -75,8 +75,9 @@ class _CashCountDialogState extends State<CashCountDialog> {
         for (final denom in denoms) {
           final id = denom['id'] as int;
           _countsByCurrency[currency]![id] = 0;
-          _controllersByCurrency[currency]![id] =
-              TextEditingController(text: '');
+          _controllersByCurrency[currency]![id] = TextEditingController(
+            text: '',
+          );
         }
       }
 
@@ -101,7 +102,9 @@ class _CashCountDialogState extends State<CashCountDialog> {
     return values
         .asMap()
         .entries
-        .map((e) => {'id': -100 - e.key, 'denominacion': e.value, 'moneda': 'CUP'})
+        .map(
+          (e) => {'id': -100 - e.key, 'denominacion': e.value, 'moneda': 'CUP'},
+        )
         .toList();
   }
 
@@ -110,7 +113,9 @@ class _CashCountDialogState extends State<CashCountDialog> {
     return values
         .asMap()
         .entries
-        .map((e) => {'id': -200 - e.key, 'denominacion': e.value, 'moneda': 'USD'})
+        .map(
+          (e) => {'id': -200 - e.key, 'denominacion': e.value, 'moneda': 'USD'},
+        )
         .toList();
   }
 
@@ -128,7 +133,11 @@ class _CashCountDialogState extends State<CashCountDialog> {
     });
   }
 
-  void _updateCountFromInput(String currency, int denominationId, String value) {
+  void _updateCountFromInput(
+    String currency,
+    int denominationId,
+    String value,
+  ) {
     final count = int.tryParse(value) ?? 0;
     setState(() {
       _countsByCurrency[currency]?[denominationId] = count;
@@ -174,7 +183,7 @@ class _CashCountDialogState extends State<CashCountDialog> {
           child: const Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CircularProgressIndicator(color: Color(0xFF4A90E2)),
+              CircularProgressIndicator(color: VentiqHomeTheme.primary),
               SizedBox(height: 16),
               Text('Cargando denominaciones...'),
             ],
@@ -237,26 +246,27 @@ class _CashCountDialogState extends State<CashCountDialog> {
             // Selector de moneda
             if (_currencies.length > 1) ...[
               Row(
-                children: _currencies.map((currency) {
-                  final selected = _selectedCurrency == currency;
-                  return Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: ChoiceChip(
-                        label: Text(currency),
-                        selected: selected,
-                        onSelected: (_) {
-                          setState(() => _selectedCurrency = currency);
-                        },
-                        selectedColor: const Color(0xFF4A90E2),
-                        labelStyle: TextStyle(
-                          color: selected ? Colors.white : Colors.black87,
-                          fontWeight: FontWeight.w600,
+                children:
+                    _currencies.map((currency) {
+                      final selected = _selectedCurrency == currency;
+                      return Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: ChoiceChip(
+                            label: Text(currency),
+                            selected: selected,
+                            onSelected: (_) {
+                              setState(() => _selectedCurrency = currency);
+                            },
+                            selectedColor: VentiqHomeTheme.primary,
+                            labelStyle: TextStyle(
+                              color: selected ? Colors.white : Colors.black87,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                  );
-                }).toList(),
+                      );
+                    }).toList(),
               ),
               const SizedBox(height: 12),
             ],
@@ -311,22 +321,24 @@ class _CashCountDialogState extends State<CashCountDialog> {
                           ),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.remove_circle_outline,
-                              color: Colors.red),
+                          icon: const Icon(
+                            Icons.remove_circle_outline,
+                            color: Colors.red,
+                          ),
                           onPressed: () {
-                            final current =
-                                int.tryParse(controller.text) ?? 0;
+                            final current = int.tryParse(controller.text) ?? 0;
                             if (current > 0) {
                               _setCount(currency, id, current - 1);
                             }
                           },
                         ),
                         IconButton(
-                          icon: const Icon(Icons.add_circle_outline,
-                              color: Color(0xFF4A90E2)),
+                          icon: const Icon(
+                            Icons.add_circle_outline,
+                            color: VentiqHomeTheme.primary,
+                          ),
                           onPressed: () {
-                            final current =
-                                int.tryParse(controller.text) ?? 0;
+                            final current = int.tryParse(controller.text) ?? 0;
                             _setCount(currency, id, current + 1);
                           },
                         ),
@@ -377,7 +389,7 @@ class _CashCountDialogState extends State<CashCountDialog> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.blue[50],
+                color: VentiqHomeTheme.primary.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Row(
@@ -385,17 +397,14 @@ class _CashCountDialogState extends State<CashCountDialog> {
                 children: [
                   const Text(
                     'Total CUP:',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                   ),
                   Text(
                     '\$${totalCounted.toMoneyString(2)}',
                     style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
-                      color: Color(0xFF1F2937),
+                      color: VentiqHomeTheme.textPrimary,
                     ),
                   ),
                 ],
@@ -412,7 +421,7 @@ class _CashCountDialogState extends State<CashCountDialog> {
         ElevatedButton(
           onPressed: _useTotal,
           style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF4A90E2),
+            backgroundColor: VentiqHomeTheme.primary,
             foregroundColor: Colors.white,
           ),
           child: const Text('Usar monto'),

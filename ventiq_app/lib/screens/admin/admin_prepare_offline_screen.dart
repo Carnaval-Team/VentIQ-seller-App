@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../services/auto_sync_service.dart';
 import '../../services/device_offline_prep_service.dart';
 import '../../services/user_preferences_service.dart';
+import '../../theme/ventiq_home_theme.dart';
 
 /// Sync + registro local de admin/vendedores para full offline en el dispositivo.
 class AdminPrepareOfflineScreen extends StatefulWidget {
@@ -70,7 +71,8 @@ class _AdminPrepareOfflineScreenState extends State<AdminPrepareOfflineScreen> {
               u['email']?.toString().toLowerCase() == email.toLowerCase() &&
               (u['entryRole'] == 'gerente' || u['entryRole'] == 'supervisor'),
         );
-        _adminRegistered = hasAdminInUsers &&
+        _adminRegistered =
+            hasAdminInUsers &&
             (adminCreds['email']?.isNotEmpty ?? false) &&
             (adminCreds['password']?.isNotEmpty ?? false);
       }
@@ -117,17 +119,19 @@ class _AdminPrepareOfflineScreenState extends State<AdminPrepareOfflineScreen> {
 
     try {
       final result = await _prep.runPrepSync(
-        ensurePassword: _adminPasswordCtrl.text.trim().isNotEmpty
-            ? _adminPasswordCtrl.text.trim()
-            : null,
+        ensurePassword:
+            _adminPasswordCtrl.text.trim().isNotEmpty
+                ? _adminPasswordCtrl.text.trim()
+                : null,
       );
       final hasData = await _prefs.hasOfflineData();
       setState(() {
         _syncCurrent = _syncTotal;
-        _status = result.success
-            ? 'Sync OK (${result.syncedItems.length} módulos). '
-                'Datos offline: ${hasData ? "listos" : "incompletos"}'
-            : 'Sync con errores: ${result.errors.join("; ")}';
+        _status =
+            result.success
+                ? 'Sync OK (${result.syncedItems.length} módulos). '
+                    'Datos offline: ${hasData ? "listos" : "incompletos"}'
+                : 'Sync con errores: ${result.errors.join("; ")}';
       });
       await _refreshSellers();
     } catch (e) {
@@ -167,7 +171,10 @@ class _AdminPrepareOfflineScreenState extends State<AdminPrepareOfflineScreen> {
                 ? 'Paso $_syncCurrent de $_syncTotal'
                     '${remaining > 0 ? ' · Faltan $remaining' : ''}'
                 : 'Preparando módulos...',
-            style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+            style: TextStyle(
+              fontSize: 12,
+              color: VentiqHomeTheme.textSecondary,
+            ),
           ),
         ],
       ),
@@ -242,119 +249,132 @@ class _AdminPrepareOfflineScreenState extends State<AdminPrepareOfflineScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Preparar dispositivo offline'),
-        backgroundColor: Colors.blue[700],
+        backgroundColor: VentiqHomeTheme.primary,
         foregroundColor: Colors.white,
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null && _sellers.isEmpty && !_adminRegistered
+      body:
+          _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _error != null && _sellers.isEmpty && !_adminRegistered
               ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(_error!, textAlign: TextAlign.center),
-                  ),
-                )
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text(_error!, textAlign: TextAlign.center),
+                ),
+              )
               : ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    if (_ready)
-                      Card(
-                        color: Colors.green[50],
-                        child: const ListTile(
-                          leading: Icon(Icons.check_circle, color: Colors.green),
-                          title: Text('Dispositivo en modo full offline'),
-                          subtitle: Text(
-                            'Cerrar sesión abrirá el selector local de usuarios',
-                          ),
+                padding: const EdgeInsets.all(16),
+                children: [
+                  if (_ready)
+                    Card(
+                      color: Colors.green[50],
+                      child: const ListTile(
+                        leading: Icon(Icons.check_circle, color: Colors.green),
+                        title: Text('Dispositivo en modo full offline'),
+                        subtitle: Text(
+                          'Cerrar sesión abrirá el selector local de usuarios',
                         ),
                       ),
-                    const Text(
-                      '1. Contraseña del administrador',
-                      style: TextStyle(fontWeight: FontWeight.w600),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Necesaria para el sync (credenciales offline) y el registro local.',
-                      style: TextStyle(color: Colors.grey[700], fontSize: 13),
+                  const Text(
+                    '1. Contraseña del administrador',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Necesaria para el sync (credenciales offline) y el registro local.',
+                    style: TextStyle(
+                      color: VentiqHomeTheme.textSecondary,
+                      fontSize: 13,
                     ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _adminPasswordCtrl,
-                      obscureText: true,
-                      decoration: InputDecoration(
-                        labelText: _adminRegistered
-                            ? 'Actualizar contraseña admin'
-                            : 'Contraseña del admin',
-                        border: const OutlineInputBorder(),
-                        suffixIcon: _adminRegistered
-                            ? const Icon(Icons.check, color: Colors.green)
-                            : null,
-                      ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _adminPasswordCtrl,
+                    obscureText: true,
+                    decoration: InputDecoration(
+                      labelText:
+                          _adminRegistered
+                              ? 'Actualizar contraseña admin'
+                              : 'Contraseña del admin',
+                      border: const OutlineInputBorder(),
+                      suffixIcon:
+                          _adminRegistered
+                              ? const Icon(Icons.check, color: Colors.green)
+                              : null,
                     ),
-                    const SizedBox(height: 8),
-                    OutlinedButton(
-                      onPressed: _registerAdmin,
-                      child: Text(
-                        _adminRegistered
-                            ? 'Actualizar admin offline'
-                            : 'Registrar admin offline',
-                      ),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton(
+                    onPressed: _registerAdmin,
+                    child: Text(
+                      _adminRegistered
+                          ? 'Actualizar admin offline'
+                          : 'Registrar admin offline',
                     ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      '2. Sincronizar catálogo y licencia',
-                      style: TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 8),
-                    ElevatedButton.icon(
-                      onPressed: _syncing ? null : _runSync,
-                      icon: _syncing
-                          ? const SizedBox(
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    '2. Sincronizar catálogo y licencia',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  ElevatedButton.icon(
+                    onPressed: _syncing ? null : _runSync,
+                    icon:
+                        _syncing
+                            ? const SizedBox(
                               width: 16,
                               height: 16,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Icon(Icons.sync),
-                      label: Text(
-                        _syncing ? 'Sincronizando...' : 'Sincronizar ahora',
-                      ),
+                            : const Icon(Icons.sync),
+                    label: Text(
+                      _syncing ? 'Sincronizando...' : 'Sincronizar ahora',
                     ),
-                    _buildSyncProgress(),
-                    const SizedBox(height: 16),
-                    const Text(
-                      '3. Registrar vendedores (email + contraseña)',
-                      style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  _buildSyncProgress(),
+                  const SizedBox(height: 16),
+                  const Text(
+                    '3. Registrar vendedores (email + contraseña)',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Supabase no entrega contraseñas: escríbela una vez por vendedor.',
+                    style: TextStyle(
+                      color: VentiqHomeTheme.textSecondary,
+                      fontSize: 13,
                     ),
-                    const SizedBox(height: 4),
+                  ),
+                  const SizedBox(height: 8),
+                  if (_sellers.isEmpty)
+                    const Text('No hay vendedores en esta tienda.'),
+                  ..._sellers.map(_buildSellerTile),
+                  if (_status.isNotEmpty) ...[
+                    const SizedBox(height: 12),
                     Text(
-                      'Supabase no entrega contraseñas: escríbela una vez por vendedor.',
-                      style: TextStyle(color: Colors.grey[700], fontSize: 13),
-                    ),
-                    const SizedBox(height: 8),
-                    if (_sellers.isEmpty)
-                      const Text('No hay vendedores en esta tienda.'),
-                    ..._sellers.map(_buildSellerTile),
-                    if (_status.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      Text(_status, style: TextStyle(color: Colors.blue[800])),
-                    ],
-                    if (_error != null) ...[
-                      const SizedBox(height: 8),
-                      Text(_error!, style: const TextStyle(color: Colors.red)),
-                    ],
-                    const SizedBox(height: 24),
-                    ElevatedButton.icon(
-                      onPressed: _finish,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue[700],
-                        foregroundColor: Colors.white,
-                        minimumSize: const Size.fromHeight(48),
-                      ),
-                      icon: const Icon(Icons.phonelink_setup),
-                      label: const Text('Marcar dispositivo listo'),
+                      _status,
+                      style: TextStyle(color: VentiqHomeTheme.primaryDark),
                     ),
                   ],
-                ),
+                  if (_error != null) ...[
+                    const SizedBox(height: 8),
+                    Text(_error!, style: const TextStyle(color: Colors.red)),
+                  ],
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    onPressed: _finish,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: VentiqHomeTheme.primary,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size.fromHeight(48),
+                    ),
+                    icon: const Icon(Icons.phonelink_setup),
+                    label: const Text('Marcar dispositivo listo'),
+                  ),
+                ],
+              ),
     );
   }
 
@@ -384,7 +404,10 @@ class _AdminPrepareOfflineScreenState extends State<AdminPrepareOfflineScreen> {
                       ),
                       Text(
                         email.isEmpty ? 'Sin email (user_mail)' : email,
-                        style: TextStyle(color: Colors.grey[700], fontSize: 13),
+                        style: TextStyle(
+                          color: VentiqHomeTheme.textSecondary,
+                          fontSize: 13,
+                        ),
                       ),
                     ],
                   ),

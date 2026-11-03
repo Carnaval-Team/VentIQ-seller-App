@@ -1,6 +1,7 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import '../../services/admin_inventory_service.dart';
+import '../../theme/ventiq_home_theme.dart';
 
 /// Stock agrupado por ubicación/layout a partir del cache local.
 class AdminWarehousesScreen extends StatefulWidget {
@@ -29,7 +30,8 @@ class _AdminWarehousesScreenState extends State<AdminWarehousesScreen> {
     for (final l in layouts) {
       final id = (l['id'] as num?)?.toInt();
       if (id == null) continue;
-      names[id] = l['label']?.toString() ??
+      names[id] =
+          l['label']?.toString() ??
           l['denominacion']?.toString() ??
           'Ubicación $id';
     }
@@ -48,21 +50,26 @@ class _AdminWarehousesScreenState extends State<AdminWarehousesScreen> {
           final first = inv.first;
           if (first is Map) {
             final firstMap = Map<String, dynamic>.from(first as Map);
-            final ubMap = firstMap['ubicacion'] is Map
-                ? Map<String, dynamic>.from(firstMap['ubicacion'] as Map)
-                : null;
-            final almMap = ubMap?['almacen'] is Map
-                ? Map<String, dynamic>.from(ubMap!['almacen'] as Map)
-                : null;
-            ubicacionId = (firstMap['id_ubicacion'] as num?)?.toInt() ??
+            final ubMap =
+                firstMap['ubicacion'] is Map
+                    ? Map<String, dynamic>.from(firstMap['ubicacion'] as Map)
+                    : null;
+            final almMap =
+                ubMap?['almacen'] is Map
+                    ? Map<String, dynamic>.from(ubMap!['almacen'] as Map)
+                    : null;
+            ubicacionId =
+                (firstMap['id_ubicacion'] as num?)?.toInt() ??
                 (ubMap?['id'] as num?)?.toInt() ??
                 (p['id_ubicacion'] as num?)?.toInt();
-            ubicacionName = firstMap['ubicacion_nombre']?.toString() ??
+            ubicacionName =
+                firstMap['ubicacion_nombre']?.toString() ??
                 firstMap['denominacion_ubicacion']?.toString() ??
                 firstMap['ubicacion_label']?.toString() ??
                 ubMap?['denominacion']?.toString() ??
                 p['ubicacion_nombre']?.toString();
-            almacenName = firstMap['almacen_nombre']?.toString() ??
+            almacenName =
+                firstMap['almacen_nombre']?.toString() ??
                 almMap?['denominacion']?.toString() ??
                 p['almacen_nombre']?.toString();
           }
@@ -76,9 +83,10 @@ class _AdminWarehousesScreenState extends State<AdminWarehousesScreen> {
       if (ubicacionId != null && names.containsKey(ubicacionId)) {
         displayName = names[ubicacionId]!;
       } else if (ubicacionName != null && ubicacionName.isNotEmpty) {
-        displayName = almacenName != null && almacenName.isNotEmpty
-            ? '$almacenName · $ubicacionName'
-            : ubicacionName;
+        displayName =
+            almacenName != null && almacenName.isNotEmpty
+                ? '$almacenName · $ubicacionName'
+                : ubicacionName;
       } else if (almacenName != null && almacenName.isNotEmpty) {
         displayName = almacenName;
       } else if (ubicacionId != null) {
@@ -114,7 +122,7 @@ class _AdminWarehousesScreenState extends State<AdminWarehousesScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Stock por ubicación'),
-        backgroundColor: Colors.blue[700],
+        backgroundColor: VentiqHomeTheme.primary,
         foregroundColor: Colors.white,
         actions: [
           IconButton(
@@ -123,57 +131,59 @@ class _AdminWarehousesScreenState extends State<AdminWarehousesScreen> {
           ),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _byLocation.isEmpty
+      body:
+          _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _byLocation.isEmpty
               ? Center(
-                  child: Text(
-                    'No hay productos en cache',
-                    style: TextStyle(color: Colors.grey[600]),
-                  ),
-                )
+                child: Text(
+                  'No hay productos en cache',
+                  style: TextStyle(color: VentiqHomeTheme.textSecondary),
+                ),
+              )
               : ListView(
-                  children: [
-                    if (_layoutNames.isEmpty)
-                      Material(
-                        color: Colors.orange.shade50,
-                        child: const Padding(
-                          padding: EdgeInsets.all(12),
-                          child: Text(
-                            'Layouts no cacheados: sincroniza productos/'
-                            'ubicaciones (Preparar dispositivo o Sync selectivo). '
-                            'Se agrupa con la ubicación embebida si existe.',
-                          ),
+                children: [
+                  if (_layoutNames.isEmpty)
+                    Material(
+                      color: VentiqHomeTheme.warning.withValues(alpha: 0.08),
+                      child: const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: Text(
+                          'Layouts no cacheados: sincroniza productos/'
+                          'ubicaciones (Preparar dispositivo o Sync selectivo). '
+                          'Se agrupa con la ubicación embebida si existe.',
                         ),
                       ),
-                    ..._byLocation.entries.map((entry) {
-                      final products = entry.value;
-                      final totalQty = products.fold<double>(
-                        0,
-                        (sum, p) =>
-                            sum + ((p['cantidad'] as num?)?.toDouble() ?? 0),
-                      );
-                      return ExpansionTile(
-                        initiallyExpanded: _byLocation.length == 1,
-                        title: Text(entry.key),
-                        subtitle: Text(
-                          '${products.length} producto(s) · qty $totalQty',
-                        ),
-                        children: products
-                            .map(
-                              (p) => ListTile(
-                                dense: true,
-                                title: Text(
-                                  p['denominacion']?.toString() ?? '',
+                    ),
+                  ..._byLocation.entries.map((entry) {
+                    final products = entry.value;
+                    final totalQty = products.fold<double>(
+                      0,
+                      (sum, p) =>
+                          sum + ((p['cantidad'] as num?)?.toDouble() ?? 0),
+                    );
+                    return ExpansionTile(
+                      initiallyExpanded: _byLocation.length == 1,
+                      title: Text(entry.key),
+                      subtitle: Text(
+                        '${products.length} producto(s) · qty $totalQty',
+                      ),
+                      children:
+                          products
+                              .map(
+                                (p) => ListTile(
+                                  dense: true,
+                                  title: Text(
+                                    p['denominacion']?.toString() ?? '',
+                                  ),
+                                  trailing: Text('${p['cantidad'] ?? 0}'),
                                 ),
-                                trailing: Text('${p['cantidad'] ?? 0}'),
-                              ),
-                            )
-                            .toList(),
-                      );
-                    }),
-                  ],
-                ),
+                              )
+                              .toList(),
+                    );
+                  }),
+                ],
+              ),
     );
   }
 }

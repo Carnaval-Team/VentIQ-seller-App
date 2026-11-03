@@ -7,7 +7,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/home_catalogo.dart';
 import 'elaborated_availability_service.dart';
+import 'home_offline_mapper.dart';
+import 'offline_database_service.dart';
 import 'supabase_retry_helper.dart';
+import 'user_preferences_service.dart';
 
 /// Lo que el Home necesita del backend.
 ///
@@ -52,20 +55,46 @@ abstract class HomeCatalogoGateway {
 const int kMaxCategoriasGrupo = 8;
 
 /// Implementación real: RPC de Supabase + caché en memoria + snapshot en disco.
+///
+/// Todo el camino de lectura tiene **fallback offline** para que el Home nuevo
+/// se comporte como el viejo cuando no hay red:
+///
+///  * [catalogo] → memoria → snapshot en disco → (si falla) error actual;
+///  * [subcategorias] y [productos] → red y, si el modo offline está activo o la
+///    RPC falla, el cache local (`offline_data`/SQLite) vía
+///    [HomeOfflineSource]. Así el drawer no se queda vacío sin conexión.
 class HomeCatalogService implements HomeCatalogoGateway {
   HomeCatalogService({
     SupabaseClient? cliente,
     ElaboratedAvailabilityService? disponibilidadElaborados,
-  }) : _supabase = cliente ?? Supabase.instance.client,
-       _disponibilidadElaborados =
-           disponibilidadElaborados ?? ElaboratedAvailabilityService();
+    HomeOfflineSource? offline,
+  }) : _cliente = cliente,
+       _disponibilidadInyectada = disponibilidadElaborados,
+       _offlineInyectada = offline;
 
-  final SupabaseClient _supabase;
+  /// Cliente inyectado. Nulo ⇒ se resuelve `Supabase.instance` de forma
+  /// perezosa: así los tests pueden construir el servicio para probar el
+  /// fallback offline sin inicializar Supabase.
+  final SupabaseClient? _cliente;
+
+  final ElaboratedAvailabilityService? _disponibilidadInyectada;
+  final HomeOfflineSource? _offlineInyectada;
+
+  ElaboratedAvailabilityService? _disponibilidadCache;
+  HomeOfflineSource? _offlineCache;
+
+  SupabaseClient get _supabase => _cliente ?? Supabase.instance.client;
 
   /// Disponibilidad real de los elaborados. Se usa para no enseñar el stock
   /// propio del plato (1, 0...) cuando lo que importa es cuántos se pueden
   /// preparar con la materia prima de su cocina.
-  final ElaboratedAvailabilityService _disponibilidadElaborados;
+  ElaboratedAvailabilityService get _disponibilidadElaborados =>
+      _disponibilidadInyectada ??
+      (_disponibilidadCache ??= ElaboratedAvailabilityService());
+
+  /// Cache local del modo offline. Solo se construye cuando hace falta.
+  HomeOfflineSource get _offline =>
+      _offlineInyectada ?? (_offlineCache ??= _HomeOfflineSourceCache());
 
   /// Caché en memoria. Evita repetir la RPC al volver al Home desde otra
   /// pantalla, que es lo que pasa decenas de veces por turno.
@@ -142,25 +171,54 @@ class HomeCatalogService implements HomeCatalogoGateway {
   }) async {
     if (idsCategorias.isEmpty) return const <HomeSubcategoria>[];
 
-    final List<dynamic> filas = await withNetworkRetry(
-      () => _supabase.rpc(
-        'get_subcategorias_by_categoria_tpv',
-        params: <String, dynamic>{
-          'p_id_categorias': idsCategorias,
-          'p_tienda_id': contexto.idTienda,
-          'p_tpv_id': contexto.idTpv,
-        },
-      ),
-      description: 'Cargar subcategorías',
-    );
+    // Modo offline / full-offline: la fuente es el cache local, sin red.
+    if (await _debeUsarCacheLocal()) {
+      final List<HomeSubcategoria> locales = await _subcategoriasDesdeCache(
+        idsCategorias,
+      );
+      debugPrint('🔌 Subs offline (cache): ${locales.length}');
+      return locales;
+    }
 
-    return filas
-        .whereType<Map>()
-        .map(
-          (Map<dynamic, dynamic> m) =>
-              HomeSubcategoria.fromJson(m.cast<String, dynamic>()),
-        )
-        .toList();
+    try {
+      final List<dynamic> filas = await withNetworkRetry(
+        () => _supabase.rpc(
+          'get_subcategorias_by_categoria_tpv',
+          params: <String, dynamic>{
+            'p_id_categorias': idsCategorias,
+            'p_tienda_id': contexto.idTienda,
+            'p_tpv_id': contexto.idTpv,
+          },
+        ),
+        description: 'Cargar subcategorías',
+      );
+
+      return filas
+          .whereType<Map>()
+          .map(
+            (Map<dynamic, dynamic> m) =>
+                HomeSubcategoria.fromJson(m.cast<String, dynamic>()),
+          )
+          .toList();
+    } catch (e) {
+      // Sin cache el drawer enseña su estado vacío, pero no se rompe la
+      // pantalla: es preferible un nivel vacío a un Home caído en medio del
+      // turno. El mensaje del log dice exactamente qué pasó.
+      debugPrint('❌ HomeCatalogService.subcategorias: $e');
+
+      final List<HomeSubcategoria> locales = await _subcategoriasDesdeCache(
+        idsCategorias,
+      );
+      if (locales.isNotEmpty) {
+        debugPrint('📦 Subcategorías desde cache offline: ${locales.length}');
+      } else {
+        debugPrint(
+          '⚠️ Sin red y sin subcategorías en cache para $idsCategorias: '
+          'el drawer mostrará el nivel vacío.',
+        );
+      }
+      return locales;
+    }
   }
 
   @override
@@ -172,6 +230,18 @@ class HomeCatalogService implements HomeCatalogoGateway {
   }) async {
     final String? busqueda =
         (texto == null || texto.trim().isEmpty) ? null : texto.trim();
+
+    // Modo offline / full-offline: el cache local manda. No se enriquece con la
+    // disponibilidad de elaborados porque eso también es una RPC.
+    if (await _debeUsarCacheLocal()) {
+      final List<HomeProducto> locales = await _productosDesdeCache(
+        idsCategorias: idsCategorias,
+        texto: busqueda,
+        soloDisponibles: soloDisponibles,
+      );
+      debugPrint('🔌 Productos offline (cache): ${locales.length}');
+      return locales;
+    }
 
     // Sin ids: una sola llamada con categoría nula, que en la RPC significa
     // "todo el catálogo vendible del TPV". Es el camino de la búsqueda global.
@@ -187,33 +257,105 @@ class HomeCatalogService implements HomeCatalogoGateway {
       );
     }
 
-    final List<List<HomeProducto>> partes = await Future.wait(
-      categorias.map((int? idCategoria) async {
-        final List<dynamic> filas = await withNetworkRetry(
-          () => _supabase.rpc(
-            'get_productos_by_categoria_tpv_search_meta_v3',
-            params: <String, dynamic>{
-              'id_categoria_param': idCategoria,
-              'id_tienda_param': contexto.idTienda,
-              'id_tpv_param': contexto.idTpv,
-              'text_search': busqueda,
-              'solo_disponibles_param': soloDisponibles,
-            },
-          ),
-          description: 'Cargar productos',
+    try {
+      final List<List<HomeProducto>> partes = await Future.wait(
+        categorias.map((int? idCategoria) async {
+          final List<dynamic> filas = await withNetworkRetry(
+            () => _supabase.rpc(
+              'get_productos_by_categoria_tpv_search_meta_v3',
+              params: <String, dynamic>{
+                'id_categoria_param': idCategoria,
+                'id_tienda_param': contexto.idTienda,
+                'id_tpv_param': contexto.idTpv,
+                'text_search': busqueda,
+                'solo_disponibles_param': soloDisponibles,
+              },
+            ),
+            description: 'Cargar productos',
+          );
+
+          return filas
+              .whereType<Map>()
+              .map(
+                (Map<dynamic, dynamic> m) =>
+                    HomeProducto.fromJson(m.cast<String, dynamic>()),
+              )
+              .toList();
+        }),
+      );
+
+      return _conDisponibilidadElaborados(_unirPorId(partes), contexto);
+    } catch (e) {
+      // Falla la red (o el modo offline se activó a media petición): se
+      // devuelve lo que haya en el cache local, que es lo que permite seguir
+      // vendiendo. Sin cache, lista vacía y log claro; nunca una excepción que
+      // tumbe el drawer.
+      debugPrint('❌ HomeCatalogService.productos: $e');
+
+      final List<HomeProducto> locales = await _productosDesdeCache(
+        idsCategorias: idsCategorias,
+        texto: busqueda,
+        soloDisponibles: soloDisponibles,
+      );
+      if (locales.isNotEmpty) {
+        debugPrint('📦 Productos desde cache offline: ${locales.length}');
+      } else {
+        debugPrint(
+          '⚠️ Sin red y sin productos en cache para categorías $idsCategorias: '
+          'el drawer mostrará el nivel vacío.',
         );
+      }
+      return locales;
+    }
+  }
 
-        return filas
-            .whereType<Map>()
-            .map(
-              (Map<dynamic, dynamic> m) =>
-                  HomeProducto.fromJson(m.cast<String, dynamic>()),
-            )
-            .toList();
-      }),
-    );
+  /// `true` si toca leer del cache local. Tolerante: si no se puede saber
+  /// (preferencias corruptas), se intenta la red como siempre.
+  Future<bool> _debeUsarCacheLocal() async {
+    try {
+      return await _offline.debeUsarDatosLocales();
+    } catch (e) {
+      debugPrint('⚠️ Home offline: no se pudo leer el modo offline: $e');
+      return false;
+    }
+  }
 
-    return _conDisponibilidadElaborados(_unirPorId(partes), contexto);
+  Future<List<HomeSubcategoria>> _subcategoriasDesdeCache(
+    List<int> idsCategorias,
+  ) async {
+    try {
+      final Map<int, List<Map<String, dynamic>>> cache = await _offline
+          .productosPorCategoria(idsCategorias: idsCategorias);
+      return subcategoriasOfflineDesdeCache(
+        cache,
+        idsCategorias: idsCategorias,
+      );
+    } catch (e) {
+      debugPrint(
+        '⚠️ Home offline: no se pudieron leer las subcategorías del cache: $e',
+      );
+      return const <HomeSubcategoria>[];
+    }
+  }
+
+  Future<List<HomeProducto>> _productosDesdeCache({
+    required List<int> idsCategorias,
+    String? texto,
+    bool soloDisponibles = false,
+  }) async {
+    try {
+      final Map<int, List<Map<String, dynamic>>> cache = await _offline
+          .productosPorCategoria(idsCategorias: idsCategorias);
+      return productosOfflineDesdeCache(
+        cache,
+        idsCategorias: idsCategorias,
+        texto: texto,
+        soloDisponibles: soloDisponibles,
+      );
+    } catch (e) {
+      debugPrint('⚠️ Home offline: no se pudieron leer los productos: $e');
+      return const <HomeProducto>[];
+    }
   }
 
   /// Cambia el stock propio de los elaborados por su disponibilidad real
@@ -325,4 +467,103 @@ class _EntradaCatalogo {
   final DateTime cuando;
 
   bool fresca(Duration ttl) => DateTime.now().difference(cuando) < ttl;
+}
+
+/// Fuente real del fallback offline: el cache local que comparten el Home viejo
+/// y el resto de la app (`offline_data` sobre SQLite o `SharedPreferences`).
+///
+/// El mapeo no vive aquí: se delega en `home_offline_mapper.dart` para poder
+/// probarlo sin base de datos. Esta clase solo se ocupa de **leer** el cache,
+/// con las mismas prioridades que `ProductService._getProductsByCategoryLocal`:
+///
+///  1. lectura dirigida por categoría (usa el índice de `offline_products`);
+///  2. mapa completo agrupado (búsqueda global o cache con claves raras);
+///  3. blob `offline_data` legacy por si la plataforma solo tiene prefs (web).
+class _HomeOfflineSourceCache implements HomeOfflineSource {
+  _HomeOfflineSourceCache({
+    UserPreferencesService? preferencias,
+    OfflineDatabaseService? baseDatos,
+  }) : _prefs = preferencias ?? UserPreferencesService(),
+       _db = baseDatos ?? OfflineDatabaseService();
+
+  final UserPreferencesService _prefs;
+  final OfflineDatabaseService _db;
+
+  @override
+  Future<bool> debeUsarDatosLocales() => _prefs.shouldUseLocalData();
+
+  @override
+  Future<Map<int, List<Map<String, dynamic>>>> productosPorCategoria({
+    List<int> idsCategorias = const <int>[],
+  }) async {
+    final Map<int, List<Map<String, dynamic>>> salida =
+        <int, List<Map<String, dynamic>>>{};
+
+    if (idsCategorias.isNotEmpty) {
+      for (final int id in idsCategorias) {
+        try {
+          final List<Map<String, dynamic>> filas = await _db
+              .getProductsByCategory(id.toString());
+          if (filas.isNotEmpty) salida[id] = filas;
+        } catch (e) {
+          debugPrint('⚠️ Home offline: no se pudo leer la categoría $id: $e');
+        }
+      }
+      if (salida.isNotEmpty) return salida;
+    }
+
+    try {
+      final Map<String, List<Map<String, dynamic>>> agrupado =
+          await _db.getProductsGroupedByCategory();
+      final Map<int, List<Map<String, dynamic>>> normalizado =
+          _normalizarClaves(agrupado, idsCategorias: idsCategorias);
+      if (normalizado.isNotEmpty) return normalizado;
+    } catch (e) {
+      debugPrint('⚠️ Home offline: no se pudo leer el mapa de productos: $e');
+    }
+
+    // Último recurso: solo queda el blob clásico de prefs (web/legacy).
+    try {
+      final Map<String, dynamic>? datos = await _prefs.getOfflineData();
+      final Object? productos = datos?['products'];
+      if (productos is Map) {
+        final Map<String, List<Map<String, dynamic>>> agrupado =
+            <String, List<Map<String, dynamic>>>{};
+        for (final MapEntry<dynamic, dynamic> entry in productos.entries) {
+          final Object? lista = entry.value;
+          if (lista is! List) continue;
+          agrupado[entry.key.toString()] =
+              lista
+                  .whereType<Map>()
+                  .map(
+                    (Map<dynamic, dynamic> m) => Map<String, dynamic>.from(m),
+                  )
+                  .toList();
+        }
+        return _normalizarClaves(agrupado, idsCategorias: idsCategorias);
+      }
+    } catch (e) {
+      debugPrint('⚠️ Home offline: offline_data ilegible: $e');
+    }
+
+    return salida;
+  }
+
+  Map<int, List<Map<String, dynamic>>> _normalizarClaves(
+    Map<String, List<Map<String, dynamic>>> agrupado, {
+    required List<int> idsCategorias,
+  }) {
+    final Set<int> pedidas = idsCategorias.toSet();
+    final Map<int, List<Map<String, dynamic>>> salida =
+        <int, List<Map<String, dynamic>>>{};
+
+    for (final MapEntry<String, List<Map<String, dynamic>>> entry
+        in agrupado.entries) {
+      final int? id = int.tryParse(entry.key);
+      if (id == null) continue;
+      if (pedidas.isNotEmpty && !pedidas.contains(id)) continue;
+      salida[id] = entry.value;
+    }
+    return salida;
+  }
 }

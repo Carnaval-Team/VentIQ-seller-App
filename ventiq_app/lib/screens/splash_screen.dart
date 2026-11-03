@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/user_preferences_service.dart';
+import '../theme/ventiq_home_theme.dart';
 import '../services/auth_service.dart';
 import '../services/settings_integration_service.dart';
 import '../services/auto_sync_service.dart';
@@ -44,9 +45,7 @@ class _SplashScreenState extends State<SplashScreen> {
             await _userPreferencesService.isDeviceFullOfflineReady();
         if (fullOfflineReady) {
           await _userPreferencesService.setOfflineMode(true);
-          print(
-            '📦 Sesión + full offline: se mantiene offline sin auto-sync',
-          );
+          print('📦 Sesión + full offline: se mantiene offline sin auto-sync');
         } else {
           // User has valid session, initialize smart services and go to categories
           print(
@@ -100,8 +99,7 @@ class _SplashScreenState extends State<SplashScreen> {
             // Si no hay conexión, intentar login offline automático con las
             // credenciales guardadas para que el usuario pueda seguir
             // trabajando sin volver a pedir usuario/contraseña.
-            final hasInternet =
-                await ConnectivityService().checkConnectivity();
+            final hasInternet = await ConnectivityService().checkConnectivity();
             if (hasInternet) {
               await _attemptAutoLogin(email, password);
             } else {
@@ -155,8 +153,7 @@ class _SplashScreenState extends State<SplashScreen> {
 
         if (mounted) {
           if (!hasLicense) {
-            Navigator.of(context)
-                .pushReplacementNamed('/subscription-detail');
+            Navigator.of(context).pushReplacementNamed('/subscription-detail');
           } else {
             await ServicentroService.primeCache();
             // Tras auto-login, refrescar flags del TPV si hay red.
@@ -208,10 +205,8 @@ class _SplashScreenState extends State<SplashScreen> {
   /// la app sin conexión y no hay sesión online vigente.
   Future<void> _attemptOfflineAutoLogin(String email, String password) async {
     try {
-      final offlineUser = await _userPreferencesService.restoreOfflineUserSession(
-        email,
-        password,
-      );
+      final offlineUser = await _userPreferencesService
+          .restoreOfflineUserSession(email, password);
 
       if (offlineUser == null) {
         print('❌ Auto-login offline fallido: credenciales inválidas');
@@ -579,7 +574,7 @@ class _SplashScreenState extends State<SplashScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(color: Color(0xFF4A90E2)),
+        decoration: const BoxDecoration(color: VentiqHomeTheme.primary),
         child: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,

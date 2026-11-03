@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'tutorial/tutorial_overlay.dart';
 import 'screens/splash_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/login_web_screen.dart';
@@ -271,13 +272,15 @@ class MyApp extends StatelessWidget {
         ),
       ),
       builder: (context, child) {
-        return OfflineDialogOverlay(
-          child: SyncBlockingOverlay(
-            child: Column(
-              children: [
-                const LicenseReconnectBanner(),
-                Expanded(child: child ?? const SizedBox.shrink()),
-              ],
+        return TutorialOverlayHost(
+          child: OfflineDialogOverlay(
+            child: SyncBlockingOverlay(
+              child: Column(
+                children: [
+                  const LicenseReconnectBanner(),
+                  Expanded(child: child ?? const SizedBox.shrink()),
+                ],
+              ),
             ),
           ),
         );

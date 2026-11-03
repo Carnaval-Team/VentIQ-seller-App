@@ -13,6 +13,7 @@ import '../services/product_detail_service.dart';
 import '../services/promotion_service.dart';
 import '../services/turno_service.dart';
 import '../services/user_preferences_service.dart';
+import '../theme/ventiq_home_theme.dart';
 import '../utils/promotion_rules.dart';
 import '../utils/price_utils.dart';
 
@@ -105,7 +106,6 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
   bool _dLoadingStates = false;
   bool _dLoadingCities = false;
 
-  static const Color _primary = Color(0xFF194B8C);
   static const String _fallbackAsset = 'assets/package.jpg';
 
   @override
@@ -172,9 +172,9 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
           (context) => AlertDialog(
             title: Row(
               children: [
-                Icon(
+                const Icon(
                   Icons.warning_amber_rounded,
-                  color: Colors.orange,
+                  color: VentiqHomeTheme.warning,
                   size: 28,
                 ),
                 const SizedBox(width: 8),
@@ -190,7 +190,9 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                   Navigator.pop(context);
                   Navigator.pushReplacementNamed(context, '/apertura');
                 },
-                style: ElevatedButton.styleFrom(backgroundColor: _primary),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: VentiqHomeTheme.primary,
+                ),
                 child: const Text('Ir a Apertura'),
               ),
               TextButton(
@@ -525,24 +527,52 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
   @override
   Widget build(BuildContext context) {
     if (_checkingShift) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(
+        backgroundColor: VentiqHomeTheme.surface,
+        body: Center(child: CircularProgressIndicator()),
+      );
     }
     if (!_hasOpenShift) {
-      return const Scaffold(
-        body: Center(child: Text('No tiene un turno abierto')),
+      return Scaffold(
+        backgroundColor: VentiqHomeTheme.surface,
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: const [
+              Icon(
+                Icons.lock_clock_outlined,
+                size: 56,
+                color: VentiqHomeTheme.primary,
+              ),
+              SizedBox(height: 16),
+              Text(
+                'No tiene un turno abierto',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: VentiqHomeTheme.textPrimary,
+                ),
+              ),
+            ],
+          ),
+        ),
       );
     }
 
     final isWide = _isWide(context);
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
+      backgroundColor: VentiqHomeTheme.surface,
       appBar: AppBar(
         elevation: 0,
         title: Text(
           _showShipmentForm ? 'Datos de envío' : 'Detalle del paquete',
-          style: const TextStyle(color: Colors.white),
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
         ),
-        backgroundColor: _primary,
+        backgroundColor: VentiqHomeTheme.primary,
         iconTheme: const IconThemeData(color: Colors.white),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
@@ -605,9 +635,10 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
   Widget _buildLeftColumnWeb(Product product) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.shade200),
+        color: VentiqHomeTheme.card,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: VentiqHomeTheme.border),
+        boxShadow: VentiqHomeTheme.shadowCard,
       ),
       padding: const EdgeInsets.all(18),
       child: Column(
@@ -619,15 +650,19 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
             spacing: 6,
             runSpacing: 6,
             children: [
-              _chip('Paquete', Icons.card_giftcard_outlined, _primary),
+              _chip('Paquete', Icons.card_giftcard_outlined, VentiqHomeTheme.primary),
               if (product.categoria.isNotEmpty)
                 _chip(
                   product.categoria,
                   Icons.category_outlined,
-                  Colors.blueGrey,
+                  VentiqHomeTheme.textSecondary,
                 ),
               if (product.sku != null && product.sku!.isNotEmpty)
-                _chip('SKU: ${product.sku}', Icons.qr_code_2, Colors.grey),
+                _chip(
+                  'SKU: ${product.sku}',
+                  Icons.qr_code_2,
+                  VentiqHomeTheme.textSecondary,
+                ),
             ],
           ),
           if (product.descripcion != null &&
@@ -635,8 +670,8 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
             const SizedBox(height: 12),
             Text(
               product.descripcion!,
-              style: TextStyle(
-                color: Colors.grey.shade700,
+              style: const TextStyle(
+                color: VentiqHomeTheme.textSecondary,
                 fontSize: 13,
                 height: 1.4,
               ),
@@ -655,8 +690,10 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
           product.denominacion,
           style: const TextStyle(
             fontSize: 24,
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.3,
             height: 1.2,
+            color: VentiqHomeTheme.textPrimary,
           ),
         ),
         const SizedBox(height: 14),
@@ -687,12 +724,12 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
         icon: const Icon(Icons.arrow_forward_rounded),
         label: const Text(
           'Siguiente',
-          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
         ),
         style: ElevatedButton.styleFrom(
-          backgroundColor: _primary,
+          backgroundColor: VentiqHomeTheme.primary,
           foregroundColor: Colors.white,
-          elevation: 2,
+          elevation: 0,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
@@ -728,11 +765,11 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
       fit: BoxFit.cover,
       errorBuilder:
           (_, __, ___) => Container(
-            color: Colors.grey.shade100,
-            child: Icon(
+            color: VentiqHomeTheme.surface,
+            child: const Icon(
               Icons.inventory_2_rounded,
               size: 80,
-              color: Colors.grey.shade400,
+              color: VentiqHomeTheme.border,
             ),
           ),
     );
@@ -746,15 +783,19 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
           spacing: 6,
           runSpacing: 6,
           children: [
-            _chip('Paquete', Icons.card_giftcard_outlined, _primary),
+            _chip('Paquete', Icons.card_giftcard_outlined, VentiqHomeTheme.primary),
             if (product.categoria.isNotEmpty)
               _chip(
                 product.categoria,
                 Icons.category_outlined,
-                Colors.blueGrey,
+                VentiqHomeTheme.textSecondary,
               ),
             if (product.sku != null && product.sku!.isNotEmpty)
-              _chip('SKU: ${product.sku}', Icons.qr_code_2, Colors.grey),
+              _chip(
+                'SKU: ${product.sku}',
+                Icons.qr_code_2,
+                VentiqHomeTheme.textSecondary,
+              ),
           ],
         ),
         const SizedBox(height: 8),
@@ -762,8 +803,10 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
           product.denominacion,
           style: const TextStyle(
             fontSize: 18,
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.2,
             height: 1.2,
+            color: VentiqHomeTheme.textPrimary,
           ),
         ),
         if (product.descripcion != null &&
@@ -771,8 +814,8 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
           const SizedBox(height: 4),
           Text(
             product.descripcion!,
-            style: TextStyle(
-              color: Colors.grey.shade700,
+            style: const TextStyle(
+              color: VentiqHomeTheme.textSecondary,
               fontSize: 12.5,
               height: 1.35,
             ),
@@ -815,7 +858,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           behavior: SnackBarBehavior.floating,
-          backgroundColor: Colors.orange.shade700,
+          backgroundColor: VentiqHomeTheme.warning,
           content: Text('Completa: ${missing.join(', ')}'),
         ),
       );
@@ -826,11 +869,12 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
 
   Widget _buildPackageInfoCard() {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        color: VentiqHomeTheme.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: VentiqHomeTheme.border),
+        boxShadow: VentiqHomeTheme.shadowCard,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -840,19 +884,23 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
               Container(
                 padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
-                  color: _primary.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(6),
+                  color: VentiqHomeTheme.primary.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Icon(
                   Icons.inventory_2_outlined,
-                  color: _primary,
+                  color: VentiqHomeTheme.primary,
                   size: 16,
                 ),
               ),
               const SizedBox(width: 8),
               const Text(
                 'Información del paquete',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: VentiqHomeTheme.textPrimary,
+                ),
               ),
             ],
           ),
@@ -881,9 +929,6 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                         tooltip: 'Obtener nuevo correlativo',
                         onPressed: _loadPackageNumber,
                       ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
               isDense: true,
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 10,
@@ -901,9 +946,6 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
               labelText: 'Descripción',
               labelStyle: const TextStyle(fontSize: 13),
               alignLabelWithHint: true,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
               isDense: true,
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 10,
@@ -932,17 +974,17 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                 width: 64,
                 height: 64,
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.grey.shade300),
+                  color: VentiqHomeTheme.surface,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: VentiqHomeTheme.border),
                 ),
                 clipBehavior: Clip.antiAlias,
                 child:
                     _packagePhotoBytes != null
                         ? Image.memory(_packagePhotoBytes!, fit: BoxFit.cover)
-                        : Icon(
+                        : const Icon(
                           Icons.add_a_photo_outlined,
-                          color: Colors.grey.shade500,
+                          color: VentiqHomeTheme.textSecondary,
                           size: 22,
                         ),
               ),
@@ -955,9 +997,9 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                   Text(
                     'Foto principal (opcional)',
                     style: TextStyle(
-                      color: Colors.grey.shade700,
+                      color: VentiqHomeTheme.textSecondary,
                       fontSize: 12,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -975,8 +1017,10 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                             style: const TextStyle(fontSize: 12),
                           ),
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: _primary,
-                            side: const BorderSide(color: _primary),
+                            foregroundColor: VentiqHomeTheme.primary,
+                            side: const BorderSide(
+                              color: VentiqHomeTheme.primary,
+                            ),
                             padding: const EdgeInsets.symmetric(
                               horizontal: 6,
                               vertical: 6,
@@ -1001,7 +1045,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                             child: Icon(
                               Icons.close,
                               size: 18,
-                              color: Colors.red.shade600,
+                              color: VentiqHomeTheme.danger,
                             ),
                           ),
                         ),
@@ -1019,9 +1063,9 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
             Text(
               'Fotos adicionales (${_packageExtraPhotos.length})',
               style: TextStyle(
-                color: Colors.grey.shade700,
+                color: VentiqHomeTheme.textSecondary,
                 fontSize: 12,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
               ),
             ),
             const Spacer(),
@@ -1030,8 +1074,8 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
               icon: const Icon(Icons.add_photo_alternate_outlined, size: 14),
               label: const Text('Agregar', style: TextStyle(fontSize: 12)),
               style: OutlinedButton.styleFrom(
-                foregroundColor: _primary,
-                side: const BorderSide(color: _primary),
+                foregroundColor: VentiqHomeTheme.primary,
+                side: const BorderSide(color: VentiqHomeTheme.primary),
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                 minimumSize: const Size(0, 32),
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -1055,8 +1099,8 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                       width: 64,
                       height: 64,
                       decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: VentiqHomeTheme.border),
                       ),
                       clipBehavior: Clip.antiAlias,
                       child: Image.memory(photo.bytes, fit: BoxFit.cover),
@@ -1070,7 +1114,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                                 setState(() => _packageExtraPhotos.removeAt(i)),
                         child: Container(
                           decoration: BoxDecoration(
-                            color: Colors.red.shade600,
+                            color: VentiqHomeTheme.danger,
                             shape: BoxShape.circle,
                           ),
                           padding: const EdgeInsets.all(2),
@@ -1108,7 +1152,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
+                    color: VentiqHomeTheme.border,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -1116,7 +1160,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                 ListTile(
                   leading: const Icon(
                     Icons.photo_camera_outlined,
-                    color: _primary,
+                    color: VentiqHomeTheme.primary,
                   ),
                   title: const Text('Tomar foto con la cámara'),
                   onTap: () => Navigator.pop(ctx, ImageSource.camera),
@@ -1124,7 +1168,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                 ListTile(
                   leading: const Icon(
                     Icons.photo_library_outlined,
-                    color: _primary,
+                    color: VentiqHomeTheme.primary,
                   ),
                   title: const Text('Elegir de la galería'),
                   onTap: () => Navigator.pop(ctx, ImageSource.gallery),
@@ -1188,7 +1232,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('No se pudo abrir la cámara/galería: $e'),
-            backgroundColor: Colors.red.shade600,
+            backgroundColor: VentiqHomeTheme.danger,
           ),
         );
       }
@@ -1199,9 +1243,10 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.shade200),
+        color: VentiqHomeTheme.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: VentiqHomeTheme.border),
+        boxShadow: VentiqHomeTheme.shadowCard,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1211,19 +1256,23 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: _primary.withOpacity(0.1),
+                  color: VentiqHomeTheme.primary.withOpacity(0.10),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Icon(
                   Icons.payments_outlined,
-                  color: _primary,
+                  color: VentiqHomeTheme.primary,
                   size: 20,
                 ),
               ),
               const SizedBox(width: 10),
               const Text(
                 'Método de pago',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: VentiqHomeTheme.textPrimary,
+                ),
               ),
             ],
           ),
@@ -1268,10 +1317,14 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
         decoration: BoxDecoration(
-          color: selected ? _primary.withOpacity(0.1) : Colors.grey.shade50,
+          color:
+              selected
+                  ? VentiqHomeTheme.primary.withOpacity(0.08)
+                  : VentiqHomeTheme.surface,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: selected ? _primary : Colors.grey.shade300,
+            color:
+                selected ? VentiqHomeTheme.primary : VentiqHomeTheme.border,
             width: selected ? 1.6 : 1,
           ),
         ),
@@ -1279,15 +1332,21 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
           children: [
             Icon(
               icon,
-              color: selected ? _primary : Colors.grey.shade600,
+              color:
+                  selected
+                      ? VentiqHomeTheme.primary
+                      : VentiqHomeTheme.textSecondary,
               size: 24,
             ),
             const SizedBox(height: 6),
             Text(
               label,
               style: TextStyle(
-                color: selected ? _primary : Colors.grey.shade800,
-                fontWeight: selected ? FontWeight.bold : FontWeight.w500,
+                color:
+                    selected
+                        ? VentiqHomeTheme.primary
+                        : VentiqHomeTheme.textPrimary,
+                fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
                 fontSize: 13,
               ),
             ),
@@ -1299,11 +1358,11 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
 
   Widget _chip(String text, IconData icon, Color color) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.3)),
+        color: color.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(VentiqHomeTheme.radiusChip),
+        border: Border.all(color: color.withOpacity(0.28)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1314,8 +1373,8 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
             text,
             style: TextStyle(
               color: color,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
@@ -1329,8 +1388,9 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
     if (valor == null || tipo == null) return const SizedBox.shrink();
 
     final isSurcharge = _hasSurcharge;
-    final accent = isSurcharge ? Colors.orange.shade700 : Colors.red.shade600;
-    final bg = isSurcharge ? Colors.orange.shade50 : Colors.red.shade50;
+    final accent =
+        isSurcharge ? VentiqHomeTheme.warning : VentiqHomeTheme.danger;
+    final bg = accent.withOpacity(0.08);
     final prefix = isSurcharge ? '+' : '-';
     // tipo_descuento: 1 % desc, 2 fijo desc, 3 % recargo, 4 fijo recargo
     final isPercent = tipo == 1 || tipo == 3;
@@ -1340,11 +1400,11 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
             : '$prefix\$${valor.toMoneyString(2)}';
 
     return Container(
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: accent.withOpacity(0.3)),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: accent.withOpacity(0.28)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -1368,7 +1428,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
             decoration: BoxDecoration(
               color: accent,
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
               label,
@@ -1401,21 +1461,22 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        color: VentiqHomeTheme.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: VentiqHomeTheme.border),
+        boxShadow: VentiqHomeTheme.shadowCard,
       ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(9),
             decoration: BoxDecoration(
-              color: Colors.green.shade50,
+              color: VentiqHomeTheme.success.withOpacity(0.10),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(
+            child: const Icon(
               Icons.attach_money_rounded,
-              color: Colors.green.shade700,
+              color: VentiqHomeTheme.success,
               size: 22,
             ),
           ),
@@ -1424,15 +1485,19 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                const Text(
                   'Precio unitario (USD)',
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                  style: TextStyle(
+                    color: VentiqHomeTheme.textSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 if (_usdRate <= 0)
                   Text(
                     'Cargando tasa...',
-                    style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+                    style: TextStyle(color: VentiqHomeTheme.textSecondary, fontSize: 14),
                   )
                 else if (_hasDiscount)
                   Row(
@@ -1442,8 +1507,8 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                         '\$${effectiveUsd.toMoneyString(2)}',
                         style: TextStyle(
                           fontSize: 32,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.green.shade700,
+                          fontWeight: FontWeight.w800,
+                          color: VentiqHomeTheme.success,
                           height: 1,
                         ),
                       ),
@@ -1454,7 +1519,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                           '\$${baseUsd.toMoneyString(2)}',
                           style: const TextStyle(
                             fontSize: 14,
-                            color: Colors.grey,
+                            color: VentiqHomeTheme.textSecondary,
                             decoration: TextDecoration.lineThrough,
                           ),
                         ),
@@ -1469,8 +1534,8 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                         '\$${effectiveUsd.toMoneyString(2)}',
                         style: TextStyle(
                           fontSize: 32,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.green.shade700,
+                          fontWeight: FontWeight.w800,
+                          color: VentiqHomeTheme.success,
                           height: 1,
                         ),
                       ),
@@ -1481,7 +1546,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                           'base \$${baseUsd.toMoneyString(2)}',
                           style: const TextStyle(
                             fontSize: 12,
-                            color: Colors.grey,
+                            color: VentiqHomeTheme.textSecondary,
                           ),
                         ),
                       ),
@@ -1492,8 +1557,8 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                     '\$${effectiveUsd.toMoneyString(2)}',
                     style: TextStyle(
                       fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.green.shade700,
+                      fontWeight: FontWeight.w800,
+                      color: VentiqHomeTheme.success,
                       height: 1,
                     ),
                   ),
@@ -1512,20 +1577,21 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
 
   Widget _buildQuantityCard() {
     return Container(
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        color: VentiqHomeTheme.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: VentiqHomeTheme.border),
+        boxShadow: VentiqHomeTheme.shadowCard,
       ),
       child: Row(
         children: [
-          Text(
+          const Text(
             'Cantidad de libras:',
             style: TextStyle(
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w700,
               fontSize: 13,
-              color: Colors.grey.shade700,
+              color: VentiqHomeTheme.textPrimary,
             ),
           ),
           const Spacer(),
@@ -1552,9 +1618,14 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
               inputFormatters: [
                 FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
               ],
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: VentiqHomeTheme.textPrimary,
+              ),
               decoration: const InputDecoration(
                 isDense: true,
+                filled: false,
                 contentPadding: EdgeInsets.symmetric(vertical: 6),
                 border: UnderlineInputBorder(),
               ),
@@ -1604,11 +1675,21 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
         width: 36,
         height: 36,
         decoration: BoxDecoration(
-          color: enabled ? _primary.withOpacity(0.1) : Colors.grey.shade100,
+          color:
+              enabled
+                  ? VentiqHomeTheme.primary.withOpacity(0.10)
+                  : VentiqHomeTheme.surface,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: enabled ? _primary : Colors.grey.shade300),
+          border: Border.all(
+            color: enabled ? VentiqHomeTheme.primary : VentiqHomeTheme.border,
+          ),
         ),
-        child: Icon(icon, color: enabled ? _primary : Colors.grey, size: 18),
+        child: Icon(
+          icon,
+          color:
+              enabled ? VentiqHomeTheme.primary : VentiqHomeTheme.textSecondary,
+          size: 18,
+        ),
       ),
     );
   }
@@ -1617,13 +1698,12 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
     final totalUsd = _usdValue(_total);
     final unitUsd = _usdValue(_effectiveUnitPrice);
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.green.shade100, Colors.green.shade50],
-        ),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.green.shade300),
+        color: VentiqHomeTheme.card,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: VentiqHomeTheme.border),
+        boxShadow: VentiqHomeTheme.shadowCard,
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1631,28 +1711,33 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              const Text(
                 'Total (USD)',
                 style: TextStyle(
-                  color: Colors.grey.shade700,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
+                  color: VentiqHomeTheme.textSecondary,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.4,
                 ),
               ),
               Text(
                 _usdRate > 0
                     ? '${_formatQty(_quantity)} × \$${unitUsd.toMoneyString(2)}'
                     : 'Cargando tasa...',
-                style: TextStyle(color: Colors.grey.shade600, fontSize: 11),
+                style: const TextStyle(
+                  color: VentiqHomeTheme.textSecondary,
+                  fontSize: 11,
+                ),
               ),
             ],
           ),
           Text(
             _usdRate > 0 ? '\$${totalUsd.toMoneyString(2)}' : '--',
-            style: TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.bold,
-              color: Colors.green.shade800,
+            style: const TextStyle(
+              fontSize: 30,
+              fontWeight: FontWeight.w800,
+              color: VentiqHomeTheme.primary,
+              height: 1.1,
             ),
           ),
         ],
@@ -1734,11 +1819,11 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
         ),
         style: ElevatedButton.styleFrom(
-          backgroundColor: _primary,
+          backgroundColor: VentiqHomeTheme.primary,
           foregroundColor: Colors.white,
-          elevation: 2,
+          elevation: 0,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(12),
           ),
         ),
       ),
@@ -1750,16 +1835,10 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.shade200),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        color: VentiqHomeTheme.card,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: VentiqHomeTheme.border),
+        boxShadow: VentiqHomeTheme.shadowCard,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1769,19 +1848,23 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: _primary.withOpacity(0.1),
+                  color: VentiqHomeTheme.primary.withOpacity(0.10),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Icon(
                   Icons.receipt_long_outlined,
-                  color: _primary,
+                  color: VentiqHomeTheme.primary,
                   size: 20,
                 ),
               ),
               const SizedBox(width: 10),
               const Text(
                 'Resumen',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: VentiqHomeTheme.textPrimary,
+                ),
               ),
             ],
           ),
@@ -1839,7 +1922,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
             const SizedBox(height: 8),
             Text(
               _descPaqueteCtrl.text.trim(),
-              style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
+              style: TextStyle(color: VentiqHomeTheme.textSecondary, fontSize: 12),
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
             ),
@@ -1851,18 +1934,18 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
               Text(
                 'Total (USD)',
                 style: TextStyle(
-                  color: Colors.grey.shade700,
-                  fontWeight: FontWeight.w600,
+                  color: VentiqHomeTheme.textSecondary,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
               Text(
                 _usdRate > 0
                     ? '\$${_usdValue(_total).toMoneyString(2)}'
                     : '--',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.green.shade800,
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                  color: VentiqHomeTheme.primary,
                 ),
               ),
             ],
@@ -1882,7 +1965,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
             width: 92,
             child: Text(
               k,
-              style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+              style: TextStyle(color: VentiqHomeTheme.textSecondary, fontSize: 12),
             ),
           ),
           Expanded(
@@ -1901,18 +1984,12 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
   Widget _buildSummaryBanner() {
     final product = _detailedProduct ?? widget.product;
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.shade200),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        color: VentiqHomeTheme.card,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: VentiqHomeTheme.border),
+        boxShadow: VentiqHomeTheme.shadowCard,
       ),
       child: Row(
         children: [
@@ -1932,8 +2009,9 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                 Text(
                   product.denominacion,
                   style: const TextStyle(
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w700,
                     fontSize: 15,
+                    color: VentiqHomeTheme.textPrimary,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -1942,7 +2020,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                   _usdRate > 0
                       ? '${_formatQty(_quantity)} × USD \$${_usdValue(_effectiveUnitPrice).toMoneyString(2)}'
                       : '${_formatQty(_quantity)} libras',
-                  style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
+                  style: TextStyle(color: VentiqHomeTheme.textSecondary, fontSize: 12),
                 ),
                 if (_numeroPaqueteCtrl.text.trim().isNotEmpty ||
                     _metodoPago != null)
@@ -1953,7 +2031,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                       if (_metodoPago != null) _metodoPago!,
                     ].join(' • '),
                     style: TextStyle(
-                      color: Colors.grey.shade600,
+                      color: VentiqHomeTheme.textSecondary,
                       fontSize: 11,
                       fontStyle: FontStyle.italic,
                     ),
@@ -1965,9 +2043,9 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
             _usdRate > 0
                 ? 'USD \$${_usdValue(_total).toMoneyString(2)}'
                 : '--',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: Colors.green.shade800,
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              color: VentiqHomeTheme.primary,
               fontSize: 20,
             ),
           ),
@@ -2071,9 +2149,6 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
                           },
                         )
                         : const Icon(Icons.arrow_drop_down),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
                 errorText: state.errorText,
                 isDense: true,
                 contentPadding: const EdgeInsets.symmetric(
@@ -2088,7 +2163,8 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
               alignment: Alignment.topLeft,
               child: Material(
                 elevation: 4,
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(14),
+                color: VentiqHomeTheme.card,
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(
                     maxHeight: 260,
@@ -2299,16 +2375,10 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.shade200),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        color: VentiqHomeTheme.card,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: VentiqHomeTheme.border),
+        boxShadow: VentiqHomeTheme.shadowCard,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2318,17 +2388,18 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: _primary.withOpacity(0.1),
+                  color: VentiqHomeTheme.primary.withOpacity(0.10),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Icon(icon, color: _primary, size: 20),
+                child: Icon(icon, color: VentiqHomeTheme.primary, size: 20),
               ),
               const SizedBox(width: 10),
               Text(
                 title,
                 style: const TextStyle(
                   fontSize: 16,
-                  fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.w800,
+                  color: VentiqHomeTheme.textPrimary,
                 ),
               ),
             ],
@@ -2352,7 +2423,6 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
       decoration: InputDecoration(
         labelText: label,
         prefixIcon: Icon(icon, size: 20),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 12,
@@ -2376,7 +2446,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Completa los datos del paquete antes de continuar.'),
-          backgroundColor: Colors.orange,
+          backgroundColor: VentiqHomeTheme.warning,
         ),
       );
       return;
@@ -2536,7 +2606,7 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: Colors.red.shade700,
+        backgroundColor: VentiqHomeTheme.danger,
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 5),
       ),
@@ -2550,11 +2620,14 @@ class _PackageProductScreenState extends State<PackageProductScreen> {
       builder:
           (ctx) => AlertDialog(
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(20),
             ),
             title: Row(
               children: [
-                Icon(Icons.check_circle, color: Colors.green.shade600),
+                const Icon(
+                  Icons.check_circle,
+                  color: VentiqHomeTheme.success,
+                ),
                 const SizedBox(width: 8),
                 const Text('Orden creada'),
               ],

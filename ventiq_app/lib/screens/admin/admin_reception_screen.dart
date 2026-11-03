@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../services/admin_inventory_service.dart';
 import '../../services/admin_ticket_printer_service.dart';
 import '../../services/user_preferences_service.dart';
 import '../../utils/presentacion_cadena_local.dart';
+import '../../theme/ventiq_home_theme.dart';
 
 /// Recepción simple de mercancía (offline-first).
 class AdminReceptionScreen extends StatefulWidget {
@@ -104,8 +105,10 @@ class _AdminReceptionScreenState extends State<AdminReceptionScreen> {
   }
 
   double _cantidadDe(int idPresentacion) {
-    final txt =
-        _ctrlPorPresentacion[idPresentacion]?.text.trim().replaceAll(',', '.');
+    final txt = _ctrlPorPresentacion[idPresentacion]?.text.trim().replaceAll(
+      ',',
+      '.',
+    );
     if (txt == null || txt.isEmpty) return 0;
     return double.tryParse(txt) ?? 0;
   }
@@ -196,16 +199,18 @@ class _AdminReceptionScreenState extends State<AdminReceptionScreen> {
     }
     final qty = double.tryParse(_qtyCtrl.text.replaceAll(',', '.')) ?? 0;
     if (qty <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cantidad inválida')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Cantidad inválida')));
       return;
     }
 
     final presentationId = _selectedPresentationId;
     if (presentationId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('El producto no tiene presentación válida')),
+        const SnackBar(
+          content: Text('El producto no tiene presentación válida'),
+        ),
       );
       return;
     }
@@ -219,10 +224,11 @@ class _AdminReceptionScreenState extends State<AdminReceptionScreen> {
         'cantidad': qty,
         'costo_real': 0,
         'denominacion': p['denominacion'],
-        'presentacion_nombre': _cadena
-            .where((x) => x.idPresentacion == presentationId)
-            .map((x) => x.nombre)
-            .firstOrNull,
+        'presentacion_nombre':
+            _cadena
+                .where((x) => x.idPresentacion == presentationId)
+                .map((x) => x.nombre)
+                .firstOrNull,
       });
       _limpiarSeleccion();
     });
@@ -264,18 +270,19 @@ class _AdminReceptionScreenState extends State<AdminReceptionScreen> {
     setState(() => _saving = true);
     try {
       await _service.registerReception(
-        productos: _lines
-            .map(
-              (l) => {
-                'id_producto': l['id_producto'],
-                'id_variante': l['id_variante'],
-                'id_presentacion': l['id_presentacion'],
-                'id_ubicacion': l['id_ubicacion'],
-                'cantidad': l['cantidad'],
-                'costo_real': l['costo_real'] ?? 0,
-              },
-            )
-            .toList(),
+        productos:
+            _lines
+                .map(
+                  (l) => {
+                    'id_producto': l['id_producto'],
+                    'id_variante': l['id_variante'],
+                    'id_presentacion': l['id_presentacion'],
+                    'id_ubicacion': l['id_ubicacion'],
+                    'cantidad': l['cantidad'],
+                    'costo_real': l['costo_real'] ?? 0,
+                  },
+                )
+                .toList(),
         entregadoPor: _entregadoCtrl.text.trim(),
         recibidoPor: _recibidoCtrl.text.trim(),
         observaciones: _obsCtrl.text.trim(),
@@ -284,17 +291,20 @@ class _AdminReceptionScreenState extends State<AdminReceptionScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Recepción registrada (se sincronizará si está offline)'),
+          content: Text(
+            'Recepción registrada (se sincronizará si está offline)',
+          ),
           backgroundColor: Colors.green,
         ),
       );
-      final proveedorNombre = _suppliers
-          .cast<Map<String, dynamic>?>()
-          .firstWhere(
-            (s) => (s?['id'] as num?)?.toInt() == _idProveedor,
-            orElse: () => null,
-          )?['denominacion']
-          ?.toString();
+      final proveedorNombre =
+          _suppliers
+              .cast<Map<String, dynamic>?>()
+              .firstWhere(
+                (s) => (s?['id'] as num?)?.toInt() == _idProveedor,
+                orElse: () => null,
+              )?['denominacion']
+              ?.toString();
       await AdminTicketPrinterService().confirmAndPrint(
         context,
         title: 'Recepción',
@@ -332,7 +342,7 @@ class _AdminReceptionScreenState extends State<AdminReceptionScreen> {
           Icon(
             _modoMixto ? Icons.view_list : Icons.looks_one,
             size: 18,
-            color: Colors.blue[700],
+            color: VentiqHomeTheme.primary,
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -368,8 +378,10 @@ class _AdminReceptionScreenState extends State<AdminReceptionScreen> {
   /// Un campo por eslabon de la cadena, del empaque mayor al menor.
   Widget _buildCapturaMixta() {
     final cantidades = _cantidadesMixtas;
-    final equivalente =
-        PresentacionCadenaLocal.equivalenteBase(_cadena, cantidades);
+    final equivalente = PresentacionCadenaLocal.equivalenteBase(
+      _cadena,
+      cantidades,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -396,7 +408,7 @@ class _AdminReceptionScreenState extends State<AdminReceptionScreen> {
                         FormatoPresentacion.equivalencia(pres, _nombreBase),
                         style: TextStyle(
                           fontSize: 11,
-                          color: Colors.grey[600],
+                          color: VentiqHomeTheme.textSecondary,
                         ),
                       ),
                     ],
@@ -433,7 +445,7 @@ class _AdminReceptionScreenState extends State<AdminReceptionScreen> {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
-              color: Colors.blue.shade50,
+              color: VentiqHomeTheme.primary.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Column(
@@ -451,7 +463,10 @@ class _AdminReceptionScreenState extends State<AdminReceptionScreen> {
                   Text(
                     '= ${FormatoPresentacion.cantidad(equivalente)} '
                     '${FormatoPresentacion.plural(_nombreBase, equivalente)}',
-                    style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: VentiqHomeTheme.textSecondary,
+                    ),
                   ),
               ],
             ),
@@ -474,7 +489,7 @@ class _AdminReceptionScreenState extends State<AdminReceptionScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Recepción'),
-        backgroundColor: Colors.blue[700],
+        backgroundColor: VentiqHomeTheme.primary,
         foregroundColor: Colors.white,
       ),
       body: ListView(
@@ -503,15 +518,18 @@ class _AdminReceptionScreenState extends State<AdminReceptionScreen> {
               labelText: 'Ubicación de destino *',
               border: OutlineInputBorder(),
             ),
-            items: _layouts.map(
-              (l) => DropdownMenuItem<int?>(
-                value: (l['id'] as num?)?.toInt(),
-                child: Text(
-                  l['denominacion']?.toString() ?? '#${l['id']}',
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ).toList(),
+            items:
+                _layouts
+                    .map(
+                      (l) => DropdownMenuItem<int?>(
+                        value: (l['id'] as num?)?.toInt(),
+                        child: Text(
+                          l['denominacion']?.toString() ?? '#${l['id']}',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    )
+                    .toList(),
             onChanged: (v) => setState(() => _idUbicacion = v),
           ),
           const SizedBox(height: 12),
@@ -549,23 +567,27 @@ class _AdminReceptionScreenState extends State<AdminReceptionScreen> {
             maxLines: 2,
           ),
           const SizedBox(height: 16),
-          const Text('Agregar producto', style: TextStyle(fontWeight: FontWeight.w600)),
+          const Text(
+            'Agregar producto',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
           const SizedBox(height: 8),
           TextField(
             controller: _searchCtrl,
             decoration: InputDecoration(
               hintText: 'Buscar producto...',
               border: const OutlineInputBorder(),
-              suffixIcon: _searching
-                  ? const Padding(
-                      padding: EdgeInsets.all(12),
-                      child: SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    )
-                  : const Icon(Icons.search),
+              suffixIcon:
+                  _searching
+                      ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                      : const Icon(Icons.search),
             ),
             onChanged: _search,
           ),
@@ -631,38 +653,37 @@ class _AdminReceptionScreenState extends State<AdminReceptionScreen> {
                     labelText: 'Presentación *',
                     border: OutlineInputBorder(),
                   ),
-                  items: _cadena.isNotEmpty
-                      ? _cadena
-                          .map(
-                            (pres) => DropdownMenuItem<int?>(
-                              value: pres.idPresentacion,
-                              child: Text(
-                                pres.esBase
-                                    ? '${pres.nombre} (base)'
-                                    : '${pres.nombre} '
-                                        '= ${FormatoPresentacion.cantidad(pres.factorRel)} '
-                                        '${FormatoPresentacion.plural(_nombreBase, pres.factorRel)}',
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          )
-                          .toList()
-                      : _selectedPresentations
-                          .map(
-                            (pres) => DropdownMenuItem<int?>(
-                              value: (pres['id'] as num?)?.toInt(),
-                              child: Text(
-                                pres['denominacion']?.toString() ?? '',
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          )
-                          .toList(),
-                  onChanged: (v) =>
-                      setState(() => _selectedPresentationId = v),
+                  items:
+                      _cadena.isNotEmpty
+                          ? _cadena
+                              .map(
+                                (pres) => DropdownMenuItem<int?>(
+                                  value: pres.idPresentacion,
+                                  child: Text(
+                                    pres.esBase
+                                        ? '${pres.nombre} (base)'
+                                        : '${pres.nombre} '
+                                            '= ${FormatoPresentacion.cantidad(pres.factorRel)} '
+                                            '${FormatoPresentacion.plural(_nombreBase, pres.factorRel)}',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              )
+                              .toList()
+                          : _selectedPresentations
+                              .map(
+                                (pres) => DropdownMenuItem<int?>(
+                                  value: (pres['id'] as num?)?.toInt(),
+                                  child: Text(
+                                    pres['denominacion']?.toString() ?? '',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                  onChanged: (v) => setState(() => _selectedPresentationId = v),
                 ),
-              if (_selectedPresentations.isNotEmpty)
-                const SizedBox(height: 8),
+              if (_selectedPresentations.isNotEmpty) const SizedBox(height: 8),
               Row(
                 children: [
                   Expanded(
@@ -716,16 +737,17 @@ class _AdminReceptionScreenState extends State<AdminReceptionScreen> {
           const SizedBox(height: 24),
           ElevatedButton.icon(
             onPressed: _saving ? null : _save,
-            icon: _saving
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.save),
+            icon:
+                _saving
+                    ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                    : const Icon(Icons.save),
             label: Text(_saving ? 'Guardando...' : 'Registrar recepción'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue[700],
+              backgroundColor: VentiqHomeTheme.primary,
               foregroundColor: Colors.white,
               minimumSize: const Size.fromHeight(48),
             ),

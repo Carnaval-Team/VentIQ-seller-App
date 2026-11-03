@@ -96,7 +96,7 @@ class ProductService {
 
         // Extract subcategory name
         final subcategoryName =
-            productData['subcategoria_nombre'] as String? ?? 'Sin subcategoría';
+            productData['subcategoria_nombre'] as String? ?? 'General';
 
         // Convert Supabase response to Product model
         final product = _convertSupabaseToProduct(productData);

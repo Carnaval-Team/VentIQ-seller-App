@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/wifi_printer_service.dart';
+import '../theme/ventiq_home_theme.dart';
 
 class WiFiPrintersScreen extends StatefulWidget {
   const WiFiPrintersScreen({Key? key}) : super(key: key);
@@ -10,7 +11,7 @@ class WiFiPrintersScreen extends StatefulWidget {
 
 class _WiFiPrintersScreenState extends State<WiFiPrintersScreen> {
   final WiFiPrinterService _wifiService = WiFiPrinterService();
-  
+
   List<Map<String, dynamic>> _savedPrinters = [];
   List<Map<String, dynamic>> _discoveredPrinters = [];
   bool _isLoading = false;
@@ -25,7 +26,7 @@ class _WiFiPrintersScreenState extends State<WiFiPrintersScreen> {
 
   Future<void> _loadSavedPrinters() async {
     setState(() => _isLoading = true);
-    
+
     try {
       final printers = await _wifiService.getSavedPrinters();
       setState(() {
@@ -49,28 +50,31 @@ class _WiFiPrintersScreenState extends State<WiFiPrintersScreen> {
     try {
       debugPrint('🔍 Iniciando búsqueda de impresoras...');
       final printers = await _wifiService.discoverPrinters();
-      
+
       // Guardar impresoras encontradas
       for (final printer in printers) {
         await _wifiService.savePrinter(printer);
       }
-      
+
       setState(() {
         _discoveredPrinters = printers;
         _isScanning = false;
-        
+
         if (printers.isEmpty) {
           _statusMessage = '❌ No se encontraron impresoras';
         } else {
-          final networkCount = printers.where((p) => p['type'] == 'network').length;
-          final apCount = printers.where((p) => p['type'] == 'access_point').length;
-          _statusMessage = '✅ Se encontraron ${printers.length} impresora(s) (Red: $networkCount, AP: $apCount)';
+          final networkCount =
+              printers.where((p) => p['type'] == 'network').length;
+          final apCount =
+              printers.where((p) => p['type'] == 'access_point').length;
+          _statusMessage =
+              '✅ Se encontraron ${printers.length} impresora(s) (Red: $networkCount, AP: $apCount)';
         }
       });
-      
+
       // Recargar guardadas
       await _loadSavedPrinters();
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -85,13 +89,10 @@ class _WiFiPrintersScreenState extends State<WiFiPrintersScreen> {
         _statusMessage = '❌ Error: $e';
         _isScanning = false;
       });
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
       }
     }
@@ -100,27 +101,28 @@ class _WiFiPrintersScreenState extends State<WiFiPrintersScreen> {
   Future<void> _deletePrinter(String ip) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Eliminar Impresora'),
-        content: Text('¿Deseas eliminar la impresora $ip?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Eliminar Impresora'),
+            content: Text('¿Deseas eliminar la impresora $ip?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancelar'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: TextButton.styleFrom(foregroundColor: Colors.red),
+                child: const Text('Eliminar'),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Eliminar'),
-          ),
-        ],
-      ),
     );
 
     if (confirmed == true) {
       await _wifiService.removeSavedPrinter(ip);
       await _loadSavedPrinters();
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -135,22 +137,23 @@ class _WiFiPrintersScreenState extends State<WiFiPrintersScreen> {
   Future<void> _testPrinter(Map<String, dynamic> printer) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Probar Impresora'),
-        content: Text(
-          '¿Deseas probar la conexión con ${printer['ip']}:${printer['port']}?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Probar Impresora'),
+            content: Text(
+              '¿Deseas probar la conexión con ${printer['ip']}:${printer['port']}?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancelar'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Probar'),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Probar'),
-          ),
-        ],
-      ),
     );
 
     if (confirmed == true) {
@@ -168,7 +171,7 @@ class _WiFiPrintersScreenState extends State<WiFiPrintersScreen> {
           printer['ip'],
           port: printer['port'] ?? 9100,
         );
-        
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -177,7 +180,7 @@ class _WiFiPrintersScreenState extends State<WiFiPrintersScreen> {
             ),
           );
         }
-        
+
         await _wifiService.disconnect();
       } catch (e) {
         if (mounted) {
@@ -195,9 +198,9 @@ class _WiFiPrintersScreenState extends State<WiFiPrintersScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: VentiqHomeTheme.surface,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF4A90E2),
+        backgroundColor: VentiqHomeTheme.primary,
         elevation: 0,
         title: const Text(
           'Impresoras WiFi',
@@ -213,85 +216,92 @@ class _WiFiPrintersScreenState extends State<WiFiPrintersScreen> {
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                // Botón de búsqueda
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  color: Colors.white,
-                  child: Column(
-                    children: [
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          onPressed: _isScanning ? null : _searchPrinters,
-                          icon: _isScanning
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Icon(Icons.search),
-                          label: Text(
-                            _isScanning ? 'Buscando...' : 'Buscar Impresoras',
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF10B981),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                        ),
-                      ),
-                      if (_statusMessage != null) ...[
-                        const SizedBox(height: 12),
-                        Container(
+      body:
+          _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : Column(
+                children: [
+                  // Botón de búsqueda
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    color: Colors.white,
+                    child: Column(
+                      children: [
+                        SizedBox(
                           width: double.infinity,
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: _statusMessage!.startsWith('✅')
-                                ? Colors.green.shade50
-                                : _statusMessage!.startsWith('❌')
-                                    ? Colors.red.shade50
-                                    : Colors.blue.shade50,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: _statusMessage!.startsWith('✅')
-                                  ? Colors.green.shade200
-                                  : _statusMessage!.startsWith('❌')
-                                      ? Colors.red.shade200
-                                      : Colors.blue.shade200,
+                          child: ElevatedButton.icon(
+                            onPressed: _isScanning ? null : _searchPrinters,
+                            icon:
+                                _isScanning
+                                    ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                    : const Icon(Icons.search),
+                            label: Text(
+                              _isScanning ? 'Buscando...' : 'Buscar Impresoras',
                             ),
-                          ),
-                          child: Text(
-                            _statusMessage!,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.grey[800],
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF10B981),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
                             ),
-                            textAlign: TextAlign.center,
                           ),
                         ),
+                        if (_statusMessage != null) ...[
+                          const SizedBox(height: 12),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color:
+                                  _statusMessage!.startsWith('✅')
+                                      ? Colors.green.shade50
+                                      : _statusMessage!.startsWith('❌')
+                                      ? Colors.red.shade50
+                                      : VentiqHomeTheme.primary.withValues(
+                                        alpha: 0.08,
+                                      ),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color:
+                                    _statusMessage!.startsWith('✅')
+                                        ? Colors.green.shade200
+                                        : _statusMessage!.startsWith('❌')
+                                        ? Colors.red.shade200
+                                        : Colors.blue.shade200,
+                              ),
+                            ),
+                            child: Text(
+                              _statusMessage!,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: VentiqHomeTheme.textPrimary,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
-                ),
-                
-                // Lista de impresoras
-                Expanded(
-                  child: _savedPrinters.isEmpty
-                      ? _buildEmptyState()
-                      : _buildPrintersList(),
-                ),
-              ],
-            ),
+
+                  // Lista de impresoras
+                  Expanded(
+                    child:
+                        _savedPrinters.isEmpty
+                            ? _buildEmptyState()
+                            : _buildPrintersList(),
+                  ),
+                ],
+              ),
     );
   }
 
@@ -305,7 +315,7 @@ class _WiFiPrintersScreenState extends State<WiFiPrintersScreen> {
             Icon(
               Icons.print_disabled,
               size: 80,
-              color: Colors.grey[400],
+              color: VentiqHomeTheme.textSecondary,
             ),
             const SizedBox(height: 24),
             Text(
@@ -313,7 +323,7 @@ class _WiFiPrintersScreenState extends State<WiFiPrintersScreen> {
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
-                color: Colors.grey[700],
+                color: VentiqHomeTheme.textSecondary,
               ),
             ),
             const SizedBox(height: 8),
@@ -321,7 +331,7 @@ class _WiFiPrintersScreenState extends State<WiFiPrintersScreen> {
               'Presiona "Buscar Impresoras" para encontrar impresoras en tu red',
               style: TextStyle(
                 fontSize: 14,
-                color: Colors.grey[600],
+                color: VentiqHomeTheme.textSecondary,
               ),
               textAlign: TextAlign.center,
             ),
@@ -338,7 +348,7 @@ class _WiFiPrintersScreenState extends State<WiFiPrintersScreen> {
       itemBuilder: (context, index) {
         final printer = _savedPrinters[index];
         final isAP = printer['type'] == 'access_point';
-        
+
         return Card(
           margin: const EdgeInsets.only(bottom: 12),
           elevation: 2,
@@ -351,7 +361,10 @@ class _WiFiPrintersScreenState extends State<WiFiPrintersScreen> {
           ),
           child: Container(
             decoration: BoxDecoration(
-              color: isAP ? Colors.orange.shade50 : Colors.white,
+              color:
+                  isAP
+                      ? VentiqHomeTheme.warning.withValues(alpha: 0.08)
+                      : Colors.white,
               borderRadius: BorderRadius.circular(12),
             ),
             child: ListTile(
@@ -362,9 +375,10 @@ class _WiFiPrintersScreenState extends State<WiFiPrintersScreen> {
               leading: Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: isAP
-                      ? Colors.orange.shade100
-                      : const Color(0xFF10B981).withOpacity(0.1),
+                  color:
+                      isAP
+                          ? VentiqHomeTheme.warning.withValues(alpha: 0.14)
+                          : const Color(0xFF10B981).withOpacity(0.1),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(
@@ -411,12 +425,15 @@ class _WiFiPrintersScreenState extends State<WiFiPrintersScreen> {
                   '${printer['ip']}:${printer['port'] ?? 9100}',
                   style: TextStyle(
                     fontSize: 13,
-                    color: Colors.grey[600],
+                    color: VentiqHomeTheme.textSecondary,
                   ),
                 ),
               ),
               trailing: PopupMenuButton<String>(
-                icon: Icon(Icons.more_vert, color: Colors.grey[600]),
+                icon: Icon(
+                  Icons.more_vert,
+                  color: VentiqHomeTheme.textSecondary,
+                ),
                 onSelected: (value) {
                   switch (value) {
                     case 'test':
@@ -427,28 +444,37 @@ class _WiFiPrintersScreenState extends State<WiFiPrintersScreen> {
                       break;
                   }
                 },
-                itemBuilder: (context) => [
-                  const PopupMenuItem(
-                    value: 'test',
-                    child: Row(
-                      children: [
-                        Icon(Icons.cable, size: 20, color: Color(0xFF4A90E2)),
-                        SizedBox(width: 12),
-                        Text('Probar conexión'),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'delete',
-                    child: Row(
-                      children: [
-                        Icon(Icons.delete_outline, size: 20, color: Colors.red),
-                        SizedBox(width: 12),
-                        Text('Eliminar'),
-                      ],
-                    ),
-                  ),
-                ],
+                itemBuilder:
+                    (context) => [
+                      const PopupMenuItem(
+                        value: 'test',
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.cable,
+                              size: 20,
+                              color: VentiqHomeTheme.primary,
+                            ),
+                            SizedBox(width: 12),
+                            Text('Probar conexión'),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.delete_outline,
+                              size: 20,
+                              color: Colors.red,
+                            ),
+                            SizedBox(width: 12),
+                            Text('Eliminar'),
+                          ],
+                        ),
+                      ),
+                    ],
               ),
             ),
           ),

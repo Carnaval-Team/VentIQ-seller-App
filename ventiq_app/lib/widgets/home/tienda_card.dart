@@ -19,6 +19,7 @@ class TiendaCard extends StatelessWidget {
     required this.categorias,
     required this.productos,
     required this.onTap,
+    this.nombre = 'Tienda',
   });
 
   /// Cuántas categorías agrupa.
@@ -26,6 +27,10 @@ class TiendaCard extends StatelessWidget {
 
   /// Cuántos productos hay dentro. Se usa para el subtítulo.
   final int productos;
+
+  /// Nombre de la tienda (D2). Sale de `app_dat_tienda.denominacion`; si no se
+  /// pudo leer, cae a «Tienda».
+  final String nombre;
 
   final VoidCallback onTap;
 
@@ -40,7 +45,7 @@ class TiendaCard extends StatelessWidget {
 
     return Semantics(
       button: true,
-      label: 'Tienda. $sub',
+      label: '$nombre. $sub',
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: VentiqHomeTheme.sectionPadding,
@@ -129,11 +134,11 @@ class TiendaCard extends StatelessWidget {
                                   ],
                                 ),
                                 const SizedBox(height: 6),
-                                const Text(
-                                  'Tienda',
+                                Text(
+                                  nombre,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
+                                  style: const TextStyle(
                                     fontSize: 19,
                                     height: 1.1,
                                     fontWeight: FontWeight.w800,

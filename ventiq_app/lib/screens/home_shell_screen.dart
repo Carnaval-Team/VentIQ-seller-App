@@ -1,24 +1,34 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../tutorial/tutorial_anchor.dart';
+import '../tutorial/tutorial_flujos.dart';
+import 'tutorial_venta_screen.dart';
 import '../controllers/home_controller.dart';
+import '../models/changelog.dart';
 import '../models/home_catalogo.dart';
 import '../models/product.dart';
+import '../services/changelog_service.dart';
 import '../services/home_catalog_service.dart';
+import '../services/home_extras_service.dart';
 import '../services/notification_service.dart';
 import '../services/order_service.dart';
+import '../services/product_detail_service.dart';
 import '../services/product_service.dart';
 import '../services/quick_add_service.dart';
 import '../services/elaborated_availability_service.dart';
 import '../services/sales_mode_service.dart';
 import '../services/smart_offline_manager.dart';
+import '../services/store_config_service.dart';
 import '../services/user_preferences_service.dart';
 import '../theme/ventiq_home_theme.dart';
 import '../utils/categoria_gradiente.dart';
 import '../utils/navigation_helper.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/bottom_navigation.dart';
+import '../widgets/changelog_dialog.dart';
 import '../widgets/connection_status_widget.dart';
 import '../widgets/home/categoria_drawer.dart';
 import '../widgets/home/categoria_drawer_route.dart';
@@ -29,6 +39,7 @@ import '../widgets/home/home_quick_chips.dart';
 import '../widgets/home/home_seccion_titulo.dart';
 import '../widgets/home/producto_tile.dart';
 import '../widgets/home/quick_add_sheet.dart';
+import '../widgets/home/riel_productos.dart';
 import '../widgets/notification_widget.dart';
 import '../widgets/sales_monitor_fab.dart';
 import '../widgets/sync_status_chip.dart';
@@ -120,8 +131,28 @@ class _HomeShellScreenState extends State<HomeShellScreen>
   NotificationService? _notificaciones;
   SmartOfflineManager? _offline;
 
+  /// Rieles del Home (Fase 7). Perezoso por la misma razón que los demás
+  /// servicios: su constructor toca `Supabase.instance`.
+  HomeExtrasService? _extras;
+  HomeExtrasService get _extrasService => _extras ??= HomeExtrasService();
+
+  List<HomeRielProducto> _masVendidos = const <HomeRielProducto>[];
+  List<HomeRielProducto> _ofertas = const <HomeRielProducto>[];
+
+  /// Nombre de la tienda (D2) desde `app_dat_tienda.denominacion`.
+  String _nombreTienda = 'Tienda';
+
+  /// Ficha completa para abrir un producto de riel con su stock real.
+  ProductDetailService? _detalle;
+  ProductDetailService get _detalleService =>
+      _detalle ??= ProductDetailService();
+
   final TextEditingController _buscador = TextEditingController();
   final FocusNode _focoBuscador = FocusNode();
+
+  /// Para abrir el `endDrawer` desde la pleca lateral (el icono del AppBar ya
+  /// no existe en este Home).
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   StreamSubscription<SmartOfflineEvent>? _subOffline;
   Timer? _debounceBusqueda;
@@ -180,6 +211,43 @@ class _HomeShellScreenState extends State<HomeShellScreen>
     await _cargarCatalogo();
     _escucharModoOffline();
     unawaited(_iniciarNotificaciones());
+    // El tutorial manda: si arranca, no encadenamos el changelog encima.
+    final bool tutorial = await _quizasTutorial();
+    if (!tutorial) unawaited(_mostrarNovedadesSiAplican());
+  }
+
+  /// Lanza el tutorial de venta la primera vez (normal o restaurante según la
+  /// configuración del negocio). Devuelve 	rue si quedó visible.
+  Future<bool> _quizasTutorial() async {
+    final bool restaurante =
+        StoreConfigService.modoRestauranteSync ||
+        StoreConfigService.cocinaActivaSync;
+    return TutorialAutoStart.intentar(context, restaurante: restaurante);
+  }
+
+  /// Muestra el changelog una vez por versión (antes solo salía en la primera
+  /// instalación, así que los clientes nunca veían las novedades nuevas).
+  Future<void> _mostrarNovedadesSiAplican() async {
+    try {
+      final Changelog? novedades =
+          await ChangelogService().getLatestChangelog();
+      if (novedades == null) return;
+
+      final bool corresponde = await _prefs.isFirstTimeOpening(
+        novedades.version,
+      );
+      if (!corresponde || !mounted) return;
+
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => ChangelogDialog(changelog: novedades),
+      );
+      await _prefs.saveAppVersion(novedades.version);
+    } catch (e) {
+      // Nunca debe impedir que el Home arranque.
+      debugPrint('⚠️ No se pudo mostrar el changelog: $e');
+    }
   }
 
   /// Nombre del vendedor para el saludo. Aislado y tolerante: si el perfil no
@@ -259,9 +327,145 @@ class _HomeShellScreenState extends State<HomeShellScreen>
         HomeContexto(idTienda: idTienda, idTpv: idTpv),
         forceRefresh: forceRefresh,
       );
+
+      // Rieles y nombre de la tienda: no son críticos, van después y en
+      // paralelo para no retrasar el primer frame del catálogo.
+      unawaited(_cargarExtras(idTpv: idTpv, idTienda: idTienda));
     } catch (e) {
       debugPrint('❌ No se pudo resolver el contexto del Home: $e');
     }
+  }
+
+  /// Carga «más vendidos», «ofertas» y el nombre de la tienda.
+  ///
+  /// Tolerante: si las RPC nuevas no están aplicadas todavía (o no hay red),
+  /// los rieles quedan vacíos y el Home funciona exactamente igual.
+  Future<void> _cargarExtras({
+    required int idTpv,
+    required int idTienda,
+  }) async {
+    try {
+      // 1) Pintar primero la última copia local: en offline (o con red lenta)
+      //    el riel aparece al instante en vez de esperar al timeout.
+      final List<HomeRielProducto> cacheTop = await _extrasService
+          .masVendidosDesdeCache(idTpv);
+      final List<HomeRielProducto> cacheOfertas = await _extrasService
+          .ofertasDesdeCache(idTpv);
+      final String nombreTienda = await _leerNombreTienda(idTienda);
+      if (!mounted) return;
+      setState(() {
+        if (cacheTop.isNotEmpty) _masVendidos = cacheTop;
+        if (cacheOfertas.isNotEmpty) _ofertas = cacheOfertas;
+        _nombreTienda = nombreTienda;
+      });
+
+      // 2) En modo offline no se llama a la red: la caché es la verdad.
+      if (await _prefs.shouldUseLocalData()) return;
+
+      // 3) Online: refrescar y volver a guardar la copia local.
+      final List<dynamic> resultados =
+          await Future.wait<dynamic>(<Future<dynamic>>[
+            _extrasService.masVendidos(idTpv: idTpv),
+            _extrasService.ofertas(idTpv: idTpv),
+          ]);
+      if (!mounted) return;
+      setState(() {
+        _masVendidos = resultados[0] as List<HomeRielProducto>;
+        _ofertas = resultados[1] as List<HomeRielProducto>;
+      });
+    } catch (e) {
+      debugPrint('⚠️ No se pudieron cargar los rieles del Home: $e');
+    }
+  }
+
+  /// Nombre de la tienda para la tarjeta «Tienda» (D2). La tabla de
+  /// configuración no guarda nombre; el nombre real está en `app_dat_tienda`.
+  Future<String> _leerNombreTienda(int idTienda) async {
+    try {
+      final dynamic fila =
+          await Supabase.instance.client
+              .from('app_dat_tienda')
+              .select('denominacion')
+              .eq('id', idTienda)
+              .maybeSingle();
+      final String? nombre =
+          (fila is Map ? fila['denominacion'] : null)?.toString().trim();
+      return (nombre == null || nombre.isEmpty) ? 'Tienda' : nombre;
+    } catch (e) {
+      debugPrint('⚠️ No se pudo leer el nombre de la tienda: $e');
+      return 'Tienda';
+    }
+  }
+
+  /// Rieles que se pintan en el Home. Ofertas primero (es lo accionable) y
+  /// después «más vendidos».
+  List<Widget> _rielesDelHome() {
+    final List<Widget> rieles = <Widget>[];
+    if (_ofertas.isNotEmpty) {
+      rieles.add(
+        RielProductos(
+          titulo: 'Ofertas',
+          icono: Icons.local_offer_rounded,
+          productos: _ofertas,
+          esOferta: true,
+          onTap: (HomeRielProducto p) {
+            unawaited(_abrirProductoRiel(p));
+          },
+        ),
+      );
+    }
+    if (_masVendidos.isNotEmpty) {
+      if (rieles.isNotEmpty) rieles.add(const SizedBox(height: 18));
+      rieles.add(
+        RielProductos(
+          titulo: 'Más vendidos',
+          icono: Icons.trending_up_rounded,
+          productos: _masVendidos,
+          onTap: (HomeRielProducto p) {
+            unawaited(_abrirProductoRiel(p));
+          },
+        ),
+      );
+    }
+    return rieles;
+  }
+
+  /// Abre el detalle de un producto de riel cargando su ficha completa.
+  ///
+  /// El riel solo trae id/nombre/precio: construir un `Product` a medias
+  /// dispararía la guarda de «sin stock». Si la ficha falla, avisa sin romper
+  /// el Home.
+  Future<void> _abrirProductoRiel(HomeRielProducto p) async {
+    try {
+      final Product completo = await _detalleService.getProductDetail(p.id);
+      if (!mounted) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute<void>(
+          builder:
+              (_) => ProductDetailsScreen(
+                product: completo,
+                categoryColor: VentiqHomeTheme.primary,
+              ),
+        ),
+      );
+      if (mounted) {
+        unawaited(_cargarExtrasForzado());
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo abrir «${p.nombre}»: $e')),
+      );
+    }
+  }
+
+  Future<void> _cargarExtrasForzado() async {
+    final int? idTpv = await _prefs.getIdTpv();
+    final Map<String, dynamic> perfil = await _prefs.getWorkerProfile();
+    final int? idTienda = perfil['idTienda'] as int?;
+    if (idTpv == null || idTienda == null) return;
+    await _cargarExtras(idTpv: idTpv, idTienda: idTienda);
   }
 
   /// Cuando el modo offline se activa o desactiva, el catálogo cambia de origen
@@ -732,6 +936,7 @@ class _HomeShellScreenState extends State<HomeShellScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: VentiqHomeTheme.surface,
       body: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints c) {
@@ -761,13 +966,21 @@ class _HomeShellScreenState extends State<HomeShellScreen>
                     ),
                     const NotificationWidget(),
                   ],
-                  buscador: HomeBuscador(
-                    controller: _buscador,
-                    focusNode: _focoBuscador,
-                    onChanged: _onBuscar,
-                    onLimpiar: _limpiarBusqueda,
+                  buscador: TutorialAnchor(
+                    id: 'home_buscar',
+                    child: HomeBuscador(
+                      controller: _buscador,
+                      focusNode: _focoBuscador,
+                      onChanged: _onBuscar,
+                      onLimpiar: _limpiarBusqueda,
+                    ),
                   ),
-                  chips: _chipsRapidos(),
+                  chips: TutorialAnchor(
+                    id: 'home_chips',
+                    child: _chipsRapidos(),
+                  ),
+                  rieles: _rielesDelHome(),
+                  nombreTienda: _nombreTienda,
                   contenidoAlternativo:
                       _hayBusqueda ? _resultadosBusqueda() : null,
                   onTapCategoria: _abrirDesdeHome,
@@ -780,6 +993,22 @@ class _HomeShellScreenState extends State<HomeShellScreen>
               if (mostrarFlotantes) ...<Widget>[
                 const Positioned(bottom: 16, left: 16, child: UsdRateChip()),
                 const Positioned(bottom: 80, left: 16, child: SyncStatusChip()),
+                // Pleca lateral centrada: abre el menú (endDrawer) sin gastar
+                // sitio en el AppBar. Sustituye al icono de menú retirado.
+                Positioned(
+                  right: 0,
+                  top: 0,
+                  bottom: 0,
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: TutorialAnchor(
+                      id: 'home_pleca',
+                      child: _PlecaMenu(
+                        onTap: () => _scaffoldKey.currentState?.openEndDrawer(),
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ],
           );
@@ -847,11 +1076,40 @@ class _HomeShellScreenState extends State<HomeShellScreen>
                 ),
           ),
         HomeQuickChip(
+          label: 'Tutorial',
+          icono: Icons.school_rounded,
+          onTap: _abrirTutorial,
+        ),
+        HomeQuickChip(
           label: _mostrarSku ? 'SKU visible' : 'SKU oculto',
           icono: Icons.tag_rounded,
           onTap: () => _avisar('El SKU se cambia en Configuración.'),
         ),
       ],
+    );
+  }
+
+  /// Relanza el tutorial guiado (overlay con foco) del modo actual.
+  void _abrirTutorial() {
+    final bool restaurante =
+        StoreConfigService.modoRestauranteSync ||
+        StoreConfigService.cocinaActivaSync;
+    final String uuid = Supabase.instance.client.auth.currentUser?.id ?? '';
+    if (uuid.isEmpty) {
+      // Sin sesión no hay tutorial que recordar: se abre el recorrido simple.
+      Navigator.push(
+        context,
+        MaterialPageRoute<void>(
+          builder: (_) => TutorialVentaScreen(modoRestaurante: restaurante),
+        ),
+      );
+      return;
+    }
+    TutorialAutoStart.reiniciarIntento();
+    TutorialFlujos.iniciarVenta(
+      context,
+      restaurante: restaurante,
+      uuidUsuario: uuid,
     );
   }
 
@@ -925,6 +1183,122 @@ class _HomeShellScreenState extends State<HomeShellScreen>
           (p.esServicio || !disponible)
               ? null
               : () => _abrirCantidadRapidaBusqueda(p),
+    );
+  }
+}
+
+/// Pleca lateral que abre el menú (`endDrawer`) del Home.
+///
+/// Vive anclada al borde derecho y centrada verticalmente: no ocupa espacio del
+/// contenido, no tapa el hero ni la barra inferior y ofrece un punto de toque
+/// grande (48 px de ancho efectivo) que se hunde al pulsarlo. Entra deslizándose
+/// desde la derecha una sola vez, sin animación en bucle para no distraer.
+class _PlecaMenu extends StatefulWidget {
+  const _PlecaMenu({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  State<_PlecaMenu> createState() => _PlecaMenuState();
+}
+
+class _PlecaMenuState extends State<_PlecaMenu>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _entrada = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 320),
+  );
+  late final Animation<Offset> _deslizar = Tween<Offset>(
+    begin: const Offset(1, 0),
+    end: Offset.zero,
+  ).animate(CurvedAnimation(parent: _entrada, curve: Curves.easeOutCubic));
+
+  bool _pulsada = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _entrada.forward();
+  }
+
+  @override
+  void dispose() {
+    _entrada.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SlideTransition(
+      position: _deslizar,
+      child: Tooltip(
+        message: 'Abrir menú',
+        child: Semantics(
+          button: true,
+          label: 'Abrir menú',
+          child: GestureDetector(
+            onTapDown: (_) => setState(() => _pulsada = true),
+            onTapUp: (_) => setState(() => _pulsada = false),
+            onTapCancel: () => setState(() => _pulsada = false),
+            onTap: widget.onTap,
+            child: AnimatedScale(
+              scale: _pulsada ? 0.94 : 1.0,
+              duration: const Duration(milliseconds: 120),
+              child: Container(
+                width: 44,
+                alignment: Alignment.centerRight,
+                child: Container(
+                  width: 30,
+                  height: 98,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: <Color>[
+                        VentiqHomeTheme.primaryLight,
+                        VentiqHomeTheme.primary,
+                      ],
+                    ),
+                    borderRadius: const BorderRadius.horizontal(
+                      left: Radius.circular(16),
+                    ),
+                    boxShadow: <BoxShadow>[
+                      BoxShadow(
+                        color: VentiqHomeTheme.primary.withValues(alpha: 0.28),
+                        blurRadius: 12,
+                        offset: const Offset(-2, 3),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: <Widget>[
+                      const Icon(
+                        Icons.menu_open_rounded,
+                        color: Colors.white,
+                        size: 17,
+                      ),
+                      const SizedBox(height: 6),
+                      RotatedBox(
+                        quarterTurns: 3,
+                        child: Text(
+                          'MENÚ',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.92),
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 2.4,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

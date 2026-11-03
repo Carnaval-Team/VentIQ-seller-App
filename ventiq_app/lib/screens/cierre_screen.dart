@@ -19,6 +19,7 @@ import '../services/connectivity_service.dart';
 import '../services/server_time_service.dart';
 import '../utils/navigation_helper.dart';
 import '../utils/price_utils.dart';
+import '../theme/ventiq_home_theme.dart';
 import '../widgets/cash_count_dialog.dart';
 
 class CierreScreen extends StatefulWidget {
@@ -759,7 +760,7 @@ class _CierreScreenState extends State<CierreScreen> {
                   Navigator.pop(context);
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF4A90E2),
+                  backgroundColor: VentiqHomeTheme.primary,
                 ),
                 child: const Text('Volver'),
               ),
@@ -1073,7 +1074,7 @@ class _CierreScreenState extends State<CierreScreen> {
                 MediaQuery.viewInsetsOf(modalContext).bottom > 0;
             return Container(
               decoration: const BoxDecoration(
-                color: Colors.white,
+                color: VentiqHomeTheme.card,
                 borderRadius: BorderRadius.only(
                   topLeft: Radius.circular(20),
                   topRight: Radius.circular(20),
@@ -1085,7 +1086,7 @@ class _CierreScreenState extends State<CierreScreen> {
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: Colors.orange[700],
+                      color: VentiqHomeTheme.primary,
                       borderRadius: const BorderRadius.only(
                         topLeft: Radius.circular(20),
                         topRight: Radius.circular(20),
@@ -1100,7 +1101,7 @@ class _CierreScreenState extends State<CierreScreen> {
                             'Control de Inventario',
                             style: TextStyle(
                               fontSize: 20,
-                              fontWeight: FontWeight.bold,
+                              fontWeight: FontWeight.w800,
                               color: Colors.white,
                             ),
                           ),
@@ -1117,17 +1118,23 @@ class _CierreScreenState extends State<CierreScreen> {
                   if (!keyboardOpen)
                     Container(
                       padding: const EdgeInsets.all(16),
-                      color: Colors.blue[50],
+                      color: VentiqHomeTheme.primary.withValues(alpha: 0.06),
                       child: Row(
                         children: [
-                          Icon(Icons.info_outline, color: Colors.blue[700]),
+                          const Icon(
+                            Icons.info_outline,
+                            color: VentiqHomeTheme.primary,
+                          ),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
                               _mostrarDebeHaberEnConteo
                                   ? 'Compara el "debe haber" e ingresa la cantidad real contada'
                                   : 'Ingresa la cantidad real contada de cada producto',
-                              style: const TextStyle(fontSize: 14),
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: VentiqHomeTheme.textPrimary,
+                              ),
                             ),
                           ),
                         ],
@@ -1143,7 +1150,7 @@ class _CierreScreenState extends State<CierreScreen> {
                         horizontal: 16,
                         vertical: 8,
                       ),
-                      color: Colors.grey[50],
+                      color: VentiqHomeTheme.surface,
                       child: Wrap(
                         spacing: 8,
                         runSpacing: 4,
@@ -1220,22 +1227,25 @@ class _CierreScreenState extends State<CierreScreen> {
                                   decoration: BoxDecoration(
                                     color:
                                         isMissing
-                                            ? Colors.red[50]
-                                            : Colors.grey[50],
-                                    borderRadius: BorderRadius.circular(8),
+                                            ? VentiqHomeTheme.danger.withValues(
+                                              alpha: 0.06,
+                                            )
+                                            : VentiqHomeTheme.surface,
+                                    borderRadius: BorderRadius.circular(12),
                                     border: Border.all(
                                       color:
                                           isMissing
-                                              ? Colors.red[400]!
-                                              : Colors.grey[200]!,
+                                              ? VentiqHomeTheme.danger
+                                                  .withValues(alpha: 0.30)
+                                              : VentiqHomeTheme.border,
                                     ),
                                   ),
                                   child: Row(
                                     children: [
                                       if (isMissing) ...[
-                                        Icon(
+                                        const Icon(
                                           Icons.warning_amber_rounded,
-                                          color: Colors.red[700],
+                                          color: VentiqHomeTheme.danger,
                                           size: 20,
                                         ),
                                         const SizedBox(width: 8),
@@ -1249,18 +1259,20 @@ class _CierreScreenState extends State<CierreScreen> {
                                               product.nombreProducto,
                                               style: const TextStyle(
                                                 fontSize: 14,
-                                                fontWeight: FontWeight.w500,
-                                                color: Color(0xFF1F2937),
+                                                fontWeight: FontWeight.w600,
+                                                color:
+                                                    VentiqHomeTheme.textPrimary,
                                               ),
                                             ),
                                             if (_mostrarDebeHaberEnConteo) ...[
                                               const SizedBox(height: 4),
                                               Text(
                                                 'Debe haber: ${_formatInventoryQty(debeHaber)}',
-                                                style: TextStyle(
+                                                style: const TextStyle(
                                                   fontSize: 12,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.blue[700],
+                                                  fontWeight: FontWeight.w700,
+                                                  color:
+                                                      VentiqHomeTheme.primary,
                                                 ),
                                               ),
                                             ],
@@ -1290,7 +1302,9 @@ class _CierreScreenState extends State<CierreScreen> {
                                             hintText: '0',
                                             border: OutlineInputBorder(
                                               borderRadius:
-                                                  BorderRadius.circular(8),
+                                                  BorderRadius.circular(
+                                                    VentiqHomeTheme.radiusField,
+                                                  ),
                                             ),
                                             contentPadding:
                                                 const EdgeInsets.symmetric(
@@ -1325,16 +1339,11 @@ class _CierreScreenState extends State<CierreScreen> {
                   // sube por encima del teclado.
                   Container(
                     padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.grey.withOpacity(0.2),
-                          spreadRadius: 1,
-                          blurRadius: 5,
-                          offset: const Offset(0, -2),
-                        ),
-                      ],
+                    decoration: const BoxDecoration(
+                      color: VentiqHomeTheme.card,
+                      border: Border(
+                        top: BorderSide(color: VentiqHomeTheme.border),
+                      ),
                     ),
                     child: Row(
                       children: [
@@ -1343,7 +1352,12 @@ class _CierreScreenState extends State<CierreScreen> {
                             onPressed: () => Navigator.pop(context),
                             style: OutlinedButton.styleFrom(
                               padding: const EdgeInsets.symmetric(vertical: 12),
-                              side: BorderSide(color: Colors.grey[400]!),
+                              side: const BorderSide(
+                                color: VentiqHomeTheme.border,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                             ),
                             child: const Text('Cancelar'),
                           ),
@@ -1375,7 +1389,7 @@ class _CierreScreenState extends State<CierreScreen> {
                                     content: Text(
                                       'Faltan ${missing.length} productos por contar',
                                     ),
-                                    backgroundColor: Colors.orange,
+                                    backgroundColor: VentiqHomeTheme.warning,
                                   ),
                                 );
                                 return;
@@ -1394,20 +1408,23 @@ class _CierreScreenState extends State<CierreScreen> {
                                   content: Text(
                                     'Inventario controlado correctamente',
                                   ),
-                                  backgroundColor: Colors.green,
+                                  backgroundColor: VentiqHomeTheme.success,
                                 ),
                               );
                             },
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF4A90E2),
+                              backgroundColor: VentiqHomeTheme.primary,
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                             ),
                             child: const Text(
                               'Guardar',
                               style: TextStyle(
                                 fontSize: 16,
-                                fontWeight: FontWeight.w600,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
                           ),
@@ -1577,17 +1594,17 @@ class _CierreScreenState extends State<CierreScreen> {
     print('🔍 BUILD - _manejaInventario: $_manejaInventario');
 
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: VentiqHomeTheme.surface,
       resizeToAvoidBottomInset: true,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF4A90E2),
+        backgroundColor: VentiqHomeTheme.primary,
         elevation: 0,
         title: const Text(
           'Crear Cierre',
           style: TextStyle(
             color: Colors.white,
             fontSize: 18,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w700,
           ),
         ),
         centerTitle: true,
@@ -1613,24 +1630,25 @@ class _CierreScreenState extends State<CierreScreen> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey[300]!),
+                  color: VentiqHomeTheme.card,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: VentiqHomeTheme.border),
+                  boxShadow: VentiqHomeTheme.shadowCard,
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       children: [
-                        Icon(Icons.lock, color: Colors.orange[700], size: 24),
+                        const Icon(
+                          Icons.lock,
+                          color: VentiqHomeTheme.primary,
+                          size: 24,
+                        ),
                         const SizedBox(width: 8),
                         const Text(
                           'Cierre de Caja',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF1F2937),
-                          ),
+                          style: VentiqHomeTheme.tituloSeccion,
                         ),
                       ],
                     ),
@@ -1661,20 +1679,17 @@ class _CierreScreenState extends State<CierreScreen> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey[300]!),
+                  color: VentiqHomeTheme.card,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: VentiqHomeTheme.border),
+                  boxShadow: VentiqHomeTheme.shadowCard,
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
                       'Resumen del Turno',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF1F2937),
-                      ),
+                      style: VentiqHomeTheme.tituloSeccion,
                     ),
                     const SizedBox(height: 12),
 
@@ -1683,7 +1698,7 @@ class _CierreScreenState extends State<CierreScreen> {
                         child: Padding(
                           padding: EdgeInsets.all(20),
                           child: CircularProgressIndicator(
-                            color: Color(0xFF4A90E2),
+                            color: VentiqHomeTheme.primary,
                           ),
                         ),
                       ),
@@ -1721,11 +1736,7 @@ class _CierreScreenState extends State<CierreScreen> {
                       // Medios de pago
                       const Text(
                         'Medios de Pago',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1F2937),
-                        ),
+                        style: VentiqHomeTheme.rotuloBloque,
                       ),
                       const SizedBox(height: 8),
                       _buildInfoRow(
@@ -1757,11 +1768,7 @@ class _CierreScreenState extends State<CierreScreen> {
                         const SizedBox(height: 8),
                         const Text(
                           'Egresos del Turno',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF1F2937),
-                          ),
+                          style: VentiqHomeTheme.rotuloBloque,
                         ),
                         const SizedBox(height: 4),
                         _buildInfoRow(
@@ -1796,8 +1803,8 @@ class _CierreScreenState extends State<CierreScreen> {
                                   : Icons.warning,
                               color:
                                   _conciliacionEstado == 'Conciliado'
-                                      ? Colors.green[600]
-                                      : Colors.orange[600],
+                                      ? VentiqHomeTheme.success
+                                      : VentiqHomeTheme.warning,
                               size: 16,
                             ),
                             const SizedBox(width: 8),
@@ -1805,11 +1812,11 @@ class _CierreScreenState extends State<CierreScreen> {
                               'Estado: $_conciliacionEstado',
                               style: TextStyle(
                                 fontSize: 14,
-                                fontWeight: FontWeight.w600,
+                                fontWeight: FontWeight.w800,
                                 color:
                                     _conciliacionEstado == 'Conciliado'
-                                        ? Colors.green[700]
-                                        : Colors.orange[700],
+                                        ? VentiqHomeTheme.success
+                                        : VentiqHomeTheme.warning,
                               ),
                             ),
                           ],
@@ -1821,17 +1828,23 @@ class _CierreScreenState extends State<CierreScreen> {
                     if (_ordenesAbiertas > 0) ...[
                       const SizedBox(height: 12),
                       Container(
-                        padding: const EdgeInsets.all(8),
+                        padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: Colors.orange[50],
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: Colors.orange[300]!),
+                          color: VentiqHomeTheme.warning.withValues(
+                            alpha: 0.10,
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: VentiqHomeTheme.warning.withValues(
+                              alpha: 0.35,
+                            ),
+                          ),
                         ),
                         child: Row(
                           children: [
-                            Icon(
+                            const Icon(
                               Icons.warning,
-                              color: Colors.orange[700],
+                              color: VentiqHomeTheme.warning,
                               size: 16,
                             ),
                             const SizedBox(width: 8),
@@ -1841,8 +1854,8 @@ class _CierreScreenState extends State<CierreScreen> {
                                   : '$_ordenesAbiertas órdenes pendientes. No se completarán automáticamente.',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: Colors.orange[700],
-                                fontWeight: FontWeight.w500,
+                                color: VentiqHomeTheme.warning,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ],
@@ -1859,31 +1872,35 @@ class _CierreScreenState extends State<CierreScreen> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey[300]!),
+                  color: VentiqHomeTheme.card,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: VentiqHomeTheme.border),
+                  boxShadow: VentiqHomeTheme.shadowCard,
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       children: [
-                        Icon(Icons.money_off, color: Colors.red[600], size: 20),
+                        const Icon(
+                          Icons.money_off,
+                          color: VentiqHomeTheme.danger,
+                          size: 20,
+                        ),
                         const SizedBox(width: 8),
                         const Text(
                           'Egresos del Turno',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF1F2937),
-                          ),
+                          style: VentiqHomeTheme.tituloSeccion,
                         ),
                       ],
                     ),
                     const SizedBox(height: 8),
-                    Text(
+                    const Text(
                       'Salidas de dinero registradas durante el turno',
-                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: VentiqHomeTheme.textSecondary,
+                      ),
                     ),
                     const SizedBox(height: 16),
                     _buildExpensesList(),
@@ -1898,18 +1915,14 @@ class _CierreScreenState extends State<CierreScreen> {
                         children: [
                           const Text(
                             'Total Egresos:',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF1F2937),
-                            ),
+                            style: VentiqHomeTheme.tituloSeccion,
                           ),
                           Text(
                             '\$${_totalEgresos.toMoneyString(2)}',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.red[600],
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                              color: VentiqHomeTheme.danger,
                             ),
                           ),
                         ],
@@ -1925,25 +1938,25 @@ class _CierreScreenState extends State<CierreScreen> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey[300]!),
+                  color: VentiqHomeTheme.card,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: VentiqHomeTheme.border),
+                  boxShadow: VentiqHomeTheme.shadowCard,
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
                       'Monto Final en Caja',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF1F2937),
-                      ),
+                      style: VentiqHomeTheme.tituloSeccion,
                     ),
                     const SizedBox(height: 8),
-                    Text(
+                    const Text(
                       'Ingrese el monto real contado en caja',
-                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: VentiqHomeTheme.textSecondary,
+                      ),
                     ),
                     const SizedBox(height: 12),
                     SizedBox(
@@ -1952,16 +1965,18 @@ class _CierreScreenState extends State<CierreScreen> {
                         onPressed: _showCashCountDialog,
                         icon: const Icon(
                           Icons.calculate_outlined,
-                          color: Color(0xFF4A90E2),
+                          color: VentiqHomeTheme.primary,
                         ),
                         label: const Text(
                           'Contar billetes',
-                          style: TextStyle(color: Color(0xFF4A90E2)),
+                          style: TextStyle(color: VentiqHomeTheme.primary),
                         ),
                         style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: Color(0xFF4A90E2)),
+                          side: const BorderSide(
+                            color: VentiqHomeTheme.primary,
+                          ),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(12),
                           ),
                           padding: const EdgeInsets.symmetric(vertical: 12),
                         ),
@@ -1985,7 +2000,9 @@ class _CierreScreenState extends State<CierreScreen> {
                             'Debe haber: \$${montoEsperado.toMoneyString(2)} CUP',
                         prefixIcon: const Icon(Icons.attach_money),
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(
+                            VentiqHomeTheme.radiusField,
+                          ),
                         ),
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 12,
@@ -2023,7 +2040,9 @@ class _CierreScreenState extends State<CierreScreen> {
                             'Debe haber: \$${_efectivoUsdEsperado.toMoneyString(2)} USD',
                         prefixIcon: const Icon(Icons.attach_money),
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(
+                            VentiqHomeTheme.radiusField,
+                          ),
                         ),
                       ),
                       validator: (value) {
@@ -2055,27 +2074,27 @@ class _CierreScreenState extends State<CierreScreen> {
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey[300]!),
+                    color: VentiqHomeTheme.card,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: VentiqHomeTheme.border),
+                    boxShadow: VentiqHomeTheme.shadowCard,
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
                         'Órdenes Pendientes',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1F2937),
-                        ),
+                        style: VentiqHomeTheme.tituloSeccion,
                       ),
                       const SizedBox(height: 8),
                       Text(
                         _trabajadorManejaAperturaControl
                             ? 'Debes cerrar estas órdenes antes de realizar el cierre'
                             : 'Estas órdenes no se completarán automáticamente',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: VentiqHomeTheme.textSecondary,
+                        ),
                       ),
                       const SizedBox(height: 12),
                       ..._ordenesPendientes
@@ -2084,9 +2103,9 @@ class _CierreScreenState extends State<CierreScreen> {
                       if (_ordenesPendientes.length > 3)
                         Text(
                           'Y ${_ordenesPendientes.length - 3} órdenes más...',
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontSize: 12,
-                            color: Colors.grey[600],
+                            color: VentiqHomeTheme.textSecondary,
                             fontStyle: FontStyle.italic,
                           ),
                         ),
@@ -2101,25 +2120,25 @@ class _CierreScreenState extends State<CierreScreen> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey[300]!),
+                  color: VentiqHomeTheme.card,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: VentiqHomeTheme.border),
+                  boxShadow: VentiqHomeTheme.shadowCard,
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
                       'Observaciones',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF1F2937),
-                      ),
+                      style: VentiqHomeTheme.tituloSeccion,
                     ),
                     const SizedBox(height: 8),
-                    Text(
+                    const Text(
                       'Opcional - Notas sobre el cierre del día',
-                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: VentiqHomeTheme.textSecondary,
+                      ),
                     ),
                     const SizedBox(height: 12),
                     TextFormField(
@@ -2129,7 +2148,9 @@ class _CierreScreenState extends State<CierreScreen> {
                       decoration: InputDecoration(
                         hintText: 'Ej: Cierre normal, inventario cuadrado...',
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(
+                            VentiqHomeTheme.radiusField,
+                          ),
                         ),
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 12,
@@ -2176,21 +2197,21 @@ class _CierreScreenState extends State<CierreScreen> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor:
                           _inventorySet
-                              ? Colors.green
+                              ? VentiqHomeTheme.success
                               : (_isLastOpenShift
-                                  ? Colors.orange
-                                  : Colors.blue),
+                                  ? VentiqHomeTheme.warning
+                                  : VentiqHomeTheme.primary),
                       foregroundColor: Colors.white,
                       disabledBackgroundColor: (_inventorySet
-                              ? Colors.green
+                              ? VentiqHomeTheme.success
                               : (_isLastOpenShift
-                                  ? Colors.orange
-                                  : Colors.blue))
-                          .withOpacity(0.7),
+                                  ? VentiqHomeTheme.warning
+                                  : VentiqHomeTheme.primary))
+                          .withValues(alpha: 0.7),
                       disabledForegroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(12),
                       ),
                     ),
                   ),
@@ -2205,11 +2226,11 @@ class _CierreScreenState extends State<CierreScreen> {
                 child: ElevatedButton(
                   onPressed: _isProcessing ? null : _crearCierre,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange[700],
+                    backgroundColor: VentiqHomeTheme.primary,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(12),
                     ),
                   ),
                   child:
@@ -2228,7 +2249,7 @@ class _CierreScreenState extends State<CierreScreen> {
                             'Crear Cierre',
                             style: TextStyle(
                               fontSize: 16,
-                              fontWeight: FontWeight.w600,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                 ),
@@ -2273,7 +2294,13 @@ class _CierreScreenState extends State<CierreScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: TextStyle(fontSize: 14, color: Colors.grey[600])),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 14,
+              color: VentiqHomeTheme.textSecondary,
+            ),
+          ),
           const SizedBox(width: 8),
           Flexible(
             child: Text(
@@ -2282,8 +2309,11 @@ class _CierreScreenState extends State<CierreScreen> {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: isNegative ? Colors.red : Color(0xFF1F2937),
+                fontWeight: isNegative ? FontWeight.w800 : FontWeight.w600,
+                color:
+                    isNegative
+                        ? VentiqHomeTheme.danger
+                        : VentiqHomeTheme.textPrimary,
               ),
             ),
           ),
@@ -2312,10 +2342,11 @@ class _CierreScreenState extends State<CierreScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: isPositive ? Colors.green.withOpacity(0.1) : Colors.red.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
+        color: (isPositive ? VentiqHomeTheme.success : VentiqHomeTheme.danger)
+            .withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: isPositive ? Colors.green : Colors.red,
+          color: isPositive ? VentiqHomeTheme.success : VentiqHomeTheme.danger,
         ),
       ),
       child: Row(
@@ -2324,15 +2355,18 @@ class _CierreScreenState extends State<CierreScreen> {
           Text(
             'Diferencia CUP:',
             style: TextStyle(
-              fontWeight: FontWeight.w600,
-              color: isPositive ? Colors.green[700] : Colors.red[700],
+              fontWeight: FontWeight.w700,
+              color:
+                  isPositive ? VentiqHomeTheme.success : VentiqHomeTheme.danger,
             ),
           ),
           Text(
             '${isPositive ? '+' : ''}\$${diferencia.toMoneyString(2)}',
             style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: isPositive ? Colors.green[700] : Colors.red[700],
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color:
+                  isPositive ? VentiqHomeTheme.success : VentiqHomeTheme.danger,
             ),
           ),
         ],
@@ -2348,10 +2382,11 @@ class _CierreScreenState extends State<CierreScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: isPositive ? Colors.green.withOpacity(0.1) : Colors.red.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
+        color: (isPositive ? VentiqHomeTheme.success : VentiqHomeTheme.danger)
+            .withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: isPositive ? Colors.green : Colors.red,
+          color: isPositive ? VentiqHomeTheme.success : VentiqHomeTheme.danger,
         ),
       ),
       child: Row(
@@ -2360,15 +2395,18 @@ class _CierreScreenState extends State<CierreScreen> {
           Text(
             'Diferencia USD:',
             style: TextStyle(
-              fontWeight: FontWeight.w600,
-              color: isPositive ? Colors.green[700] : Colors.red[700],
+              fontWeight: FontWeight.w700,
+              color:
+                  isPositive ? VentiqHomeTheme.success : VentiqHomeTheme.danger,
             ),
           ),
           Text(
             '${isPositive ? '+' : ''}\$${diferencia.toMoneyString(2)} USD',
             style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: isPositive ? Colors.green[700] : Colors.red[700],
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color:
+                  isPositive ? VentiqHomeTheme.success : VentiqHomeTheme.danger,
             ),
           ),
         ],
@@ -2381,9 +2419,9 @@ class _CierreScreenState extends State<CierreScreen> {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: Colors.grey[50],
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: Colors.grey[200]!),
+        color: VentiqHomeTheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: VentiqHomeTheme.border),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -2391,15 +2429,19 @@ class _CierreScreenState extends State<CierreScreen> {
           Expanded(
             child: Text(
               order.id,
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: VentiqHomeTheme.textPrimary,
+              ),
             ),
           ),
           Text(
             '\$${order.total.toMoneyString(2)}',
             style: const TextStyle(
               fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF4A90E2),
+              fontWeight: FontWeight.w800,
+              color: VentiqHomeTheme.primary,
             ),
           ),
         ],
@@ -2431,7 +2473,7 @@ class _CierreScreenState extends State<CierreScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              CircularProgressIndicator(color: Color(0xFF4A90E2)),
+              CircularProgressIndicator(color: VentiqHomeTheme.primary),
               SizedBox(height: 16),
               Text('Cargando egresos...'),
             ],
@@ -2447,11 +2489,18 @@ class _CierreScreenState extends State<CierreScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.money_off_outlined, size: 48, color: Colors.grey),
+              Icon(
+                Icons.money_off_outlined,
+                size: 48,
+                color: VentiqHomeTheme.textSecondary,
+              ),
               SizedBox(height: 16),
               Text(
                 'No hay egresos registrados en este turno',
-                style: TextStyle(color: Colors.grey, fontSize: 14),
+                style: TextStyle(
+                  color: VentiqHomeTheme.textSecondary,
+                  fontSize: 14,
+                ),
               ),
             ],
           ),
@@ -2470,9 +2519,11 @@ class _CierreScreenState extends State<CierreScreen> {
             margin: const EdgeInsets.only(bottom: 8),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.red[50],
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.red[200]!),
+              color: VentiqHomeTheme.danger.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: VentiqHomeTheme.danger.withValues(alpha: 0.25),
+              ),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2485,8 +2536,8 @@ class _CierreScreenState extends State<CierreScreen> {
                         expense.motivoEntrega,
                         style: const TextStyle(
                           fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                          color: Color(0xFF1F2937),
+                          fontWeight: FontWeight.w600,
+                          color: VentiqHomeTheme.textPrimary,
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
@@ -2494,10 +2545,10 @@ class _CierreScreenState extends State<CierreScreen> {
                     ),
                     Text(
                       expense.formattedAmount,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.red[700],
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: VentiqHomeTheme.danger,
                       ),
                     ),
                   ],
@@ -2505,14 +2556,25 @@ class _CierreScreenState extends State<CierreScreen> {
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    Icon(Icons.schedule, size: 12, color: Colors.grey[600]),
+                    Icon(
+                      Icons.schedule,
+                      size: 12,
+                      color: VentiqHomeTheme.textSecondary,
+                    ),
                     const SizedBox(width: 4),
                     Text(
                       expense.formattedTime,
-                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: VentiqHomeTheme.textSecondary,
+                      ),
                     ),
                     const SizedBox(width: 16),
-                    Icon(Icons.payment, size: 12, color: Colors.grey[600]),
+                    Icon(
+                      Icons.payment,
+                      size: 12,
+                      color: VentiqHomeTheme.textSecondary,
+                    ),
                     const SizedBox(width: 4),
                     Text(
                       expense.medioPago ?? 'N/A',
@@ -2520,9 +2582,9 @@ class _CierreScreenState extends State<CierreScreen> {
                         fontSize: 12,
                         color:
                             expense.medioPago == 'Efectivo'
-                                ? Colors.green[700]
-                                : Colors.blue[700],
-                        fontWeight: FontWeight.w500,
+                                ? VentiqHomeTheme.success
+                                : VentiqHomeTheme.primary,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],
@@ -2530,12 +2592,19 @@ class _CierreScreenState extends State<CierreScreen> {
                 const SizedBox(height: 4),
                 Row(
                   children: [
-                    Icon(Icons.person, size: 12, color: Colors.grey[600]),
+                    Icon(
+                      Icons.person,
+                      size: 12,
+                      color: VentiqHomeTheme.textSecondary,
+                    ),
                     const SizedBox(width: 4),
                     Expanded(
                       child: Text(
                         'Recibe: ${expense.nombreRecibe}',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: VentiqHomeTheme.textSecondary,
+                        ),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -2548,15 +2617,15 @@ class _CierreScreenState extends State<CierreScreen> {
                       Icon(
                         Icons.verified_user,
                         size: 12,
-                        color: Colors.grey[600],
+                        color: VentiqHomeTheme.textSecondary,
                       ),
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
                           'Autoriza: ${expense.nombreAutoriza}',
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontSize: 12,
-                            color: Colors.grey[600],
+                            color: VentiqHomeTheme.textSecondary,
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -2627,8 +2696,8 @@ class _CierreScreenState extends State<CierreScreen> {
                     Icons.soup_kitchen_outlined,
                     color:
                         sinCobrar > 0
-                            ? Colors.red.shade700
-                            : Colors.orange.shade800,
+                            ? VentiqHomeTheme.danger
+                            : VentiqHomeTheme.warning,
                   ),
                   const SizedBox(width: 8),
                   const Expanded(child: Text('Hay comandas sin servir')),
@@ -2648,9 +2717,9 @@ class _CierreScreenState extends State<CierreScreen> {
                     Text(
                       'Ojo: hay mesas sin cobrar. Al cerrar el turno esa venta '
                       'queda sin registrar.',
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 12,
-                        color: Colors.red.shade700,
+                        color: VentiqHomeTheme.danger,
                       ),
                     ),
                   ],
@@ -2671,7 +2740,8 @@ class _CierreScreenState extends State<CierreScreen> {
                 ),
                 FilledButton(
                   style: FilledButton.styleFrom(
-                    backgroundColor: sinCobrar > 0 ? Colors.red.shade700 : null,
+                    backgroundColor:
+                        sinCobrar > 0 ? VentiqHomeTheme.danger : null,
                   ),
                   onPressed: () => Navigator.pop(ctx, true),
                   child: const Text('Cerrar igual'),
@@ -2749,7 +2819,7 @@ class _CierreScreenState extends State<CierreScreen> {
             content: Text(
               'Tienes ${currentPendingOrders.length} órdenes pendientes. Debes cerrarlas antes de cerrar el turno.',
             ),
-            backgroundColor: Colors.orange,
+            backgroundColor: VentiqHomeTheme.warning,
             duration: const Duration(seconds: 4),
           ),
         );
@@ -2783,7 +2853,7 @@ class _CierreScreenState extends State<CierreScreen> {
             content: Text(
               'Debes controlar el inventario antes de cerrar el último turno',
             ),
-            backgroundColor: Colors.orange,
+            backgroundColor: VentiqHomeTheme.warning,
           ),
         );
         setState(() {
@@ -2809,7 +2879,7 @@ class _CierreScreenState extends State<CierreScreen> {
               content: Text(
                 'Debes ingresar la cantidad para todos los productos ($productosVacios pendientes)',
               ),
-              backgroundColor: Colors.orange,
+              backgroundColor: VentiqHomeTheme.warning,
               duration: const Duration(seconds: 4),
             ),
           );
@@ -3111,7 +3181,7 @@ class _CierreScreenState extends State<CierreScreen> {
               ElevatedButton(
                 onPressed: () => Navigator.pop(context, true),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange[700],
+                  backgroundColor: VentiqHomeTheme.primary,
                 ),
                 child: const Text('Continuar'),
               ),
@@ -3130,7 +3200,11 @@ class _CierreScreenState extends State<CierreScreen> {
           (dialogContext) => AlertDialog(
             title: Row(
               children: [
-                Icon(Icons.check_circle, color: Colors.green, size: 24),
+                Icon(
+                  Icons.check_circle,
+                  color: VentiqHomeTheme.success,
+                  size: 24,
+                ),
                 const SizedBox(width: 8),
                 const Text('Cierre Creado'),
               ],
@@ -3161,7 +3235,7 @@ class _CierreScreenState extends State<CierreScreen> {
                   await NavigationHelper.goHome(stateContext);
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF4A90E2),
+                  backgroundColor: VentiqHomeTheme.primary,
                 ),
                 child: const Text('Continuar'),
               ),
@@ -3172,7 +3246,7 @@ class _CierreScreenState extends State<CierreScreen> {
 
   void _showErrorMessage(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red),
+      SnackBar(content: Text(message), backgroundColor: VentiqHomeTheme.danger),
     );
   }
 
@@ -3412,7 +3486,7 @@ class _CierreScreenState extends State<CierreScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Cierre registrado en el servidor.'),
-              backgroundColor: Colors.green,
+              backgroundColor: VentiqHomeTheme.success,
               duration: Duration(seconds: 3),
             ),
           );
@@ -3425,7 +3499,7 @@ class _CierreScreenState extends State<CierreScreen> {
                 syncMessage ??
                     'No se pudo registrar en el servidor. Quedó pendiente de sync.',
               ),
-              backgroundColor: Colors.orange,
+              backgroundColor: VentiqHomeTheme.warning,
               duration: const Duration(seconds: 5),
             ),
           );
@@ -3443,7 +3517,7 @@ class _CierreScreenState extends State<CierreScreen> {
                     ? 'Cierre guardado localmente. Se sincronizará al desactivar el modo offline.'
                     : 'Cierre guardado localmente. Se sincronizará cuando haya conexión.',
               ),
-              backgroundColor: Colors.orange,
+              backgroundColor: VentiqHomeTheme.warning,
               duration: const Duration(seconds: 3),
             ),
           );
@@ -3482,7 +3556,7 @@ class _CierreScreenState extends State<CierreScreen> {
               children: [
                 Icon(
                   syncFailedOnline ? Icons.sync_problem : Icons.cloud_off,
-                  color: Colors.orange[700],
+                  color: VentiqHomeTheme.warning,
                   size: 28,
                 ),
                 const SizedBox(width: 8),
@@ -3514,9 +3588,9 @@ class _CierreScreenState extends State<CierreScreen> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.grey[50],
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.grey[300]!),
+                    color: VentiqHomeTheme.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: VentiqHomeTheme.border),
                   ),
                   child: Column(
                     children: [
@@ -3529,7 +3603,10 @@ class _CierreScreenState extends State<CierreScreen> {
                           'Diferencia:',
                           '${diferencia >= 0 ? '+' : ''}\$${diferencia.toMoneyString(2)}',
                           isHighlight: true,
-                          color: diferencia >= 0 ? Colors.green : Colors.red,
+                          color:
+                              diferencia >= 0
+                                  ? VentiqHomeTheme.success
+                                  : VentiqHomeTheme.danger,
                         ),
                       _buildDialogInfoRow(
                         'Estado:',
@@ -3557,7 +3634,7 @@ class _CierreScreenState extends State<CierreScreen> {
                   await NavigationHelper.goHome(stateContext);
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange[700],
+                  backgroundColor: VentiqHomeTheme.primary,
                   foregroundColor: Colors.white,
                 ),
                 child: const Text('Continuar'),
@@ -3583,8 +3660,8 @@ class _CierreScreenState extends State<CierreScreen> {
               label,
               style: TextStyle(
                 fontSize: 14,
-                color: Colors.grey[700],
-                fontWeight: isHighlight ? FontWeight.w600 : FontWeight.normal,
+                color: VentiqHomeTheme.textSecondary,
+                fontWeight: isHighlight ? FontWeight.w700 : FontWeight.normal,
               ),
               overflow: TextOverflow.ellipsis,
             ),
@@ -3596,8 +3673,8 @@ class _CierreScreenState extends State<CierreScreen> {
               textAlign: TextAlign.end,
               style: TextStyle(
                 fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: color ?? (isHighlight ? Colors.black87 : Colors.black87),
+                fontWeight: FontWeight.w700,
+                color: color ?? VentiqHomeTheme.textPrimary,
               ),
               overflow: TextOverflow.ellipsis,
             ),

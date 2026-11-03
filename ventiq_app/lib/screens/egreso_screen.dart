@@ -9,6 +9,7 @@ import '../services/connectivity_service.dart';
 import '../models/payment_method.dart';
 import '../utils/uuid_generator.dart';
 import '../utils/price_utils.dart';
+import '../theme/ventiq_home_theme.dart';
 
 class EgresoScreen extends StatefulWidget {
   const EgresoScreen({Key? key}) : super(key: key);
@@ -56,8 +57,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
   Future<void> _checkTurnoAbierto() async {
     try {
       final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
-      final hasNetwork =
-          await ConnectivityService().performImmediateCheck();
+      final hasNetwork = await ConnectivityService().performImmediateCheck();
       final useLocal = isOfflineModeEnabled || !hasNetwork;
 
       if (useLocal) {
@@ -103,8 +103,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
   Future<void> _loadPaymentMethods() async {
     try {
       final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
-      final hasNetwork =
-          await ConnectivityService().performImmediateCheck();
+      final hasNetwork = await ConnectivityService().performImmediateCheck();
       final useLocal = isOfflineModeEnabled || !hasNetwork;
 
       if (useLocal) {
@@ -170,8 +169,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
       if (cached is Map) account = Map<String, dynamic>.from(cached);
 
       final isOffline = await _userPrefs.isOfflineModeEnabled();
-      final hasNetwork =
-          await ConnectivityService().performImmediateCheck();
+      final hasNetwork = await ConnectivityService().performImmediateCheck();
       if (!isOffline && hasNetwork) {
         final storeId = await _userPrefs.getIdTienda();
         if (storeId != null) {
@@ -205,9 +203,9 @@ class _EgresoScreenState extends State<EgresoScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: VentiqHomeTheme.surface,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF4A90E2),
+        backgroundColor: VentiqHomeTheme.primary,
         elevation: 0,
         title: const Text(
           'Crear Egreso',
@@ -268,7 +266,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey[300]!),
+                          border: Border.all(color: VentiqHomeTheme.border),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -286,7 +284,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
                                   style: TextStyle(
                                     fontSize: 18,
                                     fontWeight: FontWeight.w600,
-                                    color: Color(0xFF1F2937),
+                                    color: VentiqHomeTheme.textPrimary,
                                   ),
                                 ),
                               ],
@@ -317,7 +315,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey[300]!),
+                          border: Border.all(color: VentiqHomeTheme.border),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -327,7 +325,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
-                                color: Color(0xFF1F2937),
+                                color: VentiqHomeTheme.textPrimary,
                               ),
                             ),
                             const SizedBox(height: 12),
@@ -379,7 +377,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey[300]!),
+                          border: Border.all(color: VentiqHomeTheme.border),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -389,7 +387,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
-                                color: Color(0xFF1F2937),
+                                color: VentiqHomeTheme.textPrimary,
                               ),
                             ),
                             const SizedBox(height: 12),
@@ -425,7 +423,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey[300]!),
+                          border: Border.all(color: VentiqHomeTheme.border),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -435,7 +433,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
-                                color: Color(0xFF1F2937),
+                                color: VentiqHomeTheme.textPrimary,
                               ),
                             ),
                             const SizedBox(height: 12),
@@ -450,7 +448,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
                               Container(
                                 padding: const EdgeInsets.all(16),
                                 decoration: BoxDecoration(
-                                  color: Colors.grey[100],
+                                  color: VentiqHomeTheme.surface,
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: const Text(
@@ -484,7 +482,8 @@ class _EgresoScreenState extends State<EgresoScreen> {
                                             Icon(
                                               method.typeIcon,
                                               size: 20,
-                                              color: Colors.grey[600],
+                                              color:
+                                                  VentiqHomeTheme.textSecondary,
                                             ),
                                             const SizedBox(width: 8),
                                             Text(method.displayName),
@@ -514,7 +513,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey[300]!),
+                          border: Border.all(color: VentiqHomeTheme.border),
                         ),
                         child: CheckboxListTile(
                           value: _contabilizarFondoCaja,
@@ -545,7 +544,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey[300]!),
+                          border: Border.all(color: VentiqHomeTheme.border),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -555,7 +554,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
-                                color: Color(0xFF1F2937),
+                                color: VentiqHomeTheme.textPrimary,
                               ),
                             ),
                             const SizedBox(height: 12),
@@ -658,7 +657,13 @@ class _EgresoScreenState extends State<EgresoScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: TextStyle(fontSize: 14, color: Colors.grey[600])),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 14,
+              color: VentiqHomeTheme.textSecondary,
+            ),
+          ),
           const SizedBox(width: 8),
           Flexible(
             child: Text(
@@ -668,7 +673,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
               style: const TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
-                color: Color(0xFF1F2937),
+                color: VentiqHomeTheme.textPrimary,
               ),
             ),
           ),
@@ -711,8 +716,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
 
       // Modo offline o sin red: guardar solo local (cola egresos_offline).
       final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
-      final hasNetwork =
-          await ConnectivityService().performImmediateCheck();
+      final hasNetwork = await ConnectivityService().performImmediateCheck();
       final forceLocalOnly = isOfflineModeEnabled || !hasNetwork;
 
       if (forceLocalOnly) {
@@ -858,7 +862,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
                   Navigator.pop(context); // Volver a pantalla anterior
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF4A90E2),
+                  backgroundColor: VentiqHomeTheme.primary,
                 ),
                 child: const Text('Continuar'),
               ),
@@ -951,10 +955,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
     }
   }
 
-  void _showOfflineSuccessDialog(
-    double monto, {
-    bool isOfflineMode = true,
-  }) {
+  void _showOfflineSuccessDialog(double monto, {bool isOfflineMode = true}) {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -984,9 +985,9 @@ class _EgresoScreenState extends State<EgresoScreen> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.grey[50],
+                    color: VentiqHomeTheme.surface,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.grey[300]!),
+                    border: Border.all(color: VentiqHomeTheme.border),
                   ),
                   child: Column(
                     children: [
@@ -1043,7 +1044,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
             label,
             style: TextStyle(
               fontSize: 14,
-              color: Colors.grey[700],
+              color: VentiqHomeTheme.textSecondary,
               fontWeight: FontWeight.normal,
             ),
           ),

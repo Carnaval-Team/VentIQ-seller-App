@@ -6,6 +6,7 @@ import '../models/comanda.dart';
 import '../models/tanda.dart';
 import '../services/comanda_service.dart';
 import '../widgets/tanda_widgets.dart';
+import '../theme/ventiq_home_theme.dart';
 
 /// Pantalla de produccion por tandas, para el jefe de cocina.
 ///
@@ -66,9 +67,13 @@ class _ProduccionScreenState extends State<ProduccionScreen>
         _cocinas = cocinas;
         // Se elige la primera cocina donde el usuario sea jefe: es la que va a
         // querer operar. Si solo es cocinero, la primera que tenga.
-        _cocina = cocinas.isEmpty
-            ? null
-            : cocinas.firstWhere((c) => c.esJefe, orElse: () => cocinas.first);
+        _cocina =
+            cocinas.isEmpty
+                ? null
+                : cocinas.firstWhere(
+                  (c) => c.esJefe,
+                  orElse: () => cocinas.first,
+                );
       });
       await _cargar(silencioso: true);
     } catch (e) {
@@ -191,26 +196,29 @@ class _ProduccionScreenState extends State<ProduccionScreen>
 
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('¿Anular esta produccion?'),
-        content: Text(
-          'Se retiran ${tanda.num2(tanda.producidas)} porciones de '
-          '${tanda.producto} y se devuelve la materia prima al almacen.\n\n'
-          'Solo funciona si no ha salido ninguna porcion. Si ya se sirvio algo, '
-          'cierra la tanda declarando la merma.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('No'),
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('¿Anular esta produccion?'),
+            content: Text(
+              'Se retiran ${tanda.num2(tanda.producidas)} porciones de '
+              '${tanda.producto} y se devuelve la materia prima al almacen.\n\n'
+              'Solo funciona si no ha salido ninguna porcion. Si ya se sirvio algo, '
+              'cierra la tanda declarando la merma.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('No'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.red.shade700,
+                ),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Si, anular'),
+              ),
+            ],
           ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Si, anular'),
-          ),
-        ],
-      ),
     );
     if (ok != true) return;
 
@@ -226,20 +234,23 @@ class _ProduccionScreenState extends State<ProduccionScreen>
       if (e.yaConsumida) {
         final cerrar = await showDialog<bool>(
           context: context,
-          builder: (ctx) => AlertDialog(
-            title: Text(e.titulo),
-            content: Text('${e.mensaje}\n\n¿Cerrar la tanda declarando merma?'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Cancelar'),
+          builder:
+              (ctx) => AlertDialog(
+                title: Text(e.titulo),
+                content: Text(
+                  '${e.mensaje}\n\n¿Cerrar la tanda declarando merma?',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('Cancelar'),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: const Text('Cerrar con merma'),
+                  ),
+                ],
               ),
-              FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Cerrar con merma'),
-              ),
-            ],
-          ),
         );
         if (cerrar == true && mounted) await _cerrar(tanda);
       } else {
@@ -269,16 +280,18 @@ class _ProduccionScreenState extends State<ProduccionScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF3F4F6),
+      backgroundColor: VentiqHomeTheme.surface,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF4A90E2),
+        backgroundColor: VentiqHomeTheme.primary,
         foregroundColor: Colors.white,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Produccion',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            const Text(
+              'Produccion',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
             Text(
               _subtitulo(),
               style: const TextStyle(fontSize: 11, color: Colors.white70),
@@ -305,8 +318,10 @@ class _ProduccionScreenState extends State<ProduccionScreen>
           indicatorColor: Colors.white,
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white70,
-          labelStyle:
-              const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+          labelStyle: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+          ),
           tabs: [
             Tab(text: 'Platos (${_platos.length})'),
             Tab(text: 'Lotes (${_tandas.length})'),
@@ -362,13 +377,14 @@ class _ProduccionScreenState extends State<ProduccionScreen>
                     ],
                   ),
                   selectedColor: Colors.white,
-                  backgroundColor: const Color(0xFF2E6DA8),
+                  backgroundColor: VentiqHomeTheme.primaryDark,
                   labelStyle: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
-                    color: _cocina?.idCocina == c.idCocina
-                        ? const Color(0xFF1F2937)
-                        : Colors.white,
+                    color:
+                        _cocina?.idCocina == c.idCocina
+                            ? VentiqHomeTheme.textPrimary
+                            : Colors.white,
                   ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
@@ -391,8 +407,11 @@ class _ProduccionScreenState extends State<ProduccionScreen>
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: Row(
         children: [
-          Icon(Icons.visibility_outlined,
-              size: 16, color: Colors.amber.shade900),
+          Icon(
+            Icons.visibility_outlined,
+            size: 16,
+            color: Colors.amber.shade900,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -426,15 +445,13 @@ class _ProduccionScreenState extends State<ProduccionScreen>
       return _mensaje(
         icono: Icons.no_meals_outlined,
         titulo: 'No tienes cocinas asignadas',
-        detalle: 'Pide al gerente que te asigne a una cocina desde '
+        detalle:
+            'Pide al gerente que te asigne a una cocina desde '
             'Gestion de cocinas en la app de administracion.',
       );
     }
 
-    return TabBarView(
-      controller: _tabs,
-      children: [_tabPlatos(), _tabLotes()],
-    );
+    return TabBarView(controller: _tabs, children: [_tabPlatos(), _tabLotes()]);
   }
 
   Widget _tabPlatos() {
@@ -442,7 +459,8 @@ class _ProduccionScreenState extends State<ProduccionScreen>
       return _mensaje(
         icono: Icons.ramen_dining_outlined,
         titulo: 'Sin platos por tanda',
-        detalle: 'Esta cocina no tiene platos configurados como "por tanda". '
+        detalle:
+            'Esta cocina no tiene platos configurados como "por tanda". '
             'Se configuran en la gestion de platos del administrador.',
       );
     }
@@ -466,11 +484,16 @@ class _ProduccionScreenState extends State<ProduccionScreen>
   Widget _tabLotes() {
     if (_tandas.isEmpty) {
       return _mensaje(
-        icono: _verHistorico ? Icons.history_toggle_off : Icons.inventory_2_outlined,
-        titulo: _verHistorico ? 'Sin lotes en el historial' : 'Sin lotes abiertos',
-        detalle: _verHistorico
-            ? 'Aqui aparecen los lotes cerrados y anulados de los ultimos 7 dias.'
-            : 'Produce una tanda desde la pestaña Platos.',
+        icono:
+            _verHistorico
+                ? Icons.history_toggle_off
+                : Icons.inventory_2_outlined,
+        titulo:
+            _verHistorico ? 'Sin lotes en el historial' : 'Sin lotes abiertos',
+        detalle:
+            _verHistorico
+                ? 'Aqui aparecen los lotes cerrados y anulados de los ultimos 7 dias.'
+                : 'Produce una tanda desde la pestaña Platos.',
       );
     }
 
@@ -509,7 +532,7 @@ class _ProduccionScreenState extends State<ProduccionScreen>
           style: const TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w700,
-            color: Color(0xFF1F2937),
+            color: VentiqHomeTheme.textPrimary,
           ),
         ),
         if (detalle != null) ...[

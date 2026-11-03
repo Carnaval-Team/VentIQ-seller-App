@@ -1,8 +1,9 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../services/admin_inventory_service.dart';
 import '../../utils/price_utils.dart';
+import '../../theme/ventiq_home_theme.dart';
 
 /// Precios diferenciados por TPV (offline-first).
 class AdminTpvPricesScreen extends StatefulWidget {
@@ -40,9 +41,8 @@ class _AdminTpvPricesScreenState extends State<AdminTpvPricesScreen> {
     if (!mounted) return;
     setState(() {
       _tpvs = tpvs;
-      _selectedTpv ??= tpvs.isNotEmpty
-          ? (tpvs.first['id'] as num?)?.toInt()
-          : null;
+      _selectedTpv ??=
+          tpvs.isNotEmpty ? (tpvs.first['id'] as num?)?.toInt() : null;
     });
     await _loadPrices();
   }
@@ -67,9 +67,7 @@ class _AdminTpvPricesScreenState extends State<AdminTpvPricesScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            'Cache: ${n['tpvs']} TPVs, ${n['tpv_prices']} precios',
-          ),
+          content: Text('Cache: ${n['tpvs']} TPVs, ${n['tpv_prices']} precios'),
         ),
       );
       await _bootstrap();
@@ -85,9 +83,7 @@ class _AdminTpvPricesScreenState extends State<AdminTpvPricesScreen> {
 
   Future<void> _openEditor({Map<String, dynamic>? existing}) async {
     final priceCtrl = TextEditingController(
-      text: existing != null
-          ? '${existing['precio_venta_cup'] ?? ''}'
-          : '',
+      text: existing != null ? '${existing['precio_venta_cup'] ?? ''}' : '',
     );
     final productSearch = TextEditingController(
       text: existing?['producto_nombre']?.toString() ?? '',
@@ -119,21 +115,24 @@ class _AdminTpvPricesScreenState extends State<AdminTpvPricesScreen> {
                           labelText: 'TPV',
                           border: OutlineInputBorder(),
                         ),
-                        items: _tpvs
-                            .map(
-                              (t) => DropdownMenuItem<int>(
-                                value: (t['id'] as num?)?.toInt(),
-                                child: Text(
-                                  t['denominacion']?.toString() ?? '#${t['id']}',
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            )
-                            .where((i) => i.value != null)
-                            .toList(),
-                        onChanged: existing != null
-                            ? null
-                            : (v) => setLocal(() => tpvId = v),
+                        items:
+                            _tpvs
+                                .map(
+                                  (t) => DropdownMenuItem<int>(
+                                    value: (t['id'] as num?)?.toInt(),
+                                    child: Text(
+                                      t['denominacion']?.toString() ??
+                                          '#${t['id']}',
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                )
+                                .where((i) => i.value != null)
+                                .toList(),
+                        onChanged:
+                            existing != null
+                                ? null
+                                : (v) => setLocal(() => tpvId = v),
                       ),
                       const SizedBox(height: 12),
                       if (existing == null) ...[
@@ -159,17 +158,19 @@ class _AdminTpvPricesScreenState extends State<AdminTpvPricesScreen> {
                             (p) => ListTile(
                               dense: true,
                               title: Text(p['denominacion']?.toString() ?? ''),
-                              subtitle: Text('Precio base: ${p['precio'] ?? 0}'),
-                              onTap: () => setLocal(() {
-                                productId = (p['id'] as num?)?.toInt();
-                                productName =
-                                    p['denominacion']?.toString();
-                                productSearch.text = productName ?? '';
-                                hits = [];
-                                if (priceCtrl.text.trim().isEmpty) {
-                                  priceCtrl.text = '${p['precio'] ?? ''}';
-                                }
-                              }),
+                              subtitle: Text(
+                                'Precio base: ${p['precio'] ?? 0}',
+                              ),
+                              onTap:
+                                  () => setLocal(() {
+                                    productId = (p['id'] as num?)?.toInt();
+                                    productName = p['denominacion']?.toString();
+                                    productSearch.text = productName ?? '';
+                                    hits = [];
+                                    if (priceCtrl.text.trim().isEmpty) {
+                                      priceCtrl.text = '${p['precio'] ?? ''}';
+                                    }
+                                  }),
                             ),
                           ),
                         if (productId != null)
@@ -200,9 +201,7 @@ class _AdminTpvPricesScreenState extends State<AdminTpvPricesScreen> {
                           decimal: true,
                         ),
                         inputFormatters: [
-                          FilteringTextInputFormatter.allow(
-                            RegExp(r'[0-9.,]'),
-                          ),
+                          FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
                         ],
                       ),
                     ],
@@ -229,9 +228,9 @@ class _AdminTpvPricesScreenState extends State<AdminTpvPricesScreen> {
     final price = double.tryParse(priceCtrl.text.replaceAll(',', '.'));
     if (price == null || price < 0) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Precio inválido')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Precio inválido')));
       return;
     }
     if (productId == null || tpvId == null) {
@@ -242,13 +241,14 @@ class _AdminTpvPricesScreenState extends State<AdminTpvPricesScreen> {
       return;
     }
 
-    final tpvName = _tpvs
-        .cast<Map<String, dynamic>?>()
-        .firstWhere(
-          (t) => (t?['id'] as num?)?.toInt() == tpvId,
-          orElse: () => null,
-        )?['denominacion']
-        ?.toString();
+    final tpvName =
+        _tpvs
+            .cast<Map<String, dynamic>?>()
+            .firstWhere(
+              (t) => (t?['id'] as num?)?.toInt() == tpvId,
+              orElse: () => null,
+            )?['denominacion']
+            ?.toString();
 
     try {
       await _service.upsertTpvPrice(
@@ -280,22 +280,23 @@ class _AdminTpvPricesScreenState extends State<AdminTpvPricesScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Precios por TPV'),
-        backgroundColor: Colors.blue[700],
+        backgroundColor: VentiqHomeTheme.primary,
         foregroundColor: Colors.white,
         actions: [
           IconButton(
             tooltip: 'Sincronizar cache',
             onPressed: _syncing ? null : _sync,
-            icon: _syncing
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Icon(Icons.cloud_download_outlined),
+            icon:
+                _syncing
+                    ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                    : const Icon(Icons.cloud_download_outlined),
           ),
         ],
       ),
@@ -315,10 +316,7 @@ class _AdminTpvPricesScreenState extends State<AdminTpvPricesScreen> {
                 border: OutlineInputBorder(),
               ),
               items: [
-                const DropdownMenuItem<int?>(
-                  value: null,
-                  child: Text('Todos'),
-                ),
+                const DropdownMenuItem<int?>(value: null, child: Text('Todos')),
                 ..._tpvs.map(
                   (t) => DropdownMenuItem<int?>(
                     value: (t['id'] as num?)?.toInt(),
@@ -349,7 +347,7 @@ class _AdminTpvPricesScreenState extends State<AdminTpvPricesScreen> {
           ),
           if (_tpvs.isEmpty)
             Material(
-              color: Colors.orange.shade50,
+              color: VentiqHomeTheme.warning.withValues(alpha: 0.08),
               child: const Padding(
                 padding: EdgeInsets.all(12),
                 child: Text(
@@ -359,45 +357,46 @@ class _AdminTpvPricesScreenState extends State<AdminTpvPricesScreen> {
               ),
             ),
           Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _prices.isEmpty
+            child:
+                _loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _prices.isEmpty
                     ? Center(
-                        child: Text(
-                          'Sin precios TPV en cache',
-                          style: TextStyle(color: Colors.grey[600]),
-                        ),
-                      )
-                    : ListView.separated(
-                        itemCount: _prices.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
-                        itemBuilder: (context, i) {
-                          final p = _prices[i];
-                          final pending = p['pending_local'] == true;
-                          return ListTile(
-                            title: Text(
-                              p['producto_nombre']?.toString() ??
-                                  'Producto #${p['id_producto']}',
-                            ),
-                            subtitle: Text(
-                              [
-                                p['tpv_nombre'] ?? 'TPV ${p['id_tpv']}',
-                                if (p['producto_sku'] != null)
-                                  'SKU ${p['producto_sku']}',
-                                if (pending) 'pendiente sync',
-                              ].join(' · '),
-                            ),
-                            trailing: Text(
-                              '\$${((p['precio_venta_cup'] as num?)?.toDouble() ?? 0).toMoneyString(2)}',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 16,
-                              ),
-                            ),
-                            onTap: () => _openEditor(existing: p),
-                          );
-                        },
+                      child: Text(
+                        'Sin precios TPV en cache',
+                        style: TextStyle(color: VentiqHomeTheme.textSecondary),
                       ),
+                    )
+                    : ListView.separated(
+                      itemCount: _prices.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (context, i) {
+                        final p = _prices[i];
+                        final pending = p['pending_local'] == true;
+                        return ListTile(
+                          title: Text(
+                            p['producto_nombre']?.toString() ??
+                                'Producto #${p['id_producto']}',
+                          ),
+                          subtitle: Text(
+                            [
+                              p['tpv_nombre'] ?? 'TPV ${p['id_tpv']}',
+                              if (p['producto_sku'] != null)
+                                'SKU ${p['producto_sku']}',
+                              if (pending) 'pendiente sync',
+                            ].join(' · '),
+                          ),
+                          trailing: Text(
+                            '\$${((p['precio_venta_cup'] as num?)?.toDouble() ?? 0).toMoneyString(2)}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 16,
+                            ),
+                          ),
+                          onTap: () => _openEditor(existing: p),
+                        );
+                      },
+                    ),
           ),
         ],
       ),
