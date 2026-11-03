@@ -221,6 +221,18 @@ class ReauthenticationService {
       final timeUntilExpiry = expiresAt.difference(now);
 
       if (timeUntilExpiry.inMinutes < 5) {
+        // Rotación de token primero: un refresh barato evita el relogin
+        // completo con password. Solo si falla hace falta reautenticar.
+        try {
+          final refreshed =
+              await Supabase.instance.client.auth.refreshSession();
+          if (refreshed.session != null) {
+            print('🔄 Token rotado - no se requiere reautenticación');
+            return false;
+          }
+        } catch (e) {
+          print('⚠️ Refresh de sesión falló ($e) - Reautenticación necesaria');
+        }
         print(
           '🔍 Token próximo a expirar (${timeUntilExpiry.inMinutes} min) - Reautenticación necesaria',
         );

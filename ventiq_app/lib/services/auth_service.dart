@@ -5,6 +5,7 @@ import 'subscription_guard_service.dart';
 import 'user_preferences_service.dart';
 import 'auto_sync_service.dart';
 import 'settings_integration_service.dart';
+import 'session_refresh_service.dart';
 
 class AuthService {
   static final AuthService _instance = AuthService._internal();
@@ -19,6 +20,10 @@ class AuthService {
       url: SupabaseConfig.supabaseUrl,
       anonKey: SupabaseConfig.supabaseAnonKey,
     );
+
+    // Rotación automática del token: refresca antes de expirar, mantiene el
+    // token persistido al día y reautentica si el refresh token falla.
+    SessionRefreshService().start();
   }
 
   // Obtener usuario actual

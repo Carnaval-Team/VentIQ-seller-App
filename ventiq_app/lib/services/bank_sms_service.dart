@@ -191,22 +191,44 @@ class BankSmsService {
     });
   }
 
+  /// Fragmentos de SMS multipart recientes por remitente. Algunas operadoras
+  /// entregan el mensaje de pago en dos partes; se conservan unos minutos para
+  /// reintentar el parseo con la concatenación cuando llega el resto.
+  final Map<String, List<_SmsFragment>> _fragments = {};
+
+  static const Duration _fragmentTtl = Duration(minutes: 10);
+
   Future<void> _handleForegroundSms(SmsMessage message) async {
     if (!BankSmsParser.isKnownSender(message.address)) return;
     final body = message.body;
     if (body == null || body.isEmpty) return;
 
-    final payment = BankSmsParser.parse(
-      body,
-      receivedAt: message.date != null
-          ? DateTime.fromMillisecondsSinceEpoch(message.date!)
-          : DateTime.now(),
-    );
+    final receivedAt = message.date != null
+        ? DateTime.fromMillisecondsSinceEpoch(message.date!)
+        : DateTime.now();
+
+    var payment = BankSmsParser.parse(body, receivedAt: receivedAt);
+
     if (payment == null) {
-      if (BankSmsParser.looksLikePartialPayment(body)) {
-        debugPrint('📨 Fragmento de SMS de pago incompleto — se ignora');
+      // Puede ser un fragmento de un mensaje multipart: guardarlo e
+      // intentar el parseo con todo lo recibido de ese remitente.
+      if (!BankSmsParser.looksLikePartialPayment(body)) return;
+      final address = message.address ?? '';
+      final parts = _fragments.putIfAbsent(address, () => [])
+        ..add(_SmsFragment(body, receivedAt));
+      parts.removeWhere(
+        (f) => receivedAt.difference(f.receivedAt) > _fragmentTtl,
+      );
+      if (parts.length > 10) parts.removeRange(0, parts.length - 10);
+
+      final combined =
+          parts.map((f) => f.body).join(' ');
+      payment = BankSmsParser.parse(combined, receivedAt: receivedAt);
+      if (payment == null) {
+        debugPrint('📨 Fragmento de SMS de pago incompleto — se conserva');
+        return;
       }
-      return;
+      _fragments.remove(address);
     }
 
     debugPrint('📩 Pago SMS recibido: $payment');
@@ -486,6 +508,9 @@ class BankSmsService {
           .toSet();
       var recovered = 0;
 
+      // Candidatos por remitente para reconstruir mensajes multipart.
+      final bySender = <String, List<SmsMessage>>{};
+
       for (final m in messages) {
         if (!BankSmsParser.isKnownSender(m.address)) continue;
         final body = m.body;
@@ -496,12 +521,47 @@ class BankSmsService {
             : null;
         if (receivedAt == null || receivedAt.isBefore(cutoff)) continue;
 
-        final payment = BankSmsParser.parse(body, receivedAt: receivedAt);
+        var payment = BankSmsParser.parse(body, receivedAt: receivedAt);
+
+        if (payment == null) {
+          // Fragmento multipart: agrupar por remitente y reintentar luego.
+          if (BankSmsParser.looksLikePartialPayment(body)) {
+            bySender.putIfAbsent(m.address ?? '', () => []).add(m);
+          }
+          continue;
+        }
+
+        if (!known.add(payment.nroTransaccionBanco)) continue;
+
+        await appendPendingPayment(payment);
+        recovered++;
+        // Emitir al stream: sin esto, un SMS guardado por el handler de
+        // background (app pausada) nunca dispara el match en las vistas
+        // abiertas — se quedan esperando un evento que no llega.
+        if (!_paymentController.isClosed) {
+          _paymentController.add(payment);
+        }
+      }
+
+      // Segundo pase: reconstruir pagos multipart concatenando los fragmentos
+      // del mismo remitente ordenados por fecha.
+      for (final entry in bySender.entries) {
+        final parts = entry.value
+          ..sort((a, b) => (a.date ?? 0).compareTo(b.date ?? 0));
+        final combined = parts.map((m) => m.body).join(' ');
+        final lastDate = parts.last.date;
+        final receivedAt = lastDate != null
+            ? DateTime.fromMillisecondsSinceEpoch(lastDate)
+            : DateTime.now();
+        final payment = BankSmsParser.parse(combined, receivedAt: receivedAt);
         if (payment == null) continue;
         if (!known.add(payment.nroTransaccionBanco)) continue;
 
         await appendPendingPayment(payment);
         recovered++;
+        if (!_paymentController.isClosed) {
+          _paymentController.add(payment);
+        }
       }
 
       if (recovered > 0) {
@@ -518,4 +578,10 @@ class BankSmsService {
     stopListening();
     _paymentController.close();
   }
+}
+
+class _SmsFragment {
+  final String body;
+  final DateTime receivedAt;
+  const _SmsFragment(this.body, this.receivedAt);
 }

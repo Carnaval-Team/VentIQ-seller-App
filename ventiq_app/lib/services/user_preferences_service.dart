@@ -239,6 +239,20 @@ class UserPreferencesService {
     return prefs.getString(_accessTokenKey);
   }
 
+  /// Actualiza el access token tras una rotación (refresh) de sesión.
+  /// No toca userId/email ni el flag de login; solo renueva el token y su
+  /// expiración persistida (expiresAt viene en epoch segundos, UTC).
+  Future<void> updateAccessToken(String accessToken, {int? expiresAt}) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_accessTokenKey, accessToken);
+    await prefs.setInt(
+      _tokenExpiryKey,
+      expiresAt != null
+          ? expiresAt * 1000
+          : DateTime.now().add(Duration(hours: 24)).millisecondsSinceEpoch,
+    );
+  }
+
   // Guardar datos del vendedor
   Future<void> saveSellerData({
     required int idTpv,
