@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../config/app_colors.dart';
 import '../widgets/app_drawer.dart';
 import '../utils/platform_utils.dart';
@@ -14,6 +15,7 @@ class AgentesScreen extends StatefulWidget {
 class _AgentesScreenState extends State<AgentesScreen> {
   List<Map<String, dynamic>> _agentes = [];
   List<Map<String, dynamic>> _filteredAgentes = [];
+  List<Map<String, dynamic>> _carnaval = [];
   bool _isLoading = true;
   String _searchQuery = '';
   bool _mostrarInactivos = false;
@@ -31,6 +33,13 @@ class _AgentesScreenState extends State<AgentesScreen> {
         soloActivos: !_mostrarInactivos,
       );
 
+      List<Map<String, dynamic>> carnaval = [];
+      try {
+        carnaval = await AgenteService.getAgentesCarnaval();
+      } catch (e) {
+        debugPrint('Agentes Carnaval no disponibles: $e');
+      }
+
       // Contar suscripciones por agente
       final agentesConConteo = <Map<String, dynamic>>[];
       for (final agente in agentes) {
@@ -46,6 +55,7 @@ class _AgentesScreenState extends State<AgentesScreen> {
       if (mounted) {
         setState(() {
           _agentes = agentesConConteo;
+          _carnaval = carnaval;
           _isLoading = false;
         });
         _filterAgentes();
@@ -259,6 +269,7 @@ class _AgentesScreenState extends State<AgentesScreen> {
                       DataColumn(label: Text('Nombre')),
                       DataColumn(label: Text('Teléfono')),
                       DataColumn(label: Text('Email')),
+                      DataColumn(label: Text('Tarjeta')),
                       DataColumn(label: Text('Licencias')),
                       DataColumn(label: Text('Estado')),
                       DataColumn(label: Text('Acciones')),
@@ -268,13 +279,23 @@ class _AgentesScreenState extends State<AgentesScreen> {
                       return DataRow(
                         cells: [
                           DataCell(
-                            Text(
-                              '${agente['nombre']} ${agente['apellidos']}',
-                              style: const TextStyle(fontWeight: FontWeight.w600),
+                            Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${agente['nombre']} ${agente['apellidos']}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                Wrap(spacing: 4, children: _rolChips(agente)),
+                              ],
                             ),
                           ),
                           DataCell(Text(agente['telefono'] ?? '-')),
                           DataCell(Text(agente['email'] ?? '-')),
+                          DataCell(_tarjetaCell(agente['tarjeta']?.toString())),
                           DataCell(
                             Chip(
                               label: Text(
@@ -391,6 +412,12 @@ class _AgentesScreenState extends State<AgentesScreen> {
                   Text('📱 ${agente['telefono']}'),
                 if (agente['email'] != null)
                   Text('📧 ${agente['email']}'),
+                Text(_etiquetaTarjeta(agente['tarjeta']?.toString())),
+                if (_rolChips(agente).isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Wrap(spacing: 4, children: _rolChips(agente)),
+                  ),
                 Text(
                   'Licencias: ${agente['suscripciones_activas'] ?? 0}',
                   style: TextStyle(
@@ -454,309 +481,116 @@ class _AgentesScreenState extends State<AgentesScreen> {
   // DIALOGS
   // =====================================================
 
-  void _showCrearAgenteDialog() {
-    final nombreController = TextEditingController();
-    final apellidosController = TextEditingController();
-    final telefonoController = TextEditingController();
-    final emailController = TextEditingController();
-    final observacionesController = TextEditingController();
-    final formKey = GlobalKey<FormState>();
+  List<Widget> _rolChips(Map<String, dynamic> agente) {
+    final chips = <Widget>[];
+    if (agente['es_socio'] == true) {
+      chips.add(const Chip(
+        label: Text('Socio', style: TextStyle(fontSize: 11)),
+        visualDensity: VisualDensity.compact,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ));
+    }
+    if (agente['despliega'] == true) {
+      chips.add(const Chip(
+        label: Text('Despliegue', style: TextStyle(fontSize: 11)),
+        visualDensity: VisualDensity.compact,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ));
+    }
+    final carnavalId = (agente['id_agente_carnaval'] as num?)?.toInt();
+    if (carnavalId != null) {
+      chips.add(Chip(
+        label: Text(
+          _nombreCarnaval(carnavalId) ?? 'Carnaval',
+          style: const TextStyle(fontSize: 11),
+        ),
+        visualDensity: VisualDensity.compact,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ));
+    }
+    return chips;
+  }
 
-    showDialog(
-      context: context,
-      builder: (context) {
-        bool isProcessing = false;
+  String? _nombreCarnaval(int id) {
+    for (final row in _carnaval) {
+      if ((row['id'] as num?)?.toInt() == id) {
+        return '${row['nombre']} ${row['apellidos']}'.trim();
+      }
+    }
+    return null;
+  }
 
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: const Row(
-                children: [
-                  Icon(Icons.person_add, color: AppColors.primary),
-                  SizedBox(width: 8),
-                  Text('Nuevo Agente'),
-                ],
-              ),
-              content: SingleChildScrollView(
-                child: Form(
-                  key: formKey,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextFormField(
-                        controller: nombreController,
-                        decoration: const InputDecoration(
-                          labelText: 'Nombre *',
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                        validator: (v) =>
-                            v == null || v.trim().isEmpty ? 'Requerido' : null,
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: apellidosController,
-                        decoration: const InputDecoration(
-                          labelText: 'Apellidos *',
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                        validator: (v) =>
-                            v == null || v.trim().isEmpty ? 'Requerido' : null,
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: telefonoController,
-                        decoration: const InputDecoration(
-                          labelText: 'Teléfono',
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                        keyboardType: TextInputType.phone,
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: emailController,
-                        decoration: const InputDecoration(
-                          labelText: 'Email',
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                        keyboardType: TextInputType.emailAddress,
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: observacionesController,
-                        decoration: const InputDecoration(
-                          labelText: 'Observaciones',
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                        maxLines: 2,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed:
-                      isProcessing ? null : () => Navigator.pop(context),
-                  child: const Text('Cancelar'),
-                ),
-                ElevatedButton(
-                  onPressed: isProcessing
-                      ? null
-                      : () async {
-                          if (!formKey.currentState!.validate()) return;
-                          setDialogState(() => isProcessing = true);
-                          try {
-                            await AgenteService.crearAgente(
-                              nombre: nombreController.text.trim(),
-                              apellidos: apellidosController.text.trim(),
-                              telefono: telefonoController.text.trim().isEmpty
-                                  ? null
-                                  : telefonoController.text.trim(),
-                              email: emailController.text.trim().isEmpty
-                                  ? null
-                                  : emailController.text.trim(),
-                              observaciones:
-                                  observacionesController.text.trim().isEmpty
-                                      ? null
-                                      : observacionesController.text.trim(),
-                            );
-                            if (context.mounted) Navigator.pop(context);
-                            if (mounted) {
-                              ScaffoldMessenger.of(this.context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Agente creado correctamente'),
-                                  backgroundColor: AppColors.success,
-                                ),
-                              );
-                              _loadAgentes();
-                            }
-                          } catch (e) {
-                            setDialogState(() => isProcessing = false);
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Error: $e'),
-                                  backgroundColor: AppColors.error,
-                                ),
-                              );
-                            }
-                          }
-                        },
-                  child: isProcessing
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Crear'),
-                ),
-              ],
+  String _etiquetaTarjeta(String? tarjeta) {
+    final limpia = (tarjeta ?? '').replaceAll(RegExp(r'\s+'), '');
+    if (limpia.isEmpty) return 'Tarjeta: sin registrar';
+    if (limpia.length <= 4) return 'Tarjeta: $limpia';
+    return 'Tarjeta: ···· ${limpia.substring(limpia.length - 4)}';
+  }
+
+  Widget _tarjetaCell(String? tarjeta) {
+    final limpia = (tarjeta ?? '').replaceAll(RegExp(r'\s+'), '');
+    if (limpia.isEmpty) return const Text('—');
+    final visible = limpia.length <= 4
+        ? limpia
+        : '···· ${limpia.substring(limpia.length - 4)}';
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(visible),
+        IconButton(
+          tooltip: 'Copiar tarjeta',
+          icon: const Icon(Icons.copy, size: 16),
+          onPressed: () async {
+            await Clipboard.setData(ClipboardData(text: limpia));
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Tarjeta copiada')),
             );
           },
-        );
-      },
+        ),
+      ],
     );
   }
 
-  void _showEditarAgenteDialog(Map<String, dynamic> agente) {
-    final nombreController = TextEditingController(text: agente['nombre']);
-    final apellidosController =
-        TextEditingController(text: agente['apellidos']);
-    final telefonoController =
-        TextEditingController(text: agente['telefono'] ?? '');
-    final emailController =
-        TextEditingController(text: agente['email'] ?? '');
-    final observacionesController =
-        TextEditingController(text: agente['observaciones'] ?? '');
-    final formKey = GlobalKey<FormState>();
-
-    showDialog(
+  Future<void> _showCrearAgenteDialog() async {
+    final saved = await showDialog<bool>(
       context: context,
-      builder: (context) {
-        bool isProcessing = false;
-
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: const Row(
-                children: [
-                  Icon(Icons.edit, color: AppColors.primary),
-                  SizedBox(width: 8),
-                  Text('Editar Agente'),
-                ],
-              ),
-              content: SingleChildScrollView(
-                child: Form(
-                  key: formKey,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextFormField(
-                        controller: nombreController,
-                        decoration: const InputDecoration(
-                          labelText: 'Nombre *',
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                        validator: (v) =>
-                            v == null || v.trim().isEmpty ? 'Requerido' : null,
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: apellidosController,
-                        decoration: const InputDecoration(
-                          labelText: 'Apellidos *',
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                        validator: (v) =>
-                            v == null || v.trim().isEmpty ? 'Requerido' : null,
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: telefonoController,
-                        decoration: const InputDecoration(
-                          labelText: 'Teléfono',
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                        keyboardType: TextInputType.phone,
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: emailController,
-                        decoration: const InputDecoration(
-                          labelText: 'Email',
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                        keyboardType: TextInputType.emailAddress,
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: observacionesController,
-                        decoration: const InputDecoration(
-                          labelText: 'Observaciones',
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                        maxLines: 2,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed:
-                      isProcessing ? null : () => Navigator.pop(context),
-                  child: const Text('Cancelar'),
-                ),
-                ElevatedButton(
-                  onPressed: isProcessing
-                      ? null
-                      : () async {
-                          if (!formKey.currentState!.validate()) return;
-                          setDialogState(() => isProcessing = true);
-                          try {
-                            await AgenteService.actualizarAgente(
-                              id: agente['id'],
-                              nombre: nombreController.text.trim(),
-                              apellidos: apellidosController.text.trim(),
-                              telefono: telefonoController.text.trim().isEmpty
-                                  ? null
-                                  : telefonoController.text.trim(),
-                              email: emailController.text.trim().isEmpty
-                                  ? null
-                                  : emailController.text.trim(),
-                              observaciones:
-                                  observacionesController.text.trim().isEmpty
-                                      ? null
-                                      : observacionesController.text.trim(),
-                            );
-                            if (context.mounted) Navigator.pop(context);
-                            if (mounted) {
-                              ScaffoldMessenger.of(this.context).showSnackBar(
-                                const SnackBar(
-                                  content:
-                                      Text('Agente actualizado correctamente'),
-                                  backgroundColor: AppColors.success,
-                                ),
-                              );
-                              _loadAgentes();
-                            }
-                          } catch (e) {
-                            setDialogState(() => isProcessing = false);
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Error: $e'),
-                                  backgroundColor: AppColors.error,
-                                ),
-                              );
-                            }
-                          }
-                        },
-                  child: isProcessing
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Guardar'),
-                ),
-              ],
-            );
-          },
-        );
-      },
+      builder: (context) => _AgenteFormDialog(
+        agentesExistentes: _agentes,
+        carnaval: _carnaval,
+      ),
     );
+    if (saved == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Agente creado correctamente'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+      _loadAgentes();
+    }
   }
+
+  Future<void> _showEditarAgenteDialog(Map<String, dynamic> agente) async {
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (context) => _AgenteFormDialog(
+        agente: agente,
+        agentesExistentes: _agentes,
+        carnaval: _carnaval,
+      ),
+    );
+    if (saved == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Agente actualizado correctamente'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+      _loadAgentes();
+    }
+  }
+
 
   Future<void> _toggleEstadoAgente(Map<String, dynamic> agente) async {
     final esActivo = agente['estado'] == 1;
@@ -950,6 +784,325 @@ class _SuscripcionesAgenteDialogState
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('Cerrar'),
+        ),
+      ],
+    );
+  }
+}
+
+class _AgenteFormDialog extends StatefulWidget {
+  final Map<String, dynamic>? agente;
+  final List<Map<String, dynamic>> agentesExistentes;
+  final List<Map<String, dynamic>> carnaval;
+
+  const _AgenteFormDialog({
+    this.agente,
+    required this.agentesExistentes,
+    required this.carnaval,
+  });
+
+  @override
+  State<_AgenteFormDialog> createState() => _AgenteFormDialogState();
+}
+
+class _AgenteFormDialogState extends State<_AgenteFormDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _nombre;
+  late final TextEditingController _apellidos;
+  late final TextEditingController _telefono;
+  late final TextEditingController _email;
+  late final TextEditingController _observaciones;
+  late final TextEditingController _tarjeta;
+  late bool _esSocio;
+  late bool _despliega;
+  int? _idCarnaval;
+  bool _guardando = false;
+
+  bool get _editando => widget.agente != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final a = widget.agente;
+    _nombre = TextEditingController(text: a?['nombre']?.toString() ?? '');
+    _apellidos = TextEditingController(text: a?['apellidos']?.toString() ?? '');
+    _telefono = TextEditingController(text: a?['telefono']?.toString() ?? '');
+    _email = TextEditingController(text: a?['email']?.toString() ?? '');
+    _observaciones =
+        TextEditingController(text: a?['observaciones']?.toString() ?? '');
+    _tarjeta = TextEditingController(text: a?['tarjeta']?.toString() ?? '');
+    _esSocio = a?['es_socio'] == true;
+    _despliega = a == null || a['despliega'] != false;
+    _idCarnaval = (a?['id_agente_carnaval'] as num?)?.toInt();
+  }
+
+  @override
+  void dispose() {
+    _nombre.dispose();
+    _apellidos.dispose();
+    _telefono.dispose();
+    _email.dispose();
+    _observaciones.dispose();
+    _tarjeta.dispose();
+    super.dispose();
+  }
+
+  String _norm(String value) {
+    const from = 'áéíóúüñ';
+    const to = 'aeiouun';
+    var out = value.toLowerCase().trim();
+    for (var i = 0; i < from.length; i++) {
+      out = out.replaceAll(from[i], to[i]);
+    }
+    return out.replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  Set<int> get _ocupados {
+    final propio = (widget.agente?['id_agente_carnaval'] as num?)?.toInt();
+    final ids = <int>{};
+    for (final row in widget.agentesExistentes) {
+      final id = (row['id_agente_carnaval'] as num?)?.toInt();
+      if (id != null && id != propio) ids.add(id);
+    }
+    return ids;
+  }
+
+  String? get _sugerencia {
+    if (_idCarnaval != null) return null;
+    final nombre = _norm('${_nombre.text} ${_apellidos.text}');
+    if (nombre.isEmpty) return null;
+    for (final row in widget.carnaval) {
+      final id = (row['id'] as num?)?.toInt();
+      if (id == null || _ocupados.contains(id)) continue;
+      final candidato = _norm('${row['nombre']} ${row['apellidos']}');
+      if (candidato == nombre) {
+        return '${row['nombre']} ${row['apellidos']}'.trim();
+      }
+    }
+    return null;
+  }
+
+  Future<void> _guardar() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _guardando = true);
+    String? vacio(TextEditingController c) {
+      final t = c.text.trim();
+      return t.isEmpty ? null : t;
+    }
+
+    try {
+      if (_editando) {
+        await AgenteService.actualizarAgente(
+          id: (widget.agente!['id'] as num).toInt(),
+          nombre: _nombre.text.trim(),
+          apellidos: _apellidos.text.trim(),
+          telefono: vacio(_telefono),
+          email: vacio(_email),
+          observaciones: vacio(_observaciones),
+          tarjeta: vacio(_tarjeta),
+          esSocio: _esSocio,
+          despliega: _despliega,
+          idAgenteCarnaval: _idCarnaval,
+        );
+      } else {
+        await AgenteService.crearAgente(
+          nombre: _nombre.text.trim(),
+          apellidos: _apellidos.text.trim(),
+          telefono: vacio(_telefono),
+          email: vacio(_email),
+          observaciones: vacio(_observaciones),
+          tarjeta: vacio(_tarjeta),
+          esSocio: _esSocio,
+          despliega: _despliega,
+          idAgenteCarnaval: _idCarnaval,
+        );
+      }
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _guardando = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final opciones = widget.carnaval.where((row) {
+      final id = (row['id'] as num?)?.toInt();
+      return id != null && (id == _idCarnaval || !_ocupados.contains(id));
+    }).toList();
+    if (_idCarnaval != null &&
+        !opciones.any((row) => (row['id'] as num?)?.toInt() == _idCarnaval)) {
+      opciones.insert(0, {
+        'id': _idCarnaval,
+        'nombre': 'Agente Carnaval',
+        'apellidos': '#$_idCarnaval',
+      });
+    }
+    final sugerencia = _sugerencia;
+
+    return AlertDialog(
+      title: Row(
+        children: [
+          Icon(_editando ? Icons.edit : Icons.person_add, color: AppColors.primary),
+          const SizedBox(width: 8),
+          Text(_editando ? 'Editar agente' : 'Nuevo agente'),
+        ],
+      ),
+      content: SizedBox(
+        width: 480,
+        child: SingleChildScrollView(
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextFormField(
+                  controller: _nombre,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombre *',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  onChanged: (_) => setState(() {}),
+                  validator: (v) =>
+                      v == null || v.trim().isEmpty ? 'Requerido' : null,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _apellidos,
+                  decoration: const InputDecoration(
+                    labelText: 'Apellidos *',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  onChanged: (_) => setState(() {}),
+                  validator: (v) =>
+                      v == null || v.trim().isEmpty ? 'Requerido' : null,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _telefono,
+                  decoration: const InputDecoration(
+                    labelText: 'Teléfono',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  keyboardType: TextInputType.phone,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _email,
+                  decoration: const InputDecoration(
+                    labelText: 'Email',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  keyboardType: TextInputType.emailAddress,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _tarjeta,
+                  decoration: const InputDecoration(
+                    labelText: 'Tarjeta',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                    helperText: 'Se usa para copiar el pago. Puede quedar vacía.',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _observaciones,
+                  decoration: const InputDecoration(
+                    labelText: 'Observaciones',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  maxLines: 2,
+                ),
+                const SizedBox(height: 8),
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: _esSocio,
+                  onChanged: _guardando
+                      ? null
+                      : (v) => setState(() => _esSocio = v ?? false),
+                  title: const Text('Socio'),
+                  subtitle: const Text(
+                    'Parte el neto de Inventtia y el 1% global de Carnaval.',
+                  ),
+                  controlAffinity: ListTileControlAffinity.leading,
+                ),
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: _despliega,
+                  onChanged: _guardando
+                      ? null
+                      : (v) => setState(() => _despliega = v ?? false),
+                  title: const Text('Se asigna en licencias'),
+                  subtitle: const Text(
+                    'Aparece al elegir el agente que desplegó una tienda.',
+                  ),
+                  controlAffinity: ListTileControlAffinity.leading,
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<int?>(
+                  value: _idCarnaval,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Agente de Carnaval',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  items: [
+                    const DropdownMenuItem<int?>(
+                      value: null,
+                      child: Text('Sin agente de Carnaval'),
+                    ),
+                    ...opciones.map((row) {
+                      final id = (row['id'] as num).toInt();
+                      return DropdownMenuItem<int?>(
+                        value: id,
+                        child: Text('${row['nombre']} ${row['apellidos']}'.trim()),
+                      );
+                    }),
+                  ],
+                  onChanged: _guardando
+                      ? null
+                      : (v) => setState(() => _idCarnaval = v),
+                ),
+                if (sugerencia != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Hay un agente de Carnaval con el mismo nombre ($sugerencia) y no está enlazado. Elige esa ficha si es la misma persona.',
+                    style: TextStyle(fontSize: 12, color: Colors.orange.shade800),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _guardando ? null : () => Navigator.pop(context, false),
+          child: const Text('Cancelar'),
+        ),
+        ElevatedButton(
+          onPressed: _guardando ? null : _guardar,
+          child: _guardando
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Text(_editando ? 'Guardar' : 'Crear'),
         ),
       ],
     );

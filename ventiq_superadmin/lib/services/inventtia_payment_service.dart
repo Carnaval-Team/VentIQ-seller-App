@@ -290,6 +290,24 @@ class InventtiaPaymentService {
         .eq('id', id);
   }
 
+  /// Ventas en CUP por proveedor. [elegible] ya resta los productos excluidos.
+  static Future<({Map<int, double> elegible, Map<int, double> excluido})>
+      salesCupByProveedor(
+    DateTime from,
+    DateTime to,
+  ) async {
+    final excluded = await ReferralPaymentsService.getExcludedProductIds();
+    final sales = await _salesByProveedor(
+      from,
+      to,
+      excludedProductIds: excluded,
+    );
+    return (
+      elegible: sales.map((id, store) => MapEntry(id, store.salesCup)),
+      excluido: sales.map((id, store) => MapEntry(id, store.excludedCup)),
+    );
+  }
+
   /// Ventas Carnaval por proveedor (sin canceladas ni productos excluidos).
   static Future<Map<int, _StoreSales>> _salesByProveedor(
     DateTime from,
@@ -316,20 +334,20 @@ class InventtiaPaymentService {
 
     final result = <int, _StoreSales>{};
     for (final r in List<Map<String, dynamic>>.from(rows as List)) {
-      final productId = _asInt(r['product_id']);
-      if (productId != null && excludedProductIds.contains(productId)) {
-        continue;
-      }
-
       final proveedorId = _asInt(r['proveedor']);
-      final orderId = _asInt(r['order_id']);
       if (proveedorId == null) continue;
 
       final qty = (_asInt(r['quantity']) ?? 0).toDouble();
       final price = (r['price'] as num?)?.toDouble() ?? 0.0;
       final lineSales = qty * price;
-
+      final productId = _asInt(r['product_id']);
       final store = result.putIfAbsent(proveedorId, _StoreSales.new);
+      if (productId != null && excludedProductIds.contains(productId)) {
+        store.excludedCup += lineSales;
+        continue;
+      }
+
+      final orderId = _asInt(r['order_id']);
       store.salesCup += lineSales;
 
       if (orderId != null) {
@@ -455,6 +473,7 @@ class _OrderAcc {
 
 class _StoreSales {
   double salesCup = 0;
+  double excludedCup = 0;
   final Map<int, _OrderSales> orders = {};
 }
 

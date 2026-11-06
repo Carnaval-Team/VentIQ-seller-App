@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/user_preferences_service.dart';
+import '../services/store_config_service.dart';
 import '../services/auto_sync_service.dart';
 import '../services/turno_service.dart';
 import '../services/server_time_service.dart';
@@ -663,7 +664,7 @@ class _AperturaScreenState extends State<AperturaScreen>
       });
 
       final isOffline = await _userPrefs.shouldUseLocalData();
-      final storeConfig = await _userPrefs.getStoreConfig();
+      final storeConfig = await StoreConfigService.getStoreConfigForSession();
 
       if (storeConfig != null) {
         final manejaInventario = storeConfig['maneja_inventario'] ?? false;
@@ -934,10 +935,17 @@ class _AperturaScreenState extends State<AperturaScreen>
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (sheetContext) {
-        final keyboardInset = MediaQuery.viewInsetsOf(sheetContext).bottom;
-        return Padding(
-          padding: EdgeInsets.only(bottom: keyboardInset),
-          child: _buildInventoryCountModal(),
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final maxHeight =
+                constraints.maxHeight.isFinite
+                    ? constraints.maxHeight
+                    : MediaQuery.sizeOf(context).height;
+            return SizedBox(
+              height: maxHeight,
+              child: _buildInventoryCountModal(),
+            );
+          },
         );
       },
     );
@@ -2150,6 +2158,8 @@ class _AperturaScreenState extends State<AperturaScreen>
   /// Widget del modal de conteo de inventario (misma UX que el cierre).
   Widget _buildInventoryCountModal() {
     return DraggableScrollableSheet(
+      // expand:true deja la altura sin cota en web y el conteo no se dibuja.
+      expand: false,
       initialChildSize: 0.9,
       minChildSize: 0.5,
       maxChildSize: 0.95,

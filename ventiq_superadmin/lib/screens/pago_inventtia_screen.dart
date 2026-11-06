@@ -5,6 +5,7 @@ import '../models/inventtia_payment_model.dart';
 import '../services/inventtia_payment_service.dart';
 import '../utils/platform_utils.dart';
 import '../widgets/app_drawer.dart';
+import 'pago_inventtia_resumen.dart';
 
 class PagoInventtiaScreen extends StatefulWidget {
   const PagoInventtiaScreen({super.key});
@@ -17,6 +18,7 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
     with SingleTickerProviderStateMixin {
   late DateTime _fechaInicio;
   late DateTime _fechaFin;
+  late DateTime _licenciaMes;
   late TabController _tabController;
 
   InventtiaPaymentModel? _paymentData;
@@ -46,8 +48,10 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
 
   void _initializeDefaultDates() {
     final now = DateTime.now();
-    _fechaInicio = DateTime(now.year, now.month, 1);
-    _fechaFin = now;
+    // El día de pago se liquidan las ventas del mes cerrado y la licencia del mes en curso.
+    _fechaInicio = DateTime(now.year, now.month - 1, 1);
+    _fechaFin = DateTime(now.year, now.month, 0);
+    _licenciaMes = DateTime(now.year, now.month, 1);
   }
 
   Future<void> _loadAll() async {
@@ -142,6 +146,10 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
         case 'week':
           _fechaInicio = now.subtract(const Duration(days: 7));
           _fechaFin = now;
+          break;
+        case 'previous':
+          _fechaInicio = DateTime(now.year, now.month - 1, 1);
+          _fechaFin = DateTime(now.year, now.month, 0);
           break;
         case 'month':
           _fechaInicio = DateTime(now.year, now.month, 1);
@@ -487,7 +495,7 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
-            Tab(text: 'Inventtia', icon: Icon(Icons.account_balance_wallet)),
+            Tab(text: 'Reparto', icon: Icon(Icons.account_balance_wallet)),
             Tab(text: 'Agentes', icon: Icon(Icons.people)),
           ],
         ),
@@ -523,17 +531,19 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
             child: _buildDateFilters(),
           ),
           Expanded(
-            child: _isLoading && _paymentData == null
-                ? const Center(child: CircularProgressIndicator())
-                : _errorMessage != null && _paymentData == null
-                    ? _buildError()
-                    : TabBarView(
-                        controller: _tabController,
-                        children: [
-                          _buildInventtiaTab(isDesktop),
-                          _buildAgentsTab(isDesktop),
-                        ],
-                      ),
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                PagoInventtiaResumen(
+                  fechaInicio: _fechaInicio,
+                  fechaFin: _fechaFin,
+                  licenciaMes: _licenciaMes,
+                ),
+                _isLoading && _agents.isEmpty
+                    ? const Center(child: CircularProgressIndicator())
+                    : _buildAgentsTab(isDesktop),
+              ],
+            ),
           ),
         ],
       ),
@@ -561,69 +571,92 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
 
   Widget _buildDateFilters() {
     final dateFormat = DateFormat('dd/MM/yyyy');
+    final mesLicencia = DateFormat('MMMM yyyy', 'es_ES').format(_licenciaMes);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
-        child: Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          crossAxisAlignment: WrapCrossAlignment.center,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            FilterChip(
-              label: const Text('Semana'),
-              selected: false,
-              onSelected: (_) => _setDateRange('week'),
+            Text('Pagos de', style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                FilterChip(
+                  label: const Text('Mes anterior'),
+                  selected: false,
+                  onSelected: (_) => _setDateRange('previous'),
+                ),
+                FilterChip(
+                  label: const Text('Este mes'),
+                  selected: false,
+                  onSelected: (_) => _setDateRange('month'),
+                ),
+                FilterChip(
+                  label: const Text('3 meses'),
+                  selected: false,
+                  onSelected: (_) => _setDateRange('3months'),
+                ),
+                InkWell(
+                  onTap: () async {
+                    final date = await showDatePicker(
+                      context: context,
+                      initialDate: _fechaInicio,
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime.now(),
+                    );
+                    if (date != null) setState(() => _fechaInicio = date);
+                  },
+                  child: Chip(
+                    avatar: const Icon(Icons.calendar_today, size: 16),
+                    label: Text('Desde ${dateFormat.format(_fechaInicio)}'),
+                  ),
+                ),
+                InkWell(
+                  onTap: () async {
+                    final date = await showDatePicker(
+                      context: context,
+                      initialDate: _fechaFin,
+                      firstDate: _fechaInicio,
+                      lastDate: DateTime.now(),
+                    );
+                    if (date != null) setState(() => _fechaFin = date);
+                  },
+                  child: Chip(
+                    avatar: const Icon(Icons.event, size: 16),
+                    label: Text('Hasta ${dateFormat.format(_fechaFin)}'),
+                  ),
+                ),
+              ],
             ),
-            FilterChip(
-              label: const Text('Mes'),
-              selected: false,
-              onSelected: (_) => _setDateRange('month'),
-            ),
-            FilterChip(
-              label: const Text('3 meses'),
-              selected: false,
-              onSelected: (_) => _setDateRange('3months'),
-            ),
-            FilterChip(
-              label: const Text('Año'),
-              selected: false,
-              onSelected: (_) => _setDateRange('year'),
-            ),
-            const SizedBox(width: 8),
-            InkWell(
-              onTap: () async {
-                final date = await showDatePicker(
-                  context: context,
-                  initialDate: _fechaInicio,
-                  firstDate: DateTime(2020),
-                  lastDate: DateTime.now(),
-                );
-                if (date != null) setState(() => _fechaInicio = date);
-              },
-              child: Chip(
-                avatar: const Icon(Icons.calendar_today, size: 16),
-                label: Text('Desde ${dateFormat.format(_fechaInicio)}'),
-              ),
-            ),
-            InkWell(
-              onTap: () async {
-                final date = await showDatePicker(
-                  context: context,
-                  initialDate: _fechaFin,
-                  firstDate: _fechaInicio,
-                  lastDate: DateTime.now(),
-                );
-                if (date != null) setState(() => _fechaFin = date);
-              },
-              child: Chip(
-                avatar: const Icon(Icons.event, size: 16),
-                label: Text('Hasta ${dateFormat.format(_fechaFin)}'),
-              ),
-            ),
-            ElevatedButton.icon(
-              onPressed: _isLoading ? null : _loadAll,
-              icon: const Icon(Icons.bar_chart, size: 18),
-              label: const Text('Generar'),
+            const SizedBox(height: 12),
+            Text('Licencias de', style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: 'Mes anterior',
+                  onPressed: () => setState(() {
+                    _licenciaMes = DateTime(_licenciaMes.year, _licenciaMes.month - 1, 1);
+                  }),
+                  icon: const Icon(Icons.chevron_left),
+                ),
+                Text(
+                  mesLicencia,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                IconButton(
+                  tooltip: 'Mes siguiente',
+                  onPressed: () => setState(() {
+                    _licenciaMes = DateTime(_licenciaMes.year, _licenciaMes.month + 1, 1);
+                  }),
+                  icon: const Icon(Icons.chevron_right),
+                ),
+              ],
             ),
           ],
         ),

@@ -166,6 +166,7 @@ class _LoginScreenState extends State<LoginScreen> {
     return TextFormField(
       controller: _emailController,
       keyboardType: TextInputType.emailAddress,
+      textInputAction: TextInputAction.next,
       decoration: InputDecoration(
         labelText: 'Correo Electrónico',
         hintText: 'admin@ventiq.com',
@@ -190,6 +191,10 @@ class _LoginScreenState extends State<LoginScreen> {
     return TextFormField(
       controller: _passwordController,
       obscureText: _obscurePassword,
+      textInputAction: TextInputAction.done,
+      onFieldSubmitted: (_) {
+        if (!_isLoading) _handleLogin();
+      },
       decoration: InputDecoration(
         labelText: 'Contraseña',
         hintText: 'Ingrese su contraseña',

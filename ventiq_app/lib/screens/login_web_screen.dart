@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../services/user_preferences_service.dart';
+import '../services/store_config_service.dart';
 import '../services/auto_sync_service.dart';
 import '../services/settings_integration_service.dart';
 import '../services/seller_service.dart';
@@ -203,6 +204,28 @@ class _LoginWebScreenState extends State<LoginWebScreen> {
                 valorDescuento: null,
                 tipoDescuento: null,
               );
+            }
+
+            // Misma carga que el login móvil. Sin esto el cache de
+            // configuración queda vacío y apertura/cierre ignoran
+            // maneja_inventario.
+            try {
+              print('🔧 Cargando configuración de tienda...');
+              final storeConfig = await StoreConfigService.getStoreConfig(
+                idTienda,
+              );
+              if (storeConfig != null) {
+                print(
+                  '✅ Configuración de tienda cargada - maneja_inventario: '
+                  '${storeConfig['maneja_inventario']}',
+                );
+              } else {
+                print(
+                  '⚠️ No se pudo cargar configuración de tienda - usando valores por defecto',
+                );
+              }
+            } catch (e) {
+              print('❌ Error cargando configuración de tienda: $e');
             }
 
             // Login exitoso: gerente/supervisor → gestión, personal de cocina

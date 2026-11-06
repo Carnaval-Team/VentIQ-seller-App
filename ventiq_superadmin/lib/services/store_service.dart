@@ -29,6 +29,7 @@ class StoreService {
             direccion,
             ubicacion,
             created_at,
+            es_prueba,
             app_suscripciones!left(
               id_plan,
               fecha_inicio,
@@ -67,6 +68,7 @@ class StoreService {
           totalTrabajadores: 0,
           ventasDelMes: 0.0,
           activa: true,
+          esPrueba: storeData['es_prueba'] == true,
           planSuscripcion: suscripcionActiva?['app_suscripciones_plan']?['denominacion'],
           fechaVencimientoSuscripcion: suscripcionActiva?['fecha_fin'] != null
               ? DateTime.parse(suscripcionActiva!['fecha_fin'])

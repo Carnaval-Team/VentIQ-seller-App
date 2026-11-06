@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/product.dart';
@@ -68,6 +69,18 @@ class ProductDetailService {
 
       debugPrint('🔍 Obteniendo detalles del producto ID: $productId');
 
+      final session = _supabase.auth.currentSession;
+      final cachedUserId = await _userPrefs.getUserId();
+      debugPrint(jsonEncode({
+        'event': 'product_detail_auth_context',
+        'product_id': productId,
+        'host': Uri.parse(_supabase.rest.url).host,
+        'session_user_id': session?.user.id,
+        'cached_user_id': cachedUserId,
+        'has_session': session != null,
+        'session_expired': session?.isExpired,
+        'expires_at': session?.expiresAt,
+      }));
       final response = await _supabase.rpc(
         'get_detalle_producto',
         params: {'id_producto_param': productId},
