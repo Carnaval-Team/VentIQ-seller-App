@@ -21,6 +21,7 @@ import '../widgets/paqueteria_tab.dart';
 import '../models/sales.dart';
 import '../models/sales_analyst_models.dart';
 import '../services/sales_service.dart';
+import '../services/moneda_consolidacion_service.dart';
 import '../services/sales_analyst_controller.dart';
 import '../services/subscription_service.dart';
 import '../services/user_preferences_service.dart';
@@ -480,11 +481,40 @@ class _SalesScreenState extends State<SalesScreen>
     return estado.contains('completad');
   }
 
-  ({double efectivoOferta, double efectivoRegular, double transferencias})
+  /// Totales de pago de las órdenes de un vendedor.
+  ///
+  /// El `total` de cada pago es dinero **nativo**: viene en la divisa del pago.
+  /// Sumarlo entre divisas produce un número que no significa nada (2 USD + 500
+  /// CUP no son 502 de nada), así que además del trío consolidado que ya usaban
+  /// los bottom-sheets se acumula un desglose por divisa con un `Map<String,
+  /// double>`. Con una sola divisa el trío es idéntico al de siempre y el
+  /// desglose tiene una única fila, así que la salida no cambia.
+  ///
+  /// El consolidable por divisa es `monto_cup_equivalente`, que `listar_ordenes`
+  /// ya devuelve. Si un pago no lo trae (fila histórica o parche sin aplicar) se
+  /// usa el importe nativo: el pago es CUP —única divisa que existía cuando la
+  /// columna podía ser nula— y así la divisa no desaparece del consolidado. El
+  /// equivalente solo se atribuye a la divisa que lo trae, nunca se reparte.
+  ({
+    double efectivoOferta,
+    double efectivoRegular,
+    double transferencias,
+    Map<String, double> efectivoPorMoneda,
+    Map<String, double> transferenciasPorMoneda,
+    Map<String, double> totalPorMoneda,
+  })
   _calculateVendorPaymentTotals(List<VendorOrder> orders) {
     double totalEfectivoOferta = 0.0;
     double totalEfectivoRegular = 0.0;
     double totalTransferencias = 0.0;
+
+    final Map<String, double> efectivoPorMoneda = <String, double>{};
+    final Map<String, double> transferenciasPorMoneda = <String, double>{};
+    final Map<String, double> totalPorMoneda = <String, double>{};
+
+    void acumular(Map<String, double> mapa, String moneda, double monto) {
+      mapa[moneda] = (mapa[moneda] ?? 0.0) + monto;
+    }
 
     for (final order in orders) {
       if (order.detalles['pagos'] == null) continue;
@@ -495,15 +525,26 @@ class _SalesScreenState extends State<SalesScreen>
         final esEfectivo = pago['es_efectivo'] ?? false;
         final tipoPago = pago['tipo_pago'] ?? 1;
 
+        // Normalizada en un solo lugar: `usd` y `USD` son la misma fila.
+        final moneda = _monedaDePago(pago['moneda']);
+        final equivalente = _toDoubleSafe(pago['monto_cup_equivalente']);
+        final totalBase = equivalente > 0 ? equivalente : total;
+
         if (esEfectivo && metodoPago.contains('efectivo')) {
           if (tipoPago == 1) {
             totalEfectivoOferta += total;
           } else if (tipoPago == 2) {
             totalEfectivoRegular += total;
           }
+          acumular(efectivoPorMoneda, moneda, total);
+          acumular(totalPorMoneda, moneda, totalBase);
         } else if (metodoPago.contains('transferencia')) {
           totalTransferencias += total;
+          acumular(transferenciasPorMoneda, moneda, total);
+          acumular(totalPorMoneda, moneda, totalBase);
         }
+        // Un pago que no es efectivo ni transferencia no alimenta ninguna de
+        // las dos líneas del resumen: se ignora, igual que antes.
       }
     }
 
@@ -511,8 +552,79 @@ class _SalesScreenState extends State<SalesScreen>
       efectivoOferta: totalEfectivoOferta,
       efectivoRegular: totalEfectivoRegular,
       transferencias: totalTransferencias,
+      efectivoPorMoneda: efectivoPorMoneda,
+      transferenciasPorMoneda: transferenciasPorMoneda,
+      totalPorMoneda: totalPorMoneda,
     );
   }
+
+  /// ¿La divisa `moneda` es la base contable de la pantalla?
+  bool _esMonedaBase(String moneda) =>
+      moneda.trim().toUpperCase() == _monedaBase;
+
+  /// Normaliza el código de divisa de un pago. Una clave ausente o vacía
+  /// significa **moneda base**: los pagos anteriores al multimoneda no la traen
+  /// y su dinero siempre fue CUP. Concentra la normalización en un solo lugar
+  /// para que las tres vistas que leen pagos no puedan divergir entre sí.
+  String _monedaDePago(dynamic valor) {
+    final codigo = (valor?.toString() ?? '').trim().toUpperCase();
+    return codigo.isEmpty ? _monedaBase : codigo;
+  }
+
+  /// Importe de un pago en el «Desglose».
+  ///
+  /// Con [mostrarDivisa] en `false` la salida es **exactamente** la de antes
+  /// (`$123.45`): es el caso de una orden con una sola divisa y, por tanto, la
+  /// prueba de que no se rompió nada. Con `true` —la orden mezcla divisas— el
+  /// importe nativo va siempre con su código y, si no es la base, se añade el
+  /// equivalente consolidable entre paréntesis. Nada ramifica por un código
+  /// concreto: solo se compara «¿es la base?» para no repetir el mismo dinero
+  /// dos veces.
+  ///
+  /// `reporte_ordenes_json` puede aún no mandar `moneda` ni
+  /// `monto_cup_equivalente` (el parche SQL se aplica en paralelo): sin ellas
+  /// todo cae en la rama de la divisa base.
+  String _formatMontoPagoDesglose(
+    Map<String, dynamic> pago, {
+    bool mostrarDivisa = false,
+  }) {
+    final monto = pago['monto'] ?? 0.0;
+    final montoTexto = monto is num ? monto.toStringAsFixed(2) : '$monto';
+    if (!mostrarDivisa) return '\$$montoTexto';
+
+    final moneda = _monedaDePago(pago['moneda']);
+    final nativo = _formatMontoNativo(_toDoubleSafe(monto), moneda);
+    if (_esMonedaBase(moneda)) return nativo;
+
+    final equivalente = _toDoubleSafe(pago['monto_cup_equivalente']);
+    if (equivalente <= 0) return nativo;
+    return '$nativo (${_formatCurrency(equivalente)} $_monedaBase)';
+  }
+
+  /// Desglose «por divisa» de un conjunto de importes nativos, listo para
+  /// pintar: `5000.00 CUP · 14.00 USD`.
+  ///
+  /// El importe va **siempre con su código** porque la sucesión no es sumable:
+  /// sin la divisa, un 14 junto a un 5.000 parecen el mismo tipo de dinero.
+  String _formatDesglosePorMoneda(Map<String, double> porMoneda) {
+    final entradas = porMoneda.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return entradas
+        .map((e) => _formatMontoNativo(e.value, e.key))
+        .join(' · ');
+  }
+
+  /// Con una sola divisa el desglose no aporta nada: la salida de la pantalla
+  /// debe ser idéntica a la de antes de existir el multimoneda. El umbral es el
+  /// número de divisas, **no** su código: no hay ninguna rama atada a `'CUP'`.
+  bool _hayVariasMonedas(Map<String, double> porMoneda) =>
+      porMoneda.length > 1;
+
+  /// El mismo umbral —más de una divisa— sobre las filas que devuelve
+  /// `fn_reporte_ventas_por_moneda` (`VentasPorMoneda`). Lo usa la tarjeta de
+  /// turno de «TPVs». Otra vez el número de divisas, nunca su código.
+  bool _hayVariasMonedasEnFilas(List<VentasPorMoneda> filas) =>
+      filas.length > 1;
 
   Future<void> _exportVendorOrdersToPdf({
     required SalesVendorReport vendor,
@@ -575,6 +687,8 @@ class _SalesScreenState extends State<SalesScreen>
               totalEfectivoOferta: paymentTotals.efectivoOferta,
               totalEfectivoRegular: paymentTotals.efectivoRegular,
               totalTransferencias: paymentTotals.transferencias,
+              efectivoPorMoneda: paymentTotals.efectivoPorMoneda,
+              transferenciasPorMoneda: paymentTotals.transferenciasPorMoneda,
             ),
             pw.SizedBox(height: 16),
             pw.Text(
@@ -647,6 +761,8 @@ class _SalesScreenState extends State<SalesScreen>
     required double totalEfectivoOferta,
     required double totalEfectivoRegular,
     required double totalTransferencias,
+    required Map<String, double> efectivoPorMoneda,
+    required Map<String, double> transferenciasPorMoneda,
   }) {
     return pw.Container(
       padding: const pw.EdgeInsets.all(12),
@@ -702,12 +818,42 @@ class _SalesScreenState extends State<SalesScreen>
               totalEfectivoRegular > 0 ||
               totalTransferencias > 0)
             pw.SizedBox(height: 4),
+          // Los tres métodos de pago suman importes **nativos** de divisas
+          // distintas: se quedan sin consolidar, como en la pantalla.
           if (totalEfectivoOferta > 0)
-            _pdfSummaryRow('Efectivo (Oferta)', totalEfectivoOferta),
+            _pdfSummaryRow('Efectivo (Oferta)', totalEfectivoOferta, nativo: true),
           if (totalEfectivoRegular > 0)
-            _pdfSummaryRow('Efectivo (Regular)', totalEfectivoRegular),
+            _pdfSummaryRow(
+              'Efectivo (Regular)',
+              totalEfectivoRegular,
+              nativo: true,
+            ),
           if (totalTransferencias > 0)
-            _pdfSummaryRow('Transferencias', totalTransferencias),
+            _pdfSummaryRow(
+              'Transferencias',
+              totalTransferencias,
+              nativo: true,
+            ),
+          // Desglose por divisa del resumen de caja y transferencias. Las tres
+          // líneas de arriba suman importes nativos de divisas distintas y solo
+          // cuadran con una única divisa; el desglose las desambigua. Va con
+          // código de divisa y sin símbolo `$`, que aquí mentiría sobre cuál es
+          // la divisa del importe (el `$` del resto del PDF es el del sistema
+          // anterior, unimoneda).
+          if (_hayVariasMonedas(efectivoPorMoneda) ||
+              _hayVariasMonedas(transferenciasPorMoneda)) ...[
+            pw.SizedBox(height: 4),
+            if (efectivoPorMoneda.isNotEmpty)
+              _pdfSummaryTextRow(
+                'Efectivo por divisa',
+                _formatDesglosePorMoneda(efectivoPorMoneda),
+              ),
+            if (transferenciasPorMoneda.isNotEmpty)
+              _pdfSummaryTextRow(
+                'Transferencias por divisa',
+                _formatDesglosePorMoneda(transferenciasPorMoneda),
+              ),
+          ],
         ],
       ),
     );
@@ -820,14 +966,15 @@ class _SalesScreenState extends State<SalesScreen>
                     item['nombre']?.toString() ??
                     'Producto';
                 final cantidad = _formatCantidadDecimal(item['cantidad']);
-                final importe = _toDoubleSafe(
-                  item['importe'],
-                ).toStringAsFixed(2);
+                // El importe de la línea es CUP por construcción.
+                final importe = MonedaConsolidacionService.formatear(
+                  _toDoubleSafe(item['importe']),
+                );
                 return pw.TableRow(
                   children: [
                     _pdfBodyCell(nombre),
                     _pdfBodyCell(cantidad),
-                    _pdfBodyCell('\$$importe', isBold: true),
+                    _pdfBodyCell(importe, isBold: true),
                   ],
                 );
               }),
@@ -855,6 +1002,9 @@ class _SalesScreenState extends State<SalesScreen>
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
                   pw.Text(
+                    // Importe **nativo** del pago: es lo que se cobró en su
+                    // divisa, no un consolidado. Convertirlo inventaría un
+                    // dinero que nadie cobró.
                     _paymentLabelForPdf(pagoMap),
                     style: pw.TextStyle(
                       fontSize: 10,
@@ -1222,24 +1372,30 @@ class _SalesScreenState extends State<SalesScreen>
             .map((item) {
               final nombre = item['producto_nombre']?.toString() ?? 'Producto';
               final cantidad = _formatCantidadDecimal(item['cantidad']);
-              final precio = _toDoubleSafe(
-                item['precio_unitario'],
-              ).toStringAsFixed(2);
+              // Precio, costo, subtotal y ganancia de la línea son CUP por
+              // construcción: se formatean con la moneda de consolidación. El
+              // costo unitario se queda además como número porque con él se
+              // calculan el costo total y la ganancia.
+              final precio = MonedaConsolidacionService.formatear(
+                _toDoubleSafe(item['precio_unitario']),
+              );
               final costoUnitario = _getItemUnitCost(
                 item,
                 costById: costById,
                 costByName: costByName,
               );
-              final costoTotal =
-                  (costoUnitario * _toDoubleSafe(item['cantidad']))
-                      .toStringAsFixed(2);
-              final subtotal = _toDoubleSafe(
-                item['importe'],
-              ).toStringAsFixed(2);
+              final costoTotal = MonedaConsolidacionService.formatear(
+                costoUnitario * _toDoubleSafe(item['cantidad']),
+              );
+              final subtotal = MonedaConsolidacionService.formatear(
+                _toDoubleSafe(item['importe']),
+              );
               final gananciaValue =
                   _toDoubleSafe(item['importe']) -
                   (costoUnitario * _toDoubleSafe(item['cantidad']));
-              final ganancia = gananciaValue.toStringAsFixed(2);
+              final ganancia = MonedaConsolidacionService.formatear(
+                gananciaValue,
+              );
               final gananciaColor = gananciaValue < 0
                   ? PdfColor.fromHex('#DC2626')
                   : gananciaValue > 0
@@ -1255,12 +1411,14 @@ class _SalesScreenState extends State<SalesScreen>
                   children: [
                     _pdfBodyCell(nombre),
                     _pdfBodyCell(cantidad),
-                    _pdfBodyCell('\$$precio'),
-                    _pdfBodyCell('\$${costoUnitario.toStringAsFixed(2)}'),
-                    _pdfBodyCell('\$$costoTotal'),
-                    _pdfBodyCell('\$$subtotal'),
+                    _pdfBodyCell(precio),
                     _pdfBodyCell(
-                      '\$$ganancia',
+                      MonedaConsolidacionService.formatear(costoUnitario),
+                    ),
+                    _pdfBodyCell(costoTotal),
+                    _pdfBodyCell(subtotal),
+                    _pdfBodyCell(
+                      ganancia,
                       isBold: true,
                       color: gananciaColor,
                     ),
@@ -1463,10 +1621,16 @@ class _SalesScreenState extends State<SalesScreen>
                     ? p.cantidadFormateada
                     : p.totalVendido.toStringAsFixed(0),
               ),
-              _pdfBodyCell('\$${p.precioVentaCup.toStringAsFixed(2)}'),
-              _pdfBodyCell('\$${p.precioCostoCup.toStringAsFixed(2)}'),
+              // Precio de venta, costo y ganancia de catálogo son CUP por
+              // construcción.
               _pdfBodyCell(
-                '\$${gananciaLinea.toStringAsFixed(2)}',
+                MonedaConsolidacionService.formatear(p.precioVentaCup),
+              ),
+              _pdfBodyCell(
+                MonedaConsolidacionService.formatear(p.precioCostoCup),
+              ),
+              _pdfBodyCell(
+                MonedaConsolidacionService.formatear(gananciaLinea),
                 isBold: true,
                 color: gananciaColor,
               ),
@@ -1489,7 +1653,7 @@ class _SalesScreenState extends State<SalesScreen>
             _pdfBodyCell(''),
             _pdfBodyCell(''),
             _pdfBodyCell(
-              '\$${totalGanancia.toStringAsFixed(2)}',
+              MonedaConsolidacionService.formatear(totalGanancia),
               isBold: true,
               color: totalGananciaColor,
             ),
@@ -1585,6 +1749,14 @@ class _SalesScreenState extends State<SalesScreen>
     );
   }
 
+  /// Fila de resumen de un importe de dinero.
+  ///
+  /// Por defecto el importe es **CUP por construcción** (precio de operación,
+  /// costo de catálogo, ganancia) y se formatea con la moneda de consolidación,
+  /// igual que en la pantalla. Con [nativo] el valor es dinero **cobrado en su
+  /// propia divisa** —el efectivo o las transferencias del resumen de caja— y se
+  /// queda tal cual: convertirlo inventaría un importe que nadie cobró en esa
+  /// divisa.
   pw.Widget _pdfSummaryRow(
     String label,
     double value, {
@@ -1592,11 +1764,15 @@ class _SalesScreenState extends State<SalesScreen>
     double fontSize = 11,
     PdfColor? positiveColor,
     PdfColor? negativeColor,
+    bool nativo = false,
   }) {
     final isNegative = value < 0;
+    String texto(double importe) => nativo
+        ? '\$${importe.toStringAsFixed(2)}'
+        : MonedaConsolidacionService.formatear(importe);
     final display = isNegative
-        ? '- \$${value.abs().toStringAsFixed(2)}'
-        : '\$${value.toStringAsFixed(2)}';
+        ? '- ${texto(value.abs())}'
+        : texto(value);
     final defaultPositive = PdfColor.fromHex('#0F172A');
     final defaultNegative = PdfColor.fromHex('#DC2626');
     final valueColor = isNegative
@@ -1625,10 +1801,35 @@ class _SalesScreenState extends State<SalesScreen>
     );
   }
 
+  /// Fila de resumen cuyo valor ya viene formateado (por ejemplo un desglose
+  /// «5000.00 CUP · 14.00 USD»). [_pdfSummaryRow] no sirve: antepone `$` y
+  /// exige un `double`, y aquí el valor es una sucesión de divisas distintas.
+  pw.Widget _pdfSummaryTextRow(String label, String value) {
+    return pw.Row(
+      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+      children: [
+        pw.Text(
+          label,
+          style: pw.TextStyle(
+            fontSize: 11,
+            color: PdfColor.fromHex('#475569'),
+          ),
+        ),
+        pw.Text(
+          value,
+          style: pw.TextStyle(
+            fontSize: 10,
+            fontWeight: pw.FontWeight.bold,
+            color: PdfColor.fromHex('#0F172A'),
+          ),
+        ),
+      ],
+    );
+  }
+
   String _formatDateForPdf(DateTime date) {
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
   }
-
   List<SupplierSalesReport> _supplierReports = [];
   bool _isLoadingSuppliers = false;
   bool _isExportingPDF = false;
@@ -1641,6 +1842,64 @@ class _SalesScreenState extends State<SalesScreen>
 
   // Caching para Desglose de Ventas
   Future<Map<String, dynamic>>? _salesBreakdownFuture;
+
+  // Tab «Por moneda»: contabilización por divisa del período.
+  //
+  // Índice lógico (lista completa de pestañas) de «Por moneda». Se añade al
+  // final de la lista para no desplazar los índices que ya usan _onTabChanged
+  // ni la caché del desglose. Con o sin «Tiempo Real» siempre es el 7.
+  static const int _monedaTabIndex = 7;
+
+  /// Moneda base contable del sistema. Es el valor al que cae la pantalla
+  /// cuando la tienda no fuerza ninguna divisa, y la etiqueta de último recurso
+  /// cuando la RPC todavía no manda `moneda_consolidacion`. Ninguna lógica de
+  /// esta pantalla ramifica por código de divisa: la comparación vive dentro de
+  /// `MonedaConsolidacionService`.
+  static const String _monedaBase = 'CUP';
+
+  /// Divisa en la que la pantalla consolida ahora mismo.
+  ///
+  /// `MonedaConsolidacionService.formatear` es síncrono (se llama dentro de
+  /// `build()`) pero leerla es asíncrono, así que el resultado se guarda aquí y
+  /// el `setState` de [_cargarMonedaConsolidacion] repinta la pantalla cuando
+  /// llega. Este campo es la única fuente de los rótulos «· MONEDA»: si se
+  /// leyera el estado del servicio directamente, los rótulos no se repintarían.
+  String _monedaConsolidacion = _monedaBase;
+
+  /// Carga la moneda de consolidación de la tienda actual.
+  ///
+  /// Se llama al cargar la pantalla y en cada refresco —que es como esta
+  /// pantalla se entera de un cambio de tienda—. El servicio nunca lanza: si la
+  /// RPC falla devuelve CUP, que es el comportamiento de siempre. Sin tienda
+  /// resuelta no hay configuración que leer, así que se limpia el estado en
+  /// memoria para no arrastrar la divisa de la tienda anterior.
+  Future<void> _cargarMonedaConsolidacion() async {
+    final idTienda = await UserPreferencesService().getIdTienda();
+    if (idTienda == null) {
+      MonedaConsolidacionService.limpiar();
+    } else {
+      await MonedaConsolidacionService.cargar(idTienda);
+    }
+    if (!mounted) return;
+    setState(
+      () => _monedaConsolidacion = MonedaConsolidacionService.actual.moneda,
+    );
+  }
+
+  List<VentasPorMoneda> _ventasPorMoneda = [];
+  bool _isLoadingMonedas = false;
+  String? _monedasError;
+  bool _isExportingPorMoneda = false;
+
+  // Bloque «Por moneda» reutilizable por «Tiempo Real» y «Proveedores».
+  //
+  // Se sirve de la **misma** RPC que la pestaña «Por moneda» (nada de consultas
+  // nuevas) y se carga bajo demanda, solo al pintar una de esas dos pestañas.
+  // Es un `Future` y no una lista porque `FutureBuilder` necesita distinguir los
+  // tres estados: cargando, con datos y con error. Un error deja el `Future`
+  // resuelto con `null`, y «sin datos» o «con error» significan sencillamente
+  // que el bloque no se pinta: la pestaña queda exactamente como estaba.
+  Future<List<VentasPorMoneda>?>? _monedasCompartidasFuture;
 
   @override
   void initState() {
@@ -1659,7 +1918,7 @@ class _SalesScreenState extends State<SalesScreen>
     if (!mounted) return;
     _tabController?.dispose();
     final controller = TabController(
-      length: canViewRealTime ? 7 : 6,
+      length: canViewRealTime ? 8 : 7,
       vsync: this,
     );
     controller.addListener(_onTabChanged);
@@ -1710,6 +1969,13 @@ class _SalesScreenState extends State<SalesScreen>
             }
           }
           break;
+        case _monedaTabIndex: // Por moneda
+          // _onTabChanged se notifica varias veces por gesto (animación y
+          // asentado): se evita lanzar RPCs en paralelo sobre la misma tabla.
+          if (!_isLoadingMonedas) {
+            _loadVentasPorMoneda();
+          }
+          break;
       }
     }
   }
@@ -1750,6 +2016,10 @@ class _SalesScreenState extends State<SalesScreen>
     setState(() {
       _isLoading = true;
       _salesBreakdownFuture = null; // Limpiar caché de desglose
+      // Mismo motivo en el bloque «Por moneda» de «Tiempo Real»/«Proveedores»:
+      // el refresco debe descartar lo cacheado. Lo vuelve a pedir el propio
+      // bloque al repintarse, así que aquí no se dispara ninguna RPC extra.
+      _monedasCompartidasFuture = null;
     });
 
     // Si estamos en la pestaña de desglose, recargar inmediatamente
@@ -1757,9 +2027,19 @@ class _SalesScreenState extends State<SalesScreen>
       _salesBreakdownFuture = _fetchSalesBreakdown();
     }
 
+    // Igual que el desglose: solo se recalcula si la pestaña está a la vista,
+    // para que el refresco general no dispare una RPC que nadie va a mirar.
+    if (_logicalTabIndex == _monedaTabIndex) {
+      _loadVentasPorMoneda();
+    }
+
     _loadProductSalesData();
     _loadVendorReports();
     _loadAdvancedPlanStatus();
+    // La divisa de consolidación se resuelve en cada refresco —y el refresco es
+    // también el camino por el que la pantalla se entera de un cambio de
+    // tienda—. El `setState` de dentro repinta los importes cuando llega.
+    _cargarMonedaConsolidacion();
     // El análisis de productos se carga solo cuando se selecciona el tab de análisis
   }
 
@@ -1907,6 +2187,147 @@ class _SalesScreenState extends State<SalesScreen>
     }
   }
 
+  /// Carga el desglose por divisa del período visible (tab «Por moneda»).
+  Future<void> _loadVentasPorMoneda() async {
+    setState(() {
+      _isLoadingMonedas = true;
+      _monedasError = null;
+    });
+
+    try {
+      final idTienda = await UserPreferencesService().getIdTienda();
+      if (idTienda == null) {
+        throw Exception('No se pudo obtener la tienda actual');
+      }
+
+      final filas = await SalesService.getVentasPorMoneda(
+        idTienda: idTienda,
+        desde: _startDate,
+        hasta: _endDate,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _ventasPorMoneda = filas;
+        _isLoadingMonedas = false;
+      });
+    } catch (e) {
+      print('Error al cargar ventas por moneda: $e');
+      if (!mounted) return;
+      setState(() {
+        _isLoadingMonedas = false;
+        _monedasError = e.toString();
+      });
+    }
+  }
+
+  /// Carga el desglose por divisa para el bloque compartido de «Tiempo Real» y
+  /// «Proveedores». Devuelve la **misma** lista que la pestaña «Por moneda» para
+  /// el mismo período (`_startDate`/`_endDate`).
+  ///
+  /// Nunca lanza: un fallo se convierte en `null`, que el bloque interpreta como
+  /// «no hay nada que enseñar» para que la pestaña no gane un estado de error
+  /// que antes no tenía. Sí se pide `idTienda` y sí se propaga su ausencia como
+  /// `null`, por el mismo motivo.
+  Future<List<VentasPorMoneda>?> _fetchVentasPorMonedaCompartidas() async {
+    try {
+      final idTienda = await UserPreferencesService().getIdTienda();
+      if (idTienda == null) return null;
+      return await SalesService.getVentasPorMoneda(
+        idTienda: idTienda,
+        desde: _startDate,
+        hasta: _endDate,
+      );
+    } catch (e) {
+      print('Error al cargar el bloque por moneda compartido: $e');
+      return null;
+    }
+  }
+
+  /// Lanza la carga del bloque compartido si aún no se ha pedido. Los cambios de
+  /// fecha lo invalidan para que no muestre el período anterior.
+  void _asegurarMonedasCompartidas() {
+    if (_monedasCompartidasFuture != null) return;
+    final future = _fetchVentasPorMonedaCompartidas();
+    setState(() {
+      _monedasCompartidasFuture = future;
+    });
+  }
+
+  /// Bloque «Por moneda» de las pestañas «Tiempo Real» y «Proveedores».
+  ///
+  /// Devuelve un `SizedBox.shrink()` —nada— mientras carga, si la RPC falló, si
+  /// no hay filas y con una sola divisa. Ese último caso es el importante: el
+  /// umbral es el número de divisas (dos o más), nunca su código, así que con
+  /// CUP la pestaña queda píxel a píxel como estaba.
+  ///
+  /// La carga se dispara **desde aquí**, que es lo único que garantiza que solo
+  /// se pide cuando la pestaña se pinta de verdad: se difiere un frame porque no
+  /// se puede mutar el estado durante `build`, y se hace una sola vez porque el
+  /// `Future` queda cacheado. No se usa `_onTabChanged` porque sus índices
+  /// lógicos se desplazan cuando el usuario no tiene «Tiempo Real» y pediría la
+  /// RPC desde otra pestaña.
+  Widget _buildBloqueMonedas() {
+    final future = _monedasCompartidasFuture;
+    if (future == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (_monedasCompartidasFuture != null) return;
+        _asegurarMonedasCompartidas();
+      });
+      return const SizedBox.shrink();
+    }
+
+    return FutureBuilder<List<VentasPorMoneda>?>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const SizedBox.shrink();
+        }
+        final filas = snapshot.data ?? const <VentasPorMoneda>[];
+        // Menos de dos divisas: no hay nada que desglosar y la pestaña se ve
+        // exactamente como antes de este bloque.
+        if (filas.length < 2) return const SizedBox.shrink();
+
+        return Container(
+          margin: const EdgeInsets.only(top: 20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Icon(Icons.currency_exchange, color: AppColors.primary),
+                    SizedBox(width: 8),
+                    // «cobrado», no «facturado»: este bloque mide los pagos por
+                    // divisa, no la venta. Sin la palabra, sus cifras parecerían
+                    // comparables con las de la tarjeta de ventas.
+                    Text(
+                      'Por moneda (cobrado)',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              _buildPorMonedaTable(filas),
+              _buildPorMonedaConsolidado(filas),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _loadWarehouses() async {
     if (!mounted) return;
     setState(() => _isLoadingWarehouses = true);
@@ -2041,6 +2462,10 @@ class _SalesScreenState extends State<SalesScreen>
         icon: Icon(Icons.local_shipping_outlined, size: 18),
       ),
       const Tab(text: 'Analista', icon: Icon(Icons.smart_toy, size: 18)),
+      const Tab(
+        text: 'Por moneda',
+        icon: Icon(Icons.currency_exchange, size: 18),
+      ),
     ];
 
     final tabViews = <Widget>[
@@ -2051,6 +2476,7 @@ class _SalesScreenState extends State<SalesScreen>
       _buildAnalyticsTab(),
       const PaqueteriaTab(),
       _buildAnalystGateTab(),
+      _buildPorMonedaTab(),
     ];
 
     return Scaffold(
@@ -2186,7 +2612,13 @@ class _SalesScreenState extends State<SalesScreen>
             _buildMissingExchangeRateWarning(),
           ],
           const SizedBox(height: 16),
+          // La tarjeta «Ventas» muestra `_totalSales` —`ingresos_totales` de la
+          // RPC—, que ya viene en moneda base por construcción. La etiqueta
+          // lleva el código porque un `$` suelto es ambiguo en multimoneda.
           _buildRealTimeMetrics(_totalSales, _totalProductsSold),
+          // Desglose por divisa del mismo período. Oculto con una sola divisa:
+          // con CUP la pestaña se ve exactamente igual que antes.
+          _buildBloqueMonedas(),
           const SizedBox(height: 20),
           _buildProductSalesReport(),
         ],
@@ -2270,6 +2702,801 @@ class _SalesScreenState extends State<SalesScreen>
         ],
       ),
     );
+  }
+
+  /// Tab «Por moneda»: responde «¿cuánto se cobró en cada divisa?».
+  Widget _buildPorMonedaTab() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildPeriodSelector(),
+          const SizedBox(height: 16),
+          _buildPorMonedaCard(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPorMonedaCard() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.currency_exchange, color: AppColors.primary),
+                    SizedBox(width: 8),
+                    Text(
+                      'Cobrado por divisa',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 6),
+                // El porqué de las dos columnas de importe: son dos naturalezas
+                // distintas de dinero y confundirlas es el error que este
+                // reporte existe para evitar.
+                Text(
+                  'El importe nativo es lo que realmente entró en esa divisa: es '
+                  'exacto, pero no se puede sumar con el de otra fila. Solo el '
+                  'equivalente en moneda base es dinero homogéneo y consolidable.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          _buildPorMonedaExportActions(
+            // Con error no se exporta: la lista puede ser la del período
+            // anterior y el reporte saldría con datos equivocados.
+            enabled:
+                !_isLoadingMonedas &&
+                !_isExportingPorMoneda &&
+                _monedasError == null,
+          ),
+          if (_isLoadingMonedas)
+            const Padding(
+              padding: EdgeInsets.all(32),
+              child: Center(
+                child: CircularProgressIndicator(color: AppColors.primary),
+              ),
+            )
+          else if (_monedasError != null)
+            _buildPorMonedaError()
+          else if (_ventasPorMoneda.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(32),
+              child: Center(
+                child: Text(
+                  'No hay pagos registrados en el período seleccionado',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppColors.textSecondary),
+                ),
+              ),
+            )
+          else ...[
+            const Divider(height: 1),
+            _buildPorMonedaTable(),
+            _buildPorMonedaConsolidado(),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Acciones de exportación de la pestaña. Se dejan visibles aunque no haya
+  /// filas: en ese caso la exportación avisa con un SnackBar en vez de generar
+  /// un archivo vacío.
+  Widget _buildPorMonedaExportActions({bool enabled = true}) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          ElevatedButton.icon(
+            onPressed: enabled ? _exportPorMonedaPdf : null,
+            icon: const Icon(Icons.picture_as_pdf, size: 18),
+            label: const Text('PDF'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            ),
+          ),
+          ElevatedButton.icon(
+            onPressed: enabled ? _exportPorMonedaExcel : null,
+            icon: const Icon(Icons.table_chart, size: 18),
+            label: const Text('Excel'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPorMonedaError() {
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        children: [
+          const Icon(Icons.error_outline, color: AppColors.error, size: 32),
+          const SizedBox(height: 8),
+          const Text(
+            'No se pudo cargar el desglose por moneda',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _monedasError ?? '',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: _loadVentasPorMoneda,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Reintentar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Tabla del reporte. [filas] permite reutilizarla fuera de la pestaña «Por
+  /// moneda» (bloque compartido de «Tiempo Real»/«Proveedores»); por defecto pinta
+  /// las filas de la pestaña, así que las llamadas existentes no cambian.
+  Widget _buildPorMonedaTable([List<VentasPorMoneda>? filas]) {
+    final datos = filas ?? _ventasPorMoneda;
+    DataColumn header(String label, {bool numeric = false}) {
+      return DataColumn(
+        numeric: numeric,
+        label: Text(
+          label,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: DataTable(
+        columnSpacing: 20,
+        columns: [
+          header('Moneda'),
+          header('Operaciones', numeric: true),
+          header('Importe nativo', numeric: true),
+          header('Equivalente ${_monedaConsolidacionDe(datos)}', numeric: true),
+          header('Efectivo', numeric: true),
+          header('Digital', numeric: true),
+          header('Tasa media', numeric: true),
+        ],
+        rows: datos.map(_buildPorMonedaRow).toList(),
+      ),
+    );
+  }
+
+  DataRow _buildPorMonedaRow(VentasPorMoneda fila) {
+    return DataRow(
+      cells: [
+        DataCell(
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              fila.moneda,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ),
+        DataCell(Text('${fila.operaciones}')),
+        // Los importes en la divisa de la fila (nativo, efectivo y digital)
+        // llevan siempre el código al lado: sin él, un 14 junto a un 45.000
+        // parecen el mismo tipo de dinero y se suman por error. El equivalente
+        // consolidado no lo lleva porque esa columna ya es homogénea y su
+        // cabecera dice en qué divisa está.
+        DataCell(Text(_formatMontoNativo(fila.importeNativo, fila.moneda))),
+        DataCell(Text(_formatCurrency(_importeConsolidadoDe(fila)))),
+        DataCell(Text(_formatMontoNativo(fila.efectivoNativo, fila.moneda))),
+        DataCell(Text(_formatMontoNativo(fila.digitalNativo, fila.moneda))),
+        DataCell(Text(_formatTasaPromedio(fila.tasaPromedio))),
+      ],
+    );
+  }
+
+  /// Fila de total de la tabla. Solo se totaliza la columna consolidada (ver
+  /// [_totalConsolidadoEn]).
+  ///
+  /// [filas] existe por el bloque compartido, que tiene sus propias filas: sin
+  /// él, el pie consolidaría la lista de la pestaña «Por moneda» (otro período).
+  Widget _buildPorMonedaConsolidado([List<VentasPorMoneda>? filas]) {
+    final datos = filas ?? _ventasPorMoneda;
+    final totalConsolidado = _totalConsolidadoEn(datos);
+    // La etiqueta sale de las filas, no del estado del servicio: si la RPC no
+    // mandó consolidación, el importe del pie es el equivalente en la base y
+    // llamarlo de otra forma sería mentir sobre su divisa.
+    final moneda = _monedaConsolidacionDe(datos);
+
+    return Column(
+      children: [
+        const Divider(height: 1),
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  'Consolidado en $moneda',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+              Text(
+                // Ya está en la divisa de la etiqueta: se formatea el número,
+                // no se convierte (ver [_importeConsolidadoDe]).
+                _formatCurrency(totalConsolidado),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.primary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Importe en su divisa nativa: **siempre** con el código, porque esa columna
+  /// no es sumable verticalmente. El número se formatea con el helper de la
+  /// pantalla para que el estilo coincida con el resto de la vista.
+  ///
+  /// No pasa por `MonedaConsolidacionService`: el importe nativo **no** es CUP
+  /// por construcción —es lo que se cobró en `moneda`— y convertirlo inventaría
+  /// un dinero que nadie cobró en esa divisa.
+  String _formatMontoNativo(double value, String moneda) =>
+      '${_formatCurrency(value)} $moneda';
+
+  /// Tasa media ponderada del período (`base / nativo`). `0` significa que la
+  /// RPC no pudo calcularla (divisa sin importe): se muestra «—» en vez de un
+  /// cero que parecería una tasa real.
+  String _formatTasaPromedio(double tasa) =>
+      tasa > 0 ? tasa.toStringAsFixed(2) : '—';
+
+  /// Divisa en la que la RPC consolidó [filas].
+  ///
+  /// La manda el **dato**, no el estado del servicio: si la RPC es antigua y no
+  /// trae `moneda_consolidacion` (todas las filas vacías), la columna sigue
+  /// siendo el equivalente en la base y así se etiqueta. Cuando llega, la
+  /// etiqueta sale de la propia respuesta, que es la que explica los importes.
+  String _monedaConsolidacionDe(List<VentasPorMoneda> filas) {
+    for (final fila in filas) {
+      final moneda = fila.monedaConsolidacion.trim();
+      if (moneda.isNotEmpty) return moneda;
+    }
+    return _monedaBase;
+  }
+
+  /// Importe consolidable de una fila.
+  ///
+  /// `importeConsolidado` **ya viene convertido** por la RPC a la moneda de
+  /// consolidación —y, en la fila de esa misma divisa, es el importe nativo
+  /// exacto—, así que no puede pasar por
+  /// `MonedaConsolidacionService.formatear`: volvería a multiplicar por la tasa.
+  /// Cuando la RPC no manda consolidación (respuesta antigua) se cae a
+  /// `importeBase`, que es el equivalente en moneda base de siempre.
+  double _importeConsolidadoDe(VentasPorMoneda fila) =>
+      fila.monedaConsolidacion.trim().isEmpty
+      ? fila.importeBase
+      : fila.importeConsolidado;
+
+  /// Único total legítimo del reporte: suma la columna consolidada, que la RPC
+  /// ya dejó en una sola divisa. No se totalizan operaciones —una venta con pago
+  /// mixto cuenta en dos divisas— ni importes nativos, que no son homogéneos.
+  double _totalConsolidadoEn(List<VentasPorMoneda> filas) =>
+      filas.fold<double>(0.0, (suma, fila) => suma + _importeConsolidadoDe(fila));
+
+  // ---------------------------------------------------------------------------
+  // Exportación de «Por moneda» (PDF / Excel).
+  //
+  // Ambas exportaciones consumen las mismas cabeceras y las mismas filas que la
+  // tabla en pantalla, para que no puedan divergir de ella.
+  // ---------------------------------------------------------------------------
+
+  /// Encabezado de la tabla, en su orden exacto de columnas.
+  ///
+  /// Recibe las filas porque la divisa de la columna consolidada la dicta la
+  /// respuesta: con una RPC antigua —sin `moneda_consolidacion`— la columna
+  /// vuelve a ser el equivalente en la base y así se rotula.
+  List<String> _porMonedaExportHeadersPara(List<VentasPorMoneda> filas) => [
+    'Moneda',
+    'Operaciones',
+    'Importe nativo',
+    'Equivalente ${_monedaConsolidacionDe(filas)}',
+    'Efectivo',
+    'Digital',
+    'Tasa media',
+  ];
+
+  /// Número de columnas de la tabla; lo usa la fila de total para rellenar con
+  /// guiones las que no son sumables.
+  static const int _porMonedaColumnCount = 7;
+
+  /// Posición de la columna consolidada: la única de dinero homogénea y, por
+  /// tanto, la única que se puede totalizar.
+  static const int _porMonedaConsolidadoColumnIndex = 3;
+
+  /// Filas de la tabla ya formateadas, en el orden de
+  /// [_porMonedaExportHeadersPara].
+  ///
+  /// Los importes nativos (nativo, efectivo y digital) llevan **siempre** su
+  /// código de divisa: no son homogéneos entre filas y no se suman. El
+  /// equivalente consolidado va sin código porque su columna sí lo es.
+  ///
+  /// [filas] permite reutilizarla con las del bloque «Por moneda (cobrado)» de
+  /// «Tiempo Real»/«Proveedores»; por defecto usa las de la pestaña, así que las
+  /// exportaciones de la pestaña no cambian.
+  List<List<String>> _porMonedaExportRows([List<VentasPorMoneda>? filas]) =>
+      (filas ?? _ventasPorMoneda)
+          .map(
+            (fila) => <String>[
+              fila.moneda,
+              '${fila.operaciones}',
+              _formatMontoNativo(fila.importeNativo, fila.moneda),
+              _formatCurrency(_importeConsolidadoDe(fila)),
+              _formatMontoNativo(fila.efectivoNativo, fila.moneda),
+              _formatMontoNativo(fila.digitalNativo, fila.moneda),
+              _formatTasaPromedio(fila.tasaPromedio),
+            ],
+          )
+          .toList();
+
+  /// Total del reporte sobre la lista visible: suma la columna consolidada, que
+  /// la RPC ya dejó en una sola divisa (ver [_importeConsolidadoDe]). La fila de
+  /// la divisa de consolidación participa como una más (no se separa). No se
+  /// totalizan operaciones —una venta con pago mixto cuenta en dos divisas— ni
+  /// importes nativos, que no son homogéneos.
+  double get _totalConsolidado =>
+      _totalConsolidadoEn(_ventasPorMoneda);
+
+  /// Fila de total: solo la columna del consolidado lleva importe. Las demás
+  /// quedan con guion porque no son sumables (ver [_totalConsolidado]).
+  List<String> _porMonedaTotalRow([List<VentasPorMoneda>? filas]) {
+    final datos = filas ?? _ventasPorMoneda;
+    final celdas = List<String>.filled(_porMonedaColumnCount, '-');
+    celdas[0] = 'Consolidado en ${_monedaConsolidacionDe(datos)}';
+    celdas[_porMonedaConsolidadoColumnIndex] = _formatCurrency(
+      _totalConsolidadoEn(datos),
+    );
+    return celdas;
+  }
+
+  /// Filas del bloque «Por moneda (cobrado)» para las exportaciones de
+  /// «Tiempo Real» y «Proveedores».
+  ///
+  /// Usa la misma fuente y la misma regla que el bloque visible: la RPC de pagos
+  /// por divisa y, como mínimo, dos divisas. Se reaprovecha el `Future` que ya
+  /// tiene el bloque y solo se pide si nadie lo había pedido todavía (exportar
+  /// sin haber pintado la pestaña). Devuelve lista vacía cuando no hay nada que
+  /// enseñar —cargando, error o una sola divisa—, que es lo que hace que la
+  /// exportación salga **exactamente** como antes.
+  Future<List<VentasPorMoneda>> _porMonedaCobradoParaExport() async {
+    final future =
+        _monedasCompartidasFuture ?? _fetchVentasPorMonedaCompartidas();
+    final filas = await future;
+    if (filas == null || filas.length < 2) return const <VentasPorMoneda>[];
+    return filas;
+  }
+
+  /// Cabecera del bloque en las exportaciones: una sola definición para las dos
+  /// pestañas, para que no puedan divergir de la de la pantalla.
+  String get _porMonedaCobradoTitulo => 'Por moneda (cobrado)';
+
+  /// Aclaración del bloque en las exportaciones: «cobrado» mide pagos, no
+  /// facturación, y sus importes nativos no se suman entre filas. La divisa que
+  /// se nombra es la de la propia respuesta, que es la que explica el pie.
+  String _porMonedaCobradoNota(List<VentasPorMoneda> filas) =>
+      'Lo cobrado por divisa según los pagos. No es lo facturado y no se '
+      'compara con el total de ventas: los importes nativos llevan su divisa y '
+      'no se suman entre filas; solo el equivalente en '
+      '${_monedaConsolidacionDe(filas)} es consolidable.';
+
+  /// Bloque «Por moneda (cobrado)» en PDF, con las mismas columnas, los mismos
+  /// importes y el mismo pie consolidado que la tabla en pantalla.
+  ///
+  /// Devuelve lista vacía si no hay datos, y entonces la exportación sale
+  /// exactamente como antes. Todas las celdas pasan por [_porMonedaPdfSafe]
+  /// porque la raya de «tasa no calculada» no existe en Latin-1 —la codificación
+  /// de Helvetica— y rompería `pdf.save()`.
+  List<pw.Widget> _porMonedaPdfBlock(List<VentasPorMoneda> filas) {
+    if (filas.length < 2) return const <pw.Widget>[];
+
+    final headers = _porMonedaExportHeadersPara(filas);
+    final rows = _porMonedaExportRows(filas);
+    final total = _porMonedaTotalRow(filas);
+
+    return [
+      pw.SizedBox(height: 18),
+      pw.Text(
+        _porMonedaCobradoTitulo,
+        style: pw.TextStyle(
+          fontSize: 14,
+          fontWeight: pw.FontWeight.bold,
+          color: PdfColor.fromHex('#0F172A'),
+        ),
+      ),
+      pw.SizedBox(height: 4),
+      pw.Text(
+        _porMonedaCobradoNota(filas),
+        style: pw.TextStyle(fontSize: 9, color: PdfColor.fromHex('#475569')),
+      ),
+      pw.SizedBox(height: 8),
+      pw.Table(
+        border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.8),
+        columnWidths: {
+          0: const pw.FlexColumnWidth(1.2),
+          1: const pw.FlexColumnWidth(1.1),
+          2: const pw.FlexColumnWidth(1.6),
+          3: const pw.FlexColumnWidth(1.6),
+          4: const pw.FlexColumnWidth(1.5),
+          5: const pw.FlexColumnWidth(1.5),
+          6: const pw.FlexColumnWidth(1.1),
+        },
+        children: [
+          pw.TableRow(
+            decoration: pw.BoxDecoration(color: PdfColor.fromHex('#F1F5F9')),
+            children: headers.map(_pdfHeaderCell).toList(),
+          ),
+          ...rows.map(
+            (fila) => pw.TableRow(
+              children: fila
+                  .map((celda) => _pdfBodyCell(_porMonedaPdfSafe(celda)))
+                  .toList(),
+            ),
+          ),
+          pw.TableRow(
+            decoration: pw.BoxDecoration(color: PdfColor.fromHex('#E2E8F0')),
+            children: total
+                .map(
+                  (celda) =>
+                      _pdfBodyCell(_porMonedaPdfSafe(celda), isBold: true),
+                )
+                .toList(),
+          ),
+        ],
+      ),
+    ];
+  }
+
+  /// Mismo bloque que [_porMonedaPdfBlock], pero como filas de Excel. Deja la
+  /// columna consolidada como número —es la única sumable— y el resto como
+  /// texto, igual que la exportación de la pestaña.
+  void _porMonedaExcelBlock(excel.Sheet sheet, List<VentasPorMoneda> filas) {
+    if (filas.length < 2) return;
+
+    final rows = _porMonedaExportRows(filas);
+    sheet.appendRow([]);
+    sheet.appendRow([excel.TextCellValue(_porMonedaCobradoTitulo)]);
+    sheet.appendRow([excel.TextCellValue(_porMonedaCobradoNota(filas))]);
+    sheet.appendRow(
+      _porMonedaExportHeadersPara(
+        filas,
+      ).map((h) => excel.TextCellValue(h)).toList(),
+    );
+    for (var i = 0; i < rows.length; i++) {
+      sheet.appendRow(
+        _porMonedaExcelRow(rows[i], _importeConsolidadoDe(filas[i])),
+      );
+    }
+    sheet.appendRow(
+      _porMonedaExcelRow(
+        _porMonedaTotalRow(filas),
+        _totalConsolidadoEn(filas),
+      ),
+    );
+  }
+
+  /// Helvetica —la fuente por defecto del PDF— solo codifica Latin-1 y
+  /// `latin1.encode` falla con la raya de «tasa no calculada»: se degrada a
+  /// guion para no romper la generación del archivo.
+  String _porMonedaPdfSafe(String text) => text.replaceAll('—', '-');
+
+  void _showPorMonedaSinDatos() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('No hay datos por moneda para exportar'),
+        backgroundColor: AppColors.warning,
+      ),
+    );
+  }
+
+  Future<void> _exportPorMonedaPdf() async {
+    if (_ventasPorMoneda.isEmpty) {
+      _showPorMonedaSinDatos();
+      return;
+    }
+
+    setState(() => _isExportingPorMoneda = true);
+    try {
+      final storeId = await UserPreferencesService().getIdTienda();
+      Map<String, dynamic>? storeData;
+      if (storeId != null) {
+        storeData = await Supabase.instance.client
+            .from('app_dat_tienda')
+            .select('denominacion, direccion, ubicacion, phone, imagen_url')
+            .eq('id', storeId)
+            .maybeSingle();
+      }
+
+      final storeName = storeData?['denominacion'] as String? ?? 'Inventtia';
+      final storeAddress = storeData?['direccion'] as String? ?? '';
+      final storeLocation = storeData?['ubicacion'] as String? ?? '';
+      final storePhone = storeData?['phone'] as String? ?? '';
+      final logoBytes = await _downloadImageBytes(
+        storeData?['imagen_url'] as String?,
+      );
+
+      final dateLabel = _formatDateRangeLabel();
+      final headers = _porMonedaExportHeadersPara(_ventasPorMoneda);
+      final rows = _porMonedaExportRows();
+
+      final pdf = pw.Document();
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4.landscape,
+          margin: const pw.EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          build: (pw.Context context) => [
+            _buildPdfHeader(
+              logoBytes: logoBytes,
+              storeName: storeName,
+              storeAddress: storeAddress,
+              storeLocation: storeLocation,
+              storePhone: storePhone,
+              dateLabel: dateLabel,
+              reportTitle: 'Ventas por moneda',
+            ),
+            pw.SizedBox(height: 16),
+            pw.Text(
+              'Cobrado por divisa',
+              style: pw.TextStyle(
+                fontSize: 16,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColor.fromHex('#0F172A'),
+              ),
+            ),
+            pw.SizedBox(height: 4),
+            pw.Text(
+              'Los importes nativos llevan su divisa y no se suman entre filas: '
+              'solo el equivalente en '
+              '${_monedaConsolidacionDe(_ventasPorMoneda)} es consolidable.',
+              style: pw.TextStyle(
+                fontSize: 9,
+                color: PdfColor.fromHex('#475569'),
+              ),
+            ),
+            if (_selectedWarehouseId != null) ...[
+              pw.SizedBox(height: 6),
+              pw.Text(
+                'Almacén: $_selectedWarehouseName',
+                style: pw.TextStyle(
+                  fontSize: 10,
+                  color: PdfColor.fromHex('#475569'),
+                  fontStyle: pw.FontStyle.italic,
+                ),
+              ),
+            ],
+            pw.SizedBox(height: 12),
+            pw.Table(
+              border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.8),
+              columnWidths: {
+                0: const pw.FlexColumnWidth(1.2),
+                1: const pw.FlexColumnWidth(1.1),
+                2: const pw.FlexColumnWidth(1.6),
+                3: const pw.FlexColumnWidth(1.6),
+                4: const pw.FlexColumnWidth(1.5),
+                5: const pw.FlexColumnWidth(1.5),
+                6: const pw.FlexColumnWidth(1.1),
+              },
+              children: [
+                pw.TableRow(
+                  decoration: pw.BoxDecoration(
+                    color: PdfColor.fromHex('#F1F5F9'),
+                  ),
+                  children: headers.map(_pdfHeaderCell).toList(),
+                ),
+                ...rows.map(
+                  (fila) => pw.TableRow(
+                    children: fila
+                        .map((celda) => _pdfBodyCell(_porMonedaPdfSafe(celda)))
+                        .toList(),
+                  ),
+                ),
+                pw.TableRow(
+                  decoration: pw.BoxDecoration(
+                    color: PdfColor.fromHex('#E2E8F0'),
+                  ),
+                  children: _porMonedaTotalRow()
+                      .map(
+                        (celda) => _pdfBodyCell(
+                          _porMonedaPdfSafe(celda),
+                          isBold: true,
+                        ),
+                      )
+                      .toList(),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+
+      final bytes = await pdf.save();
+      final fileName =
+          'Ventas_Por_Moneda_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.pdf';
+
+      if (kIsWeb) {
+        await Printing.sharePdf(bytes: bytes, filename: fileName);
+      } else {
+        final output = await getTemporaryDirectory();
+        final file = File('${output.path}/$fileName');
+        await file.writeAsBytes(bytes);
+
+        await Share.shareXFiles([
+          XFile(file.path, mimeType: 'application/pdf'),
+        ], text: 'Ventas por moneda · $dateLabel');
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('PDF generado correctamente'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al generar PDF: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isExportingPorMoneda = false);
+    }
+  }
+
+  /// Convierte una fila de la tabla en celdas de Excel. La columna consolidada se
+  /// escribe como número (es la única homogénea y sumable); el resto va como
+  /// texto porque incluye su divisa o un guion.
+  List<excel.CellValue> _porMonedaExcelRow(
+    List<String> celdas,
+    double consolidado,
+  ) {
+    return [
+      for (var c = 0; c < celdas.length; c++)
+        if (c == _porMonedaConsolidadoColumnIndex)
+          excel.DoubleCellValue(consolidado)
+        else
+          excel.TextCellValue(celdas[c]),
+    ];
+  }
+
+  Future<void> _exportPorMonedaExcel() async {
+    if (_ventasPorMoneda.isEmpty) {
+      _showPorMonedaSinDatos();
+      return;
+    }
+
+    setState(() => _isExportingPorMoneda = true);
+    try {
+      final workbook = excel.Excel.createExcel();
+      workbook.delete('Sheet1');
+      final sheet = workbook['Ventas por moneda'];
+
+      sheet.appendRow([excel.TextCellValue('Ventas por moneda')]);
+      sheet.appendRow([
+        excel.TextCellValue('Período'),
+        excel.TextCellValue(_formatDateRangeLabel()),
+      ]);
+      if (_selectedWarehouseId != null) {
+        sheet.appendRow([
+          excel.TextCellValue('Almacén'),
+          excel.TextCellValue(_selectedWarehouseName ?? ''),
+        ]);
+      }
+      sheet.appendRow([]);
+
+      final headers = _porMonedaExportHeadersPara(_ventasPorMoneda);
+      final rows = _porMonedaExportRows();
+      final totalConsolidado = _totalConsolidado;
+
+      sheet.appendRow(headers.map((h) => excel.TextCellValue(h)).toList());
+      for (var i = 0; i < rows.length; i++) {
+        sheet.appendRow(
+          _porMonedaExcelRow(
+            rows[i],
+            _importeConsolidadoDe(_ventasPorMoneda[i]),
+          ),
+        );
+      }
+      sheet.appendRow(
+        _porMonedaExcelRow(_porMonedaTotalRow(), totalConsolidado),
+      );
+
+      final bytes = workbook.encode();
+      if (bytes == null) throw Exception('No se pudo generar el archivo Excel');
+      final fileName =
+          'Ventas_Por_Moneda_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.xlsx';
+      const mime =
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+      if (kIsWeb) {
+        web_download.downloadFileWeb(Uint8List.fromList(bytes), fileName, mime);
+      } else {
+        final output = await getApplicationDocumentsDirectory();
+        final file = File('${output.path}/$fileName');
+        await file.writeAsBytes(bytes);
+
+        await Share.shareXFiles([
+          XFile(file.path, mimeType: mime),
+        ], text: 'Ventas por moneda · ${_formatDateRangeLabel()}');
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Excel generado correctamente'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al exportar Excel: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isExportingPorMoneda = false);
+    }
   }
 
   Widget _buildWarehouseFilter() {
@@ -2366,6 +3593,12 @@ class _SalesScreenState extends State<SalesScreen>
       totalGanancia += report.totalGanancia;
     }
 
+    // `totalVentas` es la suma de `ingresos_totales` de la RPC: el importe de la
+    // línea de la operación, así que es **CUP por construcción**. Coste y
+    // ganancia también (importes de catálogo, no cobros). Por eso las tres se
+    // formatean con la moneda de consolidación, que las deja en CUP cuando la
+    // tienda no fuerza nada.
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -2389,7 +3622,7 @@ class _SalesScreenState extends State<SalesScreen>
               children: [
                 Expanded(
                   child: _buildSummaryColumn(
-                    'Ventas Totales',
+                    'Ventas Totales · $_monedaConsolidacion',
                     totalVentas,
                     AppColors.success,
                   ),
@@ -2474,7 +3707,9 @@ class _SalesScreenState extends State<SalesScreen>
                               DataCell(Text(report.nombreProveedor)),
                               DataCell(
                                 Text(
-                                  '\$${report.totalVentas.toStringAsFixed(2)}',
+                                  MonedaConsolidacionService.formatear(
+                                    report.totalVentas,
+                                  ),
                                   style: const TextStyle(
                                     color: AppColors.success,
                                   ),
@@ -2482,7 +3717,9 @@ class _SalesScreenState extends State<SalesScreen>
                               ),
                               DataCell(
                                 Text(
-                                  '\$${report.totalCosto.toStringAsFixed(2)}',
+                                  MonedaConsolidacionService.formatear(
+                                    report.totalCosto,
+                                  ),
                                   style: const TextStyle(
                                     color: AppColors.warning,
                                   ),
@@ -2490,7 +3727,9 @@ class _SalesScreenState extends State<SalesScreen>
                               ),
                               DataCell(
                                 Text(
-                                  '\$${report.totalGanancia.toStringAsFixed(2)}',
+                                  MonedaConsolidacionService.formatear(
+                                    report.totalGanancia,
+                                  ),
                                   style: const TextStyle(
                                     color: AppColors.primary,
                                     fontWeight: FontWeight.bold,
@@ -2525,10 +3764,13 @@ class _SalesScreenState extends State<SalesScreen>
                             Colors.grey.shade100,
                           ),
                           cells: [
-                            const DataCell(
+                            DataCell(
                               Text(
-                                'TOTAL',
-                                style: TextStyle(
+                                // El importe es `ingresos_totales`, CUP por
+                                // construcción: la etiqueta declara en qué
+                                // divisa lo deja la consolidación.
+                                'TOTAL · $_monedaConsolidacion',
+                                style: const TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 16,
                                 ),
@@ -2536,7 +3778,9 @@ class _SalesScreenState extends State<SalesScreen>
                             ),
                             DataCell(
                               Text(
-                                '\$${totalVentas.toStringAsFixed(2)}',
+                                MonedaConsolidacionService.formatear(
+                                  totalVentas,
+                                ),
                                 style: const TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 16,
@@ -2546,7 +3790,7 @@ class _SalesScreenState extends State<SalesScreen>
                             ),
                             DataCell(
                               Text(
-                                '\$${totalCosto.toStringAsFixed(2)}',
+                                MonedaConsolidacionService.formatear(totalCosto),
                                 style: const TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 16,
@@ -2556,7 +3800,9 @@ class _SalesScreenState extends State<SalesScreen>
                             ),
                             DataCell(
                               Text(
-                                '\$${totalGanancia.toStringAsFixed(2)}',
+                                MonedaConsolidacionService.formatear(
+                                  totalGanancia,
+                                ),
                                 style: const TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 16,
@@ -2571,6 +3817,9 @@ class _SalesScreenState extends State<SalesScreen>
                     ),
                   ),
                 ),
+          // Desglose por divisa del mismo período, al pie de la pestaña. Se
+          // oculta con una sola divisa, así que con CUP esta pestaña no cambia.
+          _buildBloqueMonedas(),
         ],
       ),
     );
@@ -2829,7 +4078,11 @@ class _SalesScreenState extends State<SalesScreen>
                   ],
                 ),
                 trailing: Text(
-                  '\$${total is num ? total.toStringAsFixed(2) : total}',
+                  // `total_operacion` es el importe de la operación: CUP por
+                  // construcción.
+                  MonedaConsolidacionService.formatear(
+                    _toDoubleSafe(total),
+                  ),
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 14,
@@ -2908,7 +4161,11 @@ class _SalesScreenState extends State<SalesScreen>
                   style: const TextStyle(fontSize: 12),
                 ),
                 trailing: Text(
-                  '\$${total is num ? total.toStringAsFixed(2) : total}',
+                  // `total_operacion` es el importe de la operación: CUP por
+                  // construcción.
+                  MonedaConsolidacionService.formatear(
+                    _toDoubleSafe(total),
+                  ),
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     color: AppColors.success,
@@ -2940,6 +4197,15 @@ class _SalesScreenState extends State<SalesScreen>
     final venta = orden['venta'] as Map?;
     final items = orden['items'] as List? ?? [];
     final pagos = orden['pagos'] as List? ?? [];
+
+    // ¿La orden mezcla divisas? Solo entonces se escribe el código junto al
+    // importe de cada pago: con una sola divisa el desglose debe verse igual que
+    // siempre. Se decide por número de divisas, nunca por cuál sea el código.
+    final mostrarDivisaEnPagos = pagos
+            .map((p) => _monedaDePago((p as Map)['moneda']))
+            .toSet()
+            .length >
+        1;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -3024,7 +4290,6 @@ class _SalesScreenState extends State<SalesScreen>
             ),
             const SizedBox(height: 6),
             ...pagos.map((p) {
-              final monto = p['monto'] ?? 0.0;
               return Padding(
                 padding: const EdgeInsets.only(bottom: 4.0, left: 8.0),
                 child: Row(
@@ -3044,7 +4309,10 @@ class _SalesScreenState extends State<SalesScreen>
                       ),
                     ),
                     Text(
-                      '\$${monto is num ? monto.toStringAsFixed(2) : monto}',
+                      _formatMontoPagoDesglose(
+                        p,
+                        mostrarDivisa: mostrarDivisaEnPagos,
+                      ),
                       style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
@@ -3116,13 +4384,17 @@ class _SalesScreenState extends State<SalesScreen>
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
                             Text(
-                              '\$${item['importe'] is num ? (item['importe'] as num).toStringAsFixed(2) : item['importe']}',
+                              // Importe y precio unitario de la línea: CUP por
+                              // construcción.
+                              MonedaConsolidacionService.formatear(
+                                _toDoubleSafe(item['importe']),
+                              ),
                               style: const TextStyle(
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
                             Text(
-                              '\$${item['precio_unitario'] is num ? (item['precio_unitario'] as num).toStringAsFixed(2) : item['precio_unitario']} c/u',
+                              '${MonedaConsolidacionService.formatear(_toDoubleSafe(item['precio_unitario']))} c/u',
                               style: const TextStyle(
                                 color: AppColors.textSecondary,
                                 fontSize: 10,
@@ -3582,7 +4854,9 @@ class _SalesScreenState extends State<SalesScreen>
               _buildAnalystInfoChip(Icons.date_range, _formatDateRangeLabel()),
               _buildAnalystInfoChip(
                 Icons.attach_money,
-                _formatCurrency(_totalSales),
+                // Importe consolidado del encabezado del Analista: `_totalSales`
+                // es `ingresos_totales`, CUP por construcción.
+                MonedaConsolidacionService.formatear(_totalSales),
               ),
               _buildAnalystInfoChip(
                 Icons.inventory_2,
@@ -4352,11 +5626,17 @@ class _SalesScreenState extends State<SalesScreen>
     }
   }
 
+  /// Columna del resumen de «Proveedores».
+  ///
+  /// Todas las cifras de esta tarjeta son CUP por construcción: las de ventas
+  /// porque `totalVentas` es `ingresos_totales` de la RPC —importe de la línea
+  /// de la operación—, y las de coste/ganancia porque son importes de catálogo.
+  /// Por eso se formatean con la moneda de consolidación.
   Widget _buildSummaryColumn(String label, double value, Color color) {
     return Column(
       children: [
         Text(
-          '\$${value.toStringAsFixed(2)}',
+          MonedaConsolidacionService.formatear(value),
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.bold,
@@ -4387,6 +5667,17 @@ class _SalesScreenState extends State<SalesScreen>
     }
   }
 
+  /// Tarjeta «Ventas» + «Productos» de «Tiempo Real».
+  ///
+  /// El importe es `_totalSales`, o sea `ingresos_totales` de
+  /// `fn_reporte_ventas_con_proveedor4`: sale del importe de la línea de la
+  /// operación (`importe_op`), no de los pagos, así que es **CUP por
+  /// construcción**. Se formatea con la moneda de consolidación, no se consolida
+  /// aquí: el desglose de lo cobrado por divisa es otro dato y vive en su propio
+  /// bloque.
+  ///
+  /// La etiqueta lleva el código de la divisa y sale del mismo estado que el
+  /// importe, para que no puedan decir cosas distintas.
   Widget _buildRealTimeMetrics(double totalSales, int totalProducts) {
     String periodLabel = _formatDateRangeLabel();
     return Row(
@@ -4414,7 +5705,12 @@ class _SalesScreenState extends State<SalesScreen>
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : Text(
-                        '\$${totalSales.toStringAsFixed(2)}',
+                        // La tarjeta ya rotula la divisa en «Ventas · MONEDA»:
+                        // el importe va sin código para no repetirlo.
+                        MonedaConsolidacionService.formatear(
+                          totalSales,
+                          conCodigo: false,
+                        ),
                         style: const TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
@@ -4422,8 +5718,12 @@ class _SalesScreenState extends State<SalesScreen>
                         ),
                       ),
                 Text(
-                  'Ventas',
+                  // El número es `ingresos_totales`, CUP por construcción; el
+                  // código evita que se lea como si fuera de la divisa de la
+                  // fila.
+                  'Ventas · $_monedaConsolidacion',
                   style: const TextStyle(color: AppColors.textSecondary),
+                  textAlign: TextAlign.center,
                 ),
               ],
             ),
@@ -4510,6 +5810,10 @@ class _SalesScreenState extends State<SalesScreen>
     try {
       final pdf = pw.Document();
       // Dinero desde totales SQL; cantidad con desglose + equiv en u. base.
+      // Todo el dinero de esta tabla —precio de catálogo, facturado, costo y
+      // ganancia— es CUP por construcción: se formatea con la moneda de
+      // consolidación para que el informe salga en la misma divisa que la
+      // pantalla. Las columnas de cantidad no se tocan: no son dinero.
       final rows = _sortedProductSalesReports.map((report) {
         final salePrice = report.precioVentaCup.roundToDouble();
         final unitCost = report.precioCostoCup.roundToDouble();
@@ -4517,15 +5821,15 @@ class _SalesScreenState extends State<SalesScreen>
         final totalCost = report.costoReportado;
         return [
           report.nombreProducto,
-          salePrice.toStringAsFixed(0),
+          MonedaConsolidacionService.formatear(salePrice),
           report.cantidadFormateada.isNotEmpty
               ? report.cantidadFormateada
               : report.totalVendido.toStringAsFixed(2),
           report.equivUnidadesBase.toStringAsFixed(2),
-          revenue.toStringAsFixed(2),
-          unitCost.toStringAsFixed(0),
-          totalCost.toStringAsFixed(2),
-          report.gananciaReportada.toStringAsFixed(2),
+          MonedaConsolidacionService.formatear(revenue),
+          MonedaConsolidacionService.formatear(unitCost),
+          MonedaConsolidacionService.formatear(totalCost),
+          MonedaConsolidacionService.formatear(report.gananciaReportada),
         ];
       }).toList();
       final totalQuantity = _productSalesReports.fold<double>(
@@ -4545,11 +5849,14 @@ class _SalesScreenState extends State<SalesScreen>
         '-',
         '-',
         totalQuantity.toStringAsFixed(2),
-        totalRevenue.toStringAsFixed(2),
+        MonedaConsolidacionService.formatear(totalRevenue),
         '-',
-        totalCost.toStringAsFixed(2),
-        (totalRevenue - totalCost).toStringAsFixed(2),
+        MonedaConsolidacionService.formatear(totalCost),
+        MonedaConsolidacionService.formatear(totalRevenue - totalCost),
       ]);
+      // Desglose de lo cobrado por divisa. Vacío con una sola divisa, y entonces
+      // el PDF sale exactamente como antes de existir este bloque.
+      final porMoneda = await _porMonedaCobradoParaExport();
       pdf.addPage(
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4.landscape,
@@ -4583,6 +5890,8 @@ class _SalesScreenState extends State<SalesScreen>
               ),
               cellStyle: const pw.TextStyle(fontSize: 8),
             ),
+            // Mismas columnas y mismo formato que la tabla de la pestaña.
+            ..._porMonedaPdfBlock(porMoneda),
           ],
         ),
       );
@@ -4635,6 +5944,14 @@ class _SalesScreenState extends State<SalesScreen>
               : 'Precios cobrados',
         ),
       ]);
+      // La divisa de todas las columnas de dinero del informe. Va declarada una
+      // vez, en cabecera, y no celda a celda, porque estas celdas son números
+      // —tienen que poder sumarse en Excel— y un código las convertiría en
+      // texto.
+      sheet.appendRow([
+        excel.TextCellValue('Moneda'),
+        excel.TextCellValue(_monedaConsolidacion),
+      ]);
       sheet.appendRow([]);
       sheet.appendRow([
         excel.TextCellValue('Producto'),
@@ -4662,17 +5979,21 @@ class _SalesScreenState extends State<SalesScreen>
         totalCost += cost;
         sheet.appendRow([
           excel.TextCellValue(report.nombreProducto),
-          excel.DoubleCellValue(salePrice),
+          // Dinero CUP por construcción: se convierte —no se formatea— para que
+          // la celda siga siendo un número sumable en Excel.
+          excel.DoubleCellValue(MonedaConsolidacionService.convertir(salePrice)),
           excel.TextCellValue(
             report.cantidadFormateada.isNotEmpty
                 ? report.cantidadFormateada
                 : report.totalVendido.toString(),
           ),
           excel.DoubleCellValue(report.equivUnidadesBase),
-          excel.DoubleCellValue(revenue),
-          excel.DoubleCellValue(unitCost),
-          excel.DoubleCellValue(cost),
-          excel.DoubleCellValue(report.gananciaReportada),
+          excel.DoubleCellValue(MonedaConsolidacionService.convertir(revenue)),
+          excel.DoubleCellValue(MonedaConsolidacionService.convertir(unitCost)),
+          excel.DoubleCellValue(MonedaConsolidacionService.convertir(cost)),
+          excel.DoubleCellValue(
+            MonedaConsolidacionService.convertir(report.gananciaReportada),
+          ),
         ]);
       }
       sheet.appendRow([]);
@@ -4683,11 +6004,18 @@ class _SalesScreenState extends State<SalesScreen>
         // cuadra en la de equivalentes.
         excel.TextCellValue(''),
         excel.DoubleCellValue(totalQuantity),
-        excel.DoubleCellValue(totalRevenue),
+        excel.DoubleCellValue(MonedaConsolidacionService.convertir(totalRevenue)),
         excel.TextCellValue(''),
-        excel.DoubleCellValue(totalCost),
-        excel.DoubleCellValue(totalRevenue - totalCost),
+        excel.DoubleCellValue(MonedaConsolidacionService.convertir(totalCost)),
+        excel.DoubleCellValue(
+          MonedaConsolidacionService.convertir(totalRevenue - totalCost),
+        ),
       ]);
+
+      // Desglose de lo cobrado por divisa, con las mismas columnas y el mismo
+      // pie que la tabla de la pestaña. Vacío con una sola divisa, y entonces el
+      // Excel sale exactamente como antes.
+      _porMonedaExcelBlock(sheet, await _porMonedaCobradoParaExport());
 
       final bytes = workbook.encode();
       if (bytes == null) throw Exception('No se pudo generar el archivo Excel');
@@ -4794,17 +6122,30 @@ class _SalesScreenState extends State<SalesScreen>
               '-';
         }
 
+        // Los cinco importes del historial son CUP por construcción —precio de
+        // catálogo en `*_cup` y totales de la operación—, así que el informe
+        // sale en la divisa de consolidación, igual que la pantalla. La columna
+        // «Cambio» queda fuera a propósito: declara la unidad del campo de
+        // catálogo que cambió (precio de venta en CUP, costo en USD), que no es
+        // un importe consolidable.
+        String money(String key) {
+          final value = (event[key] as num?)?.toDouble();
+          return value == null
+              ? '-'
+              : MonedaConsolidacionService.formatear(value);
+        }
+
         return [
           date == null ? '-' : dateFormat.format(date.toLocal()),
           _productHistoryEventName(event),
           event['id_operacion']?.toString() ?? '-',
           _productHistoryPaymentMethod(event),
           number('cantidad'),
-          number('precio_venta_cup'),
-          number('precio_costo_cup'),
-          number('ingreso_total'),
-          number('costo_total'),
-          number('ganancia_total'),
+          money('precio_venta_cup'),
+          money('precio_costo_cup'),
+          money('ingreso_total'),
+          money('costo_total'),
+          money('ganancia_total'),
           _productHistoryChange(event),
           event['descripcion']?.toString() ?? '-',
         ];
@@ -4889,8 +6230,11 @@ class _SalesScreenState extends State<SalesScreen>
         excel.TextCellValue('Operación'),
         excel.TextCellValue('Método de pago'),
         excel.TextCellValue('Cantidad'),
-        excel.TextCellValue('Venta unitario CUP'),
-        excel.TextCellValue('Costo unitario CUP'),
+        // La divisa va en el encabezado y no en la celda: estos importes son
+        // CUP por construcción y se convierten a la divisa de consolidación,
+        // pero tienen que seguir siendo números sumables en Excel.
+        excel.TextCellValue('Venta unitario $_monedaConsolidacion'),
+        excel.TextCellValue('Costo unitario $_monedaConsolidacion'),
         excel.TextCellValue('Ingreso'),
         excel.TextCellValue('Costo'),
         excel.TextCellValue('Ganancia'),
@@ -4906,6 +6250,17 @@ class _SalesScreenState extends State<SalesScreen>
               : excel.DoubleCellValue(value);
         }
 
+        // Importe del historial: CUP por construcción, convertido —no
+        // formateado— para que la celda siga siendo sumable.
+        excel.CellValue money(String key) {
+          final value = (event[key] as num?)?.toDouble();
+          return value == null
+              ? excel.TextCellValue('')
+              : excel.DoubleCellValue(
+                  MonedaConsolidacionService.convertir(value),
+                );
+        }
+
         sheet.appendRow([
           excel.TextCellValue(
             date == null
@@ -4918,11 +6273,11 @@ class _SalesScreenState extends State<SalesScreen>
               : excel.IntCellValue((event['id_operacion'] as num).toInt()),
           excel.TextCellValue(_productHistoryPaymentMethod(event)),
           number('cantidad'),
-          number('precio_venta_cup'),
-          number('precio_costo_cup'),
-          number('ingreso_total'),
-          number('costo_total'),
-          number('ganancia_total'),
+          money('precio_venta_cup'),
+          money('precio_costo_cup'),
+          money('ingreso_total'),
+          money('costo_total'),
+          money('ganancia_total'),
           excel.TextCellValue(_productHistoryChange(event)),
           excel.TextCellValue(event['descripcion']?.toString() ?? ''),
         ]);
@@ -5085,14 +6440,22 @@ class _SalesScreenState extends State<SalesScreen>
                                   columnSpacing: 18,
                                   dataRowMinHeight: 48,
                                   dataRowMaxHeight: 110,
-                                  columns: const [
+                                  columns: [
                                     DataColumn(label: Text('Fecha')),
                                     DataColumn(label: Text('Evento')),
                                     DataColumn(label: Text('Operación')),
                                     DataColumn(label: Text('Método de pago')),
                                     DataColumn(label: Text('Cantidad')),
-                                    DataColumn(label: Text('Venta (u)')),
-                                    DataColumn(label: Text('Costo CUP (u)')),
+                                    // La divisa de las dos columnas de precio de
+                                    // catálogo la manda la consolidación.
+                                    DataColumn(
+                                      label: Text('Venta $_monedaConsolidacion (u)'),
+                                    ),
+                                    DataColumn(
+                                      label: Text(
+                                        'Costo $_monedaConsolidacion (u)',
+                                      ),
+                                    ),
                                     DataColumn(label: Text('Ingreso')),
                                     DataColumn(label: Text('Costo')),
                                     DataColumn(label: Text('Ganancia')),
@@ -5126,12 +6489,20 @@ class _SalesScreenState extends State<SalesScreen>
                                               '${next?.toStringAsFixed(isSalePrice ? 2 : 4) ?? '-'} '
                                               '${isSalePrice ? 'CUP' : 'USD'}';
 
+                                    // Los cinco importes del historial son CUP
+                                    // por construcción (precio de catálogo en
+                                    // `*_cup` y totales de la operación): salen
+                                    // en la divisa de consolidación. La columna
+                                    // «Cambio» queda fuera porque declara la
+                                    // unidad del campo de catálogo que cambió.
                                     String money(String key) {
                                       final value = (event[key] as num?)
                                           ?.toDouble();
                                       return value == null
                                           ? '-'
-                                          : '\$${value.toStringAsFixed(2)}';
+                                          : MonedaConsolidacionService.formatear(
+                                              value,
+                                            );
                                     }
 
                                     return DataRow(
@@ -5399,7 +6770,12 @@ class _SalesScreenState extends State<SalesScreen>
                             ),
                             DataCell(
                               Text(
-                                '\$$precioVentaInt',
+                                // Precio de lista y facturado: CUP por
+                                // construcción, igual que el resto de importes
+                                // consolidables de la pantalla.
+                                MonedaConsolidacionService.formatear(
+                                  precioVentaInt.toDouble(),
+                                ),
                                 style: const TextStyle(color: AppColors.info),
                               ),
                             ),
@@ -5437,7 +6813,7 @@ class _SalesScreenState extends State<SalesScreen>
                             ),
                             DataCell(
                               Text(
-                                '\$${ingresosCup.toStringAsFixed(0)}',
+                                MonedaConsolidacionService.formatear(ingresosCup),
                                 style: const TextStyle(
                                   color: AppColors.success,
                                   fontWeight: FontWeight.bold,
@@ -5459,7 +6835,11 @@ class _SalesScreenState extends State<SalesScreen>
                                       ),
                                     )
                                   : Text(
-                                      '\$${costoUnitarioCup.round().toStringAsFixed(0)}',
+                                      // Costo unitario en CUP por construcción
+                                      // (`_resolveReportCostCup`).
+                                      MonedaConsolidacionService.formatear(
+                                        costoUnitarioCup,
+                                      ),
                                       style: const TextStyle(
                                         color: AppColors.warning,
                                       ),
@@ -5476,7 +6856,9 @@ class _SalesScreenState extends State<SalesScreen>
                                       ),
                                     )
                                   : Text(
-                                      '\$${totalCostoCup.toStringAsFixed(2)}',
+                                      MonedaConsolidacionService.formatear(
+                                        totalCostoCup,
+                                      ),
                                       style: const TextStyle(
                                         color: AppColors.warning,
                                         fontWeight: FontWeight.w500,
@@ -5487,7 +6869,9 @@ class _SalesScreenState extends State<SalesScreen>
                               Text(
                                 sinTasa
                                     ? '—'
-                                    : '\$${ganancias.toStringAsFixed(2)}',
+                                    : MonedaConsolidacionService.formatear(
+                                        ganancias,
+                                      ),
                                 style: TextStyle(
                                   color: sinTasa
                                       ? Colors.grey
@@ -5554,7 +6938,12 @@ class _SalesScreenState extends State<SalesScreen>
                         ),
                         DataCell(
                           Text(
-                            '\$${_productSalesReports.fold(0.0, (sum, r) => sum + r.ingresosReportados).toStringAsFixed(0)}',
+                            MonedaConsolidacionService.formatear(
+                              _productSalesReports.fold(
+                                0.0,
+                                (sum, r) => sum + r.ingresosReportados,
+                              ),
+                            ),
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               color: AppColors.success,
@@ -5564,7 +6953,12 @@ class _SalesScreenState extends State<SalesScreen>
                         const DataCell(Text('-')), // No average cost
                         DataCell(
                           Text(
-                            '\$${_productSalesReports.fold(0.0, (sum, r) => sum + r.costoReportado).toStringAsFixed(0)}',
+                            MonedaConsolidacionService.formatear(
+                              _productSalesReports.fold(
+                                0.0,
+                                (sum, r) => sum + r.costoReportado,
+                              ),
+                            ),
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               color: AppColors.warning,
@@ -5579,7 +6973,7 @@ class _SalesScreenState extends State<SalesScreen>
                                 (sum, r) => sum + r.gananciaReportada,
                               );
                               return Text(
-                                '\$${totalGan.toStringAsFixed(0)}',
+                                MonedaConsolidacionService.formatear(totalGan),
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   color: totalGan >= 0
@@ -5802,6 +7196,17 @@ class _SalesScreenState extends State<SalesScreen>
             '${vendor.fechaCierre != null ? _formatDateTime(vendor.fechaCierre!) : 'en curso'}'
         : null;
 
+    // Consolidado del turno. `totalDineroGeneral` es una suma de importes
+    // nativos de divisas distintas (2 USD + 500 CUP no son 502 de nada), así que
+    // solo se enseña cuando el informe trae `totalBase` **y** el desglose tiene
+    // más de una divisa. `null` significa «exactamente lo de hoy»: el total
+    // nativo del subtítulo y ni una fila de desglose de más.
+    final double? totalBaseConsolidado =
+        vendor.totalBase != null &&
+            _hayVariasMonedasEnFilas(vendor.desgloseMonedas)
+        ? vendor.totalBase
+        : null;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -5842,7 +7247,18 @@ class _SalesScreenState extends State<SalesScreen>
                 ),
               ),
             Text(
-              '${vendor.totalVentas} ventas • \$${vendor.totalDineroGeneral.toStringAsFixed(2)}',
+              totalBaseConsolidado != null
+                  // `total_base` de la RPC v2 es el equivalente en moneda base:
+                  // CUP por construcción, así que se lleva a la divisa de
+                  // consolidación y la etiqueta dice cuál es. Sin código en el
+                  // importe porque el paréntesis ya lo dice (y así el texto en
+                  // CUP es el de siempre).
+                  ? '${vendor.totalVentas} ventas • '
+                        '${MonedaConsolidacionService.formatear(totalBaseConsolidado, conCodigo: false)} '
+                        '(consolidado en $_monedaConsolidacion)'
+                  // `totalDineroGeneral` suma importes **nativos** de divisas
+                  // distintas: se queda sin consolidar, como en la pantalla.
+                  : '${vendor.totalVentas} ventas • \$${vendor.totalDineroGeneral.toStringAsFixed(2)}',
             ),
             Text(
               '${vendor.totalProductosVendidos.toStringAsFixed(0)} productos vendidos',
@@ -5917,6 +7333,37 @@ class _SalesScreenState extends State<SalesScreen>
                   '\$${vendor.totalEgresos.toStringAsFixed(2)}',
                   AppColors.error,
                 ),
+                // Desglose por divisa del turno. Reutiliza la misma tabla y el
+                // mismo pie consolidado que la pestaña «Por moneda», pero con
+                // las filas del informe del turno. Solo se pinta con más de una
+                // divisa: con una sola la tarjeta queda como estaba.
+                if (totalBaseConsolidado != null) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: AppColors.border),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Padding(
+                          padding: EdgeInsets.fromLTRB(12, 12, 12, 4),
+                          child: Text(
+                            'Desglose por divisa',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        _buildPorMonedaTable(vendor.desgloseMonedas),
+                        _buildPorMonedaConsolidado(vendor.desgloseMonedas),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 8),
                 // Primera fila de botones
                 Row(
@@ -6388,6 +7835,17 @@ class _SalesScreenState extends State<SalesScreen>
       _loadProductSalesData(); // encadena _loadSupplierReports internamente
       _loadVendorReports();
       _loadProductAnalysis();
+      // El bloque «Por moneda» de «Tiempo Real»/«Proveedores» cachea el período:
+      // si no se invalida, mostraría las divisas del rango anterior. La recarga
+      // la vuelve a pedir el propio bloque en cuanto la pestaña se repinta.
+      setState(() {
+        _monedasCompartidasFuture = null;
+      });
+      // Solo se recarga si el usuario está mirando la pestaña: si no, se pide al
+      // abrirla (_onTabChanged) y no se paga una RPC que nadie va a mirar.
+      if (_logicalTabIndex == _monedaTabIndex) {
+        _loadVentasPorMoneda();
+      }
     }
   }
 
@@ -6681,6 +8139,39 @@ class _SalesScreenState extends State<SalesScreen>
                                   ),
                               ],
                             ),
+                            // Desglose por divisa: los tres chips de arriba
+                            // suman importes nativos de divisas distintas, así
+                            // que solo dicen la verdad mientras haya una única
+                            // divisa. Con dos o más se añade el desglose; con
+                            // una sola no se pinta nada y la cabecera queda
+                            // exactamente como estaba.
+                            if (_hayVariasMonedas(paymentTotals.totalPorMoneda))
+                              Padding(
+                                padding: const EdgeInsets.only(top: 8),
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Por divisa',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.grey[700],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Efectivo: ${_formatDesglosePorMoneda(paymentTotals.efectivoPorMoneda)}',
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
+                                    Text(
+                                      'Transferencias: ${_formatDesglosePorMoneda(paymentTotals.transferenciasPorMoneda)}',
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
+                                  ],
+                                ),
+                              ),
                           ],
                         ),
                       ),
@@ -6826,7 +8317,11 @@ class _SalesScreenState extends State<SalesScreen>
                                                 ),
                                                 const SizedBox(width: 4),
                                                 Text(
-                                                  '\$${order.totalOperacion.toStringAsFixed(2)}',
+                                                  // Importe de la operación:
+                                                  // CUP por construcción.
+                                                  MonedaConsolidacionService.formatear(
+                                                    order.totalOperacion,
+                                                  ),
                                                   style: const TextStyle(
                                                     fontWeight: FontWeight.w600,
                                                     fontSize: 15,
@@ -7044,7 +8539,14 @@ class _SalesScreenState extends State<SalesScreen>
                                                         Expanded(
                                                           flex: 1,
                                                           child: Text(
-                                                            '\$${(item['importe'] ?? 0.0).toStringAsFixed(2)}',
+                                                            // Importe de la
+                                                            // línea: CUP por
+                                                            // construcción.
+                                                            MonedaConsolidacionService.formatear(
+                                                              _toDoubleSafe(
+                                                                item['importe'],
+                                                              ),
+                                                            ),
                                                             textAlign:
                                                                 TextAlign.right,
                                                             style:
@@ -7655,7 +9157,9 @@ class _SalesScreenState extends State<SalesScreen>
           Icon(Icons.price_check, size: 14, color: color),
           const SizedBox(width: 4),
           Text(
-            '$label: \$${value.toStringAsFixed(2)}',
+            // Los tres importes son descuentos y totales de la operación: CUP
+            // por construcción, así que salen en la divisa de consolidación.
+            '$label: ${MonedaConsolidacionService.formatear(value)}',
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w600,
@@ -7743,6 +9247,12 @@ class _SalesScreenState extends State<SalesScreen>
       double totalEfectivoRegular = 0.0; // tipo_pago = 2
       double totalTransferencias = 0.0;
 
+      // Desglose por divisa de las transferencias. El `total` de cada pago es
+      // nativo, así que sumarlo entre divisas no significa nada; `pago['moneda']`
+      // ya lo devuelve `listar_ordenes` y se normaliza con el helper común. Con
+      // una sola divisa el mapa tiene una fila y el chip se pinta como siempre.
+      final Map<String, double> transferenciasPorMoneda = <String, double>{};
+
       for (final order in pendingOrders) {
         if (order.detalles['pagos'] != null) {
           final pagos = order.detalles['pagos'] as List;
@@ -7762,6 +9272,9 @@ class _SalesScreenState extends State<SalesScreen>
               }
             } else if (metodoPago.contains('transferencia')) {
               totalTransferencias += total;
+              final moneda = _monedaDePago(pago['moneda']);
+              transferenciasPorMoneda[moneda] =
+                  (transferenciasPorMoneda[moneda] ?? 0.0) + total;
             }
           }
         }
@@ -7896,7 +9409,11 @@ class _SalesScreenState extends State<SalesScreen>
                                       ],
                                     ),
                                   ),
-                                // Transferencias
+                                // Transferencias. El chip suma importes
+                                // nativos: con una sola divisa dice la verdad y
+                                // se pinta exactamente como siempre; con dos o
+                                // más se le añade debajo el desglose por
+                                // divisa, igual que en «Transferencias».
                                 if (totalTransferencias > 0)
                                   Container(
                                     padding: const EdgeInsets.symmetric(
@@ -7910,25 +9427,62 @@ class _SalesScreenState extends State<SalesScreen>
                                         color: AppColors.info.withOpacity(0.3),
                                       ),
                                     ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          Icons.account_balance,
-                                          size: 16,
-                                          color: AppColors.info,
-                                        ),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          'Transfer: \$${totalTransferencias.toStringAsFixed(2)}',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w600,
-                                            color: AppColors.info,
+                                    child: _hayVariasMonedas(
+                                      transferenciasPorMoneda,
+                                    )
+                                        ? Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Icon(
+                                                    Icons.account_balance,
+                                                    size: 16,
+                                                    color: AppColors.info,
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  Text(
+                                                    'Transfer: \$${totalTransferencias.toStringAsFixed(2)}',
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      color: AppColors.info,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                'Por divisa: ${_formatDesglosePorMoneda(transferenciasPorMoneda)}',
+                                                style: const TextStyle(
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ],
+                                          )
+                                        : Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(
+                                                Icons.account_balance,
+                                                size: 16,
+                                                color: AppColors.info,
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                'Transfer: \$${totalTransferencias.toStringAsFixed(2)}',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: AppColors.info,
+                                                ),
+                                              ),
+                                            ],
                                           ),
-                                        ),
-                                      ],
-                                    ),
                                   ),
                               ],
                             ),
@@ -8097,7 +9651,9 @@ class _SalesScreenState extends State<SalesScreen>
                                         ),
                                       ),
                                       Text(
-                                        '\$${order.totalOperacion.toStringAsFixed(2)}',
+                                        MonedaConsolidacionService.formatear(
+                                          order.totalOperacion,
+                                        ),
                                         style: const TextStyle(
                                           fontSize: 16,
                                           fontWeight: FontWeight.w600,
@@ -8259,7 +9815,7 @@ class _SalesScreenState extends State<SalesScreen>
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  'Total: \$${order.totalOperacion.toStringAsFixed(2)}',
+                                  'Total: ${MonedaConsolidacionService.formatear(order.totalOperacion)}',
                                   style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w600,
@@ -8480,14 +10036,18 @@ class _SalesScreenState extends State<SalesScreen>
                                       MainAxisAlignment.spaceBetween,
                                   children: [
                                     Text(
-                                      'Precio unitario: \$${precioUnitario.toStringAsFixed(2)}',
+                                      'Precio unitario: ${MonedaConsolidacionService.formatear(precioUnitario)}',
                                       style: TextStyle(
                                         fontSize: 14,
                                         color: Colors.grey[700],
                                       ),
                                     ),
                                     Text(
-                                      '\$${importe.toStringAsFixed(2)}',
+                                      // Importe de la línea: CUP por
+                                      // construcción.
+                                      MonedaConsolidacionService.formatear(
+                                        importe,
+                                      ),
                                       style: const TextStyle(
                                         fontSize: 16,
                                         fontWeight: FontWeight.w600,
@@ -8654,8 +10214,11 @@ class _SalesScreenState extends State<SalesScreen>
         });
       }).toList();
 
-      // Calcular total de transferencias
+      // Calcular total de transferencias y su desglose por divisa. El `total`
+      // de cada pago es nativo: sumarlo entre divisas no significa nada, así que
+      // el gran total solo es fiel con una divisa y el desglose lo acompaña.
       double totalTransferencias = 0.0;
+      final Map<String, double> transferenciasPorMoneda = <String, double>{};
       for (final order in transferOrders) {
         if (order.detalles['pagos'] != null) {
           final pagos = order.detalles['pagos'] as List;
@@ -8663,7 +10226,12 @@ class _SalesScreenState extends State<SalesScreen>
             final metodoPago =
                 pago['medio_pago']?.toString().toLowerCase() ?? '';
             if (metodoPago.contains('transferencia')) {
-              totalTransferencias += (pago['total'] ?? 0.0).toDouble();
+              final total = (pago['total'] ?? 0.0).toDouble();
+              totalTransferencias += total;
+              // Normalizada en un solo lugar: `usd` y `USD` son la misma fila.
+              final moneda = _monedaDePago(pago['moneda']);
+              transferenciasPorMoneda[moneda] =
+                  (transferenciasPorMoneda[moneda] ?? 0.0) + total;
             }
           }
         }
@@ -8720,38 +10288,76 @@ class _SalesScreenState extends State<SalesScreen>
                               ),
                             ),
                             const SizedBox(height: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppColors.success.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: AppColors.success.withOpacity(0.3),
+                            // Con una sola divisa se pinta exactamente el mismo
+                            // chip de siempre; con dos o más se le añade debajo
+                            // el desglose, porque el «Total» pasa a ser una suma
+                            // de importes nativos heterogéneos.
+                            if (!_hayVariasMonedas(transferenciasPorMoneda))
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 6,
                                 ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.account_balance,
-                                    size: 16,
-                                    color: AppColors.success,
+                                decoration: BoxDecoration(
+                                  color: AppColors.success.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: AppColors.success.withOpacity(0.3),
                                   ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    'Total: \$${totalTransferencias.toStringAsFixed(2)}',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.account_balance,
+                                      size: 16,
                                       color: AppColors.success,
                                     ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Total: \$${totalTransferencias.toStringAsFixed(2)}',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.success,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            else
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.success.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: AppColors.success.withOpacity(0.3),
                                   ),
-                                ],
+                                ),
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Total: \$${totalTransferencias.toStringAsFixed(2)}',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.success,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Por divisa: ${_formatDesglosePorMoneda(transferenciasPorMoneda)}',
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
                           ],
                         ),
                       ),
@@ -8800,8 +10406,14 @@ class _SalesScreenState extends State<SalesScreen>
                           itemBuilder: (context, index) {
                             final order = transferOrders[index];
 
-                            // Calcular total de transferencias para esta orden
-                            double orderTransferTotal = 0.0;
+                            // Calcular total de transferencias para esta orden.
+                            //
+                            // Se agrupa por divisa: una misma orden puede tener
+                            // transferencias en divisas distintas y sumarlas en
+                            // un solo número no significaría nada. Con una sola
+                            // divisa el texto sigue siendo `$X.XX`.
+                            final Map<String, double> orderTransferPorMoneda =
+                                <String, double>{};
                             if (order.detalles['pagos'] != null) {
                               final pagos = order.detalles['pagos'] as List;
                               for (final pago in pagos) {
@@ -8811,11 +10423,18 @@ class _SalesScreenState extends State<SalesScreen>
                                         .toLowerCase() ??
                                     '';
                                 if (metodoPago.contains('transferencia')) {
-                                  orderTransferTotal += (pago['total'] ?? 0.0)
-                                      .toDouble();
+                                  final moneda = _monedaDePago(pago['moneda']);
+                                  orderTransferPorMoneda[moneda] =
+                                      (orderTransferPorMoneda[moneda] ?? 0.0) +
+                                      (pago['total'] ?? 0.0).toDouble();
                                 }
                               }
                             }
+                            final double orderTransferTotal =
+                                orderTransferPorMoneda.values.fold(
+                                  0.0,
+                                  (a, b) => a + b,
+                                );
 
                             return Container(
                               margin: const EdgeInsets.only(bottom: 12),
@@ -8880,7 +10499,13 @@ class _SalesScreenState extends State<SalesScreen>
                                           ),
                                           const SizedBox(width: 4),
                                           Text(
-                                            '\$${orderTransferTotal.toStringAsFixed(2)}',
+                                            _hayVariasMonedas(
+                                                  orderTransferPorMoneda,
+                                                )
+                                                ? _formatDesglosePorMoneda(
+                                                    orderTransferPorMoneda,
+                                                  )
+                                                : '\$${orderTransferTotal.toStringAsFixed(2)}',
                                             style: const TextStyle(
                                               color: Colors.white,
                                               fontSize: 12,
@@ -8908,7 +10533,7 @@ class _SalesScreenState extends State<SalesScreen>
                                           ),
                                           const SizedBox(width: 4),
                                           Text(
-                                            'Total: \$${order.totalOperacion.toStringAsFixed(2)}',
+                                            'Total: ${MonedaConsolidacionService.formatear(order.totalOperacion)}',
                                             style: const TextStyle(
                                               fontWeight: FontWeight.w600,
                                               fontSize: 15,
@@ -9647,7 +11272,10 @@ class _SalesScreenState extends State<SalesScreen>
                                                       ),
                                                     ),
                                                     Text(
-                                                      '\$${product.costoTotalVendido.toStringAsFixed(2)}',
+                                                      MonedaConsolidacionService.formatear(
+                                                        product
+                                                            .costoTotalVendido,
+                                                      ),
                                                       style: const TextStyle(
                                                         fontSize: 12,
                                                         color:
@@ -10046,7 +11674,9 @@ class _SalesScreenState extends State<SalesScreen>
                           style: const pw.TextStyle(fontSize: 11),
                         ),
                         pw.Text(
-                          '\$${supplier.totalCosto.toStringAsFixed(2)}',
+                          MonedaConsolidacionService.formatear(
+                            supplier.totalCosto,
+                          ),
                           style: pw.TextStyle(
                             fontSize: 11,
                             fontWeight: pw.FontWeight.bold,
@@ -10103,7 +11733,9 @@ class _SalesScreenState extends State<SalesScreen>
                         _pdfBodyCell(product.nombreProducto),
                         _pdfBodyCell(product.totalVendido.toStringAsFixed(0)),
                         _pdfBodyCell(
-                          '\$${product.costoTotalVendido.toStringAsFixed(2)}',
+                          MonedaConsolidacionService.formatear(
+                            product.costoTotalVendido,
+                          ),
                         ),
                         _pdfBodyCell('$orderCount'),
                       ],
@@ -10135,7 +11767,9 @@ class _SalesScreenState extends State<SalesScreen>
                       ),
                     ),
                     pw.Text(
-                      '\$${supplier.totalCosto.toStringAsFixed(2)}',
+                      MonedaConsolidacionService.formatear(
+                        supplier.totalCosto,
+                      ),
                       style: pw.TextStyle(
                         fontWeight: pw.FontWeight.bold,
                         fontSize: 12,
@@ -10326,6 +11960,11 @@ class _SalesScreenState extends State<SalesScreen>
       sheet.appendRow([
         excel.TextCellValue('Período: ${_formatDateRangeLabel()}'),
       ]);
+      // Divisa de las columnas de dinero del informe: va declarada una vez en
+      // cabecera porque las celdas son números (tienen que poder sumarse).
+      sheet.appendRow([
+        excel.TextCellValue('Moneda: $_monedaConsolidacion'),
+      ]);
       sheet.appendRow([]);
 
       sheet.appendRow([
@@ -10341,7 +11980,11 @@ class _SalesScreenState extends State<SalesScreen>
         sheet.appendRow([
           excel.TextCellValue(product.nombreProducto),
           excel.IntCellValue(product.totalVendido.toInt()),
-          excel.DoubleCellValue(product.costoTotalVendido),
+          // Costo de catálogo: CUP por construcción, convertido para que la
+          // celda siga siendo un número sumable.
+          excel.DoubleCellValue(
+            MonedaConsolidacionService.convertir(product.costoTotalVendido),
+          ),
           excel.IntCellValue(orderCount),
         ]);
       }
@@ -10350,7 +11993,9 @@ class _SalesScreenState extends State<SalesScreen>
       sheet.appendRow([
         excel.TextCellValue('TOTAL'),
         excel.TextCellValue(''),
-        excel.DoubleCellValue(supplier.totalCosto),
+        excel.DoubleCellValue(
+          MonedaConsolidacionService.convertir(supplier.totalCosto),
+        ),
         excel.TextCellValue(''),
       ]);
 
@@ -10508,6 +12153,9 @@ class _SalesScreenState extends State<SalesScreen>
 
       final pdf = pw.Document();
       final dateLabel = _formatDateRangeLabel();
+      // Desglose de lo cobrado por divisa. Vacío con una sola divisa, y entonces
+      // el PDF sale exactamente como antes de existir este bloque.
+      final porMoneda = await _porMonedaCobradoParaExport();
 
       pdf.addPage(
         pw.MultiPage(
@@ -10569,12 +12217,22 @@ class _SalesScreenState extends State<SalesScreen>
                   return pw.TableRow(
                     children: [
                       _pdfBodyCell(report.nombreProveedor),
+                      // Ventas, costo y ganancia del proveedor: CUP por
+                      // construcción (`ingresos_totales` y costos de catálogo).
                       _pdfBodyCell(
-                        '\$${report.totalVentas.toStringAsFixed(2)}',
+                        MonedaConsolidacionService.formatear(
+                          report.totalVentas,
+                        ),
                       ),
-                      _pdfBodyCell('\$${report.totalCosto.toStringAsFixed(2)}'),
                       _pdfBodyCell(
-                        '\$${report.totalGanancia.toStringAsFixed(2)}',
+                        MonedaConsolidacionService.formatear(
+                          report.totalCosto,
+                        ),
+                      ),
+                      _pdfBodyCell(
+                        MonedaConsolidacionService.formatear(
+                          report.totalGanancia,
+                        ),
                       ),
                     ],
                   );
@@ -10587,21 +12245,23 @@ class _SalesScreenState extends State<SalesScreen>
                   children: [
                     _pdfBodyCell('TOTAL', isBold: true),
                     _pdfBodyCell(
-                      '\$${totalVentas.toStringAsFixed(2)}',
+                      MonedaConsolidacionService.formatear(totalVentas),
                       isBold: true,
                     ),
                     _pdfBodyCell(
-                      '\$${totalCosto.toStringAsFixed(2)}',
+                      MonedaConsolidacionService.formatear(totalCosto),
                       isBold: true,
                     ),
                     _pdfBodyCell(
-                      '\$${totalGanancia.toStringAsFixed(2)}',
+                      MonedaConsolidacionService.formatear(totalGanancia),
                       isBold: true,
                     ),
                   ],
                 ),
               ],
             ),
+            // Mismas columnas y mismo formato que el bloque de la pestaña.
+            ..._porMonedaPdfBlock(porMoneda),
             pw.SizedBox(height: 16),
             pw.Divider(),
             pw.SizedBox(height: 8),
@@ -10632,7 +12292,7 @@ class _SalesScreenState extends State<SalesScreen>
                         style: const pw.TextStyle(fontSize: 11),
                       ),
                       pw.Text(
-                        '\$${totalVentas.toStringAsFixed(2)}',
+                        MonedaConsolidacionService.formatear(totalVentas),
                         style: pw.TextStyle(
                           fontSize: 11,
                           fontWeight: pw.FontWeight.bold,
@@ -10649,7 +12309,7 @@ class _SalesScreenState extends State<SalesScreen>
                         style: const pw.TextStyle(fontSize: 11),
                       ),
                       pw.Text(
-                        '\$${totalCosto.toStringAsFixed(2)}',
+                        MonedaConsolidacionService.formatear(totalCosto),
                         style: pw.TextStyle(
                           fontSize: 11,
                           fontWeight: pw.FontWeight.bold,
@@ -10666,7 +12326,7 @@ class _SalesScreenState extends State<SalesScreen>
                         style: const pw.TextStyle(fontSize: 11),
                       ),
                       pw.Text(
-                        '\$${totalGanancia.toStringAsFixed(2)}',
+                        MonedaConsolidacionService.formatear(totalGanancia),
                         style: pw.TextStyle(
                           fontSize: 11,
                           fontWeight: pw.FontWeight.bold,
@@ -10755,6 +12415,13 @@ class _SalesScreenState extends State<SalesScreen>
           excel.TextCellValue('Almacén: $_selectedWarehouseName'),
         ]);
       }
+      // La divisa de las columnas de dinero del informe. Va declarada una vez,
+      // en cabecera, y no celda a celda, porque estas celdas son números —tienen
+      // que poder sumarse en Excel— y un código las convertiría en texto.
+      sheet.appendRow([
+        excel.TextCellValue('Moneda'),
+        excel.TextCellValue(_monedaConsolidacion),
+      ]);
       sheet.appendRow([]); // Fila vacía
 
       // Agregar encabezados de columnas
@@ -10765,23 +12432,40 @@ class _SalesScreenState extends State<SalesScreen>
         excel.TextCellValue('Ganancia'),
       ]);
 
-      // Agregar datos de proveedores
+      // Agregar datos de proveedores. Ventas, costo y ganancia son CUP por
+      // construcción: se convierten —no se formatean— para que la celda siga
+      // siendo un número sumable.
       for (var report in _supplierReports) {
         sheet.appendRow([
           excel.TextCellValue(report.nombreProveedor),
-          excel.DoubleCellValue(report.totalVentas),
-          excel.DoubleCellValue(report.totalCosto),
-          excel.DoubleCellValue(report.totalGanancia),
+          excel.DoubleCellValue(
+            MonedaConsolidacionService.convertir(report.totalVentas),
+          ),
+          excel.DoubleCellValue(
+            MonedaConsolidacionService.convertir(report.totalCosto),
+          ),
+          excel.DoubleCellValue(
+            MonedaConsolidacionService.convertir(report.totalGanancia),
+          ),
         ]);
       }
 
       // Agregar fila de totales
       sheet.appendRow([
         excel.TextCellValue('TOTAL'),
-        excel.DoubleCellValue(totalVentas),
-        excel.DoubleCellValue(totalCosto),
-        excel.DoubleCellValue(totalGanancia),
+        excel.DoubleCellValue(
+          MonedaConsolidacionService.convertir(totalVentas),
+        ),
+        excel.DoubleCellValue(MonedaConsolidacionService.convertir(totalCosto)),
+        excel.DoubleCellValue(
+          MonedaConsolidacionService.convertir(totalGanancia),
+        ),
       ]);
+
+      // Desglose de lo cobrado por divisa, con las mismas columnas y el mismo
+      // pie que la tabla de la pestaña. Vacío con una sola divisa, y entonces el
+      // Excel sale exactamente como antes.
+      _porMonedaExcelBlock(sheet, await _porMonedaCobradoParaExport());
 
       // Guardar archivo
       final fileName =

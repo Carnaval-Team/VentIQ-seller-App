@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/product.dart';
+import '../services/moneda_venta_service.dart';
 import '../services/product_service.dart';
 import '../services/user_preferences_service.dart';
-import '../utils/price_utils.dart';
 import '../theme/ventiq_home_theme.dart';
 
 /// Modelo local para un item por defecto configurado por el vendedor.
@@ -509,7 +509,10 @@ class _DefaultOrderItemsScreenState extends State<DefaultOrderItemsScreen> {
                     ),
                   ),
                 Text(
-                  '\$${p.precio.toMoneyString(2)}',
+                  MonedaVentaService.formatearPrecio(
+                    p.precio,
+                    conSimbolo: true,
+                  ),
                   style: const TextStyle(
                     fontSize: 12,
                     color: Color(0xFF0EA5E9),
@@ -622,7 +625,7 @@ class _DefaultOrderItemsScreenState extends State<DefaultOrderItemsScreen> {
                     ),
                   ),
                 Text(
-                  '\$${item.product.precio.toMoneyString(2)} c/u',
+                  '${MonedaVentaService.formatearPrecio(item.product.precio, conSimbolo: true)} c/u',
                   style: TextStyle(
                     fontSize: 12,
                     color: VentiqHomeTheme.textSecondary,

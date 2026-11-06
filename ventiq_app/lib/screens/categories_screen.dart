@@ -17,6 +17,7 @@ import '../widgets/sync_status_chip.dart';
 import '../services/notification_service.dart';
 import '../utils/connection_error_handler.dart';
 import '../utils/price_utils.dart';
+import '../services/moneda_venta_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/smart_offline_manager.dart';
 import '../services/connectivity_service.dart';
@@ -741,7 +742,12 @@ class _CategoriesScreenState extends State<CategoriesScreen>
                                   ),
                                   const SizedBox(width: 8),
                                   Text(
-                                    '\$${PriceUtils.formatDiscountPrice(product.precio)}',
+                                    MonedaVentaService.formatearPrecio(
+                                      PriceUtils.roundDiscountPrice(
+                                        product.precio,
+                                      ),
+                                      conSimbolo: true,
+                                    ),
                                     style: const TextStyle(
                                       fontWeight: FontWeight.bold,
                                       color: Color(0xFF4A90E2),

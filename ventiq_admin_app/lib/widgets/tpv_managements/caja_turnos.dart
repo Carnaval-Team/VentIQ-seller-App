@@ -321,9 +321,22 @@ class _CajaTurnosTabViewState extends State<CajaTurnosTabView> {
 
   Future<void> _imprimirActa(CajaTurno turno) async {
     try {
+      // El acta se imprime desde el listado y `fn_listar_turnos_admin` no
+      // devuelve el desglose por divisa: se pide aqui, bajo demanda, solo si el
+      // turno no lo trae ya. Sin datos (RPC no desplegada, turno antiguo o
+      // tienda de una sola divisa) el acta sale exactamente como antes.
+      var desglose = DesgloseTurnoMonedas(
+        monedas: turno.desgloseMonedas,
+        totalBase: turno.totalBase,
+      );
+      if (desglose.monedas.isEmpty) {
+        desglose = await CajaTurnoService.getDesgloseTurno(turno.id);
+      }
+
       await CajaTurnoPdfService.imprimirActaTurno(
         turno: turno,
         storeName: _storeName,
+        desglose: desglose,
       );
     } catch (e) {
       if (!mounted) return;
@@ -1461,6 +1474,19 @@ class _CajaTurnosTabViewState extends State<CajaTurnosTabView> {
     final color = _conciliacionColor(turno);
     final reporte = turno.reporte;
 
+    // El desglose por divisa se pide aqui, al abrir el detalle: la RPC del
+    // listado no lo trae y hacerlo por cada tarjeta multiplicaria las llamadas
+    // sin que nadie lo mire. Si la fila ya lo trae (listado con las columnas
+    // nuevas) se reutiliza y no se repite el viaje.
+    final desgloseFuture = turno.desgloseMonedas.isNotEmpty
+        ? Future.value(
+            DesgloseTurnoMonedas(
+              monedas: turno.desgloseMonedas,
+              totalBase: turno.totalBase,
+            ),
+          )
+        : CajaTurnoService.getDesgloseTurno(turno.id);
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1588,6 +1614,26 @@ class _CajaTurnosTabViewState extends State<CajaTurnosTabView> {
                       '% efectivo',
                       '${turno.porcentajeEfectivo.toStringAsFixed(1)}%',
                     ),
+                    FutureBuilder<DesgloseTurnoMonedas>(
+                      future: desgloseFuture,
+                      builder: (context, snapshot) {
+                        final desglose = snapshot.data;
+                        // Mientras carga no se reserva espacio, y sin desglose
+                        // util (vacio o de una sola divisa, que repetiria el
+                        // total de "Ventas") la seccion no se pinta.
+                        if (desglose == null || !desglose.tieneVariasDivisas) {
+                          return const SizedBox.shrink();
+                        }
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SizedBox(height: 16),
+                            _buildDetalleSeccion('Por moneda'),
+                            _buildDesgloseMonedas(desglose),
+                          ],
+                        );
+                      },
+                    ),
                     if (turno.desglosePagos.isNotEmpty) ...[
                       const SizedBox(height: 16),
                       _buildDetalleSeccion('Desglose de cobros'),
@@ -1709,6 +1755,146 @@ class _CajaTurnosTabViewState extends State<CajaTurnosTabView> {
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  // ===================================================================
+  // Desglose por divisa ("Por moneda")
+  // ===================================================================
+
+  /// Anchos fijos por columna: son seis y no caben en un movil, asi que la
+  /// tabla se desplaza en horizontal en vez de apretar las cifras.
+  static const double _colMoneda = 80;
+  static const double _colOps = 72;
+  static const double _colNativo = 132;
+  static const double _colEquivalente = 120;
+
+  /// Importe en la divisa de su fila, siempre con el codigo al lado: los
+  /// nativos de distintas divisas no se suman entre si ni con el equivalente
+  /// en CUP, y el codigo es lo que evita leerlos como una misma cifra.
+  String _formatNativo(double importe, String moneda) =>
+      '${_currencyFormatter.format(importe)} $moneda';
+
+  Widget _buildDesgloseMonedas(DesgloseTurnoMonedas desglose) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceVariant,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.only(bottom: 5),
+              decoration: const BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(color: AppColors.border, width: 0.8),
+                ),
+              ),
+              child: _buildMonedaFila(
+                moneda: 'Moneda',
+                operaciones: 'Operaciones',
+                nativo: 'Nativo',
+                equivalente: 'Equivalente CUP',
+                efectivo: 'Efectivo',
+                digital: 'Digital',
+                encabezado: true,
+              ),
+            ),
+            ...desglose.monedas.map(
+              (m) => _buildMonedaFila(
+                moneda: m.moneda,
+                operaciones: '${m.operaciones}',
+                nativo: _formatNativo(m.importeNativo, m.moneda),
+                equivalente: _currencyFormatter.format(m.importeBase),
+                efectivo: _formatNativo(m.efectivoNativo, m.moneda),
+                digital: _formatNativo(m.digitalNativo, m.moneda),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.only(top: 5),
+              decoration: const BoxDecoration(
+                border: Border(
+                  top: BorderSide(color: AppColors.border, width: 0.8),
+                ),
+              ),
+              // El total solo consolida en CUP. Las operaciones se cuentan por
+              // divisa (una venta pagada en dos aparece en las dos filas) y los
+              // nativos no son sumables, por eso esas celdas van sin cifra.
+              child: _buildMonedaFila(
+                moneda: 'Total CUP',
+                operaciones: '—',
+                nativo: '—',
+                equivalente: _currencyFormatter.format(
+                  desglose.totalEquivalenteBase,
+                ),
+                efectivo: '—',
+                digital: '—',
+                total: true,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMonedaFila({
+    required String moneda,
+    required String operaciones,
+    required String nativo,
+    required String equivalente,
+    required String efectivo,
+    required String digital,
+    bool encabezado = false,
+    bool total = false,
+  }) {
+    // Las cinco columnas numericas comparten estilo y solo cambian de ancho.
+    Widget celda(String texto, double ancho) {
+      return SizedBox(
+        width: ancho,
+        child: Text(
+          texto,
+          textAlign: TextAlign.right,
+          style: TextStyle(
+            fontSize: encabezado ? 10.5 : 12,
+            fontWeight: encabezado
+                ? FontWeight.w600
+                : (total ? FontWeight.bold : FontWeight.w500),
+            color: encabezado ? AppColors.textLight : AppColors.textPrimary,
+            letterSpacing: encabezado ? 0.3 : null,
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          SizedBox(
+            width: _colMoneda,
+            child: Text(
+              moneda,
+              style: TextStyle(
+                fontSize: encabezado ? 10.5 : 12,
+                fontWeight: FontWeight.w700,
+                color: encabezado ? AppColors.textLight : AppColors.primary,
+                letterSpacing: encabezado ? 0.3 : null,
+              ),
+            ),
+          ),
+          celda(operaciones, _colOps),
+          celda(nativo, _colNativo),
+          celda(equivalente, _colEquivalente),
+          celda(efectivo, _colNativo),
+          celda(digital, _colNativo),
         ],
       ),
     );

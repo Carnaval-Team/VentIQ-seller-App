@@ -1676,15 +1676,7 @@ class AdminInventoryService {
       int? subcatId = (payload['id_subcategoria'] as num?)?.toInt();
       if ((subcatId == null || subcatId <= 0) && catId != null && catId > 0) {
         try {
-          final List<dynamic> subcats = await _supabase
-              .from('app_dat_subcategorias')
-              .select('id')
-              .eq('idcategoria', catId)
-              .order('id')
-              .limit(1);
-          if (subcats.isNotEmpty) {
-            subcatId = (subcats.first['id'] as num?)?.toInt();
-          }
+          subcatId = await _firstSubcategoryIdForCategory(catId);
         } catch (e) {
           debugPrint(
             '⚠️ AdminInventory: no se pudo resolver subcategoría de $catId: $e',
@@ -1705,6 +1697,31 @@ class AdminInventoryService {
         }
       }
     }
+  }
+
+  /// Primera subcategoría de [catId] a la que se puede enlazar un producto.
+  ///
+  /// Regla única del fichero: primero las visibles, que son las de gestión. Si la
+  /// categoría no tiene ninguna —categoría *especial*: un trigger de la base creó
+  /// solo la «General» con `oculta = true`— se usa la oculta. Esa «General» es un
+  /// cajón del sistema, no una subcategoría de gestión, así que no se ofrece en
+  /// las pantallas; pero sí es un enlace válido, y sin este respaldo el alta
+  /// desde el TPV dejaría al producto sin subcategoría.
+  Future<int?> _firstSubcategoryIdForCategory(int catId) async {
+    // `false` = visibles primero; `true` = la oculta del sistema como respaldo.
+    for (final oculta in [false, true]) {
+      final subcats = await _supabase
+          .from('app_dat_subcategorias')
+          .select('id')
+          .eq('idcategoria', catId)
+          .eq('oculta', oculta)
+          .order('id')
+          .limit(1);
+      if (subcats.isNotEmpty) {
+        return (subcats.first['id'] as num?)?.toInt();
+      }
+    }
+    return null;
   }
 
   Future<void> _syncExtraction(

@@ -5,13 +5,13 @@ import '../models/payment_method.dart' as pm;
 import '../models/product.dart';
 import '../services/bank_sms_service.dart';
 import '../theme/ventiq_home_theme.dart';
+import '../services/moneda_venta_service.dart';
 import '../services/order_service.dart';
 import '../services/payment_method_service.dart';
 import '../services/servicentro_service.dart';
 import '../services/store_config_service.dart';
 import '../services/turno_service.dart';
 import '../services/user_preferences_service.dart';
-import '../utils/price_utils.dart';
 import 'checkout_screen.dart';
 import 'payment_method_picker_screen.dart';
 
@@ -380,7 +380,7 @@ class _ServicentroCantidadScreenState extends State<ServicentroCantidadScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '\$${_precio.toMoneyString(2)} / $_um'
+                          '${MonedaVentaService.formatearPrecio(_precio, conSimbolo: true)} / $_um'
                           ' · Stock: ${_fuel.stockDisponible == _fuel.stockDisponible.roundToDouble() ? _fuel.stockDisponible.toInt() : _fuel.stockDisponible.toStringAsFixed(2)} $_um',
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant,

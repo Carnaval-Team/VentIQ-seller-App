@@ -298,17 +298,30 @@ class ProductService {
   }
 
   /// Obtiene subcategorías por categoría
+  ///
+  /// [soloVisibles] descarta las subcategorías que el trigger crea para las
+  /// categorías especiales (la «General» con `oculta = true`): existen para que
+  /// la categoría siempre tenga una subcategoría válida, pero no se muestran
+  /// para no ensuciar la gestión. Pasa `false` cuando necesites representar una
+  /// subcategoría ya asignada a un producto.
 
   static Future<List<Map<String, dynamic>>> getSubcategorias(
-    int categoryId,
-  ) async {
+    int categoryId, {
+    bool soloVisibles = true,
+  }) async {
     try {
       print('🔍 Obteniendo subcategorías para categoría: $categoryId');
 
-      final response = await _supabase
+      var query = _supabase
           .from('app_dat_subcategorias')
           .select('id,denominacion')
           .eq('idcategoria', categoryId);
+
+      if (soloVisibles) {
+        query = query.eq('oculta', false);
+      }
+
+      final response = await query;
 
       print('📦 Subcategorías obtenidas: ${response.length}');
 
@@ -2310,6 +2323,9 @@ class ProductService {
           .toList();
 
       // Obtener subcategorías asignadas al producto (no todas de la categoría)
+      // Sin filtro de `oculta`: aquí se RESUELVE la subcategoría que el producto
+      // ya tiene (no se ofrece un listado). Filtrar el join rompería el `!inner`
+      // y el producto se quedaría sin denominación de subcategoría.
 
       final subcategoriasResponse = await _supabase
           .from('app_dat_productos_subcategorias')

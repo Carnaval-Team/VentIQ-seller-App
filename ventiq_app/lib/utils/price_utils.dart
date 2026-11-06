@@ -126,14 +126,26 @@ class PriceUtils {
     }
   }
 
-  /// Formats a quantity smartly: "2" for 2.0, "1.5" for 1.5, "0.25" for 0.25
+  /// Moneda base contable del sistema. Todo se consolida en ella.
+  static const String baseCurrency = 'CUP';
+
+  /// Código de moneda del pago, **sin colapsar**.
+  ///
+  /// Antes devolvía `'USD'` o `'CUP'` (cualquier otra cosa era CUP). Ahora
+  /// devuelve el código real, que es lo que permite que una fila `EUR` no se
+  /// contabilice como CUP.
+  ///
+  /// Se normaliza a CUP cuando no viene o cuando el valor no es un código
+  /// ISO-4217 de 3 letras (filas antiguas con datos sucios).
   static String paymentCurrency(Map<String, dynamic> payment) {
     final raw =
         (payment['moneda'] ?? payment['currency'] ?? '')
             .toString()
             .trim()
             .toUpperCase();
-    return raw == 'USD' ? 'USD' : 'CUP';
+    if (raw.isEmpty) return baseCurrency;
+    if (!RegExp(r'^[A-Z]{3}$').hasMatch(raw)) return baseCurrency;
+    return raw;
   }
 
   static double _paymentNumber(dynamic value) {
@@ -152,19 +164,46 @@ class PriceUtils {
     );
   }
 
+  /// Tasa aplicada del pago (moneda nativa → moneda base).
+  ///
+  /// Orden de resolución:
+  ///   1. `tasa_cambio` (columna nueva, cualquier divisa)
+  ///   2. `tasa_usd`   (columna histórica, solo USD)
+  ///   3. derivada de `monto_cup_equivalente / monto` (lo que guardó el servidor)
+  ///
+  /// Devuelve 0 si no hay ninguna forma de determinarla.
+  static double paymentRate(Map<String, dynamic> payment) {
+    final direct = _paymentNumber(payment['tasa_cambio']);
+    if (direct > 0) return direct;
+
+    final legacy = _paymentNumber(payment['tasa_usd']);
+    if (legacy > 0) return legacy;
+
+    final amount = paymentAmount(payment);
+    final saved = _paymentNumber(payment['monto_cup_equivalente']);
+    if (amount > 0 && saved > 0) return saved / amount;
+
+    return 0;
+  }
+
   static double paymentCupEquivalent(
     Map<String, dynamic> payment, {
     double? fallbackRate,
   }) {
     final amount = paymentAmount(payment);
-    if (paymentCurrency(payment) != 'USD') return amount;
+    if (paymentCurrency(payment) == baseCurrency) return amount;
 
-    final rate = _paymentNumber(payment['tasa_usd']);
-    final effectiveRate = rate > 0 ? rate : (fallbackRate ?? 0);
+    var rate = paymentRate(payment);
+    if (rate <= 0 && fallbackRate != null && fallbackRate > 0) {
+      rate = fallbackRate;
+    }
+
     final saved = _paymentNumber(payment['monto_cup_equivalente']);
-    if (effectiveRate > 0) {
-      final calculated = amount * effectiveRate;
-      final roundingTolerance = effectiveRate * 0.005 + 0.01;
+    if (rate > 0) {
+      final calculated = amount * rate;
+      // Se prefiere el equivalente guardado si cuadra con monto × tasa: es el
+      // valor exacto con el que el servidor decidió `es_pagada`.
+      final roundingTolerance = rate * 0.005 + 0.01;
       return saved > 0 && (saved - calculated).abs() <= roundingTolerance
           ? saved
           : calculated;
@@ -182,47 +221,74 @@ class PriceUtils {
         total + paymentCupEquivalent(payment, fallbackRate: fallbackRate),
   );
 
-  static double paymentTotalUsd(List<Map<String, dynamic>> payments) => payments
-      .where((payment) => paymentCurrency(payment) == 'USD')
-      .fold(0, (total, payment) => total + paymentAmount(payment));
+  /// Suma de los importes NATIVOS de una moneda concreta, sin convertir.
+  ///
+  /// Es la respuesta exacta a «¿cuánto se cobró en USD?»: no pasa por ninguna
+  /// tasa, así que no arrastra redondeos ni depende de la tasa del día.
+  static double paymentTotalIn(
+    List<Map<String, dynamic>> payments,
+    String codigo,
+  ) {
+    final target = codigo.trim().toUpperCase();
+    return payments
+        .where((payment) => paymentCurrency(payment) == target)
+        .fold(0, (total, payment) => total + paymentAmount(payment));
+  }
+
+  /// Se conserva por compatibilidad: suma solo las líneas en USD.
+  static double paymentTotalUsd(List<Map<String, dynamic>> payments) =>
+      paymentTotalIn(payments, 'USD');
 
   static String formatPaymentAmount(Map<String, dynamic> payment) =>
       '${formatAmount(paymentAmount(payment))} ${paymentCurrency(payment)}';
 
+  /// Moneda en la que se presenta el total de un conjunto de pagos.
+  ///
+  /// Todos en la misma divisa → esa divisa. Mezcla → la moneda base (CUP),
+  /// que es el consolidado.
   static String paymentDisplayCurrency(List<Map<String, dynamic>> payments) {
-    if (payments.isEmpty) return 'CUP';
-    return payments.every((payment) => paymentCurrency(payment) == 'USD')
-        ? 'USD'
-        : 'CUP';
+    if (payments.isEmpty) return baseCurrency;
+    final codigos = payments.map(paymentCurrency).toSet();
+    return codigos.length == 1 ? codigos.first : baseCurrency;
   }
 
-  static double? paymentUsdRate(
-    List<Map<String, dynamic>> payments, {
+  /// Tasa de la primera línea de esa moneda (o la de respaldo).
+  static double? paymentRateFor(
+    List<Map<String, dynamic>> payments,
+    String codigo, {
     double? fallbackRate,
   }) {
+    final target = codigo.trim().toUpperCase();
     for (final payment in payments) {
-      if (paymentCurrency(payment) != 'USD') continue;
-      final rate = _paymentNumber(payment['tasa_usd']);
+      if (paymentCurrency(payment) != target) continue;
+      final rate = paymentRate(payment);
       if (rate > 0) return rate;
     }
     if (fallbackRate != null && fallbackRate > 0) return fallbackRate;
     return null;
   }
 
+  /// Se conserva por compatibilidad: tasa de las líneas en USD.
+  static double? paymentUsdRate(
+    List<Map<String, dynamic>> payments, {
+    double? fallbackRate,
+  }) => paymentRateFor(payments, 'USD', fallbackRate: fallbackRate);
+
   static String formatCupAmountForPayments(
     double cupAmount,
     List<Map<String, dynamic>> payments, {
     double? fallbackRate,
   }) {
-    if (paymentDisplayCurrency(payments) == 'USD') {
-      final rate = paymentUsdRate(payments, fallbackRate: fallbackRate);
-      if (rate != null && rate > 0) {
-        return '${formatAmount(cupAmount / rate)} USD';
-      }
-      // Orden USD sin tasa usable: no mentir con etiqueta CUP.
-      return '${formatAmount(cupAmount)} USD';
+    final display = paymentDisplayCurrency(payments);
+    if (display == baseCurrency) {
+      return '${formatAmount(cupAmount)} $baseCurrency';
     }
-    return '${formatAmount(cupAmount)} CUP';
+    final rate = paymentRateFor(payments, display, fallbackRate: fallbackRate);
+    if (rate != null && rate > 0) {
+      return '${formatAmount(cupAmount / rate)} $display';
+    }
+    // Sin tasa usable: no mentir con una etiqueta que no corresponde.
+    return '${formatAmount(cupAmount)} $display';
   }
 
   /// Convierte un monto CUP a la moneda de visualización del ticket.
@@ -231,8 +297,9 @@ class PriceUtils {
     List<Map<String, dynamic>> payments, {
     double? fallbackRate,
   }) {
-    if (paymentDisplayCurrency(payments) != 'USD') return cupAmount;
-    final rate = paymentUsdRate(payments, fallbackRate: fallbackRate);
+    final display = paymentDisplayCurrency(payments);
+    if (display == baseCurrency) return cupAmount;
+    final rate = paymentRateFor(payments, display, fallbackRate: fallbackRate);
     if (rate == null || rate <= 0) return cupAmount;
     return cupAmount / rate;
   }
@@ -243,14 +310,69 @@ class PriceUtils {
     int cupDecimals = 0,
     double? fallbackRate,
   }) {
-    final isUsd = paymentDisplayCurrency(payments) == 'USD';
+    final display = paymentDisplayCurrency(payments);
     final amount = cupToTicketAmount(
       cupAmount,
       payments,
       fallbackRate: fallbackRate,
     );
-    if (isUsd) return '${formatAmount(amount, separator: ' ')} USD';
-    return '\$${formatAmount(amount, decimals: cupDecimals, separator: ' ')} CUP';
+    if (display == baseCurrency) {
+      return '\$${formatAmount(amount, decimals: cupDecimals, separator: ' ')} $baseCurrency';
+    }
+    return '${formatAmount(amount, separator: ' ')} $display';
+  }
+
+  /// Ajusta UNA línea de pago cuando se aplica un descuento al total.
+  ///
+  /// El descuento se expresa en moneda base (CUP). Devuelve los tres valores que
+  /// hay que escribir en la fila para que quede **coherente**:
+  /// `monto × tasa == monto_cup_equivalente`.
+  ///
+  /// Antes, el llamador escribía `monto = precioFinal` (un importe en CUP) sin
+  /// tocar `moneda` ni el equivalente: en una venta en USD grababa un importe en
+  /// CUP como si fueran dólares. Esta función es pura para poder probarla.
+  ///
+  /// - [montoDescontado]: cuánto se rebaja, en moneda base.
+  /// - [montoBaseTotal]: importe ANTES del descuento, en moneda base.
+  static ({double montoNativo, double equivalenteBase, double baseNativo})
+  ajustarPagoPorDescuento(
+    Map<String, dynamic> pago, {
+    required double montoDescontado,
+    required double montoBaseTotal,
+  }) {
+    final esMonedaBase = paymentCurrency(pago) == baseCurrency;
+    final tasa = paymentRate(pago);
+    final equivalenteActual = esMonedaBase
+        ? paymentAmount(pago)
+        : paymentCupEquivalent(pago);
+
+    final equivalenteBase = (equivalenteActual - montoDescontado)
+        .clamp(0, double.maxFinite)
+        .toDouble();
+
+    if (esMonedaBase) {
+      return (
+        montoNativo: equivalenteBase,
+        equivalenteBase: equivalenteBase,
+        baseNativo: montoBaseTotal,
+      );
+    }
+
+    if (tasa <= 0) {
+      // Sin tasa utilizable no se inventa una conversión: se conserva el importe
+      // nativo original y solo se corrige el equivalente.
+      return (
+        montoNativo: paymentAmount(pago),
+        equivalenteBase: equivalenteBase,
+        baseNativo: montoBaseTotal,
+      );
+    }
+
+    return (
+      montoNativo: equivalenteBase / tasa,
+      equivalenteBase: equivalenteBase,
+      baseNativo: montoBaseTotal / tasa,
+    );
   }
 
   /// Normaliza mapas de pago de listar_ordenes / get_sale_payments2 / checkout.
@@ -260,6 +382,17 @@ class PriceUtils {
     map['monto'] = amount;
     if (map['moneda'] == null && map['currency'] != null) {
       map['moneda'] = map['currency'];
+    }
+    // Tasa: unificar las dos columnas y rellenar la que falte.
+    //   `tasa_cambio` es la genérica (cualquier divisa).
+    //   `tasa_usd`    es la histórica (solo USD) y se mantiene por compatibilidad.
+    if (map['tasa_cambio'] == null && map['tasa_usd'] != null) {
+      map['tasa_cambio'] = map['tasa_usd'];
+    }
+    if (map['tasa_usd'] == null &&
+        map['tasa_cambio'] != null &&
+        paymentCurrency(map) == 'USD') {
+      map['tasa_usd'] = map['tasa_cambio'];
     }
     if (map['denominacion'] == null) {
       map['denominacion'] = paymentMethodName(map);

@@ -58,8 +58,8 @@ class HomeCatalogoView extends StatelessWidget {
 
   final Widget? chips;
 
-  /// Rieles extra («Ofertas», «Más vendidos»). El armazón los pinta después de
-  /// la rejilla de destacadas y antes de la tarjeta «Tienda».
+  /// Rieles extra («Ofertas», «Más vendidos»). El armazón los pinta al final,
+  /// después de las categorías: primero el catálogo, luego las recomendaciones.
   final List<Widget> rieles;
 
   /// Nombre de la tienda para la tarjeta de agrupación (D2). Por defecto,
@@ -100,15 +100,14 @@ class HomeCatalogoView extends StatelessWidget {
           SliverToBoxAdapter(child: contenidoAlternativo)
         else ...<Widget>[
           if (chips != null) SliverToBoxAdapter(child: chips),
-          // Rieles de productos justo debajo de los chips: «Ofertas» y «Más
-          // vendidos» son lo más accionable del Home y tienen que verse sin
-          // bajar por la rejilla de categorías.
-          if (rieles.isNotEmpty) ...<Widget>[
-            const SliverToBoxAdapter(child: SizedBox(height: 14)),
-            SliverToBoxAdapter(child: Column(children: rieles)),
-            const SliverToBoxAdapter(child: SizedBox(height: 8)),
-          ],
+          // Las categorías van PRIMERO: son el punto de entrada del Home. Los
+          // rieles de producto («Ofertas», «Más vendidos») son un extra y van
+          // después del catálogo, no delante de él.
           ..._sliversCatalogo(context),
+          if (rieles.isNotEmpty) ...<Widget>[
+            const SliverToBoxAdapter(child: SizedBox(height: 20)),
+            SliverToBoxAdapter(child: Column(children: rieles)),
+          ],
         ],
         const SliverToBoxAdapter(child: SizedBox(height: 28)),
       ],

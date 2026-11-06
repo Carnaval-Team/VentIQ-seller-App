@@ -444,26 +444,50 @@ class OrderService extends ChangeNotifier {
           .update({'precio_con_descuento_total': precioFinal})
           .eq('id_operacion', operationId);
 
-      // Ajustar pago más alto en app_dat_pago_venta
+      // Ajustar el pago de mayor importe EQUIVALENTE.
+      //
+      // Antes se ordenaban por `monto` NATIVO (comparar 45.000 CUP con 50 USD no
+      // significa nada) y se escribía `monto = precioFinal` a secas, sin tocar
+      // `moneda`, `tasa_usd` ni `monto_cup_equivalente`. En una venta en USD eso
+      // grababa un importe en CUP como si fueran dólares y dejaba el equivalente
+      // desincronizado con el importe.
+      //
+      // Ahora: se elige por equivalente en moneda base, el descuento se resta de
+      // ese equivalente y el importe nativo se recalcula con la tasa del propio
+      // pago. La fila queda coherente: monto × tasa = equivalente.
       final List<dynamic>? pagosResponse = await Supabase.instance.client
           .from('app_dat_pago_venta')
-          .select('id, monto')
+          .select('id, monto, moneda, tasa_usd, monto_cup_equivalente')
           .eq('id_operacion_venta', operationId);
 
       if (pagosResponse != null && pagosResponse.isNotEmpty) {
         final pagos = List<Map<String, dynamic>>.from(pagosResponse);
-        pagos.sort((a, b) {
-          final double montoA = (a['monto'] as num).toDouble();
-          final double montoB = (b['monto'] as num).toDouble();
-          return montoB.compareTo(montoA); // Mayor primero
-        });
 
+        double equivalenteDe(Map<String, dynamic> pago) {
+          if (PriceUtils.paymentCurrency(pago) == PriceUtils.baseCurrency) {
+            return PriceUtils.paymentAmount(pago);
+          }
+          return PriceUtils.paymentCupEquivalent(pago);
+        }
+
+        pagos.sort((a, b) => equivalenteDe(b).compareTo(equivalenteDe(a)));
         final pagoMayor = pagos.first;
         final pagoId = pagoMayor['id'] as int;
 
+        // La aritmética vive en PriceUtils (función pura, con tests propios).
+        final ajuste = PriceUtils.ajustarPagoPorDescuento(
+          pagoMayor,
+          montoDescontado: montoDescontado,
+          montoBaseTotal: montoBase,
+        );
+
         await Supabase.instance.client
             .from('app_dat_pago_venta')
-            .update({'monto': precioFinal, 'importe_sin_descuento': montoBase})
+            .update({
+              'monto': ajuste.montoNativo,
+              'importe_sin_descuento': ajuste.baseNativo,
+              'monto_cup_equivalente': ajuste.equivalenteBase,
+            })
             .eq('id', pagoId);
       }
 
@@ -627,7 +651,7 @@ class OrderService extends ChangeNotifier {
 
       final List<dynamic>? pagosResponse = await Supabase.instance.client
           .from('app_dat_pago_venta')
-          .select('id, id_medio_pago, monto')
+          .select('id, id_medio_pago, monto, moneda, tasa_usd, monto_cup_equivalente')
           .eq('id_operacion_venta', operationId);
 
       if (pagosResponse == null || pagosResponse.isEmpty) {
@@ -647,7 +671,7 @@ class OrderService extends ChangeNotifier {
       }
 
       final sourcePago = pagos[sourceIndex];
-      final sourceAmount = (sourcePago['monto'] as num).toDouble();
+      final sourceAmount = PriceUtils.paymentAmount(sourcePago);
 
       if (amount > sourceAmount) {
         return {
@@ -656,6 +680,16 @@ class OrderService extends ChangeNotifier {
               'El monto a mover no puede ser mayor al saldo del método origen.',
         };
       }
+
+      // `amount` viene en la moneda NATIVA del pago origen. Se mueve su VALOR en
+      // moneda base, de modo que el traspaso sigue siendo correcto aunque origen
+      // y destino estén en divisas distintas.
+      final double sourceRate =
+          PriceUtils.paymentCurrency(sourcePago) == PriceUtils.baseCurrency
+          ? 1.0
+          : PriceUtils.paymentRate(sourcePago);
+      final double valorMovidoBase =
+          amount * (sourceRate > 0 ? sourceRate : 1.0);
 
       final targetPago = pagos.firstWhere(
         (pago) => pago['id_medio_pago'] == toPaymentMethodId,
@@ -671,24 +705,54 @@ class OrderService extends ChangeNotifier {
             .delete()
             .eq('id', sourcePago['id']);
       } else {
+        // El equivalente se recalcula: antes solo se bajaba `monto` y el
+        // equivalente quedaba con el valor viejo (el total de la operación).
+        final double nuevoEquivOrigen =
+            (PriceUtils.paymentCupEquivalent(sourcePago) - valorMovidoBase)
+                .clamp(0, double.maxFinite)
+                .toDouble();
         await Supabase.instance.client
             .from('app_dat_pago_venta')
-            .update({'monto': newSourceAmount})
+            .update({
+              'monto': newSourceAmount,
+              'monto_cup_equivalente': nuevoEquivOrigen,
+            })
             .eq('id', sourcePago['id']);
       }
 
       if (targetPago.isNotEmpty) {
-        final targetAmount = (targetPago['monto'] as num).toDouble();
+        final double targetRate =
+            PriceUtils.paymentCurrency(targetPago) == PriceUtils.baseCurrency
+            ? 1.0
+            : PriceUtils.paymentRate(targetPago);
+        final double nuevoMontoDestino =
+            PriceUtils.paymentAmount(targetPago) +
+            (targetRate > 0 ? valorMovidoBase / targetRate : valorMovidoBase);
+        final double nuevoEquivDestino =
+            PriceUtils.paymentCupEquivalent(targetPago) + valorMovidoBase;
+
         await Supabase.instance.client
             .from('app_dat_pago_venta')
-            .update({'monto': targetAmount + amount})
+            .update({
+              'monto': nuevoMontoDestino,
+              'monto_cup_equivalente': nuevoEquivDestino,
+            })
             .eq('id', targetPago['id']);
       } else {
         final tipoPago = toPaymentMethodId == 1 ? 1 : 2;
+        // `moneda` y `monto_cup_equivalente` se declaran EXPLÍCITAMENTE.
+        // Antes se omitían: `moneda` tomaba el DEFAULT 'CUP' y el equivalente
+        // quedaba NULL. Es el origen de 51 de los 666 equivalentes nulos que
+        // hay en producción (filas con referencia 'Ajuste Inventtia Caja').
+        //
+        // El destino de un traspaso es CUP porque este flujo no maneja la
+        // moneda por línea; cuando lo haga (Fase 3.2), se tomará de ahí.
         await Supabase.instance.client.from('app_dat_pago_venta').insert({
           'id_operacion_venta': operationId,
           'id_medio_pago': toPaymentMethodId,
-          'monto': amount,
+          'monto': valorMovidoBase,
+          'moneda': PriceUtils.baseCurrency,
+          'monto_cup_equivalente': valorMovidoBase,
           'tipo_pago': tipoPago,
           'referencia_pago':
               'Ajuste Inventtia Caja - ${DateTime.now().millisecondsSinceEpoch}',
@@ -750,8 +814,8 @@ class OrderService extends ChangeNotifier {
       return {'success': false, 'error': 'El pago origen no fue encontrado.'};
     }
 
-    final sourceAmount =
-        (payments[sourceIndex]['monto'] as num?)?.toDouble() ?? 0;
+    final sourcePago = payments[sourceIndex];
+    final sourceAmount = PriceUtils.paymentAmount(sourcePago);
     if (amount > sourceAmount) {
       return {
         'success': false,
@@ -759,6 +823,15 @@ class OrderService extends ChangeNotifier {
             'El monto a mover no puede ser mayor al saldo del método origen.',
       };
     }
+
+    // `amount` viene en la moneda nativa del pago origen; el traspaso se hace
+    // por su VALOR en moneda base para que siga siendo correcto aunque origen y
+    // destino estén en divisas distintas.
+    final double sourceRate =
+        PriceUtils.paymentCurrency(sourcePago) == PriceUtils.baseCurrency
+        ? 1.0
+        : PriceUtils.paymentRate(sourcePago);
+    final double valorMovidoBase = amount * (sourceRate > 0 ? sourceRate : 1.0);
 
     final newSourceAmount = sourceAmount - amount;
     if (newSourceAmount <= 0.0001) {
@@ -773,19 +846,28 @@ class OrderService extends ChangeNotifier {
           toPaymentMethodId;
     });
     if (targetIndex != -1) {
-      final targetAmount =
-          (payments[targetIndex]['monto'] as num?)?.toDouble() ?? 0;
-      payments[targetIndex]['monto'] = targetAmount + amount;
+      final targetPago = payments[targetIndex];
+      final double targetRate =
+          PriceUtils.paymentCurrency(targetPago) == PriceUtils.baseCurrency
+          ? 1.0
+          : PriceUtils.paymentRate(targetPago);
+      final targetAmount = PriceUtils.paymentAmount(targetPago);
+      payments[targetIndex]['monto'] =
+          targetAmount +
+          (targetRate > 0 ? valorMovidoBase / targetRate : valorMovidoBase);
     } else {
       final methods = await userPrefs.getPaymentMethodsOffline();
       final target = methods.cast<Map<String, dynamic>?>().firstWhere(
         (method) => (method?['id'] as num?)?.toInt() == toPaymentMethodId,
         orElse: () => null,
       );
+      // `moneda` explícita: sin ella el sincronizador tendría que adivinarlo y
+      // una divisa nueva se leería como CUP.
       payments.add({
         'id_medio_pago': toPaymentMethodId,
         'denominacion': target?['denominacion'] ?? 'Método $toPaymentMethodId',
-        'monto': amount,
+        'monto': valorMovidoBase,
+        'moneda': PriceUtils.baseCurrency,
         'es_digital': target?['es_digital'] ?? false,
         'es_efectivo': target?['es_efectivo'] ?? false,
       });
@@ -1597,35 +1679,60 @@ class OrderService extends ChangeNotifier {
       print('=== DEBUG REGISTRO DE PAGOS ===');
       print('operationId: $operationId');
       print('order.items.length: ${order.items.length}');
-      // Agrupar pagos por método de pago
-      Map<int, double> paymentsByMethod = {};
-      // Mapa para rastrear el tipo de pago (1 o 2) para cada método de pago
-      Map<int, int> paymentTypeByMethod = {};
-      final paymentCurrencyByMethod = <int, String>{};
-      final paymentRateByMethod = <int, double?>{};
+      // Agrupar por (método, MONEDA).
+      //
+      // Un mismo método puede cobrarse en varias monedas en la misma venta
+      // (decisión D1), así que la clave NO puede ser solo el id del método:
+      // con `Map<int, double>` la segunda moneda PISABA a la primera y solo se
+      // registraba una línea.
+      final lineas = <String, Map<String, dynamic>>{};
+      final paymentTypeByMethod = <int, int>{};
+
+      void agregarLinea({
+        required int methodId,
+        required String moneda,
+        required double monto,
+        required int tipoPago,
+        double? tasa,
+      }) {
+        if (monto <= 0) return;
+        final key = '$methodId|$moneda';
+        final existente = lineas[key];
+        if (existente == null) {
+          lineas[key] = {
+            'id_medio_pago': methodId,
+            'monto': monto,
+            'tipo_pago': tipoPago,
+            'moneda': moneda,
+            'tasa_cambio': (tasa != null && tasa > 0) ? tasa : null,
+          };
+        } else {
+          existente['monto'] = (existente['monto'] as double) + monto;
+        }
+        paymentTypeByMethod[methodId] = tipoPago;
+      }
 
       for (final rawPayment in order.pagos ?? const <dynamic>[]) {
         if (rawPayment is! Map) continue;
         final payment = Map<String, dynamic>.from(rawPayment);
         final methodId = (payment['id_medio_pago'] as num?)?.toInt();
-        final amount = (payment['monto'] as num?)?.toDouble();
-        if (methodId == null || amount == null) continue;
-        paymentsByMethod[methodId] = amount;
-        paymentTypeByMethod[methodId] =
+        if (methodId == null) continue;
+        final amount = PriceUtils.paymentAmount(payment);
+        if (amount <= 0) continue;
+
+        final tipoPago =
             (payment['tipo_pago'] as num?)?.toInt() ?? (methodId == 1 ? 1 : 2);
-        final currency =
-            payment['moneda']?.toString().toUpperCase() == 'USD'
-                ? 'USD'
-                : 'CUP';
-        paymentCurrencyByMethod[methodId] = currency;
-        paymentRateByMethod[methodId] =
-            currency == 'USD'
-                ? (payment['tasa_usd'] as num?)?.toDouble()
-                : null;
+
+        agregarLinea(
+          methodId: methodId,
+          moneda: PriceUtils.paymentCurrency(payment),
+          monto: amount,
+          tipoPago: tipoPago,
+          tasa: PriceUtils.paymentRate(payment),
+        );
       }
 
-      for (final item
-          in paymentsByMethod.isEmpty ? order.items : <OrderItem>[]) {
+      for (final item in lineas.isEmpty ? order.items : <OrderItem>[]) {
         if (item.paymentMethod != null) {
           // "Pago Pendiente" (cuenta por cobrar): no genera fila en
           // app_dat_pago_venta. El monto queda como saldo pendiente (ver
@@ -1643,32 +1750,33 @@ class OrderService extends ChangeNotifier {
           final actualMethodId = item.paymentMethod!.id;
           final tipoPago = actualMethodId == 1 ? 1 : 2;
 
-          final itemTotal = item.subtotal;
-
-          paymentsByMethod[actualMethodId] =
-              (paymentsByMethod[actualMethodId] ?? 0.0) + itemTotal;
-
-          // Guardar el tipo de pago para este método
-          paymentTypeByMethod[actualMethodId] = tipoPago;
-
           print('Item: ${item.nombre}');
           print(
             'Payment Method: ${item.paymentMethod!.denominacion} (ID: $actualMethodId, Tipo Pago: $tipoPago)',
           );
-          print('Item Total: \$${itemTotal.toStringAsFixed(2)}');
+          print('Item Total: \$${item.subtotal.toStringAsFixed(2)}');
+
+          // Los precios de catálogo están en CUP: la línea derivada de ítems es
+          // CUP por definición.
+          agregarLinea(
+            methodId: actualMethodId,
+            moneda: PriceUtils.baseCurrency,
+            monto: item.subtotal,
+            tipoPago: tipoPago,
+          );
         } else {
           print('Warning: Item ${item.nombre} has no payment method assigned');
         }
       }
 
-      print('Payments by method: $paymentsByMethod');
+      print('Líneas de pago: $lineas');
       print('Payment types by method: $paymentTypeByMethod');
 
       final hayItemsPagoPendiente = order.items.any(
         (item) => item.paymentMethod?.esPagoPendiente ?? false,
       );
 
-      if (paymentsByMethod.isEmpty) {
+      if (lineas.isEmpty) {
         if (hayItemsPagoPendiente) {
           // Toda la venta quedó como pago pendiente (CxC): no hay pagos que
           // registrar, es un resultado válido (no un error).
@@ -1681,18 +1789,25 @@ class OrderService extends ChangeNotifier {
         };
       }
 
-      // Preparar array de pagos para la función RPC
-      List<Map<String, dynamic>> pagos = [];
+      // Preparar array de pagos para la función RPC.
+      final pagos = <Map<String, dynamic>>[];
+      final referenciaPago =
+          'Pago Inventtia Caja - ${DateTime.now().millisecondsSinceEpoch}';
 
-      for (final entry in paymentsByMethod.entries) {
+      for (final linea in lineas.values) {
+        final moneda = linea['moneda'].toString().toUpperCase();
+        final tasa = (linea['tasa_cambio'] as num?)?.toDouble();
+
         pagos.add({
-          'id_medio_pago': entry.key,
-          'monto': entry.value,
-          'tipo_pago': paymentTypeByMethod[entry.key] ?? 1, // Agregar tipo_pago
-          'moneda': paymentCurrencyByMethod[entry.key] ?? 'CUP',
-          'tasa_usd': paymentRateByMethod[entry.key],
-          'referencia_pago':
-              'Pago Inventtia Caja - ${DateTime.now().millisecondsSinceEpoch}',
+          'id_medio_pago': linea['id_medio_pago'],
+          'monto': linea['monto'],
+          'tipo_pago': linea['tipo_pago'],
+          'moneda': moneda,
+          // `tasa_cambio` es la columna genérica (sirve para cualquier divisa).
+          'tasa_cambio': tasa,
+          // `tasa_usd` se mantiene para las RPC antiguas, que solo la entienden.
+          'tasa_usd': moneda == 'USD' ? tasa : null,
+          'referencia_pago': referenciaPago,
         });
       }
 
@@ -1723,21 +1838,52 @@ class OrderService extends ChangeNotifier {
         }
 
         try {
-          // Preferir fn_registrar_pago_venta_v2 (idempotente: reescribe los
-          // pagos no liquidados). Si aún no está desplegada, caer a la
-          // función original.
+          // Cadena de RPC, de la más nueva a la más vieja:
+          //   _v3 (genérica, cualquier divisa) -> _v2 -> _v1
+          //
+          // IMPORTANTE: si alguna línea NO está en CUP/USD, NO se cae a `_v2`
+          // ni a `_v1`. Esas funciones solo entienden CUP/USD y, hasta la Fase
+          // 3.1c, coaccionaban cualquier otra divisa a CUP en silencio. Mejor
+          // fallar con un mensaje claro que guardar una fila corrupta.
+          final monedasNoSoportadas = pagos
+              .map((p) => p['moneda'].toString().toUpperCase())
+              .where((m) => m != 'CUP' && m != 'USD')
+              .toSet();
+
           dynamic response;
           try {
             response = await Supabase.instance.client.rpc(
-              'fn_registrar_pago_venta_v2',
+              'fn_registrar_pago_venta_v3',
               params: {'p_id_operacion_venta': operationId, 'p_pagos': pagos},
             );
           } catch (e) {
-            if (!_isRpcUnavailable(e, 'fn_registrar_pago_venta_v2')) rethrow;
-            response = await Supabase.instance.client.rpc(
-              'fn_registrar_pago_venta',
-              params: {'p_id_operacion_venta': operationId, 'p_pagos': pagos},
-            );
+            if (!_isRpcUnavailable(e, 'fn_registrar_pago_venta_v3')) rethrow;
+
+            if (monedasNoSoportadas.isNotEmpty) {
+              return {
+                'success': false,
+                'error':
+                    'El servidor no soporta cobros en '
+                    '${monedasNoSoportadas.join(", ")}: falta desplegar '
+                    'fn_registrar_pago_venta_v3. No se registró el pago para '
+                    'no guardar una moneda incorrecta.',
+              };
+            }
+
+            try {
+              response = await Supabase.instance.client.rpc(
+                'fn_registrar_pago_venta_v2',
+                params: {'p_id_operacion_venta': operationId, 'p_pagos': pagos},
+              );
+            } catch (e2) {
+              if (!_isRpcUnavailable(e2, 'fn_registrar_pago_venta_v2')) {
+                rethrow;
+              }
+              response = await Supabase.instance.client.rpc(
+                'fn_registrar_pago_venta',
+                params: {'p_id_operacion_venta': operationId, 'p_pagos': pagos},
+              );
+            }
           }
 
           print('Respuesta registro pagos (intento $attempt): $response');
@@ -1825,11 +1971,12 @@ class OrderService extends ChangeNotifier {
         final p = Map<String, dynamic>.from(raw);
         final id = (p['id_medio_pago'] as num?)?.toInt();
         if (id == null) continue;
-        final currency =
-            (p['moneda']?.toString().toUpperCase() == 'USD') ? 'USD' : 'CUP';
-        final key = '$id|$currency';
+        // Código REAL de la moneda. Antes se colapsaba a CUP/USD, así que un
+        // pago en EUR se agrupaba como CUP: nunca coincidía con lo esperado y
+        // la venta se reintentaba en cada sincronización.
+        final key = '$id|${PriceUtils.paymentCurrency(p)}';
         existing[key] =
-            (existing[key] ?? 0.0) + ((p['monto'] as num?)?.toDouble() ?? 0.0);
+            (existing[key] ?? 0.0) + PriceUtils.paymentAmount(p);
       }
 
       final expected = <String, double>{};
@@ -1837,11 +1984,9 @@ class OrderService extends ChangeNotifier {
         final p = Map<String, dynamic>.from(raw);
         final id = (p['id_medio_pago'] as num?)?.toInt();
         if (id == null) continue;
-        final currency =
-            (p['moneda']?.toString().toUpperCase() == 'USD') ? 'USD' : 'CUP';
-        final key = '$id|$currency';
+        final key = '$id|${PriceUtils.paymentCurrency(p)}';
         expected[key] =
-            (expected[key] ?? 0.0) + ((p['monto'] as num?)?.toDouble() ?? 0.0);
+            (expected[key] ?? 0.0) + PriceUtils.paymentAmount(p);
       }
 
       if (existing.length != expected.length) return false;

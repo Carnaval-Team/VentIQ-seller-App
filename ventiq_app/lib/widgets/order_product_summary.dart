@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/order.dart';
+import '../services/moneda_venta_service.dart';
 import '../utils/price_utils.dart';
 
 class OrderProductSummary extends StatelessWidget {
@@ -30,13 +31,13 @@ class OrderProductSummary extends StatelessWidget {
         presentation == null || presentation.isEmpty ? 'unid.' : presentation;
     final alternateTotal =
         currency == 'USD'
-            ? '${item.subtotal.toMoneyString(2)} CUP'
+            ? MonedaVentaService.formatearPrecio(item.subtotal)
             : usdRate > 0
             ? '${(item.subtotal / usdRate).toMoneyString(2)} USD'
             : null;
     final alternateUnit =
         currency == 'USD'
-            ? '${item.precioUnitario.toMoneyString(2)} CUP / $unit'
+            ? '${MonedaVentaService.formatearPrecio(item.precioUnitario)} / $unit'
             : usdRate > 0
             ? '${(item.precioUnitario / usdRate).toMoneyString(2)} USD / $unit aprox.'
             : null;

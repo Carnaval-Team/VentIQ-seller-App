@@ -18,6 +18,7 @@ import '../widgets/sales_monitor_fab.dart';
 import '../services/smart_offline_manager.dart';
 import '../utils/navigation_helper.dart';
 import '../utils/price_utils.dart';
+import '../services/moneda_venta_service.dart';
 import 'dart:async';
 import '../theme/ventiq_home_theme.dart';
 
@@ -524,7 +525,12 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen>
                                   ),
                                   const SizedBox(width: 8),
                                   Text(
-                                    '\$${PriceUtils.formatDiscountPrice(product.precio)}',
+                                    MonedaVentaService.formatearPrecio(
+                                      PriceUtils.roundDiscountPrice(
+                                        product.precio,
+                                      ),
+                                      conSimbolo: true,
+                                    ),
                                     style: const TextStyle(
                                       fontWeight: FontWeight.bold,
                                       color: Color(0xFF4A90E2),

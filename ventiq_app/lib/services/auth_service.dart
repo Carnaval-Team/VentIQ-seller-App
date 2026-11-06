@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/supabase_config.dart';
 import 'admin_access_service.dart';
+import 'moneda_venta_service.dart';
 import 'subscription_guard_service.dart';
 import 'user_preferences_service.dart';
 import 'auto_sync_service.dart';
@@ -87,6 +88,10 @@ class AuthService {
         }
       }
       AdminAccessService().clearMemoryCache();
+      // La moneda de venta es una preferencia **de este teléfono**: si no se
+      // limpia, el siguiente vendedor que entre heredaría la divisa y las tasas
+      // del anterior (y la guardada, que puede no existir en su tienda).
+      await MonedaVentaService.limpiar();
       print('👋 Usuario cerró sesión exitosamente');
     } catch (e) {
       print('❌ Error al cerrar sesión: $e');

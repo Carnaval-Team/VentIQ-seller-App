@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -23,6 +23,7 @@ import '../services/turno_service.dart';
 import '../services/auto_sync_service.dart';
 import '../services/store_config_service.dart';
 import '../services/currency_service.dart';
+import '../services/moneda_venta_service.dart';
 import '../utils/platform_utils.dart';
 import '../utils/pdf_download.dart';
 import '../utils/connection_error_handler.dart';
@@ -33,6 +34,7 @@ import '../widgets/sales_monitor_fab.dart';
 // import '../widgets/offline_status_badge.dart';
 import '../widgets/notification_widget.dart';
 import '../widgets/sync_status_chip.dart';
+import '../widgets/moneda_venta_chip.dart';
 import '../widgets/bill_count_dialog.dart';
 import '../services/bank_sms_service.dart';
 import '../widgets/transfer_sms_confirmation_banner.dart';
@@ -362,7 +364,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          'Total actual: \$${baseTotal.toMoneyString(2)}',
+                          'Total actual: ${MonedaVentaService.formatearPrecio(baseTotal, conSimbolo: true)}',
                           style: const TextStyle(
                             fontSize: 13.5,
                             color: VentiqHomeTheme.textSecondary,
@@ -551,7 +553,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                     ),
                                   ),
                                   Text(
-                                    '-\$${discountAmount.toMoneyString(2)}',
+                                    '-${MonedaVentaService.formatearPrecio(discountAmount, conSimbolo: true)}',
                                     style: const TextStyle(
                                       color: VentiqHomeTheme.danger,
                                       fontWeight: FontWeight.w800,
@@ -573,7 +575,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                     ),
                                   ),
                                   Text(
-                                    '\$${finalTotal.toMoneyString(2)}',
+                                    MonedaVentaService.formatearPrecio(
+                                      finalTotal,
+                                      conSimbolo: true,
+                                    ),
                                     style: const TextStyle(
                                       color: VentiqHomeTheme.success,
                                       fontWeight: FontWeight.w800,
@@ -600,7 +605,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           Text(
                             percentInvalid
                                 ? 'El porcentaje debe ser mayor que 0 y menor o igual a 100.'
-                                : 'El monto debe ser mayor que 0 y no superar \$${baseTotal.toMoneyString(2)}.',
+                                : 'El monto debe ser mayor que 0 y no superar ${MonedaVentaService.formatearPrecio(baseTotal, conSimbolo: true)}.',
                             style: const TextStyle(
                               color: VentiqHomeTheme.danger,
                               fontWeight: FontWeight.w600,
@@ -657,7 +662,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                             ).showSnackBar(
                                               SnackBar(
                                                 content: Text(
-                                                  'Descuento aplicado. Total ahora: \$${(result['precioFinal'] as double).toMoneyString(2)}',
+                                                  'Descuento aplicado. Total ahora: ${MonedaVentaService.formatearPrecio(result['precioFinal'] as double, conSimbolo: true)}',
                                                 ),
                                                 backgroundColor:
                                                     VentiqHomeTheme.success,
@@ -935,6 +940,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         surfaceTintColor: Colors.transparent,
         actions: [
           // const OfflineStatusBadge(showLabel: false),
+          MonedaVentaChip(onChanged: (_) => setState(() {})),
           const NotificationWidget(),
           if (_isPrintingAllOrders)
             const Padding(
@@ -1975,7 +1981,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                       if (montoPendiente > 0)
                                         _buildDetailRowNew(
                                           'Monto pendiente',
-                                          '\$${montoPendiente.toMoneyString(2)}',
+                                          MonedaVentaService.formatearPrecio(
+                                            montoPendiente,
+                                            conSimbolo: true,
+                                          ),
                                           valueStyle: TextStyle(
                                             fontSize: 14,
                                             fontWeight: FontWeight.bold,
@@ -2489,7 +2498,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                                           ),
                                                         ),
                                                       Text(
-                                                        '\$${p.precio.toMoneyString(2)} c/u',
+                                                        '${MonedaVentaService.formatearPrecio(p.precio, conSimbolo: true)} c/u',
                                                         style: TextStyle(
                                                           fontSize: 11,
                                                           color:
@@ -5163,7 +5172,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     final String label =
         isPercent
             ? 'Descuento ${valor.toStringAsFixed(0)}%'
-            : 'Descuento fijo \$${valor.toMoneyString(2)}';
+            : 'Descuento fijo ${MonedaVentaService.formatearPrecio(valor, conSimbolo: true)}';
 
     return {
       'hasDiscount': true,
@@ -5638,10 +5647,16 @@ class _OrdersScreenState extends State<OrdersScreen> {
                             PriceUtils.formatQuantity(item.cantidad),
                           ),
                           _pdfBodyCell(
-                            '\$${item.displayPrice.toMoneyString(2)}',
+                            MonedaVentaService.formatearPrecio(
+                              item.displayPrice,
+                              conSimbolo: true,
+                            ),
                           ),
                           _pdfBodyCell(
-                            '\$${item.subtotal.toMoneyString(2)}',
+                            MonedaVentaService.formatearPrecio(
+                              item.subtotal,
+                              conSimbolo: true,
+                            ),
                             isBold: true,
                           ),
                         ],
@@ -5725,7 +5740,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       children: [
                         _pdfSummaryLabel('Total sin descuento'),
                         _pdfSummaryValue(
-                          '\$${originalTotal.toMoneyString(2)}',
+                          MonedaVentaService.formatearPrecio(
+                            originalTotal,
+                            conSimbolo: true,
+                          ),
                         ),
                       ],
                     ),
@@ -5740,7 +5758,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                 : 'Descuento aplicado',
                           ),
                           _pdfSummaryValue(
-                            '- \$${saved.toMoneyString(2)}',
+                            '- ${MonedaVentaService.formatearPrecio(saved, conSimbolo: true)}',
                             color: PdfColor.fromHex('#DC2626'),
                           ),
                         ],
@@ -5760,7 +5778,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           isBold: true,
                         ),
                         _pdfSummaryValue(
-                          '\$${finalTotal.toMoneyString(2)}',
+                          MonedaVentaService.formatearPrecio(
+                            finalTotal,
+                            conSimbolo: true,
+                          ),
                           fontSize: 14,
                           isBold: true,
                           color: PdfColor.fromHex('#0F172A'),
@@ -7488,7 +7509,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               Text(
-                                'Total: \$${_total.toMoneyString(2)}',
+                                'Total: ${MonedaVentaService.formatearPrecio(_total, conSimbolo: true)}',
                                 style: TextStyle(
                                   fontSize: 13,
                                   color: Colors.grey[600],
@@ -7798,7 +7819,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                   style: TextStyle(fontSize: 12, color: Colors.grey[500]),
                 ),
               Text(
-                '\$${o.total.toMoneyString(2)} · ${o.items.length} producto${o.items.length == 1 ? '' : 's'}',
+                '${MonedaVentaService.formatearPrecio(o.total, conSimbolo: true)} · ${o.items.length} producto${o.items.length == 1 ? '' : 's'}',
                 style: TextStyle(fontSize: 12, color: Colors.grey[600]),
               ),
             ],
@@ -8007,7 +8028,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                       style: TextStyle(fontSize: 11, color: Colors.grey[500]),
                     ),
                   Text(
-                    '\$${item.precioUnitario.toMoneyString(2)} c/u · Total: \$${item.subtotal.toMoneyString(2)}',
+                    '${MonedaVentaService.formatearPrecio(item.precioUnitario, conSimbolo: true)} c/u · Total: ${MonedaVentaService.formatearPrecio(item.subtotal, conSimbolo: true)}',
                     style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                   ),
                   if (widget.usdRate > 0)
@@ -8277,7 +8298,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
               Row(
                 children: [
                   Text(
-                    '\$${p.precio.toMoneyString(2)}',
+                    MonedaVentaService.formatearPrecio(p.precio, conSimbolo: true),
                     style: const TextStyle(
                       color: Color(0xFF0EA5E9),
                       fontWeight: FontWeight.w600,
@@ -8421,7 +8442,10 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                             ),
                           ),
                         Text(
-                          '\$${p.precio.toMoneyString(2)}',
+                          MonedaVentaService.formatearPrecio(
+                            p.precio,
+                            conSimbolo: true,
+                          ),
                           style: const TextStyle(
                             color: Color(0xFF0EA5E9),
                             fontWeight: FontWeight.w600,
@@ -8490,7 +8514,10 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
           Row(
             children: [
               Text(
-                '\$${product.precio.toMoneyString(2)}',
+                MonedaVentaService.formatearPrecio(
+                  product.precio,
+                  conSimbolo: true,
+                ),
                 style: const TextStyle(
                   fontSize: 16,
                   color: Color(0xFF0EA5E9),
@@ -8591,7 +8618,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              'Stock: ${stock.toStringAsFixed(stock % 1 == 0 ? 0 : 1)}  ·  \$${precio.toMoneyString(2)}',
+                              'Stock: ${stock.toStringAsFixed(stock % 1 == 0 ? 0 : 1)}  ·  ${MonedaVentaService.formatearPrecio(precio, conSimbolo: true)}',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Colors.grey[600],
@@ -8707,7 +8734,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                           Row(
                             children: [
                               Text(
-                                '${PriceUtils.formatQuantity(_addQuantity)} × \$${precioFinal.toMoneyString(2)}',
+                                '${PriceUtils.formatQuantity(_addQuantity)} × ${MonedaVentaService.formatearPrecio(precioFinal, conSimbolo: true)}',
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w500,
                                 ),
@@ -8715,7 +8742,10 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                               if (hasDiscount) ...[
                                 const SizedBox(width: 6),
                                 Text(
-                                  '\$${precioBase.toMoneyString(2)}',
+                                  MonedaVentaService.formatearPrecio(
+                                    precioBase,
+                                    conSimbolo: true,
+                                  ),
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: Colors.grey[500],
@@ -8727,7 +8757,10 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                           ),
                           // Total
                           Text(
-                            '\$${(_addQuantity * precioFinal).toMoneyString(2)}',
+                            MonedaVentaService.formatearPrecio(
+                              _addQuantity * precioFinal,
+                              conSimbolo: true,
+                            ),
                             style: TextStyle(
                               fontWeight: FontWeight.w700,
                               color:

@@ -2,7 +2,7 @@
 import 'package:flutter/services.dart';
 
 import '../../services/admin_inventory_service.dart';
-import '../../utils/price_utils.dart';
+import '../../services/moneda_venta_service.dart';
 import '../../theme/ventiq_home_theme.dart';
 
 /// Precios diferenciados por TPV (offline-first).
@@ -387,7 +387,11 @@ class _AdminTpvPricesScreenState extends State<AdminTpvPricesScreen> {
                             ].join(' · '),
                           ),
                           trailing: Text(
-                            '\$${((p['precio_venta_cup'] as num?)?.toDouble() ?? 0).toMoneyString(2)}',
+                            MonedaVentaService.formatearPrecio(
+                              (p['precio_venta_cup'] as num?)?.toDouble() ??
+                                  0.0,
+                              conSimbolo: true,
+                            ),
                             style: const TextStyle(
                               fontWeight: FontWeight.w700,
                               fontSize: 16,

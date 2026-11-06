@@ -86,6 +86,8 @@ class StoreConfigService {
     bool? modoRestaurante,
     bool? cocinaActiva,
     bool? mostrarSelectorMoneda,
+    bool? forzarMonedaVenta,
+    String? monedaVentaForzada,
   }) async {
     try {
       print('🔧 Actualizando configuración para tienda ID: $storeId');
@@ -244,6 +246,21 @@ class StoreConfigService {
       if (mostrarSelectorMoneda != null) {
         updateData['mostrar_selector_moneda'] = mostrarSelectorMoneda;
         print('  - mostrar_selector_moneda: $mostrarSelectorMoneda');
+      }
+      if (forzarMonedaVenta != null) {
+        updateData['forzar_moneda_venta'] = forzarMonedaVenta;
+        print('  - forzar_moneda_venta: $forzarMonedaVenta');
+      }
+      // La divisa solo tiene sentido con el interruptor encendido. Al apagarlo
+      // se escribe NULL en el mismo update: una forzada huérfana volvería a
+      // bloquear la venta en cuanto alguien reencendiera el switch sin mirar.
+      // Si el flag no viene, tampoco se toca la moneda: no cambiar nada.
+      if (forzarMonedaVenta == false) {
+        updateData['moneda_venta_forzada'] = null;
+        print('  - moneda_venta_forzada: null (interruptor apagado)');
+      } else if (monedaVentaForzada != null) {
+        updateData['moneda_venta_forzada'] = monedaVentaForzada;
+        print('  - moneda_venta_forzada: $monedaVentaForzada');
       }
       if (modoRestaurante != null) {
         updateData['modo_restaurante'] = modoRestaurante;
@@ -686,6 +703,31 @@ class StoreConfigService {
     bool value,
   ) async {
     await updateStoreConfig(storeId, mostrarMetodoPagoTicket: value);
+  }
+
+  // ==================== MONEDA DE VENTA FORZADA ====================
+
+  /// Si la tienda obliga al vendedor a vender en una única divisa.
+  static Future<bool> getForzarMonedaVenta(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      return config['forzar_moneda_venta'] ?? false;
+    } catch (e) {
+      print('❌ Error al obtener forzar_moneda_venta: $e');
+      return false;
+    }
+  }
+
+  /// Divisa impuesta por la tienda (`ISO 4217`); null si no se fuerza ninguna.
+  static Future<String?> getMonedaVentaForzada(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      final codigo = (config['moneda_venta_forzada'] ?? '').toString().trim();
+      return codigo.isEmpty ? null : codigo;
+    } catch (e) {
+      print('❌ Error al obtener moneda_venta_forzada: $e');
+      return null;
+    }
   }
 
   /// Obtiene el valor de autocompletar_cantidad_real_conteo

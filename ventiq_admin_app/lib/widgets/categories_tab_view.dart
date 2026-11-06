@@ -7,6 +7,7 @@ import '../models/category_generation_plan.dart';
 import '../models/subcategory.dart';
 import '../services/category_generation_service.dart';
 import '../services/category_service.dart';
+import '../services/image_picker_service.dart';
 import '../services/subcategory_service.dart';
 
 class CategoriesTabView extends StatefulWidget {
@@ -1232,7 +1233,6 @@ class _AddCategoryDialogState extends State<_AddCategoryDialog> {
   final _descriptionController = TextEditingController();
   final _skuController = TextEditingController();
   final CategoryService _categoryService = CategoryService();
-  final ImagePicker _imagePicker = ImagePicker();
 
   Uint8List? _selectedImageBytes;
   String? _selectedImageName;
@@ -1279,18 +1279,24 @@ class _AddCategoryDialogState extends State<_AddCategoryDialog> {
       );
 
       if (source != null) {
-        final XFile? image = await _imagePicker.pickImage(
-          source: source,
-          maxWidth: 800,
-          maxHeight: 800,
-          imageQuality: 80,
+        // Se usa el servicio y no `image_picker` directo: en web `XFile.path` es
+        // una URL `blob:` que puede quedar revocada antes de leerse (con
+        // `imageQuality`/`maxWidth` la imagen se re-codifica por canvas) y la
+        // subida falla. El servicio lee los bytes con FileReader y devuelve
+        // siempre bytes + nombre, sin URLs intermedias.
+        final picked = await ImagePickerService.pickImage(
+          context: context,
+          source: source == ImageSource.camera
+              ? ImagePickSource.camera
+              : ImagePickSource.gallery,
         );
 
-        if (image != null) {
-          final bytes = await image.readAsBytes();
+        if (picked != null) {
           if (mounted) {
             setState(() {
-              _selectedImageBytes = bytes;
+              _selectedImageBytes = picked.bytes;
+              // Se conserva el nombre que ya usaba esta pantalla: cambiarlo por
+              // el real del fichero alteraría la ruta/MIME esperados al subir.
               _selectedImageName =
                   'category_${DateTime.now().millisecondsSinceEpoch}.jpg';
             });
@@ -2979,7 +2985,6 @@ class _ChangeImageDialog extends StatefulWidget {
 
 class _ChangeImageDialogState extends State<_ChangeImageDialog> {
   final CategoryService _categoryService = CategoryService();
-  final ImagePicker _imagePicker = ImagePicker();
 
   Uint8List? _selectedImageBytes;
   String? _currentImageUrl;
@@ -3022,18 +3027,18 @@ class _ChangeImageDialogState extends State<_ChangeImageDialog> {
       );
 
       if (source != null) {
-        final XFile? image = await _imagePicker.pickImage(
-          source: source,
-          maxWidth: 800,
-          maxHeight: 800,
-          imageQuality: 80,
+        // Mismo motivo que arriba: el servicio evita la URL `blob:` de web.
+        final picked = await ImagePickerService.pickImage(
+          context: context,
+          source: source == ImageSource.camera
+              ? ImagePickSource.camera
+              : ImagePickSource.gallery,
         );
 
-        if (image != null) {
-          final bytes = await image.readAsBytes();
+        if (picked != null) {
           if (mounted) {
             setState(() {
-              _selectedImageBytes = bytes;
+              _selectedImageBytes = picked.bytes;
             });
           }
         }

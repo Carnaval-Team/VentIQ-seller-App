@@ -10,8 +10,17 @@ class SubcategoryService {
   final SupabaseClient _supabase = Supabase.instance.client;
   final UserPreferencesService _userPrefs = UserPreferencesService();
 
-  /// Obtiene las subcategorías de una categoría específica usando el RPC de Supabase
-  Future<List<Subcategory>> getSubcategoriesByCategory(int categoryId) async {
+  /// Obtiene las subcategorías de una categoría específica usando el RPC de Supabase.
+  ///
+  /// [soloVisibles] descarta las subcategorías que crea el sistema para las
+  /// categorías especiales (la «General» con `oculta = true`): existen para que
+  /// la categoría siempre tenga una subcategoría válida, pero no se muestran
+  /// para no ensuciar la gestión. Pasa `false` solo para **resolver** una
+  /// subcategoría ya asignada a un producto o a una variante.
+  Future<List<Subcategory>> getSubcategoriesByCategory(
+    int categoryId, {
+    bool soloVisibles = true,
+  }) async {
     try {
       final response = await _supabase.rpc(
         'get_subcategorias_by_categoria',
@@ -22,8 +31,18 @@ class SubcategoryService {
         return [];
       }
 
+      // El RPC vive en la base y no expone la columna `oculta`, así que las
+      // ocultas se resuelven aparte y se descartan al mapear.
+      final ocultas =
+          soloVisibles ? await _ocultasDeCategoria(categoryId) : const <int>{};
+
       final List<Subcategory> subcategories = [];
       for (final item in response) {
+        final id = item is Map ? int.tryParse('${item['id']}') : null;
+        if (id != null && ocultas.contains(id)) {
+          continue; // Subcategoría del sistema: no se lista.
+        }
+
         try {
           final subcategory = Subcategory.fromJson({
             ...item,
@@ -41,6 +60,26 @@ class SubcategoryService {
       print('Error fetching subcategories: $e');
       // Retornar lista vacía en caso de error
       return [];
+    }
+  }
+
+  /// IDs de las subcategorías **ocultas** de una categoría.
+  ///
+  /// Las crea el trigger de categorías especiales («General») para que la
+  /// categoría nunca se quede sin subcategoría válida. Se consultan aparte
+  /// porque el RPC `get_subcategorias_by_categoria` no devuelve `oculta`.
+  Future<Set<int>> _ocultasDeCategoria(int categoryId) async {
+    try {
+      final rows = await _supabase
+          .from('app_dat_subcategorias')
+          .select('id')
+          .eq('idcategoria', categoryId)
+          .eq('oculta', true);
+
+      return rows.map((row) => (row['id'] as num).toInt()).toSet();
+    } catch (e) {
+      print('Error fetching hidden subcategories: $e');
+      return const <int>{};
     }
   }
 
@@ -64,6 +103,10 @@ class SubcategoryService {
   }
 
   /// Obtiene una subcategoría por ID
+  ///
+  /// Aquí **no** se excluyen las ocultas: es una resolución por id, no un
+  /// listado. Si un producto está en la «General» que creó el sistema, su
+  /// nombre debe seguir resolviéndose.
   Future<Subcategory?> getSubcategoryById(int subcategoryId) async {
     try {
       final response = await _supabase
@@ -172,7 +215,10 @@ class SubcategoryService {
         };
       }
       
-      // Eliminar subcategoría
+      // Eliminar subcategoría.
+      // Sin filtro `oculta`: esto borra por id, no lista. Filtrar aquí
+      // convertiría el borrado de una subcategoría del sistema en un "éxito"
+      // que no borra nada (PostgREST no devuelve error si no hay filas).
       await _supabase
           .from('app_dat_subcategorias')
           .delete()

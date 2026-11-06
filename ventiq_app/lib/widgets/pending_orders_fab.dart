@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/auto_sync_service.dart';
+import '../services/moneda_venta_service.dart';
 import '../services/user_preferences_service.dart';
-import '../utils/price_utils.dart';
 
 /// FAB que aparece solo cuando hay órdenes pendientes de sincronización.
 /// Muestra un badge con el conteo y, al expandirse, un panel con la lista,
@@ -225,7 +225,7 @@ class _PendingOrdersFABState extends State<PendingOrdersFAB>
           (ctx) => AlertDialog(
             title: const Text('Descartar orden pendiente'),
             content: Text(
-              '¿Deseas descartar esta orden? Esta acción no se puede deshacer y los datos se perderán.\n\nCliente: ${order['buyer_name'] ?? 'Sin nombre'}\nTotal: \$${_formatTotal(order['total'])}',
+              '¿Deseas descartar esta orden? Esta acción no se puede deshacer y los datos se perderán.\n\nCliente: ${order['buyer_name'] ?? 'Sin nombre'}\nTotal: ${_formatTotal(order['total'])}',
             ),
             actions: [
               TextButton(
@@ -256,9 +256,21 @@ class _PendingOrdersFABState extends State<PendingOrdersFAB>
     }
   }
 
+  /// Total de un pedido pendiente, ya formateado en la moneda de venta.
+  ///
+  /// Devuelve el texto COMPLETO (símbolo incluido): los dos llamadores antes le
+  /// anteponían `\$`, y el `$` solo es correcto en CUP. El símbolo lo decide
+  /// [MonedaVentaService.formatearPrecio] según la divisa activa.
   String _formatTotal(dynamic total) {
-    if (total == null) return '0.00';
-    if (total is num) return total.toMoneyString(2);
+    if (total == null) {
+      return MonedaVentaService.formatearPrecio(0.0, conSimbolo: true);
+    }
+    if (total is num) {
+      return MonedaVentaService.formatearPrecio(
+        total.toDouble(),
+        conSimbolo: true,
+      );
+    }
     return total.toString();
   }
 
@@ -468,7 +480,7 @@ class _PendingOrdersFABState extends State<PendingOrdersFAB>
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    '\$$total',
+                    total,
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 14,

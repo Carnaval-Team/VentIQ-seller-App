@@ -128,7 +128,7 @@ void main() {
   });
 
   testWidgets(
-    'los rieles se pintan debajo de los chips y antes de las categorías',
+    'los rieles se pintan después de las categorías',
     (WidgetTester tester) async {
       await tester.binding.setSurfaceSize(const Size(360, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -146,10 +146,10 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(find.text('RIEL DE PRUEBA'), findsOneWidget);
-      // Debe estar por encima de la sección de categorías.
+      // Las categorías son lo primero: el riel queda por debajo de ellas.
       expect(
         tester.getTopLeft(find.text('RIEL DE PRUEBA')).dy,
-        lessThan(tester.getTopLeft(find.text('Alimentos')).dy),
+        greaterThan(tester.getTopLeft(find.text('Alimentos')).dy),
       );
     },
   );

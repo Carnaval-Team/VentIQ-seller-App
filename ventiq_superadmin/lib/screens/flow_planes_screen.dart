@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../config/app_colors.dart';
+import '../services/monedas_service.dart';
 import '../services/suscripcion_admin_service.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/planes_ui.dart';
@@ -462,7 +463,9 @@ class _DialogoPlan extends StatefulWidget {
 }
 
 class _DialogoPlanState extends State<_DialogoPlan> {
-  static const List<String> _monedas = ['USD', 'CUP', 'EUR', 'MLC'];
+  // Catálogo real: se carga desde `monedas` (global). El fallback solo cubre
+  // el caso de que la consulta falle.
+  List<String> _monedas = const ['CUP', 'USD'];
   static const List<String> _sugerenciasEtiqueta = [
     'Más popular',
     'Recomendado',
@@ -521,7 +524,12 @@ class _DialogoPlanState extends State<_DialogoPlan> {
         ),
     };
     final moneda = monedaDePlan(p);
-    _moneda = _monedas.contains(moneda) ? moneda : 'USD';
+    // Se acepta tal cual para no perder la moneda ya guardada en el plan; si no
+    // está en el catálogo activo se añade a la lista al cargarla.
+    _moneda = moneda.isNotEmpty ? moneda : 'USD';
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _cargarMonedas(moneda),
+    );
     _activo = _esNuevo ? false : boolDe(p['activo']);
     _modalidad = modalidadDePlan(p);
     _privado = esPlanPrivado(p);
@@ -531,6 +539,27 @@ class _DialogoPlanState extends State<_DialogoPlan> {
     if (_privado) {
       // Se intenta tener el listado listo para poder cambiar de entidad.
       WidgetsBinding.instance.addPostFrameCallback((_) => _leerEntidades());
+    }
+  }
+
+  /// Carga los códigos activos desde el catálogo global (`monedas`).
+  ///
+  /// Si la consulta falla se mantiene el fallback CUP/USD. La moneda ya guardada
+  /// en el plan se conserva en la lista aunque esté inactiva, para que editarla
+  /// no la cambie en silencio.
+  Future<void> _cargarMonedas(String monedaActual) async {
+    try {
+      final codigos = await MonedasService.codigos();
+      if (codigos.isEmpty || !mounted) return;
+      if (monedaActual.isNotEmpty && !codigos.contains(monedaActual)) {
+        codigos.insert(0, monedaActual);
+      }
+      setState(() {
+        _monedas = codigos;
+        if (!_monedas.contains(_moneda)) _moneda = _monedas.first;
+      });
+    } catch (_) {
+      // Se mantiene el fallback CUP/USD.
     }
   }
 

@@ -6,6 +6,7 @@ import '../theme/ventiq_home_theme.dart';
 import '../services/order_service.dart';
 import '../services/sales_mode_service.dart';
 import '../utils/price_utils.dart';
+import '../services/moneda_venta_service.dart';
 import '../widgets/estado_servicio_chip.dart';
 import '../tutorial/tutorial_anchor.dart';
 
@@ -466,7 +467,10 @@ class _CuentaMesaScreenState extends State<CuentaMesaScreen> {
               Expanded(
                 child: _miniMetric(
                   'Total',
-                  '\$${PriceUtils.formatDiscountPrice(c.total)}',
+                  MonedaVentaService.formatearPrecio(
+                    PriceUtils.roundDiscountPrice(c.total),
+                    conSimbolo: true,
+                  ),
                   Icons.payments_outlined,
                 ),
               ),
@@ -609,7 +613,10 @@ class _CuentaMesaScreenState extends State<CuentaMesaScreen> {
                 ),
               ),
               Text(
-                '\$${PriceUtils.formatDiscountPrice(item.subtotal)}',
+                MonedaVentaService.formatearPrecio(
+                  PriceUtils.roundDiscountPrice(item.subtotal),
+                  conSimbolo: true,
+                ),
                 style: const TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.bold,
@@ -668,7 +675,7 @@ class _CuentaMesaScreenState extends State<CuentaMesaScreen> {
           Row(
             children: [
               Text(
-                '\$${PriceUtils.formatDiscountPrice(item.precioUnitario)} c/u',
+                '${MonedaVentaService.formatearPrecio(PriceUtils.roundDiscountPrice(item.precioUnitario), conSimbolo: true)} c/u',
                 style: TextStyle(
                   fontSize: 12,
                   color: VentiqHomeTheme.textSecondary,
@@ -790,7 +797,10 @@ class _CuentaMesaScreenState extends State<CuentaMesaScreen> {
                 ),
                 const Spacer(),
                 Text(
-                  '\$${PriceUtils.formatDiscountPrice(c.total)}',
+                  MonedaVentaService.formatearPrecio(
+                    PriceUtils.roundDiscountPrice(c.total),
+                    conSimbolo: true,
+                  ),
                   style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,

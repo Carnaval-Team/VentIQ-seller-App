@@ -289,6 +289,13 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
                 turnoEstado: expenseJson['turno_estado'] ?? 1,
                 medioPago: expenseJson['medio_pago'],
                 esDigital: expenseJson['es_digital'] ?? false,
+                // Fase 4: el egreso se registró en una divisa concreta y
+                // `montoEntrega` es su importe NATIVO, así que hay que
+                // conservarla. Sin ella el modelo asume la moneda base y un
+                // egreso en USD se leería como CUP. Los egresos anteriores a la
+                // Fase 4 (y el cache viejo) no traen el campo: caen en la base,
+                // exactamente como antes.
+                moneda: expenseJson['moneda'] ?? PriceUtils.baseCurrency,
               );
             }).toList();
 

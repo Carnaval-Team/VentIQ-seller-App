@@ -8,6 +8,7 @@ import '../services/mesa_cuenta_service.dart';
 import '../services/order_service.dart';
 import '../services/sales_mode_service.dart';
 import '../utils/price_utils.dart';
+import '../services/moneda_venta_service.dart';
 import '../widgets/mesa_form_dialog.dart';
 import '../tutorial/tutorial_anchor.dart';
 
@@ -383,7 +384,10 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      '\$${PriceUtils.formatDiscountPrice(cuenta.total)}',
+                      MonedaVentaService.formatearPrecio(
+                        PriceUtils.roundDiscountPrice(cuenta.total),
+                        conSimbolo: true,
+                      ),
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -801,7 +805,10 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      '\$${PriceUtils.formatDiscountPrice(o.total)}',
+                      MonedaVentaService.formatearPrecio(
+                        PriceUtils.roundDiscountPrice(o.total),
+                        conSimbolo: true,
+                      ),
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,

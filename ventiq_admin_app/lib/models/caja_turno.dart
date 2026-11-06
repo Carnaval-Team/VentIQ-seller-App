@@ -41,6 +41,105 @@ class PagoMedio {
   }
 }
 
+/// Cierre de una divisa dentro del turno (viene del jsonb `desglose_monedas`).
+///
+/// Los importes `*Nativo` están en [moneda] y no se pueden sumar entre sí ni
+/// con el equivalente: el único consolidado comparable es [importeBase], ya
+/// convertido a la moneda base de la tienda.
+class DesgloseMoneda {
+  final String moneda;
+  final int operaciones;
+  final double importeNativo;
+  final double importeBase;
+  final double efectivoNativo;
+  final double digitalNativo;
+
+  const DesgloseMoneda({
+    required this.moneda,
+    required this.operaciones,
+    required this.importeNativo,
+    required this.importeBase,
+    required this.efectivoNativo,
+    required this.digitalNativo,
+  });
+
+  factory DesgloseMoneda.fromJson(Map<String, dynamic> json) {
+    return DesgloseMoneda(
+      moneda: json['moneda']?.toString() ?? 'Sin divisa',
+      operaciones: (json['operaciones'] as num?)?.toInt() ?? 0,
+      importeNativo: (json['importe_nativo'] as num?)?.toDouble() ?? 0,
+      importeBase: (json['importe_base'] as num?)?.toDouble() ?? 0,
+      efectivoNativo: (json['efectivo_nativo'] as num?)?.toDouble() ?? 0,
+      digitalNativo: (json['digital_nativo'] as num?)?.toDouble() ?? 0,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'moneda': moneda,
+      'operaciones': operaciones,
+      'importe_nativo': importeNativo,
+      'importe_base': importeBase,
+      'efectivo_nativo': efectivoNativo,
+      'digital_nativo': digitalNativo,
+    };
+  }
+}
+
+/// Desglose por divisa del cierre de un turno, tal como lo devuelve
+/// `fn_resumen_turno_por_id_v2`.
+///
+/// Es tolerante por diseño: si la `_v2` no está desplegada o el turno es
+/// anterior a la migración no llegan `desglose_monedas` ni `total_base`, la
+/// lista queda vacía y la UI omite la sección sin romper el detalle.
+class DesgloseTurnoMonedas {
+  final List<DesgloseMoneda> monedas;
+
+  /// Consolidado en la moneda base; null si el RPC no mandó la columna.
+  final double? totalBase;
+
+  const DesgloseTurnoMonedas({required this.monedas, this.totalBase});
+
+  factory DesgloseTurnoMonedas.empty() =>
+      const DesgloseTurnoMonedas(monedas: []);
+
+  /// Parsea la fila cruda del RPC (`null` cuando no devolvió filas). Se usa
+  /// igual desde el servicio y desde [CajaTurno.fromJson], de modo que la
+  /// tolerancia es la misma venga la fila del listado o del detalle.
+  factory DesgloseTurnoMonedas.fromRow(Map<String, dynamic>? row) {
+    if (row == null) return DesgloseTurnoMonedas.empty();
+
+    final crudo = row['desglose_monedas'];
+    final monedas = crudo is List
+        ? crudo
+              .whereType<Map>()
+              .map(
+                (item) =>
+                    DesgloseMoneda.fromJson(Map<String, dynamic>.from(item)),
+              )
+              .toList()
+        : const <DesgloseMoneda>[];
+
+    // `total_base` es numeric: se reutiliza el parser del turno para aceptar
+    // tanto número JSON como texto.
+    return DesgloseTurnoMonedas(
+      monedas: monedas,
+      totalBase: CajaTurno._toDouble(row['total_base']),
+    );
+  }
+
+  /// La tabla solo aporta con varias divisas: una sola repetiría el total que
+  /// la sección "Ventas" ya muestra (y sin desglose la lista también está
+  /// vacía, así que cubre los dos casos).
+  bool get tieneVariasDivisas => monedas.length > 1;
+
+  /// Consolidado en moneda base. Si el RPC no mandó `total_base` se usa la
+  /// suma de los equivalentes, que ya están todos en moneda base (es la misma
+  /// cuenta que hace `fn_desglose_monedas_turno`).
+  double get totalEquivalenteBase =>
+      totalBase ?? monedas.fold<double>(0, (suma, m) => suma + m.importeBase);
+}
+
 /// Reporte de discrepancias parseado desde `observaciones`.
 ///
 /// El TPV graba el texto con este formato:
@@ -231,6 +330,13 @@ class CajaTurno {
   final double porcentajeEfectivo;
   final List<PagoMedio> desglosePagos;
 
+  // Desglose por divisa. Solo lo traen `fn_resumen_turno_por_id_v2` y la carga
+  // bajo demanda del detalle, así que en el listado viaja vacío.
+  final List<DesgloseMoneda> desgloseMonedas;
+
+  /// Consolidado en moneda base de [desgloseMonedas]; null si no vino.
+  final double? totalBase;
+
   // Egresos (entregas parciales de caja)
   final double totalEgresos;
   final int egresosCantidad;
@@ -277,6 +383,8 @@ class CajaTurno {
     required this.totalDigital,
     required this.porcentajeEfectivo,
     required this.desglosePagos,
+    this.desgloseMonedas = const [],
+    this.totalBase,
     required this.totalEgresos,
     required this.egresosCantidad,
     this.observaciones,
@@ -292,6 +400,9 @@ class CajaTurno {
   factory CajaTurno.fromJson(Map<String, dynamic> json) {
     final observaciones = json['observaciones']?.toString();
     final reporte = ReporteDiscrepancias.parse(observaciones);
+
+    // Un solo parseo para las dos columnas nuevas; sin la `_v2` queda vacío.
+    final desglose = DesgloseTurnoMonedas.fromRow(json);
 
     final fechaApertura = _parseDate(json['fecha_apertura']) ?? DateTime.now();
     final fechaCierre = _parseDate(json['fecha_cierre']);
@@ -373,6 +484,8 @@ class CajaTurno {
       totalDigital: _toDouble(json['total_digital']) ?? 0,
       porcentajeEfectivo: _toDouble(json['porcentaje_efectivo']) ?? 0,
       desglosePagos: _parseDesglose(json['desglose_pagos']),
+      desgloseMonedas: desglose.monedas,
+      totalBase: desglose.totalBase,
       totalEgresos: totalEgresos,
       egresosCantidad: _toInt(json['egresos_cantidad']) ?? 0,
       observaciones: observaciones,
@@ -418,6 +531,8 @@ class CajaTurno {
       'total_efectivo': totalEfectivo,
       'total_digital': totalDigital,
       'porcentaje_efectivo': porcentajeEfectivo,
+      'desglose_monedas': desgloseMonedas.map((m) => m.toJson()).toList(),
+      'total_base': totalBase,
       'total_egresos': totalEgresos,
       'egresos_cantidad': egresosCantidad,
       'observaciones': observaciones,

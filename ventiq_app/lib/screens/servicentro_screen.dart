@@ -1,10 +1,10 @@
 ﻿import 'package:flutter/material.dart';
 
+import '../services/moneda_venta_service.dart';
 import '../services/servicentro_service.dart';
 import '../theme/ventiq_home_theme.dart';
 import '../services/user_preferences_service.dart';
 import '../utils/navigation_helper.dart';
-import '../utils/price_utils.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/bottom_navigation.dart';
 import 'servicentro_cantidad_screen.dart';
@@ -343,7 +343,7 @@ class _ServicentroScreenState extends State<ServicentroScreen> {
                 Text(
                   sinPrecio
                       ? 'Sin precio'
-                      : '\$${item.precioVenta.toMoneyString(2)}'
+                      : '${MonedaVentaService.formatearPrecio(item.precioVenta, conSimbolo: true)}'
                           '${item.um != null && item.um!.isNotEmpty ? ' / ${item.um}' : ''}',
                   style: TextStyle(
                     color: sinPrecio ? Colors.orangeAccent : Colors.white70,

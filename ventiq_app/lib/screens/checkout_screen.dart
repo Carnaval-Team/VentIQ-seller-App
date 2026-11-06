@@ -15,6 +15,7 @@ import '../services/order_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/store_config_service.dart';
 import '../services/currency_service.dart';
+import '../services/moneda_venta_service.dart';
 import '../services/server_time_service.dart';
 import '../services/mesa_service.dart';
 import '../services/mesa_cuenta_service.dart';
@@ -75,6 +76,50 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   bool _isLoadingUsdRate = false;
   bool _mostrarSelectorMoneda = false;
   final Map<int, String> _paymentCurrencyByMethodId = {};
+
+  // ===== Multimoneda (Fase 3) =====
+  // Monedas que acepta la tienda y su tasa a la moneda base (CUP).
+  List<Map<String, dynamic>> _monedasTienda = const [];
+  Map<String, double> _tasasMoneda = const {};
+
+  /// Código de la moneda base contable.
+  String get _monedaBase => PriceUtils.baseCurrency;
+
+  /// Tasa de una divisa a la moneda base. La base siempre es 1.
+  double _tasaDe(String codigo) =>
+      codigo == _monedaBase ? 1.0 : (_tasasMoneda[codigo] ?? 0.0);
+
+  /// Divisas que la tienda acepta **y** tienen tasa resoluble.
+  ///
+  /// Si solo hay una (el caso normal: CUP), el checkout se comporta igual que
+  /// siempre y no se muestra ningún selector.
+  List<String> get _divisasDisponibles => _monedasTienda
+      .map((m) => (m['codigo'] ?? '').toString().trim().toUpperCase())
+      .where((c) => c.isNotEmpty && _tasaDe(c) > 0)
+      .toList();
+
+  /// ¿Hay algo que elegir? Con una sola divisa no se pinta ningún control.
+  ///
+  /// Con la tienda forzando la divisa tampoco: el vendedor no puede cobrar en
+  /// otra, así que ofrecerle el selector sería ofrecerle un error.
+  bool get _haySelectorMoneda =>
+      _mostrarSelectorMoneda &&
+      _monedaForzada == null &&
+      _divisasDisponibles.length > 1;
+
+  /// Divisa que la tienda impone, ya validada contra las tasas que este
+  /// checkout tiene cargadas. `null` = el vendedor elige libremente (lo de
+  /// siempre).
+  ///
+  /// La valida el servicio al arrancar; aquí solo se comprueba que su tasa
+  /// esté disponible en esta pantalla. Si no lo está (p. ej. falló la consulta
+  /// de tasas), se trata como si no hubiera bloqueo: es peor dejar el cobro sin
+  /// salida que desobedecer un bloqueo en una divisa que la RPC rechazaría.
+  String? get _monedaForzada {
+    final forzada = MonedaVentaService.forzada;
+    if (forzada == null) return null;
+    return _tasaDe(forzada) > 0 ? forzada : null;
+  }
 
   // ===== Confirmación de pago por SMS (PAGOxMOVIL) =====
   final GlobalKey<TransferSmsConfirmationBannerState> _smsBannerKey =
@@ -148,27 +193,88 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       _isLoadingUsdRate = true;
     });
 
+    var monedas = const <Map<String, dynamic>>[];
+    var tasas = const <String, double>{};
+
     try {
-      final rate = await CurrencyService.getUsdRate();
-      setState(() {
-        _usdRate = rate > 0 ? rate : 0.0;
-        _isLoadingUsdRate = false;
-      });
+      // 1) Monedas que acepta ESTA tienda (app_dat_tienda_moneda).
+      monedas = await CurrencyService.getMonedasTienda();
     } catch (e) {
-      print('❌ Error loading USD rate: $e');
+      print('❌ Error cargando monedas de la tienda: $e');
+    }
+
+    try {
+      // 2) Tasas a CUP de esas monedas. Usa la MISMA `fn_tasa_cambio` que el
+      // servidor al registrar el cobro, así el importe mostrado y el guardado
+      // no pueden discrepar.
+      tasas = await CurrencyService.getRatesForStore();
+    } catch (e) {
+      print('❌ Error cargando tasas de la tienda: $e');
+    }
+
+    // Respaldo: si falla la consulta de monedas, mantener el comportamiento
+    // previo (CUP + USD con la tasa cacheada).
+    if (monedas.isEmpty) {
+      monedas = [
+        {'codigo': PriceUtils.baseCurrency, 'orden': 10},
+        {'codigo': 'USD', 'orden': 20},
+      ];
+    }
+
+    var usd = tasas['USD'] ?? 0.0;
+    if (usd <= 0) {
       try {
         final cached = await UserPreferencesService().getCambioCupUsd();
-        setState(() {
-          _usdRate = cached > 0 ? cached : 0.0;
-          _isLoadingUsdRate = false;
-        });
+        usd = cached > 0 ? cached : 0.0;
       } catch (_) {
-        setState(() {
-          _usdRate = 0.0;
-          _isLoadingUsdRate = false;
-        });
+        usd = 0.0;
       }
+      if (usd > 0) tasas = {...tasas, 'USD': usd};
     }
+
+    if (!mounted) return;
+    setState(() {
+      _monedasTienda = monedas;
+      _tasasMoneda = {...tasas, PriceUtils.baseCurrency: 1.0};
+      _usdRate = usd;
+      _isLoadingUsdRate = false;
+    });
+    _aplicarMonedaVentaPorDefecto();
+  }
+
+  /// Usa la **moneda de venta** como divisa por defecto de las líneas de pago.
+  ///
+  /// Es el último punto que faltaba del diseño: si el vendedor muestra los
+  /// precios en EUR porque va a cobrar en EUR, el cobro no debería empezar en
+  /// CUP obligándole a cambiar divisa en cada método.
+  ///
+  /// Condiciones (todas deliberadas):
+  /// * la divisa tiene que ser de la tienda y tener tasa resoluble (si no, la
+  ///   RPC rechazaría el pago);
+  /// * sin bloqueo, el vendedor tiene que haber elegido **activamente** una
+  ///   divisa distinta de la base (si no, `actual` es CUP y aquí no se hace
+  ///   nada) y no se pisa una elección previa del cajero;
+  /// * con la tienda forzando la divisa esa condición desaparece: ya no es una
+  ///   preferencia del teléfono sino la única divisa legal, así que se aplica
+  ///   aunque el cajero hubiera tocado algo antes.
+  ///
+  /// **No** se exige el flag legado `mostrar_selector_moneda`: ese flag gobernaba
+  /// el antiguo toggle CUP/USD. Si el vendedor fijó EUR como moneda de venta y la
+  /// tienda acepta EUR, el cobro tiene que ir en EUR aunque el flag esté apagado;
+  /// de lo contrario el Home mostraría los precios en EUR y el cobro se
+  /// registraría en CUP, que es justo la incoherencia que esto viene a cerrar.
+  void _aplicarMonedaVentaPorDefecto() {
+    final forzada = _monedaForzada;
+    if (forzada == null && _paymentCurrencyByMethodId.isNotEmpty) return;
+
+    final moneda = forzada ?? MonedaVentaService.actual;
+    if (moneda == _monedaBase || _tasaDe(moneda) <= 0) return;
+    for (final item in widget.order.items) {
+      final method = item.paymentMethod;
+      if (method == null || method.esPagoPendiente) continue;
+      _paymentCurrencyByMethodId[method.id] = moneda;
+    }
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadGlobalPromotion() async {
@@ -250,6 +356,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             _configLoading = false;
           });
         }
+        // `_mostrarSelectorMoneda` se resuelve aquí y `_loadUsdRate()` corre en
+        // paralelo: si esta carga termina después, es la que puede aplicar la
+        // divisa por defecto. Es idempotente.
+        _aplicarMonedaVentaPorDefecto();
       }
     } catch (e) {
       print('❌ Error cargando configuración: $e');
@@ -416,30 +526,41 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   double get finalTotal => totalAfterPromo;
 
-  bool get _displayTotalsInUsd {
-    final methodIds =
-        widget.order.items
-            .where((item) => !(item.paymentMethod?.esPagoPendiente ?? false))
-            .map((item) {
-              final id = item.paymentMethod?.id;
-              return id;
-            })
-            .whereType<int>()
-            .toSet();
-    return methodIds.isNotEmpty &&
-        _usdRate > 0 &&
-        methodIds.every(
-          (id) => (_paymentCurrencyByMethodId[id] ?? 'CUP') == 'USD',
-        );
+  /// Ids de método con pago real (ni nulo ni "Pago Pendiente").
+  Set<int> get _methodIdsCobrados => widget.order.items
+      .where((item) => !(item.paymentMethod?.esPagoPendiente ?? false))
+      .map((item) => item.paymentMethod?.id)
+      .whereType<int>()
+      .toSet();
+
+  /// Moneda en la que se presenta el total del checkout.
+  ///
+  /// Si todas las líneas comparten una divisa distinta de la base, se muestra
+  /// en esa divisa; si hay mezcla (o es la base), se muestra en la moneda base.
+  String get _monedaVisualizacion {
+    final ids = _methodIdsCobrados;
+    if (ids.isEmpty) return _monedaBase;
+    final monedas = ids
+        .map((id) => _paymentCurrencyByMethodId[id] ?? _monedaBase)
+        .toSet();
+    if (monedas.length == 1 && monedas.first != _monedaBase) {
+      return _tasaDe(monedas.first) > 0 ? monedas.first : _monedaBase;
+    }
+    return _monedaBase;
   }
 
-  double _displayAmount(double cupAmount) =>
-      _displayTotalsInUsd ? cupAmount / _usdRate : cupAmount;
+  /// Se conserva el nombre para no romper las llamadas existentes.
+  bool get _displayTotalsInUsd => _monedaVisualizacion == 'USD';
 
-  String _formatCheckoutAmount(double cupAmount) {
-    final currency = _displayTotalsInUsd ? 'USD' : 'CUP';
-    return '${_displayAmount(cupAmount).toMoneyString(2)} $currency';
+  double _displayAmount(double cupAmount) {
+    final moneda = _monedaVisualizacion;
+    if (moneda == _monedaBase) return cupAmount;
+    final tasa = _tasaDe(moneda);
+    return tasa > 0 ? cupAmount / tasa : cupAmount;
   }
+
+  String _formatCheckoutAmount(double cupAmount) =>
+      '${_displayAmount(cupAmount).toMoneyString(2)} $_monedaVisualizacion';
 
   // Calculate payment breakdown from individual product payment methods
   Map<String, double> get paymentBreakdown {
@@ -457,27 +578,38 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   List<Map<String, dynamic>> get _currencyPaymentLines {
-    final grouped = <int, Map<String, dynamic>>{};
+    // La clave es (método, moneda), no solo el método: así el MISMO método
+    // puede cobrarse en dos divisas distintas en la misma venta (decisión D1).
+    final grouped = <String, Map<String, dynamic>>{};
     for (final item in widget.order.items) {
       final method = item.paymentMethod;
       if (method == null || method.esPagoPendiente) continue;
       final methodId = method.id;
-      final currency = _paymentCurrencyByMethodId[methodId] ?? 'CUP';
+      final currency = _paymentCurrencyByMethodId[methodId] ?? _monedaBase;
+      final tasa = _tasaDe(currency);
+
+      // Sin tasa no hay forma de consolidar: la línea no se envía y la
+      // validación avisa antes de cobrar.
+      if (currency != _monedaBase && tasa <= 0) continue;
+
       final cupAmount = _calculateItemPrice(item);
+      final key = '$methodId|$currency';
       final line = grouped.putIfAbsent(
-        methodId,
+        key,
         () => {
           'id_medio_pago': methodId,
           'denominacion': method.denominacion,
           'monto': 0.0,
           'moneda': currency,
-          'tasa_usd': currency == 'USD' ? _usdRate : null,
+          'tasa_cambio': currency == _monedaBase ? 1.0 : tasa,
+          // Compatibilidad con la RPC antigua (solo entiende `tasa_usd`).
+          'tasa_usd': currency == 'USD' ? tasa : null,
           'tipo_pago': methodId == 1 ? 1 : 2,
         },
       );
       line['monto'] =
           (line['monto'] as double) +
-          (currency == 'USD' ? cupAmount / _usdRate : cupAmount);
+          (currency == _monedaBase ? cupAmount : cupAmount / tasa);
     }
     return grouped.values.toList();
   }
@@ -719,7 +851,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Monto pendiente: \$${PriceUtils.formatAmount(monto)}. No se cobra ahora; '
+                  'Monto pendiente: '
+                  '${MonedaVentaService.formatearPrecio(monto, conSimbolo: true)}. '
+                  'No se cobra ahora; '
                   'queda como saldo a favor de la tienda contra el cliente.',
                   style: const TextStyle(
                     fontSize: 12,
@@ -736,6 +870,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Widget _buildPaymentBreakdownDetails(Map<String, double> breakdown) {
+    final forzada = _monedaForzada;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -748,6 +883,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text('Desglose de Pagos', style: VentiqHomeTheme.tituloSeccion),
+          // Aquí no llega el chip de la barra: sin este aviso, el vendedor
+          // vería desaparecer el selector por línea sin saber por qué.
+          if (forzada != null) ...[
+            const SizedBox(height: 4),
+            _buildMonedaForzadaBadge(forzada),
+          ],
           const SizedBox(height: 12),
           if (breakdown.isEmpty) ...[
             Container(
@@ -788,14 +929,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               final methodInfo = _paymentMethodInfoForName(methodName);
               final methodId = methodInfo?.id;
               final esPendiente = methodInfo?.esPagoPendiente ?? false;
-              final currency =
-                  methodId == null
-                      ? 'CUP'
-                      : (_paymentCurrencyByMethodId[methodId] ?? 'CUP');
-              final displayAmount =
-                  currency == 'USD' && _usdRate > 0
-                      ? amount / _usdRate
-                      : amount;
+              final currency = methodId == null
+                  ? _monedaBase
+                  : (_paymentCurrencyByMethodId[methodId] ?? _monedaBase);
+              final tasaLinea = _tasaDe(currency);
+              final displayAmount = (currency == _monedaBase || tasaLinea <= 0)
+                  ? amount
+                  : amount / tasaLinea;
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Row(
@@ -820,11 +960,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         ],
                       ),
                     ),
-                    if (methodId != null &&
-                        !esPendiente &&
-                        _usdRate > 0 &&
-                        _mostrarSelectorMoneda) ...[
-                      _buildCurrencyToggle(methodId, currency),
+                    if (methodId != null && !esPendiente && _haySelectorMoneda) ...[
+                      _buildCurrencySelector(methodId, currency),
                       const SizedBox(width: 8),
                     ],
                     Text(
@@ -870,6 +1007,32 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 
+  /// Recuerda que la divisa de cobro la impone la tienda y no se puede cambiar.
+  Widget _buildMonedaForzadaBadge(String moneda) {
+    return Tooltip(
+      message: 'La tienda fuerza esta moneda: la venta se cobra en ella.',
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.lock_outline,
+            size: 13,
+            color: VentiqHomeTheme.textSecondary,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            'Moneda fija: $moneda',
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: VentiqHomeTheme.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// Busca el método de pago asociado a un nombre del desglose para obtener
   /// su id real y si es Pago Pendiente.
   ({int id, bool esPagoPendiente})? _paymentMethodInfoForName(String name) {
@@ -882,54 +1045,96 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     return null;
   }
 
-  /// Toggle compacto CUP/USD para que el cajero elija la moneda de cobro de
-  /// cada método en esta venta. Actualiza [_paymentCurrencyByMethodId], que
-  /// usan `_currencyPaymentLines` y el desglose offline al persistir.
-  Widget _buildCurrencyToggle(int methodId, String currency) {
-    return Container(
-      decoration: BoxDecoration(
-        color: VentiqHomeTheme.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: VentiqHomeTheme.border),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children:
-            ['CUP', 'USD'].map((c) {
-              final selected = c == currency;
-              return GestureDetector(
-                onTap: () {
-                  setState(() {
-                    if (c == 'CUP') {
-                      _paymentCurrencyByMethodId.remove(methodId);
-                    } else {
-                      _paymentCurrencyByMethodId[methodId] = 'USD';
-                    }
-                  });
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: selected ? VentiqHomeTheme.primary : Colors.transparent,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    c,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color:
-                          selected
-                              ? Colors.white
-                              : VentiqHomeTheme.textSecondary,
-                    ),
+  /// Selector de moneda de la línea, **adaptado al número de divisas**.
+  ///
+  /// - 1 divisa (lo normal: solo CUP): no se pinta nada.
+  /// - 2 divisas: toggle compacto, un solo toque (como el CUP/USD de antes).
+  /// - 3 o más: menú desplegable.
+  ///
+  /// Actualiza [_paymentCurrencyByMethodId], que usan `_currencyPaymentLines`,
+  /// el desglose offline y la validación previa al cobro.
+  Widget _buildCurrencySelector(int methodId, String currency) {
+    final opciones = _divisasDisponibles;
+    if (opciones.length < 2) return const SizedBox.shrink();
+
+    void seleccionar(String c) {
+      setState(() {
+        if (c == _monedaBase) {
+          _paymentCurrencyByMethodId.remove(methodId);
+        } else {
+          _paymentCurrencyByMethodId[methodId] = c;
+        }
+      });
+    }
+
+    if (opciones.length == 2) {
+      return Container(
+        decoration: BoxDecoration(
+          color: VentiqHomeTheme.surface,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: VentiqHomeTheme.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: opciones.map((c) {
+            final selected = c == currency;
+            return GestureDetector(
+              onTap: () => seleccionar(c),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: selected
+                      ? VentiqHomeTheme.primary
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  c,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: selected
+                        ? Colors.white
+                        : VentiqHomeTheme.textSecondary,
                   ),
                 ),
-              );
-            }).toList(),
+              ),
+            );
+          }).toList(),
+        ),
+      );
+    }
+
+    return PopupMenuButton<String>(
+      initialValue: currency,
+      tooltip: 'Moneda de cobro',
+      onSelected: seleccionar,
+      itemBuilder: (_) => opciones
+          .map((c) => PopupMenuItem<String>(value: c, child: Text(c)))
+          .toList(),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: VentiqHomeTheme.surface,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: VentiqHomeTheme.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              currency,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const Icon(Icons.arrow_drop_down, size: 16),
+          ],
+        ),
       ),
     );
   }
@@ -1376,19 +1581,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Widget _buildFinalTotalSection() {
-    final hasRate = _usdRate > 0;
-    final secondaryLabel =
-        _displayTotalsInUsd
-            ? 'Equivalente CUP'
-            : hasRate
-            ? 'Equivalente USD (1 USD = ${_usdRate.toStringAsFixed(2)} CUP)'
-            : 'Equivalente USD';
-    final secondaryAmount =
-        _displayTotalsInUsd
-            ? '${finalTotal.toMoneyString(2)} CUP'
-            : hasRate
-            ? '${(finalTotal / _usdRate).toMoneyString(2)} USD'
-            : 'N/D';
+    final monedaVista = _monedaVisualizacion;
+    final esBase = monedaVista == _monedaBase;
+    final secondaryLabel = esBase
+        ? (_usdRate > 0
+              ? 'Equivalente USD (1 USD = ${_usdRate.toStringAsFixed(2)} $_monedaBase)'
+              : 'Equivalente USD')
+        : 'Equivalente $_monedaBase';
+    final secondaryAmount = esBase
+        ? (_usdRate > 0
+              ? '${(finalTotal / _usdRate).toMoneyString(2)} USD'
+              : 'N/D')
+        : '${finalTotal.toMoneyString(2)} $_monedaBase';
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -1886,12 +2090,33 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       return;
     }
 
-    final usesUsd = _paymentCurrencyByMethodId.values.contains('USD');
-    if (usesUsd && _usdRate <= 0) {
+    // Toda divisa distinta de la base necesita tasa para poder consolidar.
+    // Antes solo se comprobaba USD; con más divisas hay que comprobarlas todas.
+    final sinTasa = _paymentCurrencyByMethodId.values
+        .where((c) => c != _monedaBase && _tasaDe(c) <= 0)
+        .toSet();
+    if (sinTasa.isNotEmpty) {
       _showErrorMessage(
-        'No hay una tasa USD válida. Sincroniza la tienda o cobra en CUP.',
+        'No hay tipo de cambio para ${sinTasa.join(", ")}. '
+        'Sincroniza la tienda o cobra en $_monedaBase.',
       );
       return;
+    }
+
+    // Offline: solo CUP y USD tienen tasas cacheables. El resto exige conexión
+    // (decisión D2 hasta la Fase 4).
+    final fueraDeOffline = _paymentCurrencyByMethodId.values
+        .where((c) => c != _monedaBase && c != 'USD')
+        .toSet();
+    if (fueraDeOffline.isNotEmpty) {
+      final offline = await _userPreferencesService.isOfflineModeEnabled();
+      if (offline) {
+        _showErrorMessage(
+          'Sin conexión solo se puede cobrar en $_monedaBase o USD. '
+          'Conéctate para cobrar en ${fueraDeOffline.join(", ")}.',
+        );
+        return;
+      }
     }
 
     // CxC ya no se crea desde el TPV (se gestiona en admin). Si quedó un
@@ -2008,24 +2233,28 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         final rawMethodId = item.paymentMethod?.id;
         final normalizedMethodId = rawMethodId;
         final paymentMethodId = normalizedMethodId?.toString() ?? 'sin_metodo';
-        final currency =
-            normalizedMethodId == null
-                ? 'CUP'
-                : (_paymentCurrencyByMethodId[normalizedMethodId] ?? 'CUP');
-        if (!paymentBreakdown.containsKey(paymentMethodId)) {
-          paymentBreakdown[paymentMethodId] = {
+        final currency = normalizedMethodId == null
+                ? _monedaBase
+                : (_paymentCurrencyByMethodId[normalizedMethodId] ??
+                      _monedaBase);
+        final tasaLinea = _tasaDe(currency);
+        // Clave (método, moneda): el mismo método puede ir en dos divisas.
+        final clave = '$paymentMethodId|$currency';
+        if (!paymentBreakdown.containsKey(clave)) {
+          paymentBreakdown[clave] = {
             'id_medio_pago': normalizedMethodId,
             'denominacion': item.paymentMethod?.denominacion ?? 'Sin método',
             'monto': 0.0,
             'moneda': currency,
-            'tasa_usd': currency == 'USD' ? _usdRate : null,
+            'tasa_cambio': currency == _monedaBase ? 1.0 : tasaLinea,
+            'tasa_usd': currency == 'USD' ? tasaLinea : null,
             'es_digital': item.paymentMethod?.esDigital ?? false,
             'es_efectivo': item.paymentMethod?.esEfectivo ?? false,
           };
         }
-        paymentBreakdown[paymentMethodId]!['monto'] =
-            (paymentBreakdown[paymentMethodId]!['monto'] as double) +
-            (currency == 'USD' ? itemTotal / _usdRate : itemTotal);
+        paymentBreakdown[clave]!['monto'] =
+            (paymentBreakdown[clave]!['monto'] as double) +
+            (currency == _monedaBase ? itemTotal : itemTotal / tasaLinea);
       }
 
       final total = subtotal - totalDescuentos;
@@ -2921,7 +3150,8 @@ class _ClientPickerSheetState extends State<_ClientPickerSheet> {
                             subtitle = 'Bloqueado para cuentas por cobrar';
                           } else if (tieneDeuda && saldo != null && saldo > 0) {
                             subtitle =
-                                'Deuda: \$${PriceUtils.formatAmount(saldo)}'
+                                'Deuda: '
+                                '${MonedaVentaService.formatearPrecio(saldo, conSimbolo: true)}'
                                 '${telefono != null && telefono.isNotEmpty ? ' · $telefono' : ''}';
                           } else {
                             subtitle =

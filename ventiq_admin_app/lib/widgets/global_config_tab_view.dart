@@ -8,6 +8,7 @@ import '../services/printer_preferences_service.dart';
 import '../models/subscription.dart';
 import '../screens/subscription_detail_screen.dart';
 import '../utils/navigation_guard.dart';
+import 'monedas_tienda_card.dart';
 
 class GlobalConfigTabView extends StatefulWidget {
   const GlobalConfigTabView({super.key});
@@ -1862,6 +1863,11 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
             value: _mostrarSelectorMoneda,
             onChanged: _updateMostrarSelectorMonedaSetting,
           ),
+
+          const SizedBox(height: 16),
+
+          // Fase 2 del plan multimoneda: qué monedas acepta ESTA tienda.
+          if (_storeId != null) MonedasTiendaCard(storeId: _storeId!),
 
           const SizedBox(height: 24),
 

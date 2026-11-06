@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import '../models/product.dart';
+import '../services/moneda_venta_service.dart';
 import '../services/order_service.dart';
 import '../services/product_detail_service.dart';
 import '../services/promotion_service.dart';
@@ -398,12 +399,12 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Precio actual: \$${currentPrice.toMoneyString(2)}',
+                    'Precio actual: ${MonedaVentaService.formatearPrecio(currentPrice, conSimbolo: true)}',
                     style: TextStyle(color: VentiqHomeTheme.textSecondary),
                   ),
                   if (hasCustom && originalPrice != currentPrice)
                     Text(
-                      'Precio original: \$${originalPrice.toMoneyString(2)}',
+                      'Precio original: ${MonedaVentaService.formatearPrecio(originalPrice, conSimbolo: true)}',
                       style: TextStyle(
                         color: Colors.grey[500],
                         fontSize: 12,
@@ -473,7 +474,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                         const SizedBox(height: 6),
                         Text(
                           previewPriceClamped != null
-                              ? '\$${previewPriceClamped.toMoneyString(2)}'
+                              ? MonedaVentaService.formatearPrecio(
+                                previewPriceClamped,
+                                conSimbolo: true,
+                              )
                               : 'Ingresa un valor para previsualizar',
                           style: TextStyle(
                             fontSize: 16,
@@ -487,8 +491,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                         if (previewDelta != null)
                           Text(
                             previewDelta >= 0
-                                ? '+\$${previewDelta.toMoneyString(2)}'
-                                : '-\$${previewDelta.abs().toMoneyString(2)}',
+                                ? '+${MonedaVentaService.formatearPrecio(previewDelta, conSimbolo: true)}'
+                                : '-${MonedaVentaService.formatearPrecio(previewDelta.abs(), conSimbolo: true)}',
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
@@ -1081,7 +1085,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
               ),
             ),
             Text(
-              '\$${prices['precio_venta']!.toMoneyString(2)}',
+              MonedaVentaService.formatearPrecio(
+                prices['precio_venta']!,
+                conSimbolo: true,
+              ),
               style: TextStyle(
                 fontSize: isRecargo ? 16 : 14,
                 color:
@@ -1111,7 +1118,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
               ),
             ),
             Text(
-              '\$${PriceUtils.formatDiscountPrice(prices['precio_oferta']!)}',
+              MonedaVentaService.formatearPrecio(
+                PriceUtils.roundDiscountPrice(prices['precio_oferta']!),
+                conSimbolo: true,
+              ),
               style: TextStyle(
                 fontSize: isRecargo ? 14 : 16,
                 fontWeight: FontWeight.w600,
@@ -1128,7 +1138,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     } else {
       priceContent.add(
         Text(
-          '\$${basePrice.toMoneyString(2)}',
+          MonedaVentaService.formatearPrecio(basePrice, conSimbolo: true),
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w600,
@@ -1143,7 +1153,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
       priceContent.add(const SizedBox(height: 4));
       priceContent.add(
         Text(
-          'Original: \$${originalBasePrice.toMoneyString(2)}',
+          'Original: ${MonedaVentaService.formatearPrecio(originalBasePrice, conSimbolo: true)}',
           style: TextStyle(
             fontSize: 11,
             color: VentiqHomeTheme.textSecondary,
@@ -1193,7 +1203,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
           isRecargo ? prices['precio_venta']! : prices['precio_oferta']!;
 
       priceWidget = Text(
-        '\$${PriceUtils.formatDiscountPrice(displayPrice)}',
+        MonedaVentaService.formatearPrecio(
+          PriceUtils.roundDiscountPrice(displayPrice),
+          conSimbolo: true,
+        ),
         style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w600,
@@ -1204,7 +1217,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
       );
     } else {
       priceWidget = Text(
-        '\$${basePrice.toMoneyString(2)}',
+        MonedaVentaService.formatearPrecio(basePrice, conSimbolo: true),
         style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w600,
@@ -1662,7 +1675,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                         ),
                       ),
                       Text(
-                        '\$${totalPrice.toMoneyString(2)}',
+                        MonedaVentaService.formatearPrecio(
+                          totalPrice,
+                          conSimbolo: true,
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -2381,12 +2397,15 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  '\$${_calculateTotalPriceWithPresentation(
-                    finalPrice,
-                    quantity,
-                    currentProduct,
-                    variant, // FASE 4: factor POR VARIANTE
-                  ).toMoneyString(2)}',
+                  MonedaVentaService.formatearPrecio(
+                    _calculateTotalPriceWithPresentation(
+                      finalPrice,
+                      quantity,
+                      currentProduct,
+                      variant, // FASE 4: factor POR VARIANTE
+                    ),
+                    conSimbolo: true,
+                  ),
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
@@ -2421,8 +2440,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                     children: [
                       Text(
                         isRecargo
-                            ? 'Venta: \$${prices['precio_venta']!.toMoneyString(2)}'
-                            : 'Base: \$${price.toMoneyString(2)}',
+                            ? 'Venta: ${MonedaVentaService.formatearPrecio(prices['precio_venta']!, conSimbolo: true)}'
+                            : 'Base: ${MonedaVentaService.formatearPrecio(price, conSimbolo: true)}',
                         style: TextStyle(
                           fontSize: 11,
                           color: VentiqHomeTheme.textSecondary,
@@ -2433,8 +2452,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                       ),
                       Text(
                         isRecargo
-                            ? 'Oferta: \$${PriceUtils.formatDiscountPrice(prices['precio_oferta']!)}'
-                            : 'Oferta: \$${PriceUtils.formatDiscountPrice(finalPrice)}',
+                            ? 'Oferta: ${MonedaVentaService.formatearPrecio(PriceUtils.roundDiscountPrice(prices['precio_oferta']!), conSimbolo: true)}'
+                            : 'Oferta: ${MonedaVentaService.formatearPrecio(PriceUtils.roundDiscountPrice(finalPrice), conSimbolo: true)}',
                         style: TextStyle(
                           fontSize: 13,
                           color: locationColor,
@@ -2444,7 +2463,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                     ],
                   )
                   : Text(
-                    'Precio: \$${price.toMoneyString(2)}',
+                    'Precio: ${MonedaVentaService.formatearPrecio(price, conSimbolo: true)}',
                     style: TextStyle(
                       fontSize: 13,
                       color: locationColor,
@@ -2458,7 +2477,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
             Row(
               children: [
                 Text(
-                  'Original: \$${originalPriceValue!.toMoneyString(2)}',
+                  'Original: ${MonedaVentaService.formatearPrecio(originalPriceValue!, conSimbolo: true)}',
                   style: TextStyle(
                     fontSize: 11,
                     color: VentiqHomeTheme.textSecondary,

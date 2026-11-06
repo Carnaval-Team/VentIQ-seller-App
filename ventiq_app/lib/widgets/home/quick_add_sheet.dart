@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../models/product.dart';
+import '../../services/moneda_venta_service.dart';
 import '../../services/quick_add_service.dart';
 import '../../theme/ventiq_home_theme.dart';
 
@@ -443,7 +444,7 @@ class _QuickAddSheetState extends State<QuickAddSheet> {
           ),
         ),
         Text(
-          total.toStringAsFixed(2),
+          MonedaVentaService.formatearPrecio(total),
           style: const TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.w900,

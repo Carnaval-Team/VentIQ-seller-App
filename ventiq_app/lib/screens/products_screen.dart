@@ -9,10 +9,12 @@ import '../services/order_service.dart';
 import '../models/order.dart' show OrderItem;
 import '../utils/desarme_bulto_local.dart';
 import '../widgets/cocina_chip.dart';
+import '../widgets/moneda_venta_chip.dart';
 import '../services/product_service.dart';
 import '../theme/ventiq_home_theme.dart';
 import '../services/user_preferences_service.dart';
 import '../services/currency_service.dart';
+import '../services/moneda_venta_service.dart';
 import '../utils/promotion_rules.dart';
 import '../utils/price_utils.dart';
 import '../utils/navigation_helper.dart';
@@ -352,6 +354,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
         ),
         centerTitle: true,
         actions: [
+          MonedaVentaChip(onChanged: (_) => setState(() {})),
           if (_isLimitDataUsageEnabled)
             IconButton(
               icon: const Icon(
@@ -1270,7 +1273,10 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                           // Precio de venta (tachado si es mayor que oferta)
                           Flexible(
                             child: Text(
-                              '\$${precioVenta.toMoneyString(2)}',
+                              MonedaVentaService.formatearPrecio(
+                                precioVenta,
+                                conSimbolo: true,
+                              ),
                               style: TextStyle(
                                 fontSize: precioVenta > precioOferta ? 12 : 14,
                                 color:
@@ -1294,7 +1300,10 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                           // Precio de oferta (destacado si es menor que venta)
                           Flexible(
                             child: Text(
-                              '\$${precioOferta.toMoneyString(2)}',
+                              MonedaVentaService.formatearPrecio(
+                                precioOferta,
+                                conSimbolo: true,
+                              ),
                               style: TextStyle(
                                 fontSize: precioOferta < precioVenta ? 14 : 12,
                                 fontWeight:
@@ -1318,7 +1327,10 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                           // Precio normal sin promoción
                           Flexible(
                             child: Text(
-                              '\$${widget.product.precio.toMoneyString(2)}',
+                              MonedaVentaService.formatearPrecio(
+                                widget.product.precio,
+                                conSimbolo: true,
+                              ),
                               style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,

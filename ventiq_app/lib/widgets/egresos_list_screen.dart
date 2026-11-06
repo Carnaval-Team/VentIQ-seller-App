@@ -97,6 +97,9 @@ class _EgresosListScreenState extends State<EgresosListScreen> {
             turnoEstado: expenseJson['turno_estado'] ?? 1,
             medioPago: expenseJson['medio_pago'],
             esDigital: expenseJson['es_digital'] ?? false,
+            // Los egresos anteriores a la Fase 4 no traen divisa en el cache:
+            // `Expense` los deja en la moneda base, que es donde se registraron.
+            moneda: expenseJson['moneda'],
           );
         }).toList();
         
@@ -313,7 +316,7 @@ class _EgresosListScreenState extends State<EgresosListScreen> {
                         ),
                       ),
                       Text(
-                        '\$${expense.montoEntrega.toMoneyString(0)}',
+                        '\$${expense.montoEntrega.toMoneyString(0)} ${expense.moneda}',
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
@@ -455,7 +458,10 @@ class _EgresosListScreenState extends State<EgresosListScreen> {
                     _buildDetailRow('ID Egreso:', '${expense.idEgreso}'),
                     _buildDetailRow('Fecha:', _formatDate(expense.fechaEntrega)),
                     _buildDetailRow('Hora:', _formatTime(expense.fechaEntrega)),
-                    _buildDetailRow('Monto:', '\$${expense.montoEntrega.toMoneyString(2)}'),
+                    _buildDetailRow(
+                      'Monto:',
+                      expense.formattedAmountWithCurrency,
+                    ),
                     _buildDetailRow('Método de pago:', expense.medioPago ?? 'N/A'),
                     _buildDetailRow(
                       'Tipo:',

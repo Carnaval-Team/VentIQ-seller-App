@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../models/home_catalogo.dart';
+import '../../services/moneda_venta_service.dart';
 import '../../theme/ventiq_home_theme.dart';
 
 /// Fila de producto dentro del drawer.
@@ -155,7 +156,13 @@ class ProductoTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: <Widget>[
                     Text(
-                      producto.precio.toStringAsFixed(2),
+                      // Mismo formato que el riel (`riel_productos`): el mismo
+                      // producto no puede verse «$2.50» en el riel y «2.50 CUP»
+                      // en la rejilla.
+                      MonedaVentaService.formatearPrecio(
+                        producto.precio,
+                        conSimbolo: true,
+                      ),
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w900,

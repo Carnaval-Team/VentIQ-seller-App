@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/order.dart';
+import '../services/moneda_venta_service.dart';
 import '../utils/price_utils.dart';
 
 enum PaymentFilter { all, cash, digital, transfer }
@@ -250,7 +251,11 @@ class FilteredOrdersScreen extends StatelessWidget {
                       ),
                     ),
                     child: Text(
-                      '\$${order.total.toMoneyString(0)}',
+                      MonedaVentaService.formatearPrecio(
+                        order.total,
+                        decimales: 0,
+                        conSimbolo: true,
+                      ),
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         color: Colors.green[600]!,
@@ -468,7 +473,11 @@ class FilteredOrdersScreen extends StatelessWidget {
                         _buildDetailSection(
                           'Total',
                           Icons.attach_money,
-                          '\$${order.total.toMoneyString(0)}',
+                          MonedaVentaService.formatearPrecio(
+                            order.total,
+                            decimales: 0,
+                            conSimbolo: true,
+                          ),
                         ),
                         const SizedBox(height: 16),
 

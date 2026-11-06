@@ -646,15 +646,23 @@ class CategoryService {
     return maximo + 1;
   }
 
-  /// Verifica si una categoría tiene subcategorías
+  /// Verifica si una categoría tiene subcategorías **reales** (visibles).
+  ///
+  /// Se consulta la tabla y no el RPC `get_subcategorias_by_categoria` porque el
+  /// RPC no expone `oculta`: desde que el trigger crea una subcategoría
+  /// «General» oculta para cada categoría especial, contar todo bloquearía el
+  /// borrado de esas categorías para siempre («tiene subcategorías asociadas»).
+  /// Las ocultas las gestiona el sistema, así que no cuentan.
   Future<bool> categoryHasSubcategories(int categoryId) async {
     try {
-      final subcategories = await _supabase.rpc(
-        'get_subcategorias_by_categoria',
-        params: {'p_id_categoria': categoryId},
-      );
+      final subcategories = await _supabase
+          .from('app_dat_subcategorias')
+          .select('id')
+          .eq('idcategoria', categoryId)
+          .eq('oculta', false)
+          .limit(1);
 
-      return subcategories != null && subcategories.isNotEmpty;
+      return subcategories.isNotEmpty;
     } catch (e) {
       print('❌ Error verificando subcategorías: $e');
       return false;

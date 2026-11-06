@@ -692,7 +692,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
                 subcategoriasParaEdicion =
 
-                    await ProductService.getSubcategorias(categoryId);
+                    await _cargarSubcategoriasFormulario(categoryId);
 
                 print(
 
@@ -1909,6 +1909,90 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
 
 
+  /// Subcategorías que el formulario puede ofrecer para [categoryId].
+
+  ///
+
+  /// Regla única del fichero: primero las visibles, que son las de gestión. Si
+
+  /// la categoría no tiene ninguna —caso de una categoría *especial*, donde un
+
+  /// trigger de la base creó solo la «General» con `oculta = true`— se piden
+
+  /// también las ocultas. Esa «General» es un cajón del sistema, no una
+
+  /// subcategoría de gestión: no se lista para no ensuciar la gestión, pero sí
+
+  /// es un destino válido para el producto, así que sin ella el alta quedaría
+
+  /// bloqueada pidiendo crear una subcategoría a mano.
+
+  ///
+
+  /// En edición se conservan además las subcategorías que el producto ya tiene
+
+  /// en su categoría, aunque estén ocultas, para que sigan apareciendo
+
+  /// seleccionadas. Para una categoría normal (sin ocultas) nada cambia.
+
+  Future<List<Map<String, dynamic>>> _cargarSubcategoriasFormulario(
+
+    int categoryId,
+
+  ) async {
+
+    var subcategorias = await ProductService.getSubcategorias(categoryId);
+
+    if (subcategorias.isEmpty) {
+
+      subcategorias = await ProductService.getSubcategorias(
+
+        categoryId,
+
+        soloVisibles: false,
+
+      );
+
+    }
+
+    final producto = widget.product;
+
+    if (producto == null || producto.subcategorias.isEmpty) {
+
+      return subcategorias;
+
+    }
+
+    // Solo cuando se está cargando la categoría del propio producto: si el
+
+    // usuario cambia de categoría en edición, las subcategorías anteriores no
+
+    // pintan nada en la lista nueva (serían un enlace a una subcategoría ajena).
+
+    if (int.tryParse(producto.categoryId) != categoryId) {
+
+      return subcategorias;
+
+    }
+
+    final ids = subcategorias.map((subcat) => subcat['id']).toSet();
+
+    final resultado = [...subcategorias];
+
+    for (final asignada in producto.subcategorias) {
+
+      final id = asignada['id'];
+
+      if (id == null || ids.contains(id)) continue;
+
+      resultado.add({'id': id, 'denominacion': asignada['denominacion']});
+
+    }
+
+    return resultado;
+
+  }
+
   Future<void> _loadSubcategorias(int categoryId) async {
 
     try {
@@ -1933,7 +2017,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
 
 
-      final subcategorias = await ProductService.getSubcategorias(categoryId);
+      final subcategorias = await _cargarSubcategoriasFormulario(categoryId);
 
 
 
@@ -1945,7 +2029,13 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
 
 
-        // ✅ NUEVO: Selección automática si hay una sola subcategoría
+        // ✅ NUEVO: Selección automática si hay una sola subcategoría.
+
+        // Cubre la «General» oculta de las categorías especiales: es la única
+
+        // opción del cajón del sistema y el usuario no debe elegir nada ni crear
+
+        // una subcategoría a mano.
 
         if (subcategorias.length == 1 && widget.product == null) {
 

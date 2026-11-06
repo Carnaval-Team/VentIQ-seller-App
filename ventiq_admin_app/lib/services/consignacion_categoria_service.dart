@@ -74,6 +74,10 @@ class ConsignacionCategoriaService {
           .from('app_dat_subcategorias')
           .select('id, denominacion')
           .eq('idcategoria', idCategoria)
+          // Las ocultas las crea el sistema para las categorías especiales:
+          // existen para que la categoría siempre tenga una subcategoría
+          // válida, pero no se ofrecen en el selector.
+          .eq('oculta', false)
           .order('denominacion');
 
       debugPrint('✅ Subcategorías obtenidas: ${response.length}');

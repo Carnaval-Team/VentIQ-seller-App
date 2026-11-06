@@ -818,7 +818,10 @@ void main() {
         _appTile(ProductoTile(producto: p, onTap: () {}, mostrarSku: true)),
       );
       expect(find.text('SKU-ARROZ-1'), findsOneWidget);
-      expect(find.text('2.50'), findsOneWidget);
+      // El precio del tile pasa por el formateador de moneda de venta: sin
+      // divisa alternativa activa sale idéntico a antes, con el símbolo `$`
+      // (igual que el riel) porque el default de las tasas es CUP.
+      expect(find.text(r'$2.50'), findsOneWidget);
 
       await tester.pumpWidget(
         _appTile(ProductoTile(producto: p, onTap: () {})),

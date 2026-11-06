@@ -13,6 +13,7 @@ import '../models/product.dart';
 import '../services/changelog_service.dart';
 import '../services/home_catalog_service.dart';
 import '../services/home_extras_service.dart';
+import '../services/moneda_venta_service.dart';
 import '../services/notification_service.dart';
 import '../services/order_service.dart';
 import '../services/product_detail_service.dart';
@@ -40,6 +41,7 @@ import '../widgets/home/home_seccion_titulo.dart';
 import '../widgets/home/producto_tile.dart';
 import '../widgets/home/quick_add_sheet.dart';
 import '../widgets/home/riel_productos.dart';
+import '../widgets/moneda_venta_chip.dart';
 import '../widgets/notification_widget.dart';
 import '../widgets/sales_monitor_fab.dart';
 import '../widgets/sync_status_chip.dart';
@@ -58,7 +60,8 @@ import 'products_screen.dart';
 ///  2. **buscador siempre visible**, flotando sobre la costura hero/lienzo;
 ///  3. chips rápidos;
 ///  4. rejilla de categorías **especiales**;
-///  5. tarjeta **"Tienda"** con todo lo demás.
+///  5. tarjeta **"Tienda"** con todo lo demás;
+///  6. rieles de producto («Ofertas», «Más vendidos») al final.
 ///
 /// Todo el estado y las reglas viven en [HomeController]; esta pantalla sólo
 /// pinta y navega.
@@ -208,12 +211,35 @@ class _HomeShellScreenState extends State<HomeShellScreen>
     await _redirigirSiSoloInventario();
     await _cargarPerfil();
     await _cargarAjustes();
+    // La moneda de venta se resuelve ANTES del catálogo: los precios del Home se
+    // pintan con `MonedaVentaService.formatearPrecio` en el primer `build()`, y
+    // si se cargara después el vendedor vería un parpadeo en CUP y luego el
+    // cambio de divisa.
+    await _cargarMonedaVenta();
     await _cargarCatalogo();
     _escucharModoOffline();
     unawaited(_iniciarNotificaciones());
     // El tutorial manda: si arranca, no encadenamos el changelog encima.
     final bool tutorial = await _quizasTutorial();
     if (!tutorial) unawaited(_mostrarNovedadesSiAplican());
+  }
+
+  /// Carga la **moneda de venta** de este teléfono y deja el formateador listo.
+  ///
+  /// Una sola llamada resuelve: divisas aceptadas por la tienda, sus tasas,
+  /// la moneda guardada (con caída segura a CUP si ya no sirve) y el estado en
+  /// memoria que leen las pantallas dentro de `build()`.
+  ///
+  /// Si falla la red o el catálogo, el servicio se queda en CUP, que es
+  /// exactamente el comportamiento anterior a esta funcionalidad: nunca se
+  /// bloquea el arranque del Home por esto.
+  Future<void> _cargarMonedaVenta() async {
+    try {
+      await MonedaVentaService.cargarDesdeTienda();
+    } catch (e) {
+      debugPrint('⚠️ No se pudo cargar la moneda de venta: $e');
+    }
+    if (mounted) setState(() {});
   }
 
   /// Lanza el tutorial de venta la primera vez (normal o restaurante según la
@@ -956,6 +982,15 @@ class _HomeShellScreenState extends State<HomeShellScreen>
                   // la izquierda y la derecha se lee en dos pisos.
                   estadoConexion: const ConnectionStatusWidget(compact: true),
                   acciones: <Widget>[
+                    // Moneda de venta: se oculta sola si la tienda solo tiene
+                    // una divisa con tasa, así que las tiendas de siempre no
+                    // ven ningún control nuevo. Al cambiarla hay que repintar
+                    // el Home porque todos sus precios se reformatean.
+                    MonedaVentaChip(
+                      onChanged: (_) {
+                        if (mounted) setState(() {});
+                      },
+                    ),
                     IconButton(
                       tooltip: 'Escanear código de barras',
                       onPressed: _abrirEscaner,

@@ -11,6 +11,7 @@ import '../services/web_summary_printer_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/turno_service.dart';
 import '../services/currency_service.dart';
+import '../services/moneda_venta_service.dart';
 import '../theme/ventiq_home_theme.dart';
 import '../utils/platform_utils.dart';
 import '../utils/price_utils.dart';
@@ -33,16 +34,19 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
       UserPreferencesService();
   List<OrderItem> _productosVendidos = [];
   List<Order> _ordenesVendidas = [];
-  double _totalVentas = 0.0;
-  double _totalVentasCup = 0.0;
-  double _totalVentasUsd = 0.0;
+  double _totalVentas = 0.0; // consolidado en moneda base (order.total)
   double _totalProductos = 0.0;
   double _totalEgresado = 0.0; // Cambio: era _totalCosto
-  double _totalEfectivoReal = 0.0; // Cambio: era _totalDescuentos
-  double _totalEfectivo = 0.0; // Ventas efectivo en CUP
-  double _totalEfectivoUsd = 0.0; // Ventas efectivo en USD
-  double _totalTransferencia = 0.0; // Transferencias en CUP
-  double _totalTransferenciaUsd = 0.0; // Transferencias en USD
+
+  // Importes NATIVOS acumulados por código de divisa ISO-4217. Son el único
+  // origen de verdad del resumen: cualquier divisa que el servidor acepte
+  // entra por estos mapas sin tocar el resto de la pantalla, y con una sola
+  // divisa los importes son exactamente los que calculaba la versión binaria.
+  Map<String, double> _ventasPorDivisa = {};
+  Map<String, double> _efectivoPorDivisa = {};
+  Map<String, double> _digitalPorDivisa = {};
+  Map<String, double> _egresosEfectivoPorDivisa = {};
+  Map<String, double> _egresosDigitalPorDivisa = {};
   Map<String, double> _totalesPorMedioPago = {};
   bool _isLoading = true;
   bool _hasActiveTurno = false;
@@ -50,20 +54,18 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
   // Expenses data
   List<Expense> _expenses = [];
   double _totalEgresos = 0.0;
-  double _egresosEfectivo = 0.0;
-  double _egresosTransferencias = 0.0;
-  double _egresosEfectivoUsd = 0.0;
-  double _egresosTransferenciasUsd = 0.0;
 
-  // USD rate data
-  double _usdRate = 0.0;
-  bool _isLoadingUsdRate = false;
+  // Tasa a la moneda base de cada divisa de la tienda (0 = sin tasa
+  // resoluble). Se carga una vez porque `build()` la necesita de forma
+  // síncrona para decidir qué divisas dibujar y con qué decimales.
+  Map<String, double> _ratesByCurrency = {};
+  bool _isLoadingRates = false;
 
   @override
   void initState() {
     super.initState();
     _initializeData();
-    _loadUsdRate();
+    _loadRates();
   }
 
   double _parseDouble(dynamic value) {
@@ -72,27 +74,49 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
     return double.tryParse(value.toString()) ?? 0.0;
   }
 
-  /// Calcula el desglose de pagos (efectivo/transferencia × CUP/USD).
+  /// Suma [monto] bajo [clave] dentro de un acumulador.
+  ///
+  /// Existe para no repetir el `update(... ifAbsent:)` en cada cubo y, sobre
+  /// todo, para que admitir una divisa nueva sea sólo un dato: no hay ninguna
+  /// rama por código de divisa que recordar.
+  static void _acumular(
+    Map<String, double> acumulador, {
+    required String clave,
+    required double monto,
+  }) {
+    acumulador.update(clave, (valor) => valor + monto, ifAbsent: () => monto);
+  }
+
+  /// Tasa de [divisa] a la moneda base, o `null` si no hay ninguna resoluble.
+  ///
+  /// La moneda base vale 1 por definición. Se devuelve `null` (y no 0) para
+  /// que `paymentCupEquivalent` prefiera la tasa guardada en el propio pago en
+  /// lugar de inventar una conversión.
+  double? _rateToBase(String divisa) {
+    if (divisa == PriceUtils.baseCurrency) return 1;
+    final tasa = _ratesByCurrency[divisa];
+    return (tasa != null && tasa > 0) ? tasa : null;
+  }
+
+  /// Desglose de pagos de las órdenes: importes NATIVOS por código de divisa.
+  ///
+  /// La divisa de cada línea sale del propio pago (`PriceUtils.paymentCurrency`
+  /// devuelve el código ISO real): un cobro en EUR cae en `ventasPorDivisa` de
+  /// EUR, no en el cubo de la moneda base como hacía el desglose binario.
   Future<
     ({
-      double efectivoCup,
-      double efectivoUsd,
-      double transferenciaCup,
-      double transferenciaUsd,
-      double totalCup,
-      double totalUsd,
+      Map<String, double> ventasPorDivisa,
+      Map<String, double> efectivoPorDivisa,
+      Map<String, double> digitalPorDivisa,
       double total,
       int productos,
       Map<String, double> porMedio,
     })
   >
   _calculatePaymentBreakdownFromOrders(List<Order> orders) async {
-    double efectivoCup = 0.0;
-    double efectivoUsd = 0.0;
-    double transferenciaCup = 0.0;
-    double transferenciaUsd = 0.0;
-    double totalCup = 0.0;
-    double totalUsd = 0.0;
+    final ventasPorDivisa = <String, double>{};
+    final efectivoPorDivisa = <String, double>{};
+    final digitalPorDivisa = <String, double>{};
     double total = 0.0;
     int productos = 0;
     final porMedio = <String, double>{};
@@ -120,47 +144,32 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           final pago = PriceUtils.asPaymentMap(raw);
           if (pago == null) continue;
 
-          final moneda = PriceUtils.paymentCurrency(pago);
+          final divisa = PriceUtils.paymentCurrency(pago);
           final montoNativo = PriceUtils.paymentAmount(pago);
           final montoCup = PriceUtils.paymentCupEquivalent(
             pago,
-            fallbackRate: _usdRate > 0 ? _usdRate : null,
+            fallbackRate: _rateToBase(divisa),
           );
           final nombre = PriceUtils.paymentMethodName(pago);
           final etiqueta = PriceUtils.paymentIsPending(pago)
-              ? 'Cuenta por cobrar ($moneda)'
-              : '$nombre ($moneda)';
+              ? 'Cuenta por cobrar ($divisa)'
+              : '$nombre ($divisa)';
 
-          porMedio.update(
-            etiqueta,
-            (value) => value + montoNativo,
-            ifAbsent: () => montoNativo,
-          );
-
-          if (moneda == 'USD') {
-            totalUsd += montoNativo;
-          } else {
-            totalCup += montoNativo;
-          }
+          _acumular(porMedio, clave: etiqueta, monto: montoNativo);
+          _acumular(ventasPorDivisa, clave: divisa, monto: montoNativo);
 
           if (PriceUtils.paymentIsPending(pago)) {
             clasificadoCup += montoCup;
             continue;
           }
 
-          if (PriceUtils.paymentIsCash(pago)) {
-            if (moneda == 'USD') {
-              efectivoUsd += montoNativo;
-            } else {
-              efectivoCup += montoNativo;
-            }
-          } else {
-            if (moneda == 'USD') {
-              transferenciaUsd += montoNativo;
-            } else {
-              transferenciaCup += montoNativo;
-            }
-          }
+          _acumular(
+            PriceUtils.paymentIsCash(pago)
+                ? efectivoPorDivisa
+                : digitalPorDivisa,
+            clave: divisa,
+            monto: montoNativo,
+          );
           clasificadoCup += montoCup;
         }
       }
@@ -170,27 +179,25 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         final esCuentaPorCobrar = await _orderService.isVentaPendienteDePago(
           order,
         );
+        // Sin líneas de pago no hay divisa que leer: se asume la moneda base,
+        // que es la unidad contable con la que se registró el pedido.
+        final divisa = PriceUtils.baseCurrency;
         final etiqueta =
-            esCuentaPorCobrar ? 'Cuenta por cobrar (CUP)' : 'Efectivo (CUP)';
-        porMedio.update(
-          etiqueta,
-          (value) => value + montoSinClasificar,
-          ifAbsent: () => montoSinClasificar,
-        );
-        totalCup += montoSinClasificar;
+            esCuentaPorCobrar
+                ? 'Cuenta por cobrar ($divisa)'
+                : 'Efectivo ($divisa)';
+        _acumular(porMedio, clave: etiqueta, monto: montoSinClasificar);
+        _acumular(ventasPorDivisa, clave: divisa, monto: montoSinClasificar);
         if (!esCuentaPorCobrar) {
-          efectivoCup += montoSinClasificar;
+          _acumular(efectivoPorDivisa, clave: divisa, monto: montoSinClasificar);
         }
       }
     }
 
     return (
-      efectivoCup: efectivoCup,
-      efectivoUsd: efectivoUsd,
-      transferenciaCup: transferenciaCup,
-      transferenciaUsd: transferenciaUsd,
-      totalCup: totalCup,
-      totalUsd: totalUsd,
+      ventasPorDivisa: ventasPorDivisa,
+      efectivoPorDivisa: efectivoPorDivisa,
+      digitalPorDivisa: digitalPorDivisa,
       total: total,
       productos: productos,
       porMedio: porMedio,
@@ -199,32 +206,113 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
   void _applyPaymentBreakdown(
     ({
-      double efectivoCup,
-      double efectivoUsd,
-      double transferenciaCup,
-      double transferenciaUsd,
-      double totalCup,
-      double totalUsd,
+      Map<String, double> ventasPorDivisa,
+      Map<String, double> efectivoPorDivisa,
+      Map<String, double> digitalPorDivisa,
       double total,
       int productos,
       Map<String, double> porMedio,
-    }) breakdown,
+    })
+    breakdown,
   ) {
     _totalVentas = breakdown.total;
-    _totalVentasCup = breakdown.totalCup;
-    _totalVentasUsd = breakdown.totalUsd;
     _totalProductos = breakdown.productos.toDouble();
-    _totalEfectivo = breakdown.efectivoCup;
-    _totalEfectivoUsd = breakdown.efectivoUsd;
-    _totalTransferencia = breakdown.transferenciaCup;
-    _totalTransferenciaUsd = breakdown.transferenciaUsd;
+    _ventasPorDivisa = breakdown.ventasPorDivisa;
+    _efectivoPorDivisa = breakdown.efectivoPorDivisa;
+    _digitalPorDivisa = breakdown.digitalPorDivisa;
     _totalesPorMedioPago = breakdown.porMedio;
-    _totalEfectivoReal = breakdown.efectivoCup - _egresosEfectivo;
   }
 
-  /// Siempre muestra CUP y USD en el resumen (aunque alguno sea 0).
-  String _formatCupUsdAmount(double cup, double usd) {
-    return '\$${cup.toMoneyString(0)} CUP\n\$${usd.toMoneyString(2)} USD';
+  /// Efectivo real de la moneda base para el impresor web, que todavía recibe
+  /// un único importe. Es un valor derivado (no un acumulador paralelo) para
+  /// que no pueda quedar desincronizado de los desgloses.
+  double get _totalEfectivoReal =>
+      _baseAmount(_efectivoPorDivisa) - _baseAmount(_egresosEfectivoPorDivisa);
+
+  /// Importe de un desglose en la moneda base, sin convertir.
+  ///
+  /// Los detalles que se abren desde aquí (`FilteredOrdersScreen`,
+  /// `EgresosListScreen`) reciben un único importe: se les pasa la porción en
+  /// moneda base, que es justo lo que mostraban antes de multimoneda.
+  double _baseAmount(Map<String, double> montos) =>
+      montos[PriceUtils.baseCurrency] ?? 0.0;
+
+  /// Suma dos desgloses por divisa conservando las claves con importe 0.
+  ///
+  /// Se combinan los mapas al pintar en vez de mantener acumuladores
+  /// paralelos: un acumulador que nadie asigna es precisamente el defecto que
+  /// dejaba «Egresado USD» en 0.0 permanente.
+  Map<String, double> _sumarPorDivisa(
+    Map<String, double> a,
+    Map<String, double> b,
+  ) {
+    final total = <String, double>{...a};
+    for (final entrada in b.entries) {
+      _acumular(total, clave: entrada.key, monto: entrada.value);
+    }
+    return total;
+  }
+
+  /// Resta [b] a [a] por divisa. Las claves de [a] se conservan aunque queden
+  /// en cero: la línea debe seguir apareciendo, como hacía el resumen binario.
+  Map<String, double> _restarPorDivisa(
+    Map<String, double> a,
+    Map<String, double> b,
+  ) {
+    final total = <String, double>{...a};
+    for (final entrada in b.entries) {
+      _acumular(total, clave: entrada.key, monto: -entrada.value);
+    }
+    return total;
+  }
+
+  /// Divisas que debe pintar el resumen, en orden estable: la moneda base
+  /// primero y después las de la tienda, más las que aparezcan en [montos].
+  ///
+  /// Se siembra con las divisas de la tienda aunque no tengan movimiento para
+  /// que el resumen muestre las mismas líneas que el arqueo (una tienda
+  /// CUP/USD sigue pintando las dos de siempre) y se añaden las que sólo
+  /// existen en los datos para no ocultar una venta en una divisa que la
+  /// tienda ya no acepta.
+  List<String> _displayCurrencies(Map<String, double> montos) {
+    final divisas = <String>[PriceUtils.baseCurrency];
+    for (final codigo in [..._ratesByCurrency.keys, ...montos.keys]) {
+      if (codigo.isNotEmpty && !divisas.contains(codigo)) divisas.add(codigo);
+    }
+    return divisas;
+  }
+
+  /// Decimales con los que se pinta cada divisa.
+  ///
+  /// La moneda base va sin decimales (es la unidad contable y sus importes son
+  /// grandes) y las demás con dos (importes nominales pequeños): exactamente
+  /// el formato que ya tenían CUP y USD.
+  int _decimalsFor(String divisa) =>
+      divisa == PriceUtils.baseCurrency ? 0 : 2;
+
+  /// Importe por divisa tal y como se pinta en las tarjetas: una línea por
+  /// divisa, `$importe DIVISA`.
+  String _formatAmountsByCurrency(Map<String, double> montos) {
+    return _displayCurrencies(montos)
+        .map((divisa) {
+          final importe = (montos[divisa] ?? 0).toMoneyString(
+            _decimalsFor(divisa),
+          );
+          return '\$$importe $divisa';
+        })
+        .join('\n');
+  }
+
+  /// Código de divisa de una etiqueta «Medio (DIVISA)».
+  ///
+  /// Las etiquetas del desglose por medio de pago terminan siempre con el
+  /// código entre paréntesis; leerlo evita adivinar la divisa (antes se
+  /// comparaba con `contains('(USD)')`, que no admite una tercera divisa).
+  String _currencyOfLabel(String etiqueta) {
+    final abre = etiqueta.lastIndexOf('(');
+    if (abre < 0 || !etiqueta.endsWith(')')) return PriceUtils.baseCurrency;
+    final codigo = etiqueta.substring(abre + 1, etiqueta.length - 1).trim();
+    return codigo.isEmpty ? PriceUtils.baseCurrency : codigo;
   }
 
   Future<void> _initializeData() async {
@@ -245,24 +333,28 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
     await _calcularVentaTotal();
   }
 
-  Future<void> _loadUsdRate() async {
+  /// Carga la tasa de TODAS las divisas de la tienda (antes sólo la de USD).
+  ///
+  /// `getRatesForStore()` resuelve cada divisa con la misma función que usa el
+  /// servidor al registrar el cobro, así que el importe que ve el cajero y el
+  /// que guarda la base no pueden discrepar por usar reglas distintas.
+  Future<void> _loadRates() async {
     setState(() {
-      _isLoadingUsdRate = true;
+      _isLoadingRates = true;
     });
 
+    Map<String, double> tasas = const {};
     try {
-      final rate = await CurrencyService.getUsdRate();
-      setState(() {
-        _usdRate = rate;
-        _isLoadingUsdRate = false;
-      });
+      tasas = await CurrencyService.getRatesForStore();
     } catch (e) {
-      print('❌ Error loading USD rate: $e');
-      setState(() {
-        _usdRate = 0.0;
-        _isLoadingUsdRate = false;
-      });
+      print('❌ Error cargando tasas por divisa: $e');
     }
+
+    if (!mounted) return;
+    setState(() {
+      _ratesByCurrency = tasas;
+      _isLoadingRates = false;
+    });
   }
 
   Future<void> _calcularVentaTotal() async {
@@ -384,15 +476,12 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           print('Órdenes completadas: ${ordenesVendidas.length}');
           print('Productos vendidos: ${productosVendidos.length}');
           print(
-            'Efectivo CUP: \$${_totalEfectivo.toMoneyString(2)} | '
-            'USD: \$${_totalEfectivoUsd.toMoneyString(2)}',
+            'Ventas por divisa: $_ventasPorDivisa | '
+            'efectivo: $_efectivoPorDivisa | digital: $_digitalPorDivisa',
           );
           print(
-            'Transferencia CUP: \$${_totalTransferencia.toMoneyString(2)} | '
-            'USD: \$${_totalTransferenciaUsd.toMoneyString(2)}',
-          );
-          print(
-            'Efectivo Real CUP: \$${_totalEfectivoReal.toMoneyString(2)}',
+            'Efectivo Real (${PriceUtils.baseCurrency}): '
+            '\$${_totalEfectivoReal.toMoneyString(2)}',
           );
         }
       }
@@ -455,39 +544,46 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
       // Calculate total expenses and separate by payment type
       double total = 0.0;
-      double efectivo = 0.0;
-      double transferencias = 0.0;
+      final egresosEfectivoPorDivisa = <String, double>{};
+      final egresosDigitalPorDivisa = <String, double>{};
 
       for (final expense in expenses) {
         total += expense.montoEntrega;
 
         // ✅ Solo es transferencia si esDigital == true. null cuenta como efectivo.
-        final isDigital = expense.esDigital == true;
-        if (isDigital) {
-          transferencias += expense.montoEntrega;
-        } else {
-          efectivo += expense.montoEntrega;
-        }
+        //
+        // Cada egreso guarda en qué divisa salió el dinero (`Expense.moneda`,
+        // de `app_dat_entregas_parciales_caja.moneda`) y `montoEntrega` es su
+        // importe NATIVO, así que el cubo es el de esa divisa: atribuirlo a la
+        // moneda base descuadraría el arqueo. Los egresos anteriores a la Fase 4
+        // no traen divisa y caen en la base, como antes.
+        _acumular(
+          expense.esDigital == true
+              ? egresosDigitalPorDivisa
+              : egresosEfectivoPorDivisa,
+          clave: expense.moneda,
+          monto: expense.montoEntrega,
+        );
       }
 
       setState(() {
         _expenses = expenses;
         _totalEgresos = total;
-        _egresosEfectivo = efectivo;
-        _egresosTransferencias = transferencias;
+        _egresosEfectivoPorDivisa = egresosEfectivoPorDivisa;
+        _egresosDigitalPorDivisa = egresosDigitalPorDivisa;
       });
 
       print('DEBUG - Expenses loaded:');
       print('Total egresos: $_totalEgresos');
-      print('Egresos efectivo: $_egresosEfectivo');
-      print('Egresos transferencias: $_egresosTransferencias');
+      print('Egresos efectivo por divisa: $_egresosEfectivoPorDivisa');
+      print('Egresos digital por divisa: $_egresosDigitalPorDivisa');
     } catch (e) {
       print('Error loading expenses: $e');
       setState(() {
         _expenses = [];
         _totalEgresos = 0.0;
-        _egresosEfectivo = 0.0;
-        _egresosTransferencias = 0.0;
+        _egresosEfectivoPorDivisa = {};
+        _egresosDigitalPorDivisa = {};
       });
     }
   }
@@ -519,6 +615,12 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                 turnoEstado: expenseJson['turno_estado'] ?? 1,
                 medioPago: expenseJson['medio_pago'],
                 esDigital: expenseJson['es_digital'] ?? false,
+                // Sin `moneda` (egresos previos a la Fase 4, o cache viejo) el
+                // modelo asume la moneda base, que es donde se registraron. El
+                // `??` es obligatorio: `Expense.moneda` no es nullable, así que
+                // pasar null daría TypeError y el catch de arriba devolvería
+                // una lista vacía, perdiendo TODOS los egresos.
+                moneda: expenseJson['moneda'] ?? PriceUtils.baseCurrency,
               );
             }).toList();
 
@@ -538,6 +640,15 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Divisas distintas de la moneda base que se anuncian en el chip inferior.
+    // Se oculta el chip cuando la tienda sólo maneja la moneda base: un
+    // «USD: $0» de una divisa que no existe no informa de nada.
+    final divisasConTasa =
+        _ratesByCurrency.keys
+            .where((codigo) => codigo != PriceUtils.baseCurrency)
+            .toList()
+          ..sort();
+
     return Scaffold(
       backgroundColor: VentiqHomeTheme.surface,
       appBar: AppBar(
@@ -605,11 +716,11 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                                 Expanded(
                                   child: _buildClickableSummaryCard(
                                     'Total Egresado',
-                                    _formatCupUsdAmount(
-                                      _egresosEfectivo +
-                                          _egresosTransferencias,
-                                      _egresosEfectivoUsd +
-                                          _egresosTransferenciasUsd,
+                                    _formatAmountsByCurrency(
+                                      _sumarPorDivisa(
+                                        _egresosEfectivoPorDivisa,
+                                        _egresosDigitalPorDivisa,
+                                      ),
                                     ),
                                     Icons.attach_money,
                                     VentiqHomeTheme.danger,
@@ -620,10 +731,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                                 Expanded(
                                   child: _buildClickableSummaryCard(
                                     'Total Ventas',
-                                    _formatCupUsdAmount(
-                                      _totalVentasCup,
-                                      _totalVentasUsd,
-                                    ),
+                                    _formatAmountsByCurrency(_ventasPorDivisa),
                                     Icons.attach_money,
                                     VentiqHomeTheme.success,
                                     onTap: _showAllOrders,
@@ -637,10 +745,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                                 Expanded(
                                   child: _buildClickableSummaryCard(
                                     'Transferencia',
-                                    _formatCupUsdAmount(
-                                      _totalTransferencia,
-                                      _totalTransferenciaUsd,
-                                    ),
+                                    _formatAmountsByCurrency(_digitalPorDivisa),
                                     Icons.credit_card,
                                     VentiqHomeTheme.warning,
                                     onTap: _showTransferOrders,
@@ -650,9 +755,11 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                                 Expanded(
                                   child: _buildClickableSummaryCard(
                                     'Efectivo Real',
-                                    _formatCupUsdAmount(
-                                      _totalEfectivo - _egresosEfectivo,
-                                      _totalEfectivoUsd - _egresosEfectivoUsd,
+                                    _formatAmountsByCurrency(
+                                      _restarPorDivisa(
+                                        _efectivoPorDivisa,
+                                        _egresosEfectivoPorDivisa,
+                                      ),
                                     ),
                                     Icons.account_balance_wallet,
                                     VentiqHomeTheme.success,
@@ -680,8 +787,12 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                                         b.key.toLowerCase(),
                                       ),
                                     ))
-                                  .map(
-                                    (e) => Padding(
+                                  .map((e) {
+                                    final divisa = _currencyOfLabel(e.key);
+                                    final importe = e.value.toMoneyString(
+                                      _decimalsFor(divisa),
+                                    );
+                                    return Padding(
                                       padding: const EdgeInsets.only(bottom: 4),
                                       child: Row(
                                         mainAxisAlignment:
@@ -697,9 +808,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                                             ),
                                           ),
                                           Text(
-                                            e.key.contains('(USD)')
-                                                ? '\$${e.value.toMoneyString(2)} USD'
-                                                : '\$${e.value.toMoneyString(0)} CUP',
+                                            '\$$importe $divisa',
                                             style: const TextStyle(
                                               fontSize: 12,
                                               fontWeight: FontWeight.w700,
@@ -708,8 +817,8 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                                           ),
                                         ],
                                       ),
-                                    ),
-                                  ),
+                                    );
+                                  }),
                             ],
                           ],
                         ),
@@ -735,8 +844,13 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                       ),
                     ],
                   ),
-                  // USD Rate Chip positioned at bottom left
-                  Positioned(bottom: 16, left: 16, child: _buildUsdRateChip()),
+                  // Rate chip positioned at bottom left
+                  if (_isLoadingRates || divisasConTasa.isNotEmpty)
+                    Positioned(
+                      bottom: 16,
+                      left: 16,
+                      child: _buildRateChip(divisasConTasa),
+                    ),
                 ],
               ),
     );
@@ -880,7 +994,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
             Text(
               value,
               style: TextStyle(
-                fontSize: value.contains('\n') ? 13 : 19,
+                fontSize: _summaryValueFontSize(value),
                 fontWeight: FontWeight.w800,
                 color: color,
                 height: 1.15,
@@ -893,11 +1007,23 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
     );
   }
 
+  /// Tamaño del importe en las tarjetas del resumen.
+  ///
+  /// El resumen tiene una línea por divisa y la tarjeta no puede crecer, así
+  /// que la tipografía se encoge al crecer el número de líneas. Con una o dos
+  /// líneas se ve exactamente igual que antes (una sola divisa o CUP/USD).
+  double _summaryValueFontSize(String value) {
+    final lineas = value.split('\n').length;
+    if (lineas <= 1) return 19;
+    if (lineas == 2) return 13;
+    return 10;
+  }
+
   void _showEgresosList() {
     print('🔍 Mostrando lista de egresos...');
     print('📊 Total egresos: $_totalEgresos');
-    print('💰 Egresos efectivo: $_egresosEfectivo');
-    print('💳 Egresos transferencias: $_egresosTransferencias');
+    print('💰 Egresos efectivo por divisa: $_egresosEfectivoPorDivisa');
+    print('💳 Egresos digital por divisa: $_egresosDigitalPorDivisa');
     print('📋 Número de egresos: ${_expenses.length}');
 
     Navigator.push(
@@ -907,8 +1033,8 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
             (context) => EgresosListScreen(
               expenses: _expenses,
               totalEgresos: _totalEgresos,
-              egresosEfectivo: _egresosEfectivo,
-              egresosTransferencias: _egresosTransferencias,
+              egresosEfectivo: _baseAmount(_egresosEfectivoPorDivisa),
+              egresosTransferencias: _baseAmount(_egresosDigitalPorDivisa),
             ),
       ),
     );
@@ -927,7 +1053,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
   void _showCashOrders() {
     print('🔍 Mostrando órdenes pagadas con efectivo...');
-    print('💰 Efectivo: $_totalEfectivo');
+    print('💰 Efectivo por divisa: $_efectivoPorDivisa');
 
     final completedOrders =
         _orderService.orders
@@ -948,7 +1074,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
               filter: PaymentFilter.cash,
               title: 'Órdenes - Efectivo',
               orders: completedOrders,
-              totalAmount: _totalEfectivo,
+              totalAmount: _baseAmount(_efectivoPorDivisa),
             ),
       ),
     );
@@ -956,7 +1082,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
   void _showTransferOrders() {
     print('🔍 Mostrando órdenes pagadas con transferencias...');
-    print('💳 Total transferencias: $_totalTransferencia');
+    print('💳 Digital por divisa: $_digitalPorDivisa');
 
     final completedOrders =
         _orderService.orders
@@ -977,7 +1103,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
               filter: PaymentFilter.transfer,
               title: 'Órdenes - Transferencias',
               orders: completedOrders,
-              totalAmount: _totalTransferencia,
+              totalAmount: _baseAmount(_digitalPorDivisa),
             ),
       ),
     );
@@ -1235,7 +1361,11 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           // Total
           Expanded(
             child: Text(
-              '\$${order.total.toMoneyString(0)}',
+              MonedaVentaService.formatearPrecio(
+                order.total,
+                decimales: 0,
+                conSimbolo: true,
+              ),
               style: const TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
@@ -1586,7 +1716,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                     ),
                   ),
                   Text(
-                    '\$${item.precioUnitario.toMoneyString(2)} c/u',
+                    '${MonedaVentaService.formatearPrecio(item.precioUnitario, conSimbolo: true)} c/u',
                     style: const TextStyle(
                       fontSize: 10,
                       color: VentiqHomeTheme.warning,
@@ -1594,7 +1724,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                   ),
                 ] else ...[
                   Text(
-                    '\$${item.precioUnitario.toMoneyString(0)} c/u',
+                    '${MonedaVentaService.formatearPrecio(item.precioUnitario, decimales: 0, conSimbolo: true)} c/u',
                     style: const TextStyle(
                       fontSize: 10,
                       color: VentiqHomeTheme.textSecondary,
@@ -1660,7 +1790,11 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           // Total (ahora incluye ingredientes)
           Expanded(
             child: Text(
-              '\$${subtotal.toMoneyString(esIngrediente ? 2 : 0)}',
+              MonedaVentaService.formatearPrecio(
+                subtotal,
+                decimales: esIngrediente ? 2 : 0,
+                conSimbolo: true,
+              ),
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
@@ -1919,16 +2053,16 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                             'Total Productos: ${PriceUtils.formatQuantity(_totalProductos)}',
                           ),
                           Text(
-                            'Total Ventas: ${_formatCupUsdAmount(_totalVentasCup, _totalVentasUsd).replaceAll('\n', ' · ')}',
+                            'Total Ventas: ${_formatAmountsByCurrency(_ventasPorDivisa).replaceAll('\n', ' · ')}',
                           ),
                           Text(
-                            'Total Egresado: ${_formatCupUsdAmount(_egresosEfectivo + _egresosTransferencias, _egresosEfectivoUsd + _egresosTransferenciasUsd).replaceAll('\n', ' · ')}',
+                            'Total Egresado: ${_formatAmountsByCurrency(_sumarPorDivisa(_egresosEfectivoPorDivisa, _egresosDigitalPorDivisa)).replaceAll('\n', ' · ')}',
                           ),
                           Text(
-                            'Efectivo Real: ${_formatCupUsdAmount(_totalEfectivo - _egresosEfectivo, _totalEfectivoUsd - _egresosEfectivoUsd).replaceAll('\n', ' · ')}',
+                            'Efectivo Real: ${_formatAmountsByCurrency(_restarPorDivisa(_efectivoPorDivisa, _egresosEfectivoPorDivisa)).replaceAll('\n', ' · ')}',
                           ),
                           Text(
-                            'Transferencia: ${_formatCupUsdAmount(_totalTransferencia, _totalTransferenciaUsd).replaceAll('\n', ' · ')}',
+                            'Transferencia: ${_formatAmountsByCurrency(_digitalPorDivisa).replaceAll('\n', ' · ')}',
                           ),
                         ],
                       ),
@@ -2022,49 +2156,43 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         'Total Productos: ${PriceUtils.formatQuantity(_totalProductos)}',
         styles: PosStyles(align: PosAlign.left),
       );
-      bytes += generator.text(
-        'Total Ventas CUP: \$${_totalVentasCup.toMoneyString(0, ' ')}',
-        styles: PosStyles(align: PosAlign.left),
-      );
-      bytes += generator.text(
-        'Total Ventas USD: \$${_totalVentasUsd.toMoneyString(2, ' ')}',
-        styles: PosStyles(align: PosAlign.left),
-      );
+      // Una línea por divisa real: el ticket deja de tener columnas fijas
+      // CUP/USD y pasa a listar exactamente las divisas del turno.
+      void addCurrencyLines(String rotulo, Map<String, double> montos) {
+        for (final divisa in _displayCurrencies(montos)) {
+          final importe = (montos[divisa] ?? 0).toMoneyString(
+            _decimalsFor(divisa),
+            ' ',
+          );
+          bytes += generator.text(
+            '$rotulo $divisa: \$$importe',
+            styles: PosStyles(align: PosAlign.left),
+          );
+        }
+      }
+
+      addCurrencyLines('Total Ventas', _ventasPorDivisa);
       final mediosPago =
           _totalesPorMedioPago.entries.toList()..sort(
             (a, b) => a.key.toLowerCase().compareTo(b.key.toLowerCase()),
           );
       for (final medio in mediosPago) {
-        final suffix = medio.key.contains('(USD)') ? ' USD' : ' CUP';
+        final divisa = _currencyOfLabel(medio.key);
+        final importe = medio.value.toMoneyString(_decimalsFor(divisa), ' ');
         bytes += generator.text(
-          '${medio.key}: \$${medio.value.toMoneyString(medio.key.contains('(USD)') ? 2 : 0, ' ')}$suffix',
+          '${medio.key}: \$$importe $divisa',
           styles: PosStyles(align: PosAlign.left),
         );
       }
-      bytes += generator.text(
-        'Egresado CUP: \$${(_egresosEfectivo + _egresosTransferencias).toMoneyString(0, ' ')}',
-        styles: PosStyles(align: PosAlign.left),
+      addCurrencyLines(
+        'Egresado',
+        _sumarPorDivisa(_egresosEfectivoPorDivisa, _egresosDigitalPorDivisa),
       );
-      bytes += generator.text(
-        'Egresado USD: \$${(_egresosEfectivoUsd + _egresosTransferenciasUsd).toMoneyString(2, ' ')}',
-        styles: PosStyles(align: PosAlign.left),
+      addCurrencyLines(
+        'Efectivo Real',
+        _restarPorDivisa(_efectivoPorDivisa, _egresosEfectivoPorDivisa),
       );
-      bytes += generator.text(
-        'Efectivo Real CUP: \$${(_totalEfectivo - _egresosEfectivo).toMoneyString(0, ' ')}',
-        styles: PosStyles(align: PosAlign.left),
-      );
-      bytes += generator.text(
-        'Efectivo Real USD: \$${(_totalEfectivoUsd - _egresosEfectivoUsd).toMoneyString(2, ' ')}',
-        styles: PosStyles(align: PosAlign.left),
-      );
-      bytes += generator.text(
-        'Transferencia CUP: \$${_totalTransferencia.toMoneyString(0, ' ')}',
-        styles: PosStyles(align: PosAlign.left),
-      );
-      bytes += generator.text(
-        'Transferencia USD: \$${_totalTransferenciaUsd.toMoneyString(2, ' ')}',
-        styles: PosStyles(align: PosAlign.left),
-      );
+      addCurrencyLines('Transferencia', _digitalPorDivisa);
       bytes += generator.emptyLines(1);
 
       // Detalle de productos (solo nombre + cantidad vendida)
@@ -2143,7 +2271,18 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         "${date.minute.toString().padLeft(2, '0')}";
   }
 
-  Widget _buildUsdRateChip() {
+  /// Chip de tasas: una entrada por divisa distinta de la moneda base.
+  ///
+  /// Con una sola divisa extra se lee igual que antes («USD: $900»); con
+  /// varias, separadas por «·».
+  Widget _buildRateChip(List<String> divisas) {
+    final texto = divisas
+        .map(
+          (divisa) =>
+              '$divisa: \$${(_ratesByCurrency[divisa] ?? 0).toStringAsFixed(0)}',
+        )
+        .join('  ·  ');
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
@@ -2161,7 +2300,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
             color: VentiqHomeTheme.primary,
           ),
           const SizedBox(width: 4),
-          _isLoadingUsdRate
+          _isLoadingRates
               ? const SizedBox(
                 width: 12,
                 height: 12,
@@ -2171,7 +2310,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                 ),
               )
               : Text(
-                'USD: \$${_usdRate.toStringAsFixed(0)}',
+                texto,
                 style: const TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
@@ -2246,16 +2385,13 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         print('  - Órdenes completadas/offline: ${ordenesVendidas.length}');
         print('  - Items vendidos: ${productosVendidos.length}');
         print(
-          '  - Total Egresado: $_totalEgresado (efectivo: $_egresosEfectivo, digital: $_egresosTransferencias)',
+          '  - Total Egresado: $_totalEgresado (efectivo: $_egresosEfectivoPorDivisa, digital: $_egresosDigitalPorDivisa)',
         );
+        print('  - Ventas por divisa: $_ventasPorDivisa');
+        print('  - Efectivo por divisa: $_efectivoPorDivisa');
+        print('  - Digital por divisa: $_digitalPorDivisa');
         print(
-          '  - Efectivo CUP: $_totalEfectivo | USD: $_totalEfectivoUsd',
-        );
-        print(
-          '  - Transfer CUP: $_totalTransferencia | USD: $_totalTransferenciaUsd',
-        );
-        print(
-          '  - Efectivo Real CUP: $_totalEfectivoReal',
+          '  - Efectivo Real (${PriceUtils.baseCurrency}): $_totalEfectivoReal',
         );
 
         // Mostrar información de órdenes offline si las hay
@@ -2313,7 +2449,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
       print('  - Órdenes completadas: ${ordenesVendidas.length}');
       print('  - Items vendidos: ${productosVendidos.length}');
       print(
-        '  - Efectivo CUP: $_totalEfectivo | USD: $_totalEfectivoUsd',
+        '  - Efectivo por divisa: $_efectivoPorDivisa',
       );
     } catch (e) {
       print('❌ Error en cálculo local fallback: $e');
@@ -2325,7 +2461,9 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         _productosVendidos = [];
         _ordenesVendidas = [];
         _totalEgresado = 0.0;
-        _totalEfectivoReal = 0.0;
+        _ventasPorDivisa = {};
+        _efectivoPorDivisa = {};
+        _digitalPorDivisa = {};
       });
     }
   }

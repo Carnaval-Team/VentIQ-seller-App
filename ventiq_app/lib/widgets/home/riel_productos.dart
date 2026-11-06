@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/home_catalogo.dart';
 import '../../services/home_extras_service.dart';
+import '../../services/moneda_venta_service.dart';
 import '../../theme/ventiq_home_theme.dart';
 import '../../utils/price_utils.dart';
 
@@ -165,7 +166,10 @@ class _TarjetaRiel extends StatelessWidget {
                         Row(
                           children: <Widget>[
                             Text(
-                              '\$${PriceUtils.formatAmount(producto.precio!)}',
+                              MonedaVentaService.formatearPrecio(
+                                producto.precio!,
+                                conSimbolo: true,
+                              ),
                               style: const TextStyle(
                                 fontSize: 10,
                                 color: VentiqHomeTheme.textSecondary,
@@ -175,7 +179,10 @@ class _TarjetaRiel extends StatelessWidget {
                             const SizedBox(width: 4),
                             Flexible(
                               child: Text(
-                                '\$${PriceUtils.formatAmount(precio!)}',
+                                MonedaVentaService.formatearPrecio(
+                                  precio!,
+                                  conSimbolo: true,
+                                ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
@@ -191,7 +198,10 @@ class _TarjetaRiel extends StatelessWidget {
                         Text(
                           precio == null
                               ? '—'
-                              : '\$${PriceUtils.formatAmount(precio)}',
+                              : MonedaVentaService.formatearPrecio(
+                                  precio,
+                                  conSimbolo: true,
+                                ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(

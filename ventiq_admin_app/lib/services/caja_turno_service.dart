@@ -9,6 +9,10 @@ import 'store_selector_service.dart';
 /// pagina primero y agrega despues (ver docs/migrations/fn_listar_turnos_admin.sql).
 /// Si la funcion aun no esta desplegada, cae a un select PostgREST con
 /// recursos embebidos: mantiene el tab usable, pero sin los KPIs.
+///
+/// El desglose por divisa no viaja en el listado (un jsonb por fila lo
+/// engordaria sin que nadie lo mire): se pide con [getDesgloseTurno] al abrir
+/// el detalle de un turno.
 class CajaTurnoService {
   static final SupabaseClient _supabase = Supabase.instance.client;
   static final StoreSelectorService _storeSelectorService =
@@ -16,6 +20,11 @@ class CajaTurnoService {
 
   /// Se apaga tras el primer 404 para no reintentar la RPC en cada scroll.
   static bool _rpcDisponible = true;
+
+  /// Igual que [_rpcDisponible], pero para la variante `_v2` del resumen: una
+  /// vez que el backend confirma que no la tiene desplegada, las siguientes
+  /// cargas del detalle van directas a la vigente.
+  static bool _resumenV2Disponible = true;
 
   static Future<int?> _getStoreId([int? providedStoreId]) async {
     if (providedStoreId != null) return providedStoreId;
@@ -100,6 +109,59 @@ class CajaTurnoService {
     }
 
     return _listViaPostgrest(query);
+  }
+
+  /// Desglose por divisa del cierre de un turno, para la seccion "Por moneda"
+  /// del detalle.
+  ///
+  /// `fn_resumen_turno_por_id_v2` es la unica que expone `desglose_monedas` y
+  /// `total_base`. Como es aditiva, si aun no esta desplegada se cae a la
+  /// vigente `fn_resumen_turno_por_id`, que responde sin esas columnas: el
+  /// desglose vuelve vacio y la pantalla se comporta como hoy.
+  ///
+  /// Nunca lanza: es informacion opcional del detalle, no un dato del que
+  /// dependa el arqueo, asi que un fallo se registra y se degrada a vacio.
+  static Future<DesgloseTurnoMonedas> getDesgloseTurno(int turnoId) async {
+    if (_resumenV2Disponible) {
+      try {
+        final fila = await _rpcFila('fn_resumen_turno_por_id_v2', turnoId);
+        return DesgloseTurnoMonedas.fromRow(fila);
+      } catch (e) {
+        if (!_esFuncionInexistente(e)) {
+          print('❌ Error cargando el desglose por moneda: $e');
+          return DesgloseTurnoMonedas.empty();
+        }
+        _resumenV2Disponible = false;
+        print(
+          '⚠️ fn_resumen_turno_por_id_v2 no esta desplegada, usando fn_resumen_turno_por_id',
+        );
+      }
+    }
+
+    try {
+      final fila = await _rpcFila('fn_resumen_turno_por_id', turnoId);
+      return DesgloseTurnoMonedas.fromRow(fila);
+    } catch (e) {
+      print('❌ Error cargando el resumen del turno $turnoId: $e');
+      return DesgloseTurnoMonedas.empty();
+    }
+  }
+
+  /// Las RPC de resumen son `returns table(...)`: devuelven 0 o 1 fila y
+  /// PostgREST la entrega dentro de una lista.
+  static Future<Map<String, dynamic>?> _rpcFila(
+    String funcion,
+    int turnoId,
+  ) async {
+    final response = await _supabase.rpc(
+      funcion,
+      params: {'p_turno_id': turnoId},
+    );
+    if (response is List && response.isNotEmpty && response.first is Map) {
+      return Map<String, dynamic>.from(response.first as Map);
+    }
+    if (response is Map) return Map<String, dynamic>.from(response);
+    return null;
   }
 
   static Future<CajaTurnoResponse> _listViaRpc(_TurnoQuery q) async {

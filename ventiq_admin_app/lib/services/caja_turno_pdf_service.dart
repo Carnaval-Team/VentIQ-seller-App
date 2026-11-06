@@ -24,9 +24,19 @@ class CajaTurnoPdfService {
   // Acta de cierre de un turno
   // ===================================================================
 
+  /// Acta de cierre de un turno.
+  ///
+  /// La seccion «Por moneda» se arma con [desglose] si se pasa, o con
+  /// [CajaTurno.desgloseMonedas] si el turno ya lo trae cargado. El acta se
+  /// imprime normalmente desde el listado, y `fn_listar_turnos_admin` no devuelve
+  /// el desglose, asi que el llamador lo pide bajo demanda
+  /// (`CajaTurnoService.getDesgloseTurno`) y lo pasa aqui: asi no hace falta
+  /// rehidratar el modelo ni tocar el RPC de listado. Con la lista vacia —o con
+  /// una sola divisa— la seccion no se pinta y el acta sale igual que antes.
   static Future<void> imprimirActaTurno({
     required CajaTurno turno,
     required String storeName,
+    DesgloseTurnoMonedas? desglose,
   }) async {
     final pdf = pw.Document();
     final reporte = turno.reporte;
@@ -86,6 +96,36 @@ class CajaTurnoPdfService {
             bloques.add(pw.SizedBox(height: 14));
             bloques.add(_seccion('Desglose de cobros por medio de pago'));
             bloques.add(_tablaPagos(turno));
+          }
+
+          // Desglose por divisa, despues de los totales. Se apoya en el mismo
+          // criterio que el detalle del turno: la tabla solo aporta con dos o
+          // mas divisas. Con una sola fila repetiria el total que ya muestra
+          // «Ventas del turno», y sin desglose la lista viene vacia; en los dos
+          // casos no se pinta nada y el acta queda exactamente como antes.
+          final desgloseMonedas =
+              desglose ??
+              DesgloseTurnoMonedas(
+                monedas: turno.desgloseMonedas,
+                totalBase: turno.totalBase,
+              );
+          if (desgloseMonedas.tieneVariasDivisas) {
+            bloques.add(pw.SizedBox(height: 14));
+            bloques.add(_seccion('Por moneda'));
+            bloques.add(_tablaMonedas(desgloseMonedas));
+            bloques.add(
+              pw.Padding(
+                padding: const pw.EdgeInsets.only(top: 3),
+                child: pw.Text(
+                  'El importe nativo no es sumable entre divisas; el consolidado '
+                  'en CUP (equivalente) sí lo es.',
+                  style: const pw.TextStyle(
+                    fontSize: 7.5,
+                    color: PdfColors.grey700,
+                  ),
+                ),
+              ),
+            );
           }
 
           if (reporte.tieneDiscrepancias) {
@@ -633,6 +673,74 @@ class CajaTurnoPdfService {
           ],
         ),
         ['TOTAL', '', _money.format(total), '100%'],
+      ],
+    );
+  }
+
+  /// Importe en la divisa de su fila, siempre con el codigo al lado.
+  ///
+  /// Los nativos de divisas distintas no se suman entre si ni con el
+  /// equivalente en CUP, y el codigo es lo que evita leerlos como una misma
+  /// cifra. El equivalente no lo lleva porque su columna ya es homogenea.
+  /// Mismo criterio que la pestaña «Por moneda» y el detalle del turno.
+  static String _moneyNativo(double importe, String moneda) =>
+      '${_money.format(importe)} $moneda';
+
+  /// Tabla «Por moneda» del acta: una fila por divisa y el consolidado en CUP.
+  ///
+  /// El unico total legitimo es [DesgloseTurnoMonedas.totalEquivalenteBase]:
+  /// los nativos no son homogeneos y las operaciones se cuentan por divisa (un
+  /// cobro mixto aparece en las dos filas), por eso esas celdas van sin cifra.
+  static pw.Widget _tablaMonedas(DesgloseTurnoMonedas desglose) {
+    return pw.TableHelper.fromTextArray(
+      border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.4),
+      headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9),
+      cellStyle: const pw.TextStyle(fontSize: 9),
+      headerDecoration: const pw.BoxDecoration(color: PdfColors.grey300),
+      cellPadding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+      columnWidths: {
+        0: const pw.FlexColumnWidth(1.1),
+        1: const pw.FlexColumnWidth(1.1),
+        2: const pw.FlexColumnWidth(1.7),
+        3: const pw.FlexColumnWidth(1.7),
+        4: const pw.FlexColumnWidth(1.5),
+        5: const pw.FlexColumnWidth(1.5),
+      },
+      cellAlignments: {
+        0: pw.Alignment.centerLeft,
+        1: pw.Alignment.centerRight,
+        2: pw.Alignment.centerRight,
+        3: pw.Alignment.centerRight,
+        4: pw.Alignment.centerRight,
+        5: pw.Alignment.centerRight,
+      },
+      headers: const [
+        'Moneda',
+        'Operaciones',
+        'Importe nativo',
+        'Equivalente CUP',
+        'Efectivo',
+        'Digital',
+      ],
+      data: [
+        ...desglose.monedas.map(
+          (m) => [
+            m.moneda,
+            '${m.operaciones}',
+            _moneyNativo(m.importeNativo, m.moneda),
+            _money.format(m.importeBase),
+            _moneyNativo(m.efectivoNativo, m.moneda),
+            _moneyNativo(m.digitalNativo, m.moneda),
+          ],
+        ),
+        [
+          'TOTAL CUP',
+          '-',
+          '-',
+          _money.format(desglose.totalEquivalenteBase),
+          '-',
+          '-',
+        ],
       ],
     );
   }

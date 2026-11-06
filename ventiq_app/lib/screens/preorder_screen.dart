@@ -15,6 +15,7 @@ import '../services/bank_sms_service.dart';
 import '../services/server_time_service.dart';
 import '../theme/ventiq_home_theme.dart';
 import '../utils/price_utils.dart';
+import '../services/moneda_venta_service.dart';
 import '../utils/navigation_helper.dart';
 import '../utils/desarme_bulto_local.dart';
 import '../utils/presentacion_cadena_local.dart';
@@ -509,7 +510,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                '${order.distinctItemCount} producto${order.distinctItemCount == 1 ? '' : 's'} • Total: \$${PriceUtils.formatDiscountPrice(order.total)}',
+                '${order.distinctItemCount} producto${order.distinctItemCount == 1 ? '' : 's'} • Total: ${MonedaVentaService.formatearPrecio(PriceUtils.roundDiscountPrice(order.total), conSimbolo: true)}',
                 style: const TextStyle(
                   fontSize: 13.5,
                   color: VentiqHomeTheme.textSecondary,
@@ -567,7 +568,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
                 ),
               ),
               Text(
-                '\$${PriceUtils.formatDiscountPrice(item.subtotal)}',
+                MonedaVentaService.formatearPrecio(
+                  PriceUtils.roundDiscountPrice(item.subtotal),
+                  conSimbolo: true,
+                ),
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w800,
@@ -603,7 +607,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
               const SizedBox(width: 16),
               Expanded(
                 child: Text(
-                  'Precio: \$${PriceUtils.formatDiscountPrice(item.displayPrice)}',
+                  'Precio: ${MonedaVentaService.formatearPrecio(PriceUtils.roundDiscountPrice(item.displayPrice), conSimbolo: true)}',
                   style: const TextStyle(
                     fontSize: 12.5,
                     color: VentiqHomeTheme.textSecondary,
@@ -705,7 +709,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
                 ),
               ),
               Text(
-                '\$${PriceUtils.formatDiscountPrice(order.total)}',
+                MonedaVentaService.formatearPrecio(
+                  PriceUtils.roundDiscountPrice(order.total),
+                  conSimbolo: true,
+                ),
                 style: const TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.w800,
@@ -2462,6 +2469,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
           'id_medio_pago': item.paymentMethod?.id,
           'denominacion': item.paymentMethod?.denominacion ?? 'Sin método',
           'monto': 0.0,
+          // Explícito a propósito: la preorden no ofrece selección de moneda,
+          // así que sus líneas son en CUP. Sin declararlo, el sincronizador
+          // tendría que adivinarlo y una divisa nueva se leería como CUP.
+          'moneda': 'CUP',
           'es_digital': item.paymentMethod?.esDigital ?? false,
           'es_efectivo': item.paymentMethod?.esEfectivo ?? false,
         };

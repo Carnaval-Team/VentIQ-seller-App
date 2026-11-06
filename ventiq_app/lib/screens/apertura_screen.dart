@@ -29,8 +29,21 @@ class AperturaScreen extends StatefulWidget {
 class _AperturaScreenState extends State<AperturaScreen>
     with RouteAware, WidgetsBindingObserver {
   final _formKey = GlobalKey<FormState>();
-  final _montoInicialController = TextEditingController();
-  final _montoInicialUsdController = TextEditingController(text: '0');
+
+  /// Divisas habilitadas en la tienda: una entrada por campo de efectivo.
+  /// Arranca con el par histórico CUP + USD para que el primer frame sea el de
+  /// siempre y, en cuanto se resuelve la configuración, se ajusta a lo que la
+  /// tienda acepta de verdad.
+  List<String> _divisasCaja = const [PriceUtils.baseCurrency, 'USD'];
+
+  /// Efectivo inicial por divisa en importes NATIVOS. Es la única fuente de
+  /// verdad del formulario: no hay un campo fijo por divisa ni ramas por código
+  /// de moneda.
+  final Map<String, TextEditingController> _montoInicialControllers = {
+    PriceUtils.baseCurrency: TextEditingController(),
+    'USD': TextEditingController(text: '0'),
+  };
+
   final _observacionesController = TextEditingController();
   final UserPreferencesService _userPrefs = UserPreferencesService();
   final NotificationService _notificationService = NotificationService();
@@ -86,6 +99,7 @@ class _AperturaScreenState extends State<AperturaScreen>
     _checkExistingShift();
     _loadStoreConfig();
     _loadWorkerConfig(); // Load worker inventory control settings
+    _loadDivisasCaja();
   }
 
   @override
@@ -105,11 +119,41 @@ class _AperturaScreenState extends State<AperturaScreen>
     for (final c in _inventoryControllers.values) {
       c.dispose();
     }
-    _montoInicialController.dispose();
-    _montoInicialUsdController.dispose();
+    _montoInicialControllers.forEach((_, controller) => controller.dispose());
     _observacionesController.dispose();
     super.dispose();
   }
+
+  /// Ajusta los campos de efectivo a las divisas que acepta la tienda.
+  ///
+  /// Solo añade/ordena: los controladores ya creados se conservan para no
+  /// perder lo que el vendedor haya escrito mientras se resolvía la consulta.
+  Future<void> _loadDivisasCaja() async {
+    final divisas = await TurnoService.divisasDeCaja();
+    if (!mounted) return;
+    setState(() {
+      for (final divisa in divisas) {
+        _montoInicialControllers.putIfAbsent(
+          divisa,
+          () => TextEditingController(text: '0'),
+        );
+      }
+      _divisasCaja = divisas;
+    });
+  }
+
+  /// Importe tecleado en un campo opcional (vacío o inválido = 0).
+  double _montoDeCampo(String divisa) =>
+      double.tryParse(_montoInicialControllers[divisa]?.text.trim() ?? '') ??
+      0.0;
+
+  /// Efectivo inicial por divisa tal como está en los campos (nativo).
+  ///
+  /// Se enumeran las divisas habilitadas —no el mapa de controladores— para que
+  /// el mapa tenga exactamente una entrada por campo visible.
+  Map<String, double> get _montoInicialPorDivisa => {
+    for (final divisa in _divisasCaja) divisa: _montoDeCampo(divisa),
+  };
 
   @override
   void didPopNext() {
@@ -1383,71 +1427,61 @@ class _AperturaScreenState extends State<AperturaScreen>
                               'Monto Inicial en Caja',
                               style: VentiqHomeTheme.tituloSeccion,
                             ),
-                            const SizedBox(height: 12),
-                            TextFormField(
-                              controller: _montoInicialController,
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
-                              inputFormatters: [
-                                FilteringTextInputFormatter.allow(
-                                  RegExp(r'^\d+\.?\d{0,2}'),
-                                ),
-                              ],
-                              decoration: InputDecoration(
-                                labelText: 'Monto inicial (\$)',
-                                prefixIcon: const Icon(Icons.attach_money),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(
-                                    VentiqHomeTheme.radiusField,
-                                  ),
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 8,
-                                ),
+                            const SizedBox(height: 8),
+                            const Text(
+                              'Efectivo con el que se abre el turno, por divisa',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: VentiqHomeTheme.textSecondary,
                               ),
-                              validator: (value) {
-                                if (value == null || value.trim().isEmpty) {
-                                  return 'El monto inicial es requerido';
-                                }
-                                final monto = double.tryParse(value);
-                                if (monto == null || monto < 0) {
-                                  return 'Ingrese un monto válido';
-                                }
-                                return null;
-                              },
                             ),
                             const SizedBox(height: 12),
-                            TextFormField(
-                              controller: _montoInicialUsdController,
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                    decimal: true,
+                            // Un campo por divisa habilitada. La moneda base es
+                            // obligatoria (es la unidad contable); el resto son
+                            // opcionales y arrancan en 0.
+                            for (final divisa in _divisasCaja) ...[
+                              TextFormField(
+                                controller: _montoInicialControllers[divisa],
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.allow(
+                                    RegExp(r'^\d+\.?\d{0,2}'),
                                   ),
-                              inputFormatters: [
-                                FilteringTextInputFormatter.allow(
-                                  RegExp(r'^\d+\.?\d{0,2}'),
-                                ),
-                              ],
-                              decoration: InputDecoration(
-                                labelText: 'Efectivo inicial USD (opcional)',
-                                prefixIcon: const Icon(Icons.attach_money),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(
-                                    VentiqHomeTheme.radiusField,
+                                ],
+                                decoration: InputDecoration(
+                                  labelText: 'Monto inicial $divisa',
+                                  prefixIcon: const Icon(Icons.attach_money),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(
+                                      VentiqHomeTheme.radiusField,
+                                    ),
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
                                   ),
                                 ),
+                                validator: (value) {
+                                  final texto = value?.trim() ?? '';
+                                  final esBase =
+                                      divisa == PriceUtils.baseCurrency;
+                                  if (texto.isEmpty) {
+                                    return esBase
+                                        ? 'El monto inicial es requerido'
+                                        : null;
+                                  }
+                                  final monto = double.tryParse(texto);
+                                  if (monto == null || monto < 0) {
+                                    return 'Ingrese un monto válido';
+                                  }
+                                  return null;
+                                },
                               ),
-                              validator: (value) {
-                                final monto = double.tryParse(value ?? '0');
-                                if (monto == null || monto < 0) {
-                                  return 'Ingrese un monto USD válido';
-                                }
-                                return null;
-                              },
-                            ),
+                              const SizedBox(height: 12),
+                            ],
                           ],
                         ),
                       ),
@@ -1876,7 +1910,8 @@ class _AperturaScreenState extends State<AperturaScreen>
       }
     }
 
-    final montoInicial = double.parse(_montoInicialController.text);
+    // Un solo mapa para todo el flujo: campos → RPC online / cola offline.
+    final efectivoInicialPorDivisa = _montoInicialPorDivisa;
 
     setState(() {
       _isProcessing = true;
@@ -2003,9 +2038,7 @@ class _AperturaScreenState extends State<AperturaScreen>
       if (isOfflineModeEnabled) {
         print('🔌 Modo offline - Creando apertura offline...');
         await _createOfflineApertura(
-          efectivoInicial: double.parse(_montoInicialController.text),
-          efectivoInicialUsd:
-              double.tryParse(_montoInicialUsdController.text) ?? 0,
+          efectivoInicialPorDivisa: efectivoInicialPorDivisa,
           idTpv: tpvId,
           idVendedor: sellerId,
           usuario: userUuid,
@@ -2016,9 +2049,7 @@ class _AperturaScreenState extends State<AperturaScreen>
         print('🌐 Modo online - Creando apertura en Supabase...');
         // Usar el nuevo método del TurnoService
         final result = await TurnoService.registrarAperturaTurno(
-          efectivoInicial: double.parse(_montoInicialController.text),
-          efectivoInicialUsd:
-              double.tryParse(_montoInicialUsdController.text) ?? 0,
+          efectivoInicialPorDivisa: efectivoInicialPorDivisa,
           idTpv: tpvId,
           idVendedor: sellerId,
           usuario: userUuid,
@@ -2561,9 +2592,13 @@ class _AperturaScreenState extends State<AperturaScreen>
   }
 
   /// Crear apertura offline
+  ///
+  /// [efectivoInicialPorDivisa] son importes NATIVOS. El payload conserva la
+  /// columna escalar `efectivo_inicial` (moneda base) y `efectivo_inicial_usd`
+  /// porque el sync offline vigente todavía las lee; el mapa completo va en
+  /// `efectivo_inicial_por_moneda`.
   Future<void> _createOfflineApertura({
-    required double efectivoInicial,
-    required double efectivoInicialUsd,
+    required Map<String, double> efectivoInicialPorDivisa,
     required int idTpv,
     required int idVendedor,
     required String usuario,
@@ -2591,8 +2626,10 @@ class _AperturaScreenState extends State<AperturaScreen>
         'usuario': usuario,
         'tipo_operacion': 'apertura',
         'origen_apertura': 'offline',
-        'efectivo_inicial': efectivoInicial,
-        'efectivo_inicial_usd': efectivoInicialUsd,
+        'efectivo_inicial':
+            efectivoInicialPorDivisa[PriceUtils.baseCurrency] ?? 0,
+        'efectivo_inicial_usd': efectivoInicialPorDivisa['USD'] ?? 0,
+        'efectivo_inicial_por_moneda': efectivoInicialPorDivisa,
         'fecha_apertura': nowServerCorrected.toIso8601String(),
         'observaciones': observaciones ?? '',
         'maneja_inventario': _manejaInventario,

@@ -35,6 +35,13 @@ class _EgresoScreenState extends State<EgresoScreen> {
   bool _contabilizarFondoCaja = false;
   bool _isLoadingCashFund = true;
 
+  /// Divisas que acepta la tienda, en orden (la moneda base primero).
+  ///
+  /// El egreso sale del cajón en UNA divisa concreta: `montoEntrega` es su
+  /// importe nativo, así que la divisa viaja con él hasta la fila de la base.
+  List<String> _divisasCaja = const [PriceUtils.baseCurrency];
+  String _selectedDivisa = PriceUtils.baseCurrency;
+
   final UserPreferencesService _userPrefs = UserPreferencesService();
 
   @override
@@ -43,6 +50,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
     _checkTurnoAbierto();
     _loadPaymentMethods();
     _loadDefaultCashFund();
+    _loadDivisasCaja();
   }
 
   @override
@@ -160,6 +168,31 @@ class _EgresoScreenState extends State<EgresoScreen> {
       print('Error loading payment methods: $e');
     }
   }
+
+  /// Carga las divisas de la caja y deja seleccionada la moneda base.
+  ///
+  /// [TurnoService.divisasDeCaja] ya resuelve tienda → caché → respaldo y
+  /// garantiza que la moneda base vaya primero; si falla, la lista se queda en
+  /// la base y la pantalla se comporta como antes de la Fase 4.
+  Future<void> _loadDivisasCaja() async {
+    var divisas = const [PriceUtils.baseCurrency];
+    try {
+      divisas = await TurnoService.divisasDeCaja();
+    } catch (e) {
+      print('⚠️ Egreso: no se pudieron cargar las divisas de la caja: $e');
+    }
+    if (!mounted) return;
+    setState(() {
+      _divisasCaja = divisas;
+      if (!divisas.contains(_selectedDivisa)) {
+        _selectedDivisa = divisas.first;
+      }
+    });
+  }
+
+  /// ¿Hay más de una divisa entre las que elegir? Con una sola, el selector no
+  /// se pinta y la pantalla queda igual que antes de multimoneda.
+  bool get _hayVariasDivisas => _divisasCaja.length > 1;
 
   Future<void> _loadDefaultCashFund() async {
     try {
@@ -365,6 +398,39 @@ class _EgresoScreenState extends State<EgresoScreen> {
                                 return null;
                               },
                             ),
+                            if (_hayVariasDivisas) ...[
+                              const SizedBox(height: 12),
+                              DropdownButtonFormField<String>(
+                                value: _selectedDivisa,
+                                decoration: InputDecoration(
+                                  labelText: 'Divisa del egreso',
+                                  prefixIcon: Icon(
+                                    Icons.currency_exchange,
+                                    color: Colors.red[600],
+                                  ),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
+                                ),
+                                items:
+                                    _divisasCaja
+                                        .map(
+                                          (divisa) => DropdownMenuItem<String>(
+                                            value: divisa,
+                                            child: Text(divisa),
+                                          ),
+                                        )
+                                        .toList(),
+                                onChanged: (String? divisa) {
+                                  if (divisa == null) return;
+                                  setState(() => _selectedDivisa = divisa);
+                                },
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -781,6 +847,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
               nombreAutoriza: nombreAutoriza,
               nombreRecibe: nombreRecibe,
               idMedioPago: _selectedPaymentMethod?.id,
+              moneda: _selectedDivisa,
             );
           }
 
@@ -887,6 +954,9 @@ class _EgresoScreenState extends State<EgresoScreen> {
         if (serverIdTurno != null) 'id_turno': serverIdTurno,
         if (localTurnoId != null) 'local_turno_id': localTurnoId,
         'monto_entrega': monto,
+        // Importe NATIVO de esta divisa: el sync la necesita para no registrar
+        // el egreso en la moneda base por defecto.
+        'moneda': _selectedDivisa,
         'motivo_entrega': motivo,
         'nombre_autoriza': nombreAutoriza,
         'nombre_recibe': nombreRecibe,
@@ -912,6 +982,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
         updatedCache.add({
           'id_egreso': 0,
           'monto_entrega': monto,
+          'moneda': _selectedDivisa,
           'motivo_entrega': motivo,
           'nombre_autoriza': nombreAutoriza,
           'nombre_recibe': nombreRecibe,
