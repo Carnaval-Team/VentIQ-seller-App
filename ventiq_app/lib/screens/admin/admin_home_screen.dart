@@ -291,7 +291,8 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                             'Turnos locales pendientes de sincronizar',
                         route: '/admin-turnos-offline',
                       ),
-                      if (_inventoryOnly)
+                      if (_inventoryOnly &&
+                          UserPreferencesService.enableDeviceFullOffline)
                         _tile(
                           icon: Icons.phonelink_setup,
                           title: 'Preparar dispositivo offline',

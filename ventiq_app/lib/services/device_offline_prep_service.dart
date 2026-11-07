@@ -46,6 +46,12 @@ class DeviceOfflinePrepService {
   };
 
   Future<void> assertCanPrepare() async {
+    if (!UserPreferencesService.enableDeviceFullOffline) {
+      throw Exception(
+        'La preparación full offline está deshabilitada temporalmente. '
+        'Usa el modo offline normal de la app.',
+      );
+    }
     final storeId = await _prefs.getIdTienda();
     if (storeId == null) {
       throw Exception('Sin tienda en sesión');
@@ -104,7 +110,7 @@ class DeviceOfflinePrepService {
 
     late final SyncResult result;
     try {
-      await CurrencyService.getUsdRate();
+      await CurrencyService.syncUsdRatesForOffline();
       result = await _autoSync.syncModules(prepModules);
     } finally {
       // Si el dispositivo ya estaba en full offline, reactivar el flag

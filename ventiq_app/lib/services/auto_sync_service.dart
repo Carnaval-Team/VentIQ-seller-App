@@ -21,6 +21,7 @@ import 'inventory_service.dart';
 import 'offline_database_service.dart';
 import 'order_service.dart';
 import 'connectivity_service.dart';
+import 'currency_service.dart';
 import '../models/order.dart';
 import '../utils/uuid_generator.dart';
 
@@ -4839,6 +4840,9 @@ class AutoSyncService {
 
       // Sincronizar configuración usando StoreConfigService
       final success = await StoreConfigService.syncStoreConfig(idTienda);
+
+      // Tasa actual + historial USD→CUP (conversión offline por fecha de orden)
+      await CurrencyService.syncUsdRatesForOffline();
 
       if (success) {
         print('✅ Configuración de tienda sincronizada exitosamente');

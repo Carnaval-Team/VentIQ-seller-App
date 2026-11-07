@@ -125,13 +125,31 @@ class CurrencyService {
   }
 
   /// Líneas temporales de tasas USD→CUP para resolver tasas históricas.
+  ///
+  /// Online: descarga y cachea. Offline: lee cache local.
   static Future<
       ({
         List<Map<String, dynamic>> storeRates,
         List<Map<String, dynamic>> globalRates,
-      })> loadUsdToCupRateTimelines() async {
+      })> loadUsdToCupRateTimelines({bool forceRefresh = false}) async {
+    final userPreferencesService = UserPreferencesService();
+
     try {
-      final userPreferencesService = UserPreferencesService();
+      final useLocal = !forceRefresh &&
+          await userPreferencesService.shouldUseLocalData();
+      if (useLocal) {
+        final cached = await userPreferencesService.getUsdToCupRateTimelines();
+        if (cached != null) {
+          print('🔌 Offline - timelines USD→CUP desde cache');
+          return cached;
+        }
+        print('⚠️ Offline sin timelines de tasa cacheados');
+        return (
+          storeRates: <Map<String, dynamic>>[],
+          globalRates: <Map<String, dynamic>>[],
+        );
+      }
+
       final storeId = await userPreferencesService.getIdTienda();
       List<Map<String, dynamic>> storeRates = [];
       if (storeId != null) {
@@ -153,13 +171,34 @@ class CurrencyService {
           .order('fecha_actualizacion', ascending: true);
       final globalRates = List<Map<String, dynamic>>.from(globalResponse);
 
+      await userPreferencesService.saveUsdToCupRateTimelines(
+        storeRates: storeRates,
+        globalRates: globalRates,
+      );
+
       return (storeRates: storeRates, globalRates: globalRates);
     } catch (e) {
       print('❌ Error loading USD→CUP rate timelines: $e');
+      final cached = await userPreferencesService.getUsdToCupRateTimelines();
+      if (cached != null) {
+        print('💱 Usando timelines USD→CUP desde cache tras error de red');
+        return cached;
+      }
       return (
         storeRates: <Map<String, dynamic>>[],
         globalRates: <Map<String, dynamic>>[],
       );
+    }
+  }
+
+  /// Descarga y cachea tasa actual + historial (para sync / prep offline).
+  static Future<void> syncUsdRatesForOffline() async {
+    try {
+      await getUsdRate();
+      await loadUsdToCupRateTimelines(forceRefresh: true);
+      print('✅ Tasas USD→CUP sincronizadas para offline');
+    } catch (e) {
+      print('⚠️ Sync tasas USD→CUP (no bloqueante): $e');
     }
   }
 
@@ -176,7 +215,7 @@ class CurrencyService {
     Map<String, dynamic>? latestStore;
     for (final row in timelines.storeRates) {
       final createdAt = DateTime.tryParse(row['created_at']?.toString() ?? '');
-      if (createdAt == null || createdAt.isAfter(target)) continue;
+      if (createdAt == null || createdAt.toUtc().isAfter(target)) continue;
       if (row['usar_precio_toque'] == true) continue;
       final rate = (row['valor_cambio'] as num?)?.toDouble();
       if (rate == null || rate <= 0) continue;
@@ -191,7 +230,7 @@ class CurrencyService {
       final fecha = DateTime.tryParse(
         row['fecha_actualizacion']?.toString() ?? '',
       );
-      if (fecha == null || fecha.isAfter(target)) continue;
+      if (fecha == null || fecha.toUtc().isAfter(target)) continue;
       final rate = (row['tasa'] as num?)?.toDouble();
       if (rate == null || rate <= 0) continue;
       latestGlobal = row;
