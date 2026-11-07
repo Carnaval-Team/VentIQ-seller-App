@@ -161,7 +161,8 @@ class TarjetaExploracion extends StatelessWidget {
         ),
       );
 
-  /// Foto de fondo + velo inferior.
+  /// Foto de fondo + velo lateral: opaco a la izquierda, foto limpia a la
+  /// derecha.
   ///
   /// Usa `Image.network` a propósito, sin paquetes nuevos: Flutter ya cachea en
   /// memoria por `ImageCache`, y el TPV vive en una red local. Añadir
@@ -171,14 +172,28 @@ class TarjetaExploracion extends StatelessWidget {
   ///
   /// El velo **no es decorativo**: es lo que garantiza que el título blanco
   /// siga siendo legible sobre cualquier foto que suba el gerente, incluidas
-  /// las claras. En `inventtia_flow` la `TarjetaColeccion` resuelve lo mismo
-  /// con un velo de 3 paradas.
+  /// las claras. Va **horizontal** porque todo lo que se lee —el chip, el tile
+  /// del icono, el título, el subtítulo y la acción del pie— nace en el borde
+  /// izquierdo y crece hacia la derecha: un velo vertical solo protegía la
+  /// franja de abajo (dejaba el chip y el icono a merced de la foto) y, encima,
+  /// apagaba la foto en todo el ancho. Protegiendo la columna de texto y
+  /// soltando el velo hacia la derecha, el texto mantiene su contraste y la
+  /// foto se lee limpia donde no hay nada que leer.
   Widget _fotoConVelo(BuildContext context) {
     // No decodificar 1080 px para una miniatura de ~170 pt: el doble de ancho
     // de la tarjeta es más que suficiente y ahorra memoria en TPV de gama baja.
     final double dpr = MediaQuery.devicePixelRatioOf(context);
     final int anchoCache =
         ((MediaQuery.sizeOf(context).width / 2) * dpr).round().clamp(64, 1024);
+
+    // El velo no es negro translúcido a propósito: usa los colores de la
+    // categoría para que la tarjeta con foto conserve su identidad y el blanco
+    // de encima tenga el mismo fondo —y el mismo contraste— que ya tiene sin
+    // foto. `first` → `last` repite el sentido del degradado de fondo
+    // (arriba-izquierda → abajo-derecha), así la esquina izquierda de una
+    // tarjeta con foto no cambia de tono respecto a una sin foto.
+    final Color inicio = colores.first;
+    final Color fondo = colores.last;
 
     return Stack(
       fit: StackFit.expand,
@@ -194,15 +209,25 @@ class TarjetaExploracion extends StatelessWidget {
         ),
         DecoratedBox(
           decoration: BoxDecoration(
+            // Horizontal, no vertical: la izquierda es donde vive el texto.
             gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: const <Color>[
-                Color(0x00000000),
-                Color(0x66000000),
-                Color(0x9E000000),
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+              colors: <Color>[
+                inicio,
+                fondo,
+                // Se desvanece el tono de la categoría, no `transparent`
+                // (que es negro al 0 % y ensuciaría el fundido de gris).
+                fondo.withValues(alpha: 0.78),
+                fondo.withValues(alpha: 0.30),
+                fondo.withValues(alpha: 0.00),
               ],
-              stops: const <double>[0.25, 0.62, 1.0],
+              // Tramo opaco CORTO (hasta ~0.22) y caída rápida: solo se cubre
+              // la franja donde nace el texto. En el primer intento el velo
+              // llegaba opaco hasta 0.62 y la foto casi no se veía; así se ve
+              // de verdad en los dos tercios derechos, y el texto sigue sobre
+              // el color de la tarjeta —mismo contraste que sin foto—.
+              stops: const <double>[0.0, 0.22, 0.48, 0.72, 1.0],
             ),
           ),
         ),

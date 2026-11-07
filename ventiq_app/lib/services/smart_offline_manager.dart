@@ -918,6 +918,7 @@ class SmartOfflineManager {
       isOfflineModeEnabled: isOfflineModeEnabled,
       wasOfflineModeManuallyEnabled: _wasOfflineModeManuallyEnabled,
       isAutoSyncRunning: _autoSyncService.isRunning,
+      isSyncingNow: _autoSyncService.isSyncing,
       lastAutoActivation: _lastAutoActivation,
       connectivityInfo: connectivityInfo,
       syncStats: syncStats,
@@ -1012,7 +1013,21 @@ class SmartOfflineStatus {
   final bool isConnected;
   final bool isOfflineModeEnabled;
   final bool wasOfflineModeManuallyEnabled;
+
+  /// La sincronización automática está **activada** (tiene su temporizador
+  /// vivo). No significa que haya una pasada en curso: para eso está
+  /// [isSyncingNow].
   final bool isAutoSyncRunning;
+
+  /// ¿Hay una pasada de sincronización **en curso ahora mismo**?
+  ///
+  /// Ojo, no es lo mismo que [isAutoSyncRunning], que significa «la
+  /// sincronización automática está activada» (y lo está casi siempre, con su
+  /// temporizador). El indicador de conexión tiene que distinguir las dos: si
+  /// usa la segunda, se queda en «Sincronizando» para siempre porque el
+  /// temporizador sigue vivo aunque no haya nada sincronizándose.
+  final bool isSyncingNow;
+
   final DateTime? lastAutoActivation;
   final ConnectivityInfo connectivityInfo;
   final Map<String, dynamic> syncStats;
@@ -1023,6 +1038,7 @@ class SmartOfflineStatus {
     required this.isOfflineModeEnabled,
     required this.wasOfflineModeManuallyEnabled,
     required this.isAutoSyncRunning,
+    this.isSyncingNow = false,
     this.lastAutoActivation,
     required this.connectivityInfo,
     required this.syncStats,
@@ -1030,6 +1046,6 @@ class SmartOfflineStatus {
 
   @override
   String toString() {
-    return 'SmartOfflineStatus(isInitialized: $isInitialized, isConnected: $isConnected, isOfflineModeEnabled: $isOfflineModeEnabled, wasOfflineModeManuallyEnabled: $wasOfflineModeManuallyEnabled, isAutoSyncRunning: $isAutoSyncRunning)';
+    return 'SmartOfflineStatus(isInitialized: $isInitialized, isConnected: $isConnected, isOfflineModeEnabled: $isOfflineModeEnabled, wasOfflineModeManuallyEnabled: $wasOfflineModeManuallyEnabled, isAutoSyncRunning: $isAutoSyncRunning, isSyncingNow: $isSyncingNow)';
   }
 }

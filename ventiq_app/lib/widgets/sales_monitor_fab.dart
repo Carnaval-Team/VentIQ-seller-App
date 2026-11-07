@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/user_preferences_service.dart';
@@ -23,6 +25,25 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
   late AnimationController _animationController;
   late Animation<double> _expandAnimation;
 
+  /// Cuánto tiempo el total sigue en la píldora después de cerrar el panel.
+  ///
+  /// Cerrar es el momento en que el vendedor quiere quedarse con el total del
+  /// turno, así que se deja a la vista unos segundos. Pasado ese rato el
+  /// importe es ruido: la píldora vive pegada al chip del USD del Home y, si
+  /// se queda ahí, lo tapa y le roba sitio al rótulo. Cinco segundos dan
+  /// tiempo a leerlo sin dejar la píldora deformada de forma permanente.
+  static const Duration _duracionTotalEnPildora = Duration(seconds: 5);
+
+  /// Si la píldora debe mostrar el importe del turno ahora mismo. Es solo
+  /// estado de presentación: NO se toca `_currentSales`, porque el resumen
+  /// cargado lo sigue necesitando el panel al volver a abrirse (y así no hay
+  /// que recargarlo).
+  bool _muestraTotalEnPildora = false;
+
+  /// Cuenta atrás que retira el importe de la píldora. Hay como mucho uno vivo:
+  /// cada cierre cancela el anterior antes de programar el siguiente.
+  Timer? _timerOcultarTotal;
+
   // Expenses data
   List<Expense> _expenses = [];
   double _egresosEfectivo = 0.0;
@@ -43,20 +64,64 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
 
   @override
   void dispose() {
+    // Ningún callback debe sobrevivir al widget: si la cuenta atrás siguiera
+    // viva dispararía un setState sobre un State ya desmontado.
+    _cancelarTimerOcultarTotal();
     _animationController.dispose();
     super.dispose();
   }
 
-  void _toggleExpansion() {
+  /// Descarta la cuenta atrás pendiente, si la hay, sin tocar el estado visible.
+  void _cancelarTimerOcultarTotal() {
+    _timerOcultarTotal?.cancel();
+    _timerOcultarTotal = null;
+  }
+
+  /// Tras cerrar el panel, deja el total a la vista en la píldora durante
+  /// [_duracionTotalEnPildora] y programa su retirada.
+  void _programarOcultarTotal() {
+    // Sin resumen cargado no hay importe que mostrar: nada que programar.
+    if (_currentSales == null) return;
+
+    // Un único timer: se descarta cualquier cuenta anterior antes de crear la
+    // nueva, así cerrar y volver a cerrar nunca acumula temporizadores.
+    _cancelarTimerOcultarTotal();
+
     setState(() {
-      _isExpanded = !_isExpanded;
+      _muestraTotalEnPildora = true;
     });
 
-    if (_isExpanded) {
+    _timerOcultarTotal = Timer(_duracionTotalEnPildora, () {
+      // El widget pudo desmontarse mientras corría la cuenta (y `dispose` ya
+      // canceló el timer); sin `mounted` el setState sería un error.
+      if (!mounted) return;
+      setState(() {
+        _muestraTotalEnPildora = false;
+      });
+    });
+  }
+
+  void _toggleExpansion() {
+    final bool abriendo = !_isExpanded;
+
+    // Abrir cancela la cuenta atrás pendiente: el usuario está mirando los datos
+    // y la píldora no debe cambiar sola por debajo de lo que está leyendo. Al
+    // volver a cerrar, la cuenta arranca de cero con un único timer.
+    _cancelarTimerOcultarTotal();
+
+    setState(() {
+      _isExpanded = abriendo;
+      // Al abrir, la píldora vuelve ya a su rótulo normal: el total se lee en el
+      // propio panel, no hace falta duplicarlo detrás.
+      _muestraTotalEnPildora = false;
+    });
+
+    if (abriendo) {
       _animationController.forward();
       _loadDataSequentially();
     } else {
       _animationController.reverse();
+      _programarOcultarTotal();
     }
   }
 
@@ -339,7 +404,10 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
   }
 
   /// Botón «Mis ventas»: píldora con degradado de marca, etiqueta siempre
-  /// visible y, cuando ya hay datos cargados, el total del turno en un badge.
+  /// visible y, durante los [_duracionTotalEnPildora] siguientes a cerrar el
+  /// panel, el total del turno en un badge. El badge es temporal a propósito:
+  /// en el Home la píldora comparte fila con el chip del USD y un importe fijo
+  /// ahí lo tapa, así que se retira solo y el botón vuelve a su rótulo normal.
   Widget _buildBotonFlotante() {
     final double? total =
         (_currentSales?['ventas_totales'] as num?)?.toDouble();
@@ -393,27 +461,28 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
                       letterSpacing: -0.2,
                     ),
                   ),
-                  if (!_isExpanded && total != null) ...<Widget>[
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.22),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        '\$${PriceUtils.formatAmount(total)}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w800,
+                  if (!_isExpanded && _muestraTotalEnPildora && total != null)
+                    ...<Widget>[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.22),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          '\$${PriceUtils.formatAmount(total)}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
                   if (!_isExpanded && _isOfflineMode) ...<Widget>[
                     const SizedBox(width: 6),
                     const Icon(
@@ -922,10 +991,15 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
 
   void _cerrarPanel() {
     if (!_isExpanded) return;
+    // Cerrar desde los accesos rápidos (Órdenes / Carrito / Cierre) cuenta como
+    // cualquier otro cierre: mismo único timer y misma retirada del importe.
+    _cancelarTimerOcultarTotal();
     setState(() {
       _isExpanded = false;
+      _muestraTotalEnPildora = false;
     });
     _animationController.reverse();
+    _programarOcultarTotal();
   }
 
   Widget _buildMetricCard(

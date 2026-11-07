@@ -170,7 +170,11 @@ class _ConnectionStatusWidgetState extends State<ConnectionStatusWidget> {
       icon = Icons.cloud_off;
       text = 'Offline';
     } else if (status.isConnected) {
-      if (status.isAutoSyncRunning) {
+      // «Sincronizando» solo mientras hay una pasada **en curso**. Antes se
+      // miraba `isAutoSyncRunning`, que significa «la sincronización automática
+      // está activada» y lo está permanentemente: el chip se quedaba en
+      // «Sincronizando» y nunca volvía a «Online».
+      if (status.isSyncingNow) {
         backgroundColor = Colors.green[50]!;
         borderColor = Colors.green[200]!;
         iconColor = Colors.green[600]!;

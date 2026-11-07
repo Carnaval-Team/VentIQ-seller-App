@@ -1,10 +1,11 @@
 // Tests de widget del drawer jerárquico del Home (Fase 4 del rediseño).
 //
-// Se prueba el widget **real** (`CategoriaDrawer`, `CategoriaDrawerRoute` y
-// `ProductoTile`) con un doble de `HomeCatalogoGateway`: sin Supabase, sin red y
-// sin `SharedPreferences`. El drawer se monta dentro de una ruta de verdad
-// (`abrirCategoriaDrawer`), igual que lo abre el Home, porque el botón atrás del
-// sistema y el cierre por arrastre solo tienen sentido con una ruta real.
+// Se prueba el widget **real** (`CategoriaDrawer`, `CategoriaDrawerRoute` y las
+// tarjetas de categoría y de producto) con un doble de `HomeCatalogoGateway`:
+// sin Supabase, sin red y sin `SharedPreferences`. El drawer se monta dentro de
+// una ruta de verdad (`abrirCategoriaDrawer`), igual que lo abre el Home, porque
+// el botón atrás del sistema y el cierre por arrastre solo tienen sentido con
+// una ruta real.
 //
 // Detalle importante de tiempos: el drawer tendrá una animación «boom»
 // (~190 ms) antes de cambiar de nivel y una transición de nivel de 280 ms. Por
@@ -117,6 +118,7 @@ HomeProducto _prod(
   double precio = 1,
   double stock = 5,
   String? sku,
+  String? imagen,
   bool servicio = false,
 }) => HomeProducto(
   id: id,
@@ -127,6 +129,7 @@ HomeProducto _prod(
   tieneStock: disponible,
   esServicio: servicio,
   sku: sku,
+  imagen: imagen,
 );
 
 const HomeContexto _ctx = HomeContexto(idTienda: 173, idTpv: 5);
@@ -285,6 +288,16 @@ Widget _appTile(Widget tile) {
   return MaterialApp(home: Scaffold(body: SafeArea(child: tile)));
 }
 
+/// La tarjeta de producto que contiene ese texto.
+///
+/// En el nivel de productos **todo** lo que hay en la rejilla es una
+/// `TarjetaExploracion`, así que el ancestro identifica la tarjeta entera y no
+/// solo el texto.
+Finder _tarjetaDe(String texto) => find.ancestor(
+  of: find.text(texto),
+  matching: find.byType(TarjetaExploracion),
+);
+
 void main() {
   // ── Nivel 0 ────────────────────────────────────────────────────────────
 
@@ -366,27 +379,86 @@ void main() {
       },
     );
 
-    testWidgets('categoría sin subcategorías → nivel de productos con '
-        'ProductoTile', (WidgetTester tester) async {
-      _pantallaMovil(tester);
-      final HomeController c = await _controladorCon(_gatewayCompleto());
-      c.abrirTienda();
-      await _abrirDrawer(tester, controller: c);
+    testWidgets(
+      'categoría sin subcategorías → nivel de productos en tarjetas, con el '
+      'banner de la categoría',
+      (WidgetTester tester) async {
+        _pantallaMovil(tester);
+        final HomeController c = await _controladorCon(_gatewayCompleto());
+        c.abrirTienda();
+        await _abrirDrawer(tester, controller: c);
 
-      await tester.tap(find.text('Comida'));
-      await _asentar(tester);
+        await tester.tap(find.text('Comida'));
+        await _asentar(tester);
 
-      expect(c.pasoActual!.nivel, HomeNivelDrawer.productos);
-      expect(
-        c.pila.length,
-        2,
-        reason: 'no hay nivel intermedio de subcategorías',
-      );
-      expect(find.byType(ProductoTile), findsNWidgets(4));
-      expect(find.text('Cola'), findsOneWidget);
-      expect(find.text('Seguir añadiendo'), findsOneWidget);
-      expect(find.text('Carrito'), findsOneWidget);
-    });
+        expect(c.pasoActual!.nivel, HomeNivelDrawer.productos);
+        expect(
+          c.pila.length,
+          2,
+          reason: 'no hay nivel intermedio de subcategorías',
+        );
+        // Una tarjeta por producto; el banner no es tarjeta.
+        expect(find.byType(TarjetaExploracion), findsNWidgets(4));
+        expect(find.text('Cola'), findsOneWidget);
+        // El banner dice el rubro y sus números: es lo que deja claro en qué
+        // categoría se está vendiendo.
+        expect(find.text('1 producto · 0 subcategorías'), findsOneWidget);
+        expect(find.text('Seguir añadiendo'), findsOneWidget);
+        expect(find.text('Carrito'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'una especial con UNA subcategoría salta a sus productos y enseña la '
+      'categoría, no la hija',
+      (WidgetTester tester) async {
+        _pantallaMovil(tester);
+        final _GatewayFake g = _GatewayFake(
+          categorias: <HomeCategoria>[
+            _cat(
+              1,
+              'Combustibles',
+              especial: true,
+              productos: 2,
+              subcategorias: 1,
+            ),
+          ],
+          subcategorias: <HomeSubcategoria>[
+            const HomeSubcategoria(
+              id: 20,
+              nombre: 'Especiales',
+              totalProductos: 2,
+            ),
+          ],
+          productos: <HomeProducto>[
+            _prod(100, 'Especial 95', sub: 20, precio: 1.5),
+            _prod(101, 'Especial 91', sub: 20, precio: 1.25),
+          ],
+        );
+        final HomeController c = await _controladorCon(g);
+        await c.abrirEspecial(c.especiales.single);
+        await _abrirDrawer(tester, controller: c);
+
+        expect(c.pasoActual!.nivel, HomeNivelDrawer.productos);
+        expect(
+          g.llamadasSubcategorias,
+          0,
+          reason: 'no se pide un nivel que no se va a pintar',
+        );
+        expect(
+          find.text('Especiales'),
+          findsNothing,
+          reason: 'se muestra la categoría, no la única subcategoría',
+        );
+        expect(find.text('2 productos · 1 subcategoría'), findsOneWidget);
+        expect(find.byType(TarjetaExploracion), findsNWidgets(2));
+        expect(find.text('Especial 95'), findsOneWidget);
+        // La raíz ES el nivel de productos, así que no hay a dónde subir: el
+        // pie deja solo el carrito, igual que en una especial sin hijas.
+        expect(find.text('Seguir añadiendo'), findsNothing);
+        expect(find.text('Carrito'), findsOneWidget);
+      },
+    );
   });
 
   // ── Volver atrás ───────────────────────────────────────────────────────
@@ -671,37 +743,69 @@ void main() {
   // ── Productos dentro del drawer ────────────────────────────────────────
 
   group('productos', () {
-    testWidgets('tocar una fila llama onAbrirProducto sin cerrar el drawer', (
+    testWidgets(
+      'tocar la tarjeta de un producto llama a la venta rápida, sin cerrar el '
+      'drawer',
+      (WidgetTester tester) async {
+        _pantallaMovil(tester);
+        final _Rutas rutas = _Rutas();
+        final HomeController c = await _controladorCon(_gatewayCompleto());
+        c.abrirTienda();
+        final _Registro r = await _abrirDrawer(
+          tester,
+          controller: c,
+          rutas: rutas,
+        );
+
+        await tester.tap(find.text('Comida'));
+        await _asentar(tester);
+
+        await tester.tap(find.text('Cola'));
+        await _asentar(tester);
+
+        expect(r.agregados.map((HomeProducto p) => p.nombre), <String>['Cola']);
+        expect(
+          r.productosTocados,
+          isEmpty,
+          reason:
+              'la tarjeta entera es el atajo de venta: quién decide entre '
+              'carrito y detalle es el alta rápida de la pantalla',
+        );
+        expect(
+          find.byType(CategoriaDrawer),
+          findsOneWidget,
+          reason: 'la venta rápida no cierra el drawer',
+        );
+        expect(rutas.pops, 0);
+      },
+    );
+
+    testWidgets('sin callback de venta rápida la tarjeta abre el detalle', (
       WidgetTester tester,
     ) async {
+      // La tarjeta no se queda muerta cuando la pantalla no pasa el atajo.
       _pantallaMovil(tester);
-      final _Rutas rutas = _Rutas();
       final HomeController c = await _controladorCon(_gatewayCompleto());
       c.abrirTienda();
       final _Registro r = await _abrirDrawer(
         tester,
         controller: c,
-        rutas: rutas,
+        conAgregar: false,
       );
 
       await tester.tap(find.text('Comida'));
       await _asentar(tester);
-      expect(find.byType(ProductoTile), findsWidgets);
 
       await tester.tap(find.text('Cola'));
       await _asentar(tester);
 
-      expect(r.productosTocados.length, 1);
-      expect(r.productosTocados.single.nombre, 'Cola');
-      expect(
-        find.byType(CategoriaDrawer),
-        findsOneWidget,
-        reason: 'el detalle se apila ENCIMA: el drawer no se cierra antes',
-      );
-      expect(rutas.pops, 0);
+      expect(r.productosTocados.map((HomeProducto p) => p.nombre), <String>[
+        'Cola',
+      ]);
+      expect(r.agregados, isEmpty);
     });
 
-    testWidgets('el «+» llama onAgregarProducto y el agotado no tiene «+»', (
+    testWidgets('la tarjeta de un agotado va atenuada y no responde al toque', (
       WidgetTester tester,
     ) async {
       _pantallaMovil(tester);
@@ -712,55 +816,119 @@ void main() {
       await tester.tap(find.text('Comida'));
       await _asentar(tester);
 
-      // Tres disponibles (Cerveza, Cola, Malta) ⇒ tres «+».
-      expect(find.byIcon(Icons.add_rounded), findsNWidgets(3));
-
-      final Finder agotado = find.ancestor(
-        of: find.text('Agua sin stock'),
-        matching: find.byType(ProductoTile),
-      );
-      expect(agotado, findsOneWidget);
+      // El estado de stock se lee en el chip de la propia tarjeta.
       expect(
-        find.descendant(of: agotado, matching: find.byIcon(Icons.add_rounded)),
-        findsNothing,
-        reason: 'un agotado no se vende de un toque',
+        find.descendant(
+          of: _tarjetaDe('Agua sin stock'),
+          matching: find.text('AGOTADO'),
+        ),
+        findsOneWidget,
       );
       expect(
-        find.descendant(of: agotado, matching: find.text('Agotado')),
+        find.descendant(
+          of: _tarjetaDe('Cola'),
+          matching: find.text('STOCK: 12'),
+        ),
         findsOneWidget,
       );
 
-      final Finder cola = find.ancestor(
-        of: find.text('Cola'),
-        matching: find.byType(ProductoTile),
+      // El agotado va atenuado…
+      final Finder atenuada = find.ancestor(
+        of: find.text('Agua sin stock'),
+        matching: find.byType(Opacity),
       );
-      await tester.tap(
-        find.descendant(of: cola, matching: find.byIcon(Icons.add_rounded)),
+      expect(atenuada, findsWidgets);
+      expect(
+        tester.widgetList<Opacity>(atenuada).every(
+          (Opacity o) => o.opacity < 1,
+        ),
+        isTrue,
+        reason: 'un no disponible se sigue viendo, pero apagado',
       );
+      // …y un disponible no lleva atenuación ninguna.
+      expect(
+        find.ancestor(of: find.text('Cola'), matching: find.byType(Opacity)),
+        findsNothing,
+      );
+
+      // El toque en el agotado no vende ni abre nada. Se toca por coordenadas
+      // a propósito: la tarjeta está dentro de un `IgnorePointer` y `tap()`
+      // avisaría de que el punto no pertenece al texto.
+      await tester.tapAt(tester.getCenter(find.text('Agua sin stock')));
       await _asentar(tester);
 
-      expect(r.agregados.length, 1);
-      expect(r.agregados.single.nombre, 'Cola');
       expect(
-        find.byType(CategoriaDrawer),
-        findsOneWidget,
-        reason: 'la venta rápida no cierra el drawer',
+        r.agregados,
+        isEmpty,
+        reason: 'un agotado no se vende de un toque',
       );
+      expect(r.productosTocados, isEmpty);
     });
 
-    testWidgets('sin callback de venta rápida no hay ningún «+»', (
+    testWidgets('la tarjeta lleva la foto del producto, el precio y el stock', (
       WidgetTester tester,
     ) async {
       _pantallaMovil(tester);
-      final HomeController c = await _controladorCon(_gatewayCompleto());
+      final _GatewayFake g = _GatewayFake(
+        categorias: <HomeCategoria>[_cat(1, 'Comida', productos: 2)],
+        productos: <HomeProducto>[
+          _prod(
+            100,
+            'Cola',
+            precio: 1.5,
+            stock: 12,
+            imagen: 'https://cdn.example/cola.png',
+          ),
+          _prod(101, 'Malta', precio: 2, stock: 8),
+        ],
+      );
+      final HomeController c = await _controladorCon(g);
       c.abrirTienda();
-      await _abrirDrawer(tester, controller: c, conAgregar: false);
+      await _abrirDrawer(tester, controller: c);
 
       await tester.tap(find.text('Comida'));
       await _asentar(tester);
 
-      expect(find.byType(ProductoTile), findsWidgets);
-      expect(find.byIcon(Icons.add_rounded), findsNothing);
+      final TarjetaExploracion cola = tester.widget<TarjetaExploracion>(
+        _tarjetaDe('Cola'),
+      );
+      expect(cola.titulo, 'Cola');
+      expect(cola.imagenUrl, 'https://cdn.example/cola.png');
+      // Mismo formateador que la fila y el riel.
+      expect(cola.subtitulo, r'$1.50');
+      expect(cola.chip, 'STOCK: 12');
+
+      final TarjetaExploracion malta = tester.widget<TarjetaExploracion>(
+        _tarjetaDe('Malta'),
+      );
+      expect(
+        malta.imagenUrl,
+        isNull,
+        reason: 'sin foto manda el degradado, como en las categorías',
+      );
+      expect(malta.chip, 'STOCK: 8');
+    });
+
+    testWidgets('con el ajuste de SKU activo, la tarjeta lo pinta tras el '
+        'precio', (WidgetTester tester) async {
+      _pantallaMovil(tester);
+      final _GatewayFake g = _GatewayFake(
+        categorias: <HomeCategoria>[_cat(1, 'Comida', productos: 1)],
+        productos: <HomeProducto>[
+          _prod(100, 'Cola', precio: 1.5, sku: 'SKU-COLA-1'),
+        ],
+      );
+      final HomeController c = await _controladorCon(g);
+      c.abrirTienda();
+      await _abrirDrawer(tester, controller: c, mostrarSku: true);
+
+      await tester.tap(find.text('Comida'));
+      await _asentar(tester);
+
+      expect(
+        tester.widget<TarjetaExploracion>(_tarjetaDe('Cola')).subtitulo,
+        r'$1.50 · SKU-COLA-1',
+      );
     });
   });
 

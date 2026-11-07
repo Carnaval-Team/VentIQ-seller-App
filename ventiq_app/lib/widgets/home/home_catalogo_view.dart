@@ -39,6 +39,7 @@ class HomeCatalogoView extends StatelessWidget {
     this.chips,
     this.rieles = const <Widget>[],
     this.nombreTienda = 'Tienda',
+    this.imagenTienda,
     this.contenidoAlternativo,
   });
 
@@ -65,6 +66,13 @@ class HomeCatalogoView extends StatelessWidget {
   /// Nombre de la tienda para la tarjeta de agrupación (D2). Por defecto,
   /// «Tienda»; el armazón lo resuelve de `app_dat_tienda`.
   final String nombreTienda;
+
+  /// Foto del local para la tarjeta de agrupación (D2). Opcional y
+  /// best-effort: `null` deja la tarjeta con su icono, como siempre.
+  ///
+  /// La resuelve el armazón y entra por parámetro: este widget no lee
+  /// preferencias ni hace red (ver la nota de la clase).
+  final String? imagenTienda;
 
   /// Lo que se pinta en vez del catálogo cuando hay una búsqueda activa.
   final Widget? contenidoAlternativo;
@@ -165,6 +173,15 @@ class HomeCatalogoView extends StatelessWidget {
     final bool hayTiendaAgrupada =
         !categoriasSueltas && catalogo.mostrarTarjetaTienda;
 
+    // Dónde va la tarjeta «Tienda». Con un número impar de especiales la
+    // última fila de la rejilla queda coja (un hueco a la derecha de la última
+    // destacada en 2 columnas, tres en 4), y «Tienda» —que es la tarjeta que
+    // cierra el catálogo— encaja justo ahí: entra como una celda más y la fila
+    // se lee completa. Con un número par la rejilla ya está llena, así que la
+    // tarjeta se queda abajo y a lo ancho, como siempre.
+    final bool tiendaEnRejilla = tiendaEnLaRejilla(catalogo);
+    final bool tiendaAnchaAbajo = hayTiendaAgrupada && !tiendaEnRejilla;
+
     return <Widget>[
       const SliverToBoxAdapter(child: SizedBox(height: 16)),
       SliverToBoxAdapter(
@@ -191,6 +208,21 @@ class HomeCatalogoView extends StatelessWidget {
               mainAxisExtent: alto,
             ),
             delegate: SliverChildBuilderDelegate((BuildContext context, int i) {
+              // El hueco de la fila impar: la misma tarjeta «Tienda» en formato
+              // celda. Hereda alto y espaciado de este delegado, así que mide
+              // exactamente lo mismo que las especiales de al lado. Solo se
+              // alcanza cuando `tiendaEnRejilla`, porque `childCount` es
+              // justo uno más que `tarjetas`.
+              if (tiendaEnRejilla && i == tarjetas.length) {
+                return TiendaCard.celda(
+                  nombre: nombreTienda,
+                  imagenTienda: imagenTienda,
+                  categorias: catalogo.tienda.length,
+                  productos: productosEnTienda(catalogo),
+                  onTap: onTapTienda,
+                );
+              }
+
               final HomeCategoria c = tarjetas[i];
               return TarjetaExploracion(
                 chip: chipDeCategoria(c),
@@ -207,19 +239,17 @@ class HomeCatalogoView extends StatelessWidget {
                 accionEtiqueta: 'Ver todos',
                 onAccion: () => onAbrirListado(c),
               );
-            }, childCount: tarjetas.length),
+            }, childCount: tarjetas.length + (tiendaEnRejilla ? 1 : 0)),
           ),
         ),
-      if (hayTiendaAgrupada) ...<Widget>[
+      if (tiendaAnchaAbajo) ...<Widget>[
         const SliverToBoxAdapter(child: SizedBox(height: 14)),
         SliverToBoxAdapter(
           child: TiendaCard(
             nombre: nombreTienda,
+            imagenTienda: imagenTienda,
             categorias: catalogo.tienda.length,
-            productos: catalogo.tienda.fold<int>(
-              0,
-              (int suma, HomeCategoria c) => suma + c.totalProductos,
-            ),
+            productos: productosEnTienda(catalogo),
             onTap: onTapTienda,
           ),
         ),
@@ -229,6 +259,30 @@ class HomeCatalogoView extends StatelessWidget {
 
   // ── Reglas de presentación ─────────────────────────────────────────────
   // Públicas y estáticas para poder probarlas sin montar el árbol.
+
+  /// ¿La tarjeta «Tienda» va como una celda más de la rejilla?
+  ///
+  /// Sí cuando hay especiales y su número es **impar**: la última fila queda
+  /// coja y esa es la forma de rellenarla sin inventar una tarjeta ni dejar un
+  /// hueco. Con un número **par** (o sin especiales, donde ni hay rejilla de
+  /// destacadas ni tarjeta que colocar) va a ancho completo debajo, como
+  /// siempre. El `mostrarTarjetaTienda` cierra el caso de una «Tienda» vacía,
+  /// que es un toque muerto en cualquier posición.
+  static bool tiendaEnLaRejilla(HomeCatalogo catalogo) =>
+      catalogo.especiales.isNotEmpty &&
+      catalogo.especiales.length.isOdd &&
+      catalogo.mostrarTarjetaTienda;
+
+  /// Productos que agrupa «Tienda», sumando los de sus categorías.
+  ///
+  /// Lo usan las dos disposiciones de la tarjeta (la ancha y la celda): el
+  /// contador sale de un único sitio para que no se desincronicen.
+  static int productosEnTienda(HomeCatalogo catalogo) {
+    return catalogo.tienda.fold<int>(
+      0,
+      (int suma, HomeCategoria c) => suma + c.totalProductos,
+    );
+  }
 
   /// Columnas según el ancho: 2 en móvil, hasta 5 en monitores de TPV.
   static int columnasDe(BuildContext context) {
@@ -244,11 +298,16 @@ class HomeCatalogoView extends StatelessWidget {
     return '${c.totalProductos} PRODUCTO${c.totalProductos == 1 ? '' : 'S'}';
   }
 
+  /// Subtítulo de la tarjeta de categoría.
+  ///
+  /// Con **cero o una** subcategoría el toque entra directo a los productos (no
+  /// hay nivel intermedio que enseñar), así que anunciar «1 subcategoría» sería
+  /// prometer una pantalla que no existe. La regla es la misma que usa el
+  /// drawer para decidir si abre ese nivel: una sola definición, sin
+  /// discrepancias entre el Home y el listado.
   static String subtituloDeCategoria(HomeCategoria c) {
-    if (c.tieneSubcategorias) {
-      final int n = c.totalSubcategorias;
-      return '$n subcategoría${n == 1 ? '' : 's'}';
-    }
+    final int n = c.totalSubcategorias;
+    if (n >= 2) return '$n subcategorías';
     return 'Ver productos';
   }
 }

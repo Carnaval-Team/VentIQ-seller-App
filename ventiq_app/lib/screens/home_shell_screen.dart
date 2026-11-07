@@ -145,6 +145,11 @@ class _HomeShellScreenState extends State<HomeShellScreen>
   /// Nombre de la tienda (D2) desde `app_dat_tienda.denominacion`.
   String _nombreTienda = 'Tienda';
 
+  /// Foto del local para la tarjeta «Tienda» (D2). Sale de la copia local que
+  /// deja el login (`UserPreferencesService`), así que puede venir `null` sin
+  /// que nada más se entere: la tarjeta se queda con su icono de siempre.
+  String? _imagenTienda;
+
   /// Ficha completa para abrir un producto de riel con su stock real.
   ProductDetailService? _detalle;
   ProductDetailService get _detalleService =>
@@ -378,11 +383,16 @@ class _HomeShellScreenState extends State<HomeShellScreen>
       final List<HomeRielProducto> cacheOfertas = await _extrasService
           .ofertasDesdeCache(idTpv);
       final String nombreTienda = await _leerNombreTienda(idTienda);
+      // La foto va después del nombre a propósito: sale de SharedPreferences
+      // (sin red) y es best-effort, así que nunca retrasa ni condiciona el
+      // nombre. Si no hay logo, `null` y la tarjeta no cambia.
+      final String? imagenTienda = await _leerImagenTienda();
       if (!mounted) return;
       setState(() {
         if (cacheTop.isNotEmpty) _masVendidos = cacheTop;
         if (cacheOfertas.isNotEmpty) _ofertas = cacheOfertas;
         _nombreTienda = nombreTienda;
+        _imagenTienda = imagenTienda;
       });
 
       // 2) En modo offline no se llama a la red: la caché es la verdad.
@@ -420,6 +430,25 @@ class _HomeShellScreenState extends State<HomeShellScreen>
     } catch (e) {
       debugPrint('⚠️ No se pudo leer el nombre de la tienda: $e');
       return 'Tienda';
+    }
+  }
+
+  /// Foto del local para la tarjeta «Tienda» (D2).
+  ///
+  /// Sale de la copia local que deja el login (`saveStorePrintInfo`), la misma
+  /// que usa la impresión offline: no añade una petición de red y funciona sin
+  /// conexión. Es best-effort de punta a punta; si no hay logo, la preferencia
+  /// no existe o el valor viene en blanco, devuelve `null` y la tarjeta se
+  /// queda exactamente como estaba.
+  Future<String?> _leerImagenTienda() async {
+    try {
+      final Map<String, dynamic>? info = await _prefs.getStorePrintInfo();
+      final String? url = info?['logoUrl']?.toString().trim();
+      return (url == null || url.isEmpty) ? null : url;
+    } catch (e) {
+      // Una tarjeta sin foto nunca justifica romper el Home.
+      debugPrint('⚠️ No se pudo leer la imagen de la tienda: $e');
+      return null;
     }
   }
 
@@ -1016,6 +1045,7 @@ class _HomeShellScreenState extends State<HomeShellScreen>
                   ),
                   rieles: _rielesDelHome(),
                   nombreTienda: _nombreTienda,
+                  imagenTienda: _imagenTienda,
                   contenidoAlternativo:
                       _hayBusqueda ? _resultadosBusqueda() : null,
                   onTapCategoria: _abrirDesdeHome,

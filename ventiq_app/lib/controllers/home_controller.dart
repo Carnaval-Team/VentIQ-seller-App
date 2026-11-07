@@ -354,9 +354,9 @@ class HomeController extends ChangeNotifier {
 
   /// Toca una tarjeta especial.
   ///
-  /// Sin subcategorías va directo a los productos (es el caso de "Combustibles"
-  /// en un servicentro: un toque y ya se está vendiendo). Con subcategorías abre
-  /// el nivel de subcategorías.
+  /// Con **cero o una** subcategoría va directo a los productos (es el caso de
+  /// "Combustibles" en un servicentro: un toque y ya se está vendiendo). Con dos
+  /// o más abre el nivel de subcategorías.
   Future<void> abrirEspecial(HomeCategoria categoria) async {
     _pila.clear();
     await _entrarEnCategoria(categoria, desdeLista: false);
@@ -386,11 +386,28 @@ class HomeController extends ChangeNotifier {
     await _cargarProductosDelNivel();
   }
 
+  /// Nº de subcategorías a partir del cual vale la pena enseñar el nivel
+  /// intermedio.
+  ///
+  /// Con **una sola** no: ese nivel tendría una única tarjeta y el vendedor
+  /// tocaría dos veces para ver exactamente los mismos productos que ve con un
+  /// solo toque. El corte se decide por **cuántas hijas tiene la categoría**,
+  /// nunca por su nombre: así vale para cualquier nomenclador, incluido el que
+  /// el gerente cambie mañana.
+  static const int subcategoriasQueAbrenNivel = 2;
+
+  /// ¿Esta categoría se abre en su nivel de subcategorías?
+  ///
+  /// La comparten la tarjeta especial del Home y la categoría de la lista, para
+  /// que las dos entradas se comporten igual.
+  static bool muestraSubcategorias(HomeCategoria categoria) =>
+      categoria.totalSubcategorias >= subcategoriasQueAbrenNivel;
+
   Future<void> _entrarEnCategoria(
     HomeCategoria categoria, {
     required bool desdeLista,
   }) async {
-    if (categoria.tieneSubcategorias) {
+    if (muestraSubcategorias(categoria)) {
       _pila.add(HomePasoDrawer.subcategorias(categoria));
       await _cargarSubcategoriasDelNivel();
     } else {
@@ -449,6 +466,10 @@ class HomeController extends ChangeNotifier {
   /// `_subcategorias` dejaba el nivel vacío y pintaba el mensaje «esta categoría
   /// no tiene subcategorías» aunque sí las tuviera. Solo se limpia lo que ya no
   /// sirve en el nivel de destino.
+  ///
+  /// Cuando la raíz **es** el nivel de productos (una especial con cero o una
+  /// subcategoría, que entra directa) no hay a dónde subir: se vuelve sin tocar
+  /// nada, y por eso la lista de productos sigue en pantalla.
   void volverARaiz() {
     if (_pila.length <= 1) return;
 
@@ -469,7 +490,8 @@ class HomeController extends ChangeNotifier {
           return;
         }
       case HomeNivelDrawer.productos:
-        // Raíz de una especial sin hijas: los productos siguen siendo válidos.
+        // Raíz de una especial sin hijas (o con una sola, que también entra
+        // directa): los productos ya cargados siguen siendo los del nivel.
         _errorNivel = null;
         _cargandoNivel = false;
     }

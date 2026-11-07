@@ -17,6 +17,22 @@ class NotificationWidget extends StatefulWidget {
 class _NotificationWidgetState extends State<NotificationWidget> {
   final NotificationService _notificationService = NotificationService();
 
+  /// Lado del área que responde al toque (56×56).
+  ///
+  /// Los 48×48 de un `IconButton` son el mínimo de Material y en un TPV se
+  /// quedan cortos: la campana se pulsa de pie, a veces con guantes y casi
+  /// siempre de paso hacia el buscador. 56 sigue el mínimo recomendado por
+  /// guías de accesibilidad táctil (48 lógicos) con margen para el error.
+  static const double _kTapTarget = 56;
+
+  /// Lienzo visible de la campana (48×48), el mismo que ocupaba el
+  /// `IconButton` anterior.
+  ///
+  /// Se conserva para que el icono (24) y el badge (desplazado 8/8 sobre este
+  /// lienzo) mantengan exactamente la composición de antes: los 8 px extra del
+  /// objetivo táctil se reparten como padding alrededor, no dentro del dibujo.
+  static const double _kVisualCanvas = 48;
+
   @override
   void initState() {
     super.initState();
@@ -32,50 +48,117 @@ class _NotificationWidgetState extends State<NotificationWidget> {
       builder: (context, snapshot) {
         final unreadCount = snapshot.data ?? 0;
 
-        return Stack(
-          children: [
-            // Botón de notificaciones
-            IconButton(
-              icon: Icon(
-                unreadCount > 0
-                    ? Icons.notifications_active
-                    : Icons.notifications_outlined,
-                color: Colors.white,
-              ),
-              onPressed: () {
-                _showNotificationsPanel(context);
-              },
-            ),
-            // Badge de contador
-            if (unreadCount > 0)
-              Positioned(
-                right: 8,
-                top: 8,
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: const BoxDecoration(
-                    color: VentiqHomeTheme.danger,
-                    shape: BoxShape.circle,
-                    boxShadow: VentiqHomeTheme.shadowCard,
-                  ),
-                  constraints: const BoxConstraints(
-                    minWidth: 18,
-                    minHeight: 18,
-                  ),
-                  child: Text(
-                    unreadCount > 99 ? '99+' : unreadCount.toString(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
+        // El objetivo táctil es el CONJUNTO campana + contador, no un
+        // `IconButton` suelto: un `InkWell` opaco cubre los 56×56 completos.
+        //
+        // Lo que fallaba antes: el badge era hermano del `IconButton` dentro
+        // del `Stack` y, al pintarse después, se quedaba con los toques de su
+        // esquina. El `Text` del contador absorbe el hit test
+        // (`RenderParagraph.hitTestSelf` devuelve siempre `true`), así que
+        // pulsar justo sobre el número —lo más llamativo del control— no abría
+        // nada y había que «buscar» el borde del icono.
+        return Semantics(
+          // Un único nodo para el lector de pantalla: `container` + `button`
+          // aportan etiqueta y rol, y el `Semantics(onTap:)` del `InkWell` se
+          // fusiona aquí dentro en vez de crear un segundo botón (sería doble
+          // anuncio y dos destinos de foco para un solo control).
+          container: true,
+          button: true,
+          label:
+              unreadCount > 0
+                  ? 'Notificaciones, $unreadCount sin leer'
+                  : 'Notificaciones',
+          child: Material(
+            // Sólo para que el ripple del `InkWell` se pinte ENCIMA del
+            // degradado de la cabecera: sin un `Material` propio el splash
+            // quedaría detrás del fondo y no se vería. Es transparente, en
+            // reposo no pinta nada.
+            type: MaterialType.transparency,
+            child: InkWell(
+              onTap: () => _showNotificationsPanel(context),
+              // El ripple circular es la única pista visual del tamaño real
+              // del botón; el resto del aspecto no cambia.
+              customBorder: const CircleBorder(),
+              splashColor: Colors.white.withValues(alpha: 0.16),
+              highlightColor: Colors.white.withValues(alpha: 0.08),
+              hoverColor: Colors.white.withValues(alpha: 0.06),
+              focusColor: Colors.white.withValues(alpha: 0.12),
+              child: SizedBox(
+                width: _kTapTarget,
+                height: _kTapTarget,
+                // El lienzo visible sigue siendo 48×48 con el icono de 24: el
+                // `Center` convierte los 8 px extra en padding interno, no en
+                // un icono mayor ni en un badge desplazado.
+                child: Center(
+                  child: SizedBox(
+                    width: _kVisualCanvas,
+                    height: _kVisualCanvas,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: <Widget>[
+                        _buildBell(unreadCount > 0),
+                        if (unreadCount > 0) _buildUnreadBadge(unreadCount),
+                      ],
                     ),
-                    textAlign: TextAlign.center,
                   ),
                 ),
               ),
-          ],
+            ),
+          ),
         );
       },
+    );
+  }
+
+  /// Icono de la campana.
+  ///
+  /// Sin `size`: hereda el `IconTheme` (24), igual que hacía el `IconButton`
+  /// sustituido. El color sigue siendo blanco sobre el degradado.
+  Widget _buildBell(bool hasUnread) {
+    return Icon(
+      hasUnread ? Icons.notifications_active : Icons.notifications_outlined,
+      color: Colors.white,
+    );
+  }
+
+  /// Contador de no leídas, sobre la esquina superior derecha del icono.
+  ///
+  /// Devuelve un [Positioned], así que sólo vale como hijo directo del `Stack`
+  /// del botón. Los 8/8 son los mismos de siempre: se miden sobre el lienzo de
+  /// 48, de modo que el badge no se mueve respecto al icono.
+  ///
+  /// * `IgnorePointer`: el badge es decoración sobre el botón, no un control
+  ///   aparte; sin esto se quedaba con los toques de su esquina y esa zona
+  ///   dejaba de abrir el panel.
+  /// * `ExcludeSemantics`: el lector ya anuncia la cuenta en el `label` del
+  ///   botón; dejar el `Text` dentro del árbol haría que dijera el número dos
+  ///   veces (la segunda suelto, sin contexto).
+  Widget _buildUnreadBadge(int unreadCount) {
+    return Positioned(
+      right: 8,
+      top: 8,
+      child: IgnorePointer(
+        child: ExcludeSemantics(
+          child: Container(
+            padding: const EdgeInsets.all(4),
+            decoration: const BoxDecoration(
+              color: VentiqHomeTheme.danger,
+              shape: BoxShape.circle,
+              boxShadow: VentiqHomeTheme.shadowCard,
+            ),
+            constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+            child: Text(
+              unreadCount > 99 ? '99+' : unreadCount.toString(),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -85,7 +168,22 @@ class _NotificationWidgetState extends State<NotificationWidget> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => const NotificationsPanel(),
+      // El panel es un `DraggableScrollableSheet`, así que el contenido de la
+      // ruta ocupa TODA la pantalla (aunque solo pinte la tarjeta abajo). Por
+      // eso la zona oscura de arriba no era el `barrier` del modal y tocarla no
+      // cerraba nada. Con este `Stack`, la zona de encima del panel es un área
+      // táctil que cierra; el `Align` del sheet solo ocupa su tarjeta, así que
+      // los toques de arriba caen aquí y los de la tarjeta siguen siendo suyos.
+      builder: (BuildContext sheetContext) => Stack(
+        fit: StackFit.expand,
+        children: <Widget>[
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => Navigator.of(sheetContext).pop(),
+          ),
+          const NotificationsPanel(),
+        ],
+      ),
     );
   }
 }
@@ -495,204 +593,218 @@ class _NotificationItemState extends State<NotificationItem> {
                   ),
                 ),
                 clipBehavior: Clip.antiAlias,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    // Barra de acento: solo en no leídas.
-                    Container(
-                      width: 4,
-                      color: noLeida ? color : Colors.transparent,
-                    ),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 12, 10, 10),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: <Widget>[
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: <Widget>[
-                                Container(
-                                  width: 38,
-                                  height: 38,
-                                  decoration: BoxDecoration(
-                                    color: color.withValues(alpha: 0.12),
-                                    borderRadius: BorderRadius.circular(11),
+                // `IntrinsicHeight` es imprescindible: un `Row` con
+                // `CrossAxisAlignment.stretch` dentro de un `ListView` recibe
+                // altura INFINITA y el layout revienta («BoxConstraints forces
+                // an infinite height»), que dejaba la lista de notificaciones en
+                // blanco. Con el alto intrínseco, la barra de acento se estira
+                // hasta la altura real del ítem, que es lo que se buscaba.
+                child: IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      // Barra de acento: solo en no leídas.
+                      Container(
+                        width: 4,
+                        color: noLeida ? color : Colors.transparent,
+                      ),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 12, 10, 10),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: <Widget>[
+                                  Container(
+                                    width: 38,
+                                    height: 38,
+                                    decoration: BoxDecoration(
+                                      color: color.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(11),
+                                    ),
+                                    child: Icon(icon, color: color, size: 20),
                                   ),
-                                  child: Icon(icon, color: color, size: 20),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: <Widget>[
-                                      Row(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: <Widget>[
-                                          Expanded(
-                                            child: Text(
-                                              widget.notification.titulo,
-                                              maxLines: _isExpanded ? null : 2,
-                                              overflow:
-                                                  _isExpanded
-                                                      ? null
-                                                      : TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                fontSize: 14.5,
-                                                height: 1.2,
-                                                fontWeight:
-                                                    noLeida
-                                                        ? FontWeight.w800
-                                                        : FontWeight.w600,
-                                                color:
-                                                    VentiqHomeTheme.textPrimary,
-                                              ),
-                                            ),
-                                          ),
-                                          if (widget.notification.isUrgent)
-                                            Container(
-                                              margin: const EdgeInsets.only(
-                                                left: 6,
-                                              ),
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 6,
-                                                    vertical: 2,
-                                                  ),
-                                              decoration: BoxDecoration(
-                                                color: VentiqHomeTheme.danger,
-                                                borderRadius:
-                                                    BorderRadius.circular(6),
-                                              ),
-                                              child: const Text(
-                                                'URGENTE',
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: <Widget>[
+                                        Row(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: <Widget>[
+                                            Expanded(
+                                              child: Text(
+                                                widget.notification.titulo,
+                                                maxLines:
+                                                    _isExpanded ? null : 2,
+                                                overflow:
+                                                    _isExpanded
+                                                        ? null
+                                                        : TextOverflow.ellipsis,
                                                 style: TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 9,
-                                                  fontWeight: FontWeight.w800,
-                                                  letterSpacing: 0.4,
+                                                  fontSize: 14.5,
+                                                  height: 1.2,
+                                                  fontWeight:
+                                                      noLeida
+                                                          ? FontWeight.w800
+                                                          : FontWeight.w600,
+                                                  color:
+                                                      VentiqHomeTheme
+                                                          .textPrimary,
                                                 ),
                                               ),
                                             ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 4),
-                                      AnimatedCrossFade(
-                                        firstChild: Text(
-                                          widget.notification.mensaje,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            fontSize: 12.5,
-                                            height: 1.35,
-                                            color:
-                                                VentiqHomeTheme.textSecondary,
+                                            if (widget.notification.isUrgent)
+                                              Container(
+                                                margin: const EdgeInsets.only(
+                                                  left: 6,
+                                                ),
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 6,
+                                                      vertical: 2,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  color: VentiqHomeTheme.danger,
+                                                  borderRadius:
+                                                      BorderRadius.circular(6),
+                                                ),
+                                                child: const Text(
+                                                  'URGENTE',
+                                                  style: TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 9,
+                                                    fontWeight: FontWeight.w800,
+                                                    letterSpacing: 0.4,
+                                                  ),
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 4),
+                                        AnimatedCrossFade(
+                                          firstChild: Text(
+                                            widget.notification.mensaje,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontSize: 12.5,
+                                              height: 1.35,
+                                              color:
+                                                  VentiqHomeTheme.textSecondary,
+                                            ),
+                                          ),
+                                          secondChild: Text(
+                                            widget.notification.mensaje,
+                                            style: const TextStyle(
+                                              fontSize: 13,
+                                              height: 1.4,
+                                              color:
+                                                  VentiqHomeTheme.textSecondary,
+                                            ),
+                                          ),
+                                          crossFadeState:
+                                              _isExpanded
+                                                  ? CrossFadeState.showSecond
+                                                  : CrossFadeState.showFirst,
+                                          duration: const Duration(
+                                            milliseconds: 220,
                                           ),
                                         ),
-                                        secondChild: Text(
-                                          widget.notification.mensaje,
-                                          style: const TextStyle(
-                                            fontSize: 13,
-                                            height: 1.4,
-                                            color:
-                                                VentiqHomeTheme.textSecondary,
-                                          ),
-                                        ),
-                                        crossFadeState:
-                                            _isExpanded
-                                                ? CrossFadeState.showSecond
-                                                : CrossFadeState.showFirst,
-                                        duration: const Duration(
-                                          milliseconds: 220,
-                                        ),
-                                      ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: <Widget>[
-                                const Icon(
-                                  Icons.access_time_rounded,
-                                  size: 13,
-                                  color: VentiqHomeTheme.textSecondary,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  timeago.format(
-                                    widget.notification.createdAt,
-                                    locale: 'es',
-                                  ),
-                                  style: const TextStyle(
-                                    fontSize: 11.5,
-                                    fontWeight: FontWeight.w600,
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: <Widget>[
+                                  const Icon(
+                                    Icons.access_time_rounded,
+                                    size: 13,
                                     color: VentiqHomeTheme.textSecondary,
                                   ),
-                                ),
-                                const SizedBox(width: 8),
-                                _buildTypeChip(color),
-                                const Spacer(),
-                                if (noLeida)
-                                  Container(
-                                    width: 7,
-                                    height: 7,
-                                    margin: const EdgeInsets.only(right: 6),
-                                    decoration: const BoxDecoration(
-                                      color: VentiqHomeTheme.primary,
-                                      shape: BoxShape.circle,
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    timeago.format(
+                                      widget.notification.createdAt,
+                                      locale: 'es',
+                                    ),
+                                    style: const TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: VentiqHomeTheme.textSecondary,
                                     ),
                                   ),
-                                Icon(
-                                  _isExpanded
-                                      ? Icons.expand_less_rounded
-                                      : Icons.expand_more_rounded,
-                                  size: 17,
-                                  color: VentiqHomeTheme.textSecondary,
-                                ),
-                              ],
-                            ),
-                            if (_isExpanded && _shouldShowReceiveOrderButton())
-                              Padding(
-                                padding: const EdgeInsets.only(top: 10),
-                                child: SizedBox(
-                                  width: double.infinity,
-                                  child: ElevatedButton.icon(
-                                    onPressed: _handleReceiveOrder,
-                                    icon: const Icon(
-                                      Icons.check_circle_outline_rounded,
-                                      size: 19,
-                                    ),
-                                    label: const Text(
-                                      'Recibir Orden',
-                                      style: TextStyle(
-                                        fontSize: 13.5,
-                                        fontWeight: FontWeight.w700,
+                                  const SizedBox(width: 8),
+                                  _buildTypeChip(color),
+                                  const Spacer(),
+                                  if (noLeida)
+                                    Container(
+                                      width: 7,
+                                      height: 7,
+                                      margin: const EdgeInsets.only(right: 6),
+                                      decoration: const BoxDecoration(
+                                        color: VentiqHomeTheme.primary,
+                                        shape: BoxShape.circle,
                                       ),
                                     ),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: VentiqHomeTheme.success,
-                                      foregroundColor: Colors.white,
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 16,
-                                        vertical: 11,
-                                      ),
-                                      elevation: 0,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                    ),
+                                  Icon(
+                                    _isExpanded
+                                        ? Icons.expand_less_rounded
+                                        : Icons.expand_more_rounded,
+                                    size: 17,
+                                    color: VentiqHomeTheme.textSecondary,
                                   ),
-                                ),
+                                ],
                               ),
-                          ],
+                              if (_isExpanded &&
+                                  _shouldShowReceiveOrderButton())
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 10),
+                                  child: SizedBox(
+                                    width: double.infinity,
+                                    child: ElevatedButton.icon(
+                                      onPressed: _handleReceiveOrder,
+                                      icon: const Icon(
+                                        Icons.check_circle_outline_rounded,
+                                        size: 19,
+                                      ),
+                                      label: const Text(
+                                        'Recibir Orden',
+                                        style: TextStyle(
+                                          fontSize: 13.5,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor:
+                                            VentiqHomeTheme.success,
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 16,
+                                          vertical: 11,
+                                        ),
+                                        elevation: 0,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
