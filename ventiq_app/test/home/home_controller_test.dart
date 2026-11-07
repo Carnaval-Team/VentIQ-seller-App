@@ -362,7 +362,7 @@ void main() {
     });
 
     test(
-      'una especial CON subcategorías abre el nivel de subcategorías',
+      'una especial con DOS o más subcategorías abre el nivel de subcategorías',
       () async {
         final _GatewayFake g = _GatewayFake(
           categorias: <HomeCategoria>[
@@ -384,6 +384,92 @@ void main() {
         expect(g.ultimosIdsSubcategorias, <int>[1]);
       },
     );
+
+    test(
+      'una especial con UNA subcategoría va directo a sus productos',
+      () async {
+        // Una única hija no es un menú que elegir: el nivel intermedio tendría
+        // una sola tarjeta y el vendedor tocaría dos veces para ver exactamente
+        // los mismos productos.
+        final _GatewayFake g = _GatewayFake(
+          categorias: <HomeCategoria>[
+            _cat(
+              1,
+              'Combustibles',
+              especial: true,
+              productos: 2,
+              subcategorias: 1,
+            ),
+          ],
+          subcategorias: <HomeSubcategoria>[
+            const HomeSubcategoria(
+              id: 20,
+              nombre: 'Especiales',
+              totalProductos: 2,
+            ),
+          ],
+          productos: <HomeProducto>[
+            _prod(1, 'Especial 95'),
+            _prod(2, 'Especial 91'),
+          ],
+        );
+        final HomeController c = HomeController(gateway: g);
+        await c.cargar(_ctx);
+
+        await c.abrirEspecial(c.especiales.single);
+
+        expect(c.pasoActual!.nivel, HomeNivelDrawer.productos);
+        expect(
+          c.pasoActual!.subcategoria,
+          isNull,
+          reason: 'el nivel enseña la CATEGORÍA, no la única hija',
+        );
+        expect(c.migajas, <String>['Combustibles']);
+        expect(
+          c.pila.length,
+          1,
+          reason: 'sin escalón intermedio: la raíz ya es el nivel de productos',
+        );
+        expect(
+          g.llamadasSubcategorias,
+          0,
+          reason: 'no se pide un nivel que no se va a pintar',
+        );
+        expect(c.productosNivel.map((HomeProducto p) => p.nombre), <String>[
+          'Especial 91',
+          'Especial 95',
+        ]);
+      },
+    );
+
+    test('el corte son DOS subcategorías, no el nombre de la categoría', () {
+      // La regla es por número de hijas: vale para cualquier nomenclador y para
+      // cualquier nombre que el gerente invente.
+      expect(
+        HomeController.muestraSubcategorias(
+          _cat(1, 'Combustibles', subcategorias: 0),
+        ),
+        isFalse,
+      );
+      expect(
+        HomeController.muestraSubcategorias(
+          _cat(1, 'Combustibles', subcategorias: 1),
+        ),
+        isFalse,
+      );
+      expect(
+        HomeController.muestraSubcategorias(
+          _cat(1, 'Servicios', subcategorias: 2),
+        ),
+        isTrue,
+      );
+      expect(
+        HomeController.muestraSubcategorias(
+          _cat(1, 'Servicios', subcategorias: 7),
+        ),
+        isTrue,
+      );
+    });
 
     test('una especial SIN subcategorías va directo a productos', () async {
       final _GatewayFake g = _GatewayFake(
@@ -642,6 +728,76 @@ void main() {
       expect(c.pasoActual!.nivel, HomeNivelDrawer.productos);
     });
 
+    test(
+      'una categoría de la lista con una SOLA hija también entra directa',
+      () async {
+        // La misma regla para las dos entradas al drawer: la tarjeta especial
+        // del Home y la tarjeta de la lista de «Tienda».
+        final HomeController c = await montar(
+          _GatewayFake(
+            categorias: <HomeCategoria>[
+              _cat(2, 'Bebidas', productos: 2, subcategorias: 1),
+            ],
+            subcategorias: <HomeSubcategoria>[
+              const HomeSubcategoria(
+                id: 20,
+                nombre: 'Gaseosas',
+                totalProductos: 2,
+              ),
+            ],
+            productos: <HomeProducto>[
+              _prod(100, 'Cola', sub: 20),
+              _prod(101, 'Malta', sub: 20),
+            ],
+          ),
+        );
+
+        c.abrirTienda();
+        await c.abrirCategoria(c.pasoActual!.categorias.single);
+
+        expect(c.pasoActual!.nivel, HomeNivelDrawer.productos);
+        expect(c.pila.length, 2, reason: 'raíz + productos, sin escalón de más');
+        expect(c.subcategorias, isEmpty);
+        expect(
+          c.productosNivel.length,
+          2,
+          reason: 'sin filtrar: son los productos de la categoría entera',
+        );
+      },
+    );
+
+    test('«volverARaiz» con la raíz en productos conserva la lista', () async {
+      // «Seguir añadiendo» tras una venta rápida. Cuando la especial entra
+      // directa a sus productos (cero o una hija), la raíz YA es ese nivel: no
+      // hay a dónde subir y la lista cargada no se puede tirar.
+      final HomeController c = await montar(
+        _GatewayFake(
+          categorias: <HomeCategoria>[
+            _cat(
+              1,
+              'Combustibles',
+              especial: true,
+              productos: 2,
+              subcategorias: 1,
+            ),
+          ],
+          productos: <HomeProducto>[
+            _prod(1, 'Especial 95'),
+            _prod(2, 'Especial 91'),
+          ],
+        ),
+      );
+
+      await c.abrirEspecial(c.especiales.single);
+      expect(c.pila.length, 1);
+
+      c.volverARaiz();
+
+      expect(c.pasoActual!.nivel, HomeNivelDrawer.productos);
+      expect(c.productosNivel.length, 2, reason: 'siguen en pantalla');
+      expect(c.drawerAbierto, isTrue);
+    });
+
     test('los productos salen con los disponibles primero', () async {
       final _GatewayFake g = _GatewayFake(
         categorias: <HomeCategoria>[_cat(1, 'Comida', productos: 3)],
@@ -697,8 +853,9 @@ void main() {
     test(
       'si fallan las subcategorías, el nivel lo dice y no queda cargando',
       () async {
+        // Dos hijas: es el único caso que abre el nivel de subcategorías.
         final _GatewayFake g = _GatewayFake(
-          categorias: <HomeCategoria>[_cat(1, 'Bebidas', subcategorias: 1)],
+          categorias: <HomeCategoria>[_cat(1, 'Bebidas', subcategorias: 2)],
         )..fallaSubcategorias = Exception('sin red');
         final HomeController c = HomeController(gateway: g);
         await c.cargar(_ctx);

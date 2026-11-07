@@ -6,10 +6,11 @@ import 'package:flutter/material.dart';
 
 import '../../controllers/home_controller.dart';
 import '../../models/home_catalogo.dart';
+import '../../services/moneda_venta_service.dart';
 import '../../theme/ventiq_home_theme.dart';
 import '../../utils/categoria_gradiente.dart';
 import '../../utils/categoria_icono.dart';
-import 'producto_tile.dart';
+import 'home_catalogo_view.dart';
 import 'tarjeta_exploracion.dart';
 import 'ventiq_skeleton.dart';
 
@@ -18,14 +19,18 @@ import 'ventiq_skeleton.dart';
 /// Sustituye al "tocar categoría → listado de productos" del Home viejo. Lo que
 /// resuelve, que era el encargo:
 ///
-///  * tocar una categoría **especial** sin subcategorías va directo a sus
-///    productos; con subcategorías, abre su nivel de subcategorías;
+///  * tocar una categoría **especial** con cero o una subcategoría va directo a
+///    sus productos —una única hija no es un menú que elegir—; con dos o más,
+///    abre su nivel de subcategorías;
 ///  * tocar **"Tienda"** abre el nivel de categorías no especiales;
 ///  * dentro, bajar y subir de nivel sin salir: el nivel anterior ya está
 ///    resuelto en la pila, así que volver es instantáneo;
 ///  * **cinco** formas de salir o retroceder, y ninguna obliga a la «X»;
 ///  * tocar una subcategoría enseña sus productos **sin pasar por el listado**,
-///    y el listado completo sigue a un toque si se quiere.
+///    y el listado completo sigue a un toque si se quiere;
+///  * el nivel de productos es una **rejilla de tarjetas** con el banner de la
+///    categoría arriba: se ve siempre el rubro (no la subcategoría) y cada
+///    tarjeta se toca una sola vez para vender.
 ///
 /// La navegación por niveles vive en [HomeController]; aquí solo se pinta y se
 /// traducen gestos a llamadas.
@@ -384,10 +389,12 @@ class _CategoriaDrawerState extends State<CategoriaDrawer> {
                     '${c.totalProductos} PRODUCTO'
                     '${c.totalProductos == 1 ? '' : 'S'}',
                 titulo: c.nombre,
+                // Misma regla que el Home y que la navegación: con una sola
+                // subcategoría el toque entra directo a los productos, así que
+                // la tarjeta no debe anunciar una pantalla intermedia.
                 subtitulo:
-                    c.tieneSubcategorias
-                        ? '${c.totalSubcategorias} subcategoría'
-                            '${c.totalSubcategorias == 1 ? '' : 's'}'
+                    c.totalSubcategorias >= 2
+                        ? '${c.totalSubcategorias} subcategorías'
                         : 'Ver productos',
                 icono: iconoCategoria(c.nombre),
                 colores: gradienteCategoria(c.id),
@@ -528,88 +535,137 @@ class _CategoriaDrawerState extends State<CategoriaDrawer> {
     );
   }
 
+  /// Último nivel: la categoría arriba y sus productos en rejilla de tarjetas.
+  ///
+  /// El banner es el de la **categoría** aunque se haya llegado por una
+  /// subcategoría o por una especial de una sola hija: el rubro es el contexto
+  /// que no puede faltar al vender, y el nombre de la hija ya viaja en la
+  /// migaja del breadcrumb.
   Widget _nivelProductos(BuildContext context, HomePasoDrawer paso) {
-    if (_c.cargandoNivel) {
-      return ListView.builder(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-        itemCount: 6,
-        itemBuilder:
-            (_, __) => const Padding(
-              padding: EdgeInsets.only(bottom: 8),
-              child: VentiqSkeleton(height: 64, radius: 16),
-            ),
-      );
-    }
-
-    if (_c.errorNivel != null) {
-      return _errorNivel();
-    }
-
     final HomeCategoria? categoria = paso.categoria;
     if (categoria == null) return const SizedBox.shrink();
 
     final List<HomeProducto> productos = _c.productosNivel;
 
-    if (productos.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Icon(
-                Icons.inbox_rounded,
-                size: 44,
-                color: VentiqHomeTheme.textSecondary.withValues(alpha: 0.45),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'No hay productos en «${paso.titulo}».',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: VentiqHomeTheme.textPrimary,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
     return Column(
       children: <Widget>[
         Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.only(top: 8),
-            itemCount: productos.length,
-            itemBuilder: (BuildContext context, int i) {
-              final HomeProducto p = productos[i];
-              return ProductoTile(
-                producto: p,
-                heroTag: 'prod-${p.id}',
-                mostrarSku: widget.mostrarSku,
-                atenuarImagenes: widget.atenuarImagenes,
-                onTap: () => widget.onAbrirProducto(p),
-                onAgregar:
-                    (widget.onAgregarProducto == null || !p.disponible)
-                        ? null
-                        : () => widget.onAgregarProducto!(p),
-              );
-            },
+          child: CustomScrollView(
+            slivers: <Widget>[
+              SliverToBoxAdapter(child: _bannerCategoria(categoria)),
+              if (_c.cargandoNivel)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    // Mismo alto y mismas columnas que la rejilla real: cuando
+                    // llegan los productos no salta nada.
+                    child: VentiqSkeletonRejilla(
+                      cantidad: 6,
+                      columnas: HomeCatalogoView.columnasDe(context),
+                    ),
+                  ),
+                )
+              else if (_c.errorNivel != null)
+                // `SliverFillRemaining` y no un adaptador: el error es un
+                // `Center` y necesita alto finito para centrarse.
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: _errorNivel(),
+                )
+              else if (productos.isEmpty)
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: _sinProductos(paso.titulo),
+                )
+              else
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(
+                    VentiqHomeTheme.sectionPadding,
+                    4,
+                    VentiqHomeTheme.sectionPadding,
+                    24,
+                  ),
+                  // Las medidas de la rejilla del Home (columnas, alto,
+                  // hueco): este nivel se lee como una continuación del
+                  // catálogo, no como otra pantalla.
+                  sliver: _CascadaRejilla(
+                    cantidad: productos.length,
+                    columnas: HomeCatalogoView.columnasDe(context),
+                    alto: VentiqHomeTheme.cardExtent(context),
+                    itemBuilder: (BuildContext context, int i) {
+                      final HomeProducto p = productos[i];
+                      return _TarjetaProducto(
+                        producto: p,
+                        mostrarSku: widget.mostrarSku,
+                        // Modo ahorro de datos: la tarjeta se queda con el
+                        // degradado en vez de bajar la foto del producto, que
+                        // es donde más pesa (una categoría entra pocas veces,
+                        // un producto se mira mucho).
+                        atenuarImagen: widget.atenuarImagenes,
+                        onTap: () => _tocarProducto(p),
+                      );
+                    },
+                  ),
+                ),
+            ],
           ),
         ),
-        // Pie fijo: las dos salidas útiles al vender. «Seguir añadiendo» sube a la
-        // lista de categorías sin cerrar el drawer; «Carrito» lleva al carrito
-        // con lo que se lleva acumulado. Ya no hay salto a `ProductsScreen`.
+        // Pie fijo, tal cual estaba: «Seguir añadiendo» sube a la raíz del
+        // drawer y «Carrito» lleva al carrito con lo acumulado.
         _pieCarrito(),
       ],
     );
   }
 
+  /// Traduce el toque de una tarjeta de producto.
+  ///
+  /// La pantalla que abre el drawer pasa el alta rápida, que decide sola entre
+  /// añadir al carrito (una sola presentación) y abrir el detalle. Si no la
+  /// pasa, la tarjeta **no se queda muerta**: cae al detalle, que es lo que
+  /// hacía la fila de antes.
+  void _tocarProducto(HomeProducto p) {
+    final void Function(HomeProducto producto)? agregar =
+        widget.onAgregarProducto;
+    if (agregar == null) {
+      widget.onAbrirProducto(p);
+      return;
+    }
+    agregar(p);
+  }
+
+  /// Nivel de productos sin nada que vender.
+  ///
+  /// El banner se queda arriba: el vendedor tiene que seguir viendo en qué
+  /// rubro está aunque el rubro esté vacío.
+  Widget _sinProductos(String titulo) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 40),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(
+            Icons.inbox_rounded,
+            size: 44,
+            color: VentiqHomeTheme.textSecondary.withValues(alpha: 0.45),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'No hay productos en «$titulo».',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontWeight: FontWeight.w700,
+              color: VentiqHomeTheme.textPrimary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _pieCarrito() {
     // «Seguir añadiendo» solo tiene sentido si hay un nivel al que subir. En la
-    // raíz (p. ej. una especial sin subcategorías) se deja solo el carrito.
+    // raíz (p. ej. una especial con cero o una subcategoría, que entra directa
+    // a sus productos) se deja solo el carrito.
     final bool puedeSubir = _c.pila.length > 1;
 
     return Container(
@@ -791,7 +847,125 @@ class _TarjetaConBoomState extends State<_TarjetaConBoom>
   }
 }
 
-/// Rejilla de subcategorías que aparece en cascada (`Interval(0.14 * i, 1)`).
+/// Tarjeta de un producto del último nivel.
+///
+/// Es la **misma tarjeta** de las categorías del Home
+/// ([TarjetaExploracion]) con lo que un producto necesita: foto, nombre, precio
+/// y estado de stock. Se reutiliza a propósito, y no se inventa una tarjeta
+/// nueva, porque el vendedor viene de una rejilla de categorías y el nivel de
+/// productos tiene que parecer la continuación natural de aquella.
+///
+/// A diferencia de las tarjetas de categoría, esta **no** lleva el latido de
+/// `_TarjetaConBoom`: allí el latido anuncia un cambio de nivel, y aquí el
+/// toque abre la hoja de cantidad o el detalle, donde 190 ms de espera se
+/// sentirían como un tirón.
+class _TarjetaProducto extends StatelessWidget {
+  const _TarjetaProducto({
+    required this.producto,
+    required this.onTap,
+    this.mostrarSku = false,
+    this.atenuarImagen = false,
+  });
+
+  final HomeProducto producto;
+
+  /// Qué hace el toque. Ya viene resuelto por el drawer (venta rápida o
+  /// detalle), así que la tarjeta no decide nada.
+  final VoidCallback onTap;
+
+  /// Ajuste de la pantalla: el SKU se pinta detrás del precio.
+  final bool mostrarSku;
+
+  /// Modo ahorro de datos: no se baja la foto y queda el degradado.
+  final bool atenuarImagen;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget tarjeta = TarjetaExploracion(
+      chip: _chipDeStock(producto),
+      titulo: producto.nombre,
+      subtitulo: _pieDeProducto(producto, mostrarSku: mostrarSku),
+      icono: _iconoDeProducto(producto),
+      // El color sigue la misma regla determinista que el resto del Home (el
+      // `id`), así que un producto no cambia de color entre sesiones.
+      colores: gradienteCategoria(producto.id),
+      imagenUrl: atenuarImagen ? null : producto.imagen,
+      // Mismo tag que la miniatura del detalle: al abrirlo, la foto vuela.
+      heroTag: 'prod-${producto.id}',
+      onTap: onTap,
+    );
+
+    if (producto.disponible) return tarjeta;
+
+    // Un agotado se sigue viendo —esconderlo en un TPV es peor que mostrarlo
+    // apagado— pero atenuado y **sin gesto**: no se puede vender de un toque.
+    // La etiqueta de accesibilidad lo deja claro para quien no ve el color.
+    return Semantics(
+      container: true,
+      button: true,
+      enabled: false,
+      label: '${producto.nombre}. ${_chipDeStock(producto)}',
+      child: ExcludeSemantics(
+        child: IgnorePointer(
+          child: Opacity(opacity: 0.55, child: tarjeta),
+        ),
+      ),
+    );
+  }
+}
+
+/// Estado de stock para el chip de la tarjeta.
+///
+/// Usa las mismas palabras que la fila de siempre (`ProductoTile`): un
+/// servicio no habla de stock, un elaborado dice cuánto se puede preparar y un
+/// agotado se llama agotado.
+String _chipDeStock(HomeProducto p) {
+  if (p.esServicio) return 'SERVICIO';
+  if (p.esElaborado) {
+    return p.stock > 0
+        ? 'ELABORABLE: ${_cortaCantidad(p.stock)}'
+        : 'SIN MATERIA PRIMA';
+  }
+  if (!p.disponible) return 'AGOTADO';
+  return 'STOCK: ${_cortaCantidad(p.stock)}';
+}
+
+/// Pie de la tarjeta: el precio y, si el ajuste está activo, el SKU detrás.
+///
+/// El precio pasa por el mismo formateador que la fila y el riel: el mismo
+/// producto no puede verse «$2.50» en la rejilla y «2.50 CUP» en el riel.
+String _pieDeProducto(HomeProducto p, {required bool mostrarSku}) {
+  final String precio = MonedaVentaService.formatearPrecio(
+    p.precio,
+    conSimbolo: true,
+  );
+  final String? sku = p.sku;
+  if (!mostrarSku || sku == null || sku.trim().isEmpty) return precio;
+  return '$precio · $sku';
+}
+
+/// Icono de la tarjeta cuando el producto no trae foto.
+///
+/// Manda la subcategoría, que describe mejor al producto que la categoría
+/// ("Gaseosas" antes que "Bebidas"); el SKU es el último recurso para un nombre
+/// que no dice nada, y si nada encaja queda un icono de producto —nunca el
+/// genérico de categoría, que confundiría una tarjeta de producto con una de
+/// rubro.
+IconData _iconoDeProducto(HomeProducto p) {
+  if (p.esServicio) return Icons.room_service_rounded;
+  if (p.esElaborado) return Icons.restaurant_rounded;
+  return iconoCategoriaPorTexto(p.subcategoriaNombre) ??
+      iconoCategoriaPorTexto(p.categoriaNombre) ??
+      iconoCategoriaPorTexto(p.sku) ??
+      Icons.shopping_bag_outlined;
+}
+
+/// Sin decimales cuando no aportan: "12", no "12.0".
+String _cortaCantidad(double v) =>
+    v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(2);
+
+/// Rejilla de un nivel (subcategorías o productos) que aparece en cascada
+/// (`Interval(0.14 * i, 1)`).
 ///
 /// Se hace con un solo `AnimationController` y un `Interval` por índice: N
 /// animaciones vivas para N tarjetas sería justo lo que hay que evitar en un

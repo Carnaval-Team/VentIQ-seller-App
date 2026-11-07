@@ -4,6 +4,7 @@ import 'package:ventiq_app/theme/ventiq_home_theme.dart';
 import 'package:ventiq_app/widgets/home/home_buscador.dart';
 import 'package:ventiq_app/widgets/home/home_hero_header.dart';
 import 'package:ventiq_app/widgets/home/home_quick_chips.dart';
+import 'package:ventiq_app/widgets/home/tarjeta_exploracion.dart';
 import 'package:ventiq_app/widgets/home/tienda_card.dart';
 import 'package:ventiq_app/widgets/home/ventiq_skeleton.dart';
 
@@ -387,6 +388,58 @@ void main() {
       int toques = 0;
       await tester.pumpWidget(
         _app(TiendaCard(categorias: 2, productos: 5, onTap: () => toques++)),
+      );
+
+      await tester.tap(find.text('Tienda'));
+      await tester.pump();
+
+      expect(toques, 1);
+    });
+
+    // ── Variante de celda (el hueco de una fila impar de especiales) ───────
+
+    testWidgets('la celda dice exactamente lo mismo que la tarjeta ancha', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        _app(TiendaCard.celda(categorias: 3, productos: 25, onTap: () {})),
+      );
+
+      // Mismo nombre y mismos contadores que la variante ancha: lo único que
+      // cambia entre las dos es la disposición.
+      expect(find.text('Tienda'), findsOneWidget);
+      expect(find.text('3 CATEG'), findsOneWidget);
+      expect(find.text('25 productos en 3 categ'), findsOneWidget);
+    });
+
+    testWidgets('la celda usa el marco de las tarjetas de categoría', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        _app(TiendaCard.celda(categorias: 2, productos: 0, onTap: () {})),
+      );
+
+      final TarjetaExploracion celda = tester.widget<TarjetaExploracion>(
+        find.byType(TarjetaExploracion),
+      );
+
+      expect(celda.titulo, 'Tienda');
+      expect(celda.chip, '2 CATEG');
+      expect(celda.subtitulo, '2 categ');
+      expect(celda.icono, Icons.storefront_rounded);
+      expect(
+        celda.colores,
+        VentiqHomeTheme.cardGradients[3],
+        reason: 'el mismo degradado corporativo de la tarjeta ancha',
+      );
+    });
+
+    testWidgets('tocar la celda dispara onTap', (WidgetTester tester) async {
+      int toques = 0;
+      await tester.pumpWidget(
+        _app(
+          TiendaCard.celda(categorias: 2, productos: 5, onTap: () => toques++),
+        ),
       );
 
       await tester.tap(find.text('Tienda'));
