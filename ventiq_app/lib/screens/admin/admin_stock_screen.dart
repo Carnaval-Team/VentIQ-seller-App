@@ -1,6 +1,7 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import '../../services/admin_inventory_service.dart';
+import '../../theme/ventiq_home_theme.dart';
 
 /// Consulta de stock desde cache SQLite offline.
 class AdminStockScreen extends StatefulWidget {
@@ -43,7 +44,7 @@ class _AdminStockScreenState extends State<AdminStockScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Stock'),
-        backgroundColor: Colors.blue[700],
+        backgroundColor: VentiqHomeTheme.primary,
         foregroundColor: Colors.white,
       ),
       body: Column(
@@ -73,35 +74,36 @@ class _AdminStockScreenState extends State<AdminStockScreen> {
             ),
           ),
           Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _products.isEmpty
+            child:
+                _loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _products.isEmpty
                     ? const Center(child: Text('Sin productos en cache'))
                     : ListView.separated(
-                        itemCount: _products.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
-                        itemBuilder: (context, i) {
-                          final p = _products[i];
-                          final name =
-                              p['denominacion']?.toString() ?? 'Sin nombre';
-                          final qty = p['cantidad'];
-                          final price = p['precio'];
-                          return ListTile(
-                            title: Text(name),
-                            subtitle: Text(
-                              'Precio: ${price ?? '-'}  ·  SKU: ${p['sku'] ?? '-'}',
+                      itemCount: _products.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (context, i) {
+                        final p = _products[i];
+                        final name =
+                            p['denominacion']?.toString() ?? 'Sin nombre';
+                        final qty = p['cantidad'];
+                        final price = p['precio'];
+                        return ListTile(
+                          title: Text(name),
+                          subtitle: Text(
+                            'Precio: ${price ?? '-'}  ·  SKU: ${p['sku'] ?? '-'}',
+                          ),
+                          trailing: Text(
+                            '${qty ?? 0}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: VentiqHomeTheme.primaryDark,
                             ),
-                            trailing: Text(
-                              '${qty ?? 0}',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                                color: Colors.blue[800],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
+                          ),
+                        );
+                      },
+                    ),
           ),
         ],
       ),

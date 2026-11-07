@@ -206,6 +206,8 @@ class AppRoutes {
       group: 'Finanzas',
     ),
     AppRoute(route: '/roles', label: 'Gestión de Roles', group: 'Sistema'),
+    // Catálogo global de monedas (plan multimoneda, Fase 1).
+    AppRoute(route: '/monedas', label: 'Monedas', group: 'Sistema'),
     AppRoute(route: '/configuracion', label: 'Configuración', group: 'Sistema'),
   ];
 

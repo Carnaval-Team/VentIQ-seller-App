@@ -2,10 +2,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/mesa_cuenta.dart';
 import '../services/mesa_cuenta_service.dart';
+import '../theme/ventiq_home_theme.dart';
 import '../services/order_service.dart';
 import '../services/sales_mode_service.dart';
 import '../utils/price_utils.dart';
+import '../services/moneda_venta_service.dart';
 import '../widgets/estado_servicio_chip.dart';
+import '../tutorial/tutorial_anchor.dart';
 
 /// Pantalla de **cuenta abierta** de una mesa.
 ///
@@ -117,21 +120,22 @@ class _CuentaMesaScreenState extends State<CuentaMesaScreen> {
   Future<void> _eliminarItem(MesaCuentaItem item) async {
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Eliminar producto'),
-        content: Text('¿Eliminar "${item.displayName}" de la cuenta?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Eliminar producto'),
+            content: Text('¿Eliminar "${item.displayName}" de la cuenta?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: TextButton.styleFrom(foregroundColor: Colors.red),
+                child: const Text('Eliminar'),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Eliminar'),
-          ),
-        ],
-      ),
     );
     if (ok != true) return;
 
@@ -153,23 +157,24 @@ class _CuentaMesaScreenState extends State<CuentaMesaScreen> {
     if (_cuenta == null) return;
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Cancelar Cuenta'),
-        content: Text(
-          'Se descartarán los ${_cuenta!.items.length} producto(s) de esta cuenta. ¿Estás seguro?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Volver'),
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Cancelar Cuenta'),
+            content: Text(
+              'Se descartarán los ${_cuenta!.items.length} producto(s) de esta cuenta. ¿Estás seguro?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Volver'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: TextButton.styleFrom(foregroundColor: Colors.red),
+                child: const Text('Sí, cancelar'),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Sí, cancelar'),
-          ),
-        ],
-      ),
     );
     if (ok != true) return;
 
@@ -211,24 +216,25 @@ class _CuentaMesaScreenState extends State<CuentaMesaScreen> {
       final n = _cuenta!.itemsEnCocina;
       final seguir = await showDialog<bool>(
         context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Hay platos en cocina'),
-          content: Text(
-            n == 1
-                ? 'Todavia queda 1 plato sin servir.'
-                : 'Todavia quedan $n platos sin servir.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Esperar'),
+        builder:
+            (ctx) => AlertDialog(
+              title: const Text('Hay platos en cocina'),
+              content: Text(
+                n == 1
+                    ? 'Todavia queda 1 plato sin servir.'
+                    : 'Todavia quedan $n platos sin servir.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Esperar'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('Cobrar igual'),
+                ),
+              ],
             ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Cobrar igual'),
-            ),
-          ],
-        ),
       );
       if (seguir != true) return;
     }
@@ -282,9 +288,9 @@ class _CuentaMesaScreenState extends State<CuentaMesaScreen> {
         return true;
       },
       child: Scaffold(
-        backgroundColor: Colors.grey[50],
+        backgroundColor: VentiqHomeTheme.surface,
         appBar: AppBar(
-          backgroundColor: const Color(0xFF4A90E2),
+          backgroundColor: VentiqHomeTheme.primary,
           elevation: 0,
           iconTheme: const IconThemeData(color: Colors.white),
           title: Text(
@@ -306,12 +312,16 @@ class _CuentaMesaScreenState extends State<CuentaMesaScreen> {
             ),
           ],
         ),
-        body: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : _cuenta == null
+        body:
+            _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _cuenta == null
                 ? _buildError()
                 : _buildContent(),
-        bottomNavigationBar: _cuenta == null ? null : _buildBottomBar(),
+        bottomNavigationBar:
+            _cuenta == null
+                ? null
+                : TutorialAnchor(id: 'cuenta_cobrar', child: _buildBottomBar()),
       ),
     );
   }
@@ -327,7 +337,10 @@ class _CuentaMesaScreenState extends State<CuentaMesaScreen> {
             const SizedBox(height: 16),
             Text(
               'No se pudo cargar la cuenta',
-              style: TextStyle(fontSize: 16, color: Colors.grey[700]),
+              style: TextStyle(
+                fontSize: 16,
+                color: VentiqHomeTheme.textSecondary,
+              ),
             ),
             const SizedBox(height: 16),
             ElevatedButton(
@@ -369,7 +382,7 @@ class _CuentaMesaScreenState extends State<CuentaMesaScreen> {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF4A90E2), Color(0xFF357ABD)],
+          colors: [VentiqHomeTheme.primary, Color(0xFF357ABD)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -414,7 +427,10 @@ class _CuentaMesaScreenState extends State<CuentaMesaScreen> {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(20),
@@ -451,7 +467,10 @@ class _CuentaMesaScreenState extends State<CuentaMesaScreen> {
               Expanded(
                 child: _miniMetric(
                   'Total',
-                  '\$${PriceUtils.formatDiscountPrice(c.total)}',
+                  MonedaVentaService.formatearPrecio(
+                    PriceUtils.roundDiscountPrice(c.total),
+                    conSimbolo: true,
+                  ),
                   Icons.payments_outlined,
                 ),
               ),
@@ -524,7 +543,9 @@ class _CuentaMesaScreenState extends State<CuentaMesaScreen> {
           backgroundColor: const Color(0xFF10B981),
           foregroundColor: Colors.white,
           elevation: 1,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
       ),
     );
@@ -541,14 +562,18 @@ class _CuentaMesaScreenState extends State<CuentaMesaScreen> {
       ),
       child: Column(
         children: [
-          Icon(Icons.shopping_basket_outlined, size: 56, color: Colors.grey[400]),
+          Icon(
+            Icons.shopping_basket_outlined,
+            size: 56,
+            color: Colors.grey[400],
+          ),
           const SizedBox(height: 12),
           Text(
             'La cuenta está vacía',
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w600,
-              color: Colors.grey[700],
+              color: VentiqHomeTheme.textSecondary,
             ),
           ),
           const SizedBox(height: 4),
@@ -581,29 +606,36 @@ class _CuentaMesaScreenState extends State<CuentaMesaScreen> {
                   style: const TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFF1F2937),
+                    color: VentiqHomeTheme.textPrimary,
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
               Text(
-                '\$${PriceUtils.formatDiscountPrice(item.subtotal)}',
+                MonedaVentaService.formatearPrecio(
+                  PriceUtils.roundDiscountPrice(item.subtotal),
+                  conSimbolo: true,
+                ),
                 style: const TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.bold,
-                  color: Color(0xFF4A90E2),
+                  color: VentiqHomeTheme.primary,
                 ),
               ),
             ],
           ),
-          if (item.presentacionNombre != null || item.ubicacionNombre != null) ...[
+          if (item.presentacionNombre != null ||
+              item.ubicacionNombre != null) ...[
             const SizedBox(height: 4),
             Wrap(
               spacing: 6,
               children: [
                 if (item.presentacionNombre != null)
-                  _miniChip(item.presentacionNombre!, Icons.inventory_2_outlined),
+                  _miniChip(
+                    item.presentacionNombre!,
+                    Icons.inventory_2_outlined,
+                  ),
                 if (item.ubicacionNombre != null)
                   _miniChip(item.ubicacionNombre!, Icons.location_on_outlined),
               ],
@@ -620,8 +652,11 @@ class _CuentaMesaScreenState extends State<CuentaMesaScreen> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.sticky_note_2_outlined,
-                    size: 13, color: Colors.orange[800]),
+                Icon(
+                  Icons.sticky_note_2_outlined,
+                  size: 13,
+                  color: Colors.orange[800],
+                ),
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
@@ -640,17 +675,21 @@ class _CuentaMesaScreenState extends State<CuentaMesaScreen> {
           Row(
             children: [
               Text(
-                '\$${PriceUtils.formatDiscountPrice(item.precioUnitario)} c/u',
-                style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                '${MonedaVentaService.formatearPrecio(PriceUtils.roundDiscountPrice(item.precioUnitario), conSimbolo: true)} c/u',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: VentiqHomeTheme.textSecondary,
+                ),
               ),
               const Spacer(),
               IconButton(
-                onPressed: _busy
-                    ? null
-                    : () {
-                        final step = item.cantidad % 1 != 0 ? 0.5 : 1.0;
-                        _cambiarCantidad(item, item.cantidad - step);
-                      },
+                onPressed:
+                    _busy
+                        ? null
+                        : () {
+                          final step = item.cantidad % 1 != 0 ? 0.5 : 1.0;
+                          _cambiarCantidad(item, item.cantidad - step);
+                        },
                 icon: const Icon(Icons.remove_circle_outline),
                 color: Colors.red,
                 iconSize: 22,
@@ -658,10 +697,13 @@ class _CuentaMesaScreenState extends State<CuentaMesaScreen> {
                 padding: EdgeInsets.zero,
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 margin: const EdgeInsets.symmetric(horizontal: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF4A90E2).withOpacity(0.1),
+                  color: VentiqHomeTheme.primary.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
@@ -669,19 +711,20 @@ class _CuentaMesaScreenState extends State<CuentaMesaScreen> {
                   style: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
-                    color: Color(0xFF4A90E2),
+                    color: VentiqHomeTheme.primary,
                   ),
                 ),
               ),
               IconButton(
-                onPressed: _busy
-                    ? null
-                    : () {
-                        final step = item.cantidad % 1 != 0 ? 0.5 : 1.0;
-                        _cambiarCantidad(item, item.cantidad + step);
-                      },
+                onPressed:
+                    _busy
+                        ? null
+                        : () {
+                          final step = item.cantidad % 1 != 0 ? 0.5 : 1.0;
+                          _cambiarCantidad(item, item.cantidad + step);
+                        },
                 icon: const Icon(Icons.add_circle_outline),
-                color: const Color(0xFF4A90E2),
+                color: VentiqHomeTheme.primary,
                 iconSize: 22,
                 constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                 padding: EdgeInsets.zero,
@@ -706,17 +749,20 @@ class _CuentaMesaScreenState extends State<CuentaMesaScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: Colors.grey[100],
+        color: VentiqHomeTheme.surface,
         borderRadius: BorderRadius.circular(6),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 12, color: Colors.grey[600]),
+          Icon(icon, size: 12, color: VentiqHomeTheme.textSecondary),
           const SizedBox(width: 3),
           Text(
             text,
-            style: TextStyle(fontSize: 11, color: Colors.grey[700]),
+            style: TextStyle(
+              fontSize: 11,
+              color: VentiqHomeTheme.textSecondary,
+            ),
           ),
         ],
       ),
@@ -751,11 +797,14 @@ class _CuentaMesaScreenState extends State<CuentaMesaScreen> {
                 ),
                 const Spacer(),
                 Text(
-                  '\$${PriceUtils.formatDiscountPrice(c.total)}',
+                  MonedaVentaService.formatearPrecio(
+                    PriceUtils.roundDiscountPrice(c.total),
+                    conSimbolo: true,
+                  ),
                   style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
-                    color: Color(0xFF4A90E2),
+                    color: VentiqHomeTheme.primary,
                   ),
                 ),
               ],
@@ -786,10 +835,13 @@ class _CuentaMesaScreenState extends State<CuentaMesaScreen> {
                     icon: const Icon(Icons.check_circle_outline),
                     label: const Text(
                       'Cerrar Nota',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF4A90E2),
+                      backgroundColor: VentiqHomeTheme.primary,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(

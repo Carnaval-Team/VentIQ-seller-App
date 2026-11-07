@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../services/admin_inventory_service.dart';
@@ -7,6 +7,7 @@ import '../../services/user_preferences_service.dart';
 import '../../utils/presentacion_cadena_local.dart';
 import '../../utils/presentation_selection.dart';
 import '../../widgets/captura_mixta_presentacion.dart';
+import '../../theme/ventiq_home_theme.dart';
 
 /// Extracción de mercancía (offline-first).
 class AdminExtractionScreen extends StatefulWidget {
@@ -57,9 +58,8 @@ class _AdminExtractionScreenState extends State<AdminExtractionScreen> {
     if (!mounted) return;
     setState(() {
       _motives = motives;
-      _motivoId = (motives.isNotEmpty)
-          ? (motives.first['id'] as num?)?.toInt()
-          : null;
+      _motivoId =
+          (motives.isNotEmpty) ? (motives.first['id'] as num?)?.toInt() : null;
       _loadingMotives = false;
     });
   }
@@ -117,9 +117,9 @@ class _AdminExtractionScreenState extends State<AdminExtractionScreen> {
     // productos sin fila es_base).
     final qty = double.tryParse(_qtyCtrl.text.replaceAll(',', '.')) ?? 0;
     if (qty <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cantidad inválida')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Cantidad inválida')));
       return;
     }
 
@@ -148,15 +148,15 @@ class _AdminExtractionScreenState extends State<AdminExtractionScreen> {
 
   Future<void> _save() async {
     if (_autorizadoCtrl.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Indica quién autoriza')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Indica quién autoriza')));
       return;
     }
     if (_motivoId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Selecciona un motivo')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Selecciona un motivo')));
       return;
     }
     if (_lines.isEmpty) {
@@ -169,16 +169,17 @@ class _AdminExtractionScreenState extends State<AdminExtractionScreen> {
     setState(() => _saving = true);
     try {
       await _service.registerExtraction(
-        productos: _lines
-            .map(
-              (l) => {
-                'id_producto': l['id_producto'],
-                'id_variante': l['id_variante'],
-                'id_presentacion': l['id_presentacion'],
-                'cantidad': l['cantidad'],
-              },
-            )
-            .toList(),
+        productos:
+            _lines
+                .map(
+                  (l) => {
+                    'id_producto': l['id_producto'],
+                    'id_variante': l['id_variante'],
+                    'id_presentacion': l['id_presentacion'],
+                    'cantidad': l['cantidad'],
+                  },
+                )
+                .toList(),
         idMotivoOperacion: _motivoId!,
         autorizadoPor: _autorizadoCtrl.text.trim(),
         observaciones: _obsCtrl.text.trim(),
@@ -192,18 +193,17 @@ class _AdminExtractionScreenState extends State<AdminExtractionScreen> {
           backgroundColor: Colors.green,
         ),
       );
-      final motivoLabel = _motives
-          .cast<Map<String, dynamic>?>()
-          .firstWhere(
-            (m) => (m?['id'] as num?)?.toInt() == _motivoId,
-            orElse: () => null,
-          );
+      final motivoLabel = _motives.cast<Map<String, dynamic>?>().firstWhere(
+        (m) => (m?['id'] as num?)?.toInt() == _motivoId,
+        orElse: () => null,
+      );
       await AdminTicketPrinterService().confirmAndPrint(
         context,
         title: 'Extracción',
         lines: AdminTicketPrinterService.extractionLines(
           autorizadoPor: _autorizadoCtrl.text.trim(),
-          motivo: motivoLabel?['denominacion']?.toString() ??
+          motivo:
+              motivoLabel?['denominacion']?.toString() ??
               motivoLabel?['nombre']?.toString() ??
               '$_motivoId',
           productos: _lines,
@@ -227,7 +227,7 @@ class _AdminExtractionScreenState extends State<AdminExtractionScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Extracción'),
-        backgroundColor: Colors.blue[700],
+        backgroundColor: VentiqHomeTheme.primary,
         foregroundColor: Colors.white,
       ),
       body: ListView(
@@ -250,19 +250,20 @@ class _AdminExtractionScreenState extends State<AdminExtractionScreen> {
                 labelText: 'Motivo',
                 border: OutlineInputBorder(),
               ),
-              items: _motives
-                  .map(
-                    (m) => DropdownMenuItem<int>(
-                      value: (m['id'] as num?)?.toInt(),
-                      child: Text(
-                        m['denominacion']?.toString() ??
-                            m['nombre']?.toString() ??
-                            '#${m['id']}',
-                      ),
-                    ),
-                  )
-                  .where((i) => i.value != null)
-                  .toList(),
+              items:
+                  _motives
+                      .map(
+                        (m) => DropdownMenuItem<int>(
+                          value: (m['id'] as num?)?.toInt(),
+                          child: Text(
+                            m['denominacion']?.toString() ??
+                                m['nombre']?.toString() ??
+                                '#${m['id']}',
+                          ),
+                        ),
+                      )
+                      .where((i) => i.value != null)
+                      .toList(),
               onChanged: (v) => setState(() => _motivoId = v),
             ),
           const SizedBox(height: 12),
@@ -282,16 +283,17 @@ class _AdminExtractionScreenState extends State<AdminExtractionScreen> {
             decoration: InputDecoration(
               labelText: 'Buscar producto',
               border: const OutlineInputBorder(),
-              suffixIcon: _searching
-                  ? const Padding(
-                      padding: EdgeInsets.all(12),
-                      child: SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    )
-                  : const Icon(Icons.search),
+              suffixIcon:
+                  _searching
+                      ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                      : const Icon(Icons.search),
             ),
             onChanged: _search,
           ),
@@ -300,14 +302,15 @@ class _AdminExtractionScreenState extends State<AdminExtractionScreen> {
               (p) => ListTile(
                 title: Text(p['denominacion']?.toString() ?? ''),
                 subtitle: Text('Stock: ${p['cantidad'] ?? 0}'),
-                onTap: () => setState(() {
-                  _selected = p;
-                  _lineasMixtas = [];
-                  _tieneCadena =
-                      PresentacionCadenaLocal.resolver(p).isNotEmpty;
-                  _searchCtrl.text = p['denominacion']?.toString() ?? '';
-                  _searchResults = [];
-                }),
+                onTap:
+                    () => setState(() {
+                      _selected = p;
+                      _lineasMixtas = [];
+                      _tieneCadena =
+                          PresentacionCadenaLocal.resolver(p).isNotEmpty;
+                      _searchCtrl.text = p['denominacion']?.toString() ?? '';
+                      _searchResults = [];
+                    }),
               ),
             ),
           if (_selected != null) ...[
@@ -331,8 +334,9 @@ class _AdminExtractionScreenState extends State<AdminExtractionScreen> {
                         labelText: 'Cantidad',
                         border: OutlineInputBorder(),
                       ),
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
                       inputFormatters: [
                         FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
                       ],
@@ -381,13 +385,14 @@ class _AdminExtractionScreenState extends State<AdminExtractionScreen> {
           const SizedBox(height: 24),
           FilledButton.icon(
             onPressed: _saving ? null : _save,
-            icon: _saving
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.outbox),
+            icon:
+                _saving
+                    ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                    : const Icon(Icons.outbox),
             label: Text(_saving ? 'Guardando...' : 'Registrar extracción'),
           ),
         ],

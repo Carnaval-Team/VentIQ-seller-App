@@ -18,6 +18,7 @@ import 'screens/trabajadores_screen.dart';
 import 'screens/licencias_screen.dart';
 import 'screens/renovaciones_screen.dart';
 import 'screens/configuracion_screen.dart';
+import 'screens/monedas_screen.dart';
 import 'screens/consignacion_screen.dart';
 import 'screens/fondo_inversion_screen.dart';
 import 'screens/carnaval_store_mapping_screen.dart';
@@ -295,6 +296,10 @@ class VentIQSuperAdminApp extends StatelessWidget {
         '/roles':
             (context) =>
                 const RouteGuard(route: '/roles', child: RolesScreen()),
+        // Catálogo global de monedas (plan multimoneda, Fase 1).
+        '/monedas':
+            (context) =>
+                const RouteGuard(route: '/monedas', child: MonedasScreen()),
         // Inventtia Flow: suscripciones de las entidades y su configuracion.
         '/flow-suscripciones':
             (context) => const RouteGuard(

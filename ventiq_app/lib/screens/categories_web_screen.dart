@@ -18,7 +18,9 @@ import '../widgets/sales_monitor_fab.dart';
 import '../services/smart_offline_manager.dart';
 import '../utils/navigation_helper.dart';
 import '../utils/price_utils.dart';
+import '../services/moneda_venta_service.dart';
 import 'dart:async';
+import '../theme/ventiq_home_theme.dart';
 
 class CategoriesWebScreen extends StatefulWidget {
   const CategoriesWebScreen({super.key});
@@ -108,7 +110,8 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen>
             builder: (context) => ChangelogDialog(changelog: changelog),
           );
 
-          await _preferencesService.saveAppVersion('1.0.0');
+          // R16: guardar la versión real del changelog, no un '1.0.0' fijo.
+          await _preferencesService.saveAppVersion(changelog.version);
         }
       }
     } catch (e) {
@@ -522,7 +525,12 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen>
                                   ),
                                   const SizedBox(width: 8),
                                   Text(
-                                    '\$${PriceUtils.formatDiscountPrice(product.precio)}',
+                                    MonedaVentaService.formatearPrecio(
+                                      PriceUtils.roundDiscountPrice(
+                                        product.precio,
+                                      ),
+                                      conSimbolo: true,
+                                    ),
                                     style: const TextStyle(
                                       fontWeight: FontWeight.bold,
                                       color: Color(0xFF4A90E2),
@@ -688,7 +696,7 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen>
     final screenSize = MediaQuery.of(context).size;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA),
+      backgroundColor: VentiqHomeTheme.surface,
       appBar: AppBar(
         title: const Text(
           'Categorías - Inventtia Caja',

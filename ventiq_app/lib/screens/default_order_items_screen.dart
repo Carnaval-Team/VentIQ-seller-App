@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/product.dart';
+import '../services/moneda_venta_service.dart';
 import '../services/product_service.dart';
 import '../services/user_preferences_service.dart';
-import '../utils/price_utils.dart';
+import '../theme/ventiq_home_theme.dart';
 
 /// Modelo local para un item por defecto configurado por el vendedor.
 class DefaultOrderItem {
@@ -13,9 +14,9 @@ class DefaultOrderItem {
   DefaultOrderItem({required this.product, required this.cantidad});
 
   Map<String, dynamic> toJson() => {
-        'product': product.toJson(),
-        'cantidad': cantidad,
-      };
+    'product': product.toJson(),
+    'cantidad': cantidad,
+  };
 
   static DefaultOrderItem fromJson(Map<String, dynamic> json) {
     return DefaultOrderItem(
@@ -224,23 +225,25 @@ class _DefaultOrderItemsScreenState extends State<DefaultOrderItemsScreen> {
   Future<void> _clearAll() async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Limpiar lista'),
-        content: const Text(
-            '¿Eliminar todos los productos por defecto?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Limpiar lista'),
+            content: const Text('¿Eliminar todos los productos por defecto?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                child: const Text(
+                  'Eliminar todo',
+                  style: TextStyle(color: Colors.white),
+                ),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Eliminar todo',
-                style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
     );
     if (confirmed == true) {
       setState(() => _items.clear());
@@ -248,9 +251,7 @@ class _DefaultOrderItemsScreenState extends State<DefaultOrderItemsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              result['message']?.toString() ?? 'Lista limpiada',
-            ),
+            content: Text(result['message']?.toString() ?? 'Lista limpiada'),
             backgroundColor: Colors.orange,
             duration: const Duration(seconds: 2),
           ),
@@ -262,9 +263,9 @@ class _DefaultOrderItemsScreenState extends State<DefaultOrderItemsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: VentiqHomeTheme.surface,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF4A90E2),
+        backgroundColor: VentiqHomeTheme.primary,
         elevation: 0,
         title: const Text(
           'Productos por Defecto',
@@ -289,56 +290,67 @@ class _DefaultOrderItemsScreenState extends State<DefaultOrderItemsScreen> {
               onPressed: _clearAll,
             ),
           IconButton(
-            icon: _saving
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white),
-                  )
-                : const Icon(Icons.save_outlined),
+            icon:
+                _saving
+                    ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                    : const Icon(Icons.save_outlined),
             tooltip: 'Guardar',
             onPressed: _saving ? null : _saveItems,
           ),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                _buildInfoBanner(),
-                _buildSearchBar(),
-                if (_showResults) _buildSearchResults(),
-                Expanded(child: _buildItemList()),
-              ],
-            ),
-      bottomNavigationBar: _items.isNotEmpty
-          ? SafeArea(
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                child: ElevatedButton.icon(
-                  onPressed: _saving ? null : _saveItems,
-                  icon: _saving
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white),
-                        )
-                      : const Icon(Icons.save),
-                  label: Text(_saving ? 'Guardando...' : 'Guardar cambios'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF4A90E2),
-                    foregroundColor: Colors.white,
-                    minimumSize: const Size.fromHeight(48),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10)),
+      body:
+          _loading
+              ? const Center(child: CircularProgressIndicator())
+              : Column(
+                children: [
+                  _buildInfoBanner(),
+                  _buildSearchBar(),
+                  if (_showResults) _buildSearchResults(),
+                  Expanded(child: _buildItemList()),
+                ],
+              ),
+      bottomNavigationBar:
+          _items.isNotEmpty
+              ? SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                  child: ElevatedButton.icon(
+                    onPressed: _saving ? null : _saveItems,
+                    icon:
+                        _saving
+                            ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                            : const Icon(Icons.save),
+                    label: Text(_saving ? 'Guardando...' : 'Guardar cambios'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: VentiqHomeTheme.primary,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size.fromHeight(48),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            )
-          : null,
+              )
+              : null,
     );
   }
 
@@ -347,14 +359,17 @@ class _DefaultOrderItemsScreenState extends State<DefaultOrderItemsScreen> {
       margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFF4A90E2).withOpacity(0.08),
+        color: VentiqHomeTheme.primary.withOpacity(0.08),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFF4A90E2).withOpacity(0.2)),
+        border: Border.all(color: VentiqHomeTheme.primary.withOpacity(0.2)),
       ),
       child: Row(
         children: [
-          const Icon(Icons.info_outline,
-              color: Color(0xFF4A90E2), size: 18),
+          const Icon(
+            Icons.info_outline,
+            color: VentiqHomeTheme.primary,
+            size: 18,
+          ),
           const SizedBox(width: 10),
           const Expanded(
             child: Text(
@@ -377,46 +392,54 @@ class _DefaultOrderItemsScreenState extends State<DefaultOrderItemsScreen> {
         controller: _searchController,
         decoration: InputDecoration(
           hintText: 'Buscar producto por nombre o SKU...',
-          hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
-          prefixIcon: _isSearching
-              ? const Padding(
-                  padding: EdgeInsets.all(12),
-                  child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child:
-                        CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                )
-              : const Icon(Icons.search, color: Color(0xFF4A90E2)),
-          suffixIcon: _searchController.text.isNotEmpty
-              ? IconButton(
-                  icon: const Icon(Icons.clear, size: 18),
-                  onPressed: () {
-                    _searchController.clear();
-                    setState(() {
-                      _showResults = false;
-                      _searchResults = [];
-                    });
-                  },
-                )
-              : null,
+          hintStyle: TextStyle(
+            color: VentiqHomeTheme.textSecondary,
+            fontSize: 14,
+          ),
+          prefixIcon:
+              _isSearching
+                  ? const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                  : const Icon(Icons.search, color: VentiqHomeTheme.primary),
+          suffixIcon:
+              _searchController.text.isNotEmpty
+                  ? IconButton(
+                    icon: const Icon(Icons.clear, size: 18),
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() {
+                        _showResults = false;
+                        _searchResults = [];
+                      });
+                    },
+                  )
+                  : null,
           filled: true,
           fillColor: Colors.white,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 12,
+          ),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide(color: Colors.grey[300]!),
+            borderSide: BorderSide(color: VentiqHomeTheme.border),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide:
-                const BorderSide(color: Color(0xFF4A90E2), width: 1.5),
+            borderSide: const BorderSide(
+              color: VentiqHomeTheme.primary,
+              width: 1.5,
+            ),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide(color: Colors.grey[300]!),
+            borderSide: BorderSide(color: VentiqHomeTheme.border),
           ),
         ),
       ),
@@ -436,7 +459,10 @@ class _DefaultOrderItemsScreenState extends State<DefaultOrderItemsScreen> {
         child: Center(
           child: Text(
             'No se encontraron productos',
-            style: TextStyle(color: Colors.grey[500], fontSize: 13),
+            style: TextStyle(
+              color: VentiqHomeTheme.textSecondary,
+              fontSize: 13,
+            ),
           ),
         ),
       );
@@ -446,7 +472,7 @@ class _DefaultOrderItemsScreenState extends State<DefaultOrderItemsScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.grey[200]!),
+        border: Border.all(color: VentiqHomeTheme.border),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.05),
@@ -459,8 +485,8 @@ class _DefaultOrderItemsScreenState extends State<DefaultOrderItemsScreen> {
       child: ListView.separated(
         shrinkWrap: true,
         itemCount: _searchResults.length,
-        separatorBuilder: (_, __) =>
-            Divider(height: 1, color: Colors.grey[100]),
+        separatorBuilder:
+            (_, __) => Divider(height: 1, color: VentiqHomeTheme.surface),
         itemBuilder: (_, i) {
           final p = _searchResults[i];
           final alreadyAdded = _items.any((item) => item.product.id == p.id);
@@ -468,30 +494,46 @@ class _DefaultOrderItemsScreenState extends State<DefaultOrderItemsScreen> {
             dense: true,
             title: Text(
               p.denominacion,
-              style: const TextStyle(
-                  fontSize: 13, fontWeight: FontWeight.w500),
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
             ),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (p.sku != null && p.sku!.isNotEmpty)
-                  Text('SKU: ${p.sku}',
-                      style: const TextStyle(
-                          fontSize: 11, color: Color(0xFF4A90E2))),
-                Text('\$${p.precio.toMoneyString(2)}',
+                  Text(
+                    'SKU: ${p.sku}',
                     style: const TextStyle(
-                        fontSize: 12, color: Color(0xFF0EA5E9))),
+                      fontSize: 11,
+                      color: VentiqHomeTheme.primary,
+                    ),
+                  ),
+                Text(
+                  MonedaVentaService.formatearPrecio(
+                    p.precio,
+                    conSimbolo: true,
+                  ),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF0EA5E9),
+                  ),
+                ),
               ],
             ),
-            trailing: alreadyAdded
-                ? const Icon(Icons.check_circle,
-                    color: Color(0xFF10B981), size: 20)
-                : IconButton(
-                    icon: const Icon(Icons.add_circle_outline,
-                        color: Color(0xFF4A90E2)),
-                    onPressed: () => _addProduct(p),
-                  ),
+            trailing:
+                alreadyAdded
+                    ? const Icon(
+                      Icons.check_circle,
+                      color: Color(0xFF10B981),
+                      size: 20,
+                    )
+                    : IconButton(
+                      icon: const Icon(
+                        Icons.add_circle_outline,
+                        color: VentiqHomeTheme.primary,
+                      ),
+                      onPressed: () => _addProduct(p),
+                    ),
             onTap: alreadyAdded ? null : () => _addProduct(p),
           );
         },
@@ -505,19 +547,23 @@ class _DefaultOrderItemsScreenState extends State<DefaultOrderItemsScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.playlist_add, size: 64, color: Colors.grey[300]),
+            Icon(Icons.playlist_add, size: 64, color: VentiqHomeTheme.border),
             const SizedBox(height: 12),
             Text(
               'Sin productos configurados',
               style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.grey[500]),
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+                color: VentiqHomeTheme.textSecondary,
+              ),
             ),
             const SizedBox(height: 6),
             Text(
               'Busca un producto arriba para agregarlo',
-              style: TextStyle(fontSize: 13, color: Colors.grey[400]),
+              style: TextStyle(
+                fontSize: 13,
+                color: VentiqHomeTheme.textSecondary,
+              ),
             ),
           ],
         ),
@@ -534,9 +580,10 @@ class _DefaultOrderItemsScreenState extends State<DefaultOrderItemsScreen> {
   Widget _buildItemTile(int index) {
     final item = _items[index];
     final cantidadController = TextEditingController(
-      text: item.cantidad == item.cantidad.roundToDouble()
-          ? item.cantidad.toInt().toString()
-          : item.cantidad.toString(),
+      text:
+          item.cantidad == item.cantidad.roundToDouble()
+              ? item.cantidad.toInt().toString()
+              : item.cantidad.toString(),
     );
 
     return Container(
@@ -545,7 +592,7 @@ class _DefaultOrderItemsScreenState extends State<DefaultOrderItemsScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.grey[200]!),
+        border: Border.all(color: VentiqHomeTheme.border),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.03),
@@ -565,21 +612,24 @@ class _DefaultOrderItemsScreenState extends State<DefaultOrderItemsScreen> {
                   style: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFF1F2937),
+                    color: VentiqHomeTheme.textPrimary,
                   ),
                 ),
                 const SizedBox(height: 2),
-                if (item.product.sku != null &&
-                    item.product.sku!.isNotEmpty)
+                if (item.product.sku != null && item.product.sku!.isNotEmpty)
                   Text(
                     'SKU: ${item.product.sku}',
                     style: const TextStyle(
-                        fontSize: 11, color: Color(0xFF4A90E2)),
+                      fontSize: 11,
+                      color: VentiqHomeTheme.primary,
+                    ),
                   ),
                 Text(
-                  '\$${item.product.precio.toMoneyString(2)} c/u',
-                  style:
-                      TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  '${MonedaVentaService.formatearPrecio(item.product.precio, conSimbolo: true)} c/u',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: VentiqHomeTheme.textSecondary,
+                  ),
                 ),
               ],
             ),
@@ -600,27 +650,32 @@ class _DefaultOrderItemsScreenState extends State<DefaultOrderItemsScreen> {
                 child: TextField(
                   controller: cantidadController,
                   keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true),
+                    decimal: true,
+                  ),
                   inputFormatters: [
-                    FilteringTextInputFormatter.allow(
-                        RegExp(r'[0-9.]')),
+                    FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
                   ],
                   textAlign: TextAlign.center,
                   style: const TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w600),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
                   decoration: InputDecoration(
                     isDense: true,
                     contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 6, vertical: 8),
+                      horizontal: 6,
+                      vertical: 8,
+                    ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(6),
-                      borderSide:
-                          BorderSide(color: Colors.grey[300]!),
+                      borderSide: BorderSide(color: VentiqHomeTheme.border),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(6),
                       borderSide: const BorderSide(
-                          color: Color(0xFF4A90E2), width: 1.5),
+                        color: VentiqHomeTheme.primary,
+                        width: 1.5,
+                      ),
                     ),
                   ),
                   onChanged: (v) {

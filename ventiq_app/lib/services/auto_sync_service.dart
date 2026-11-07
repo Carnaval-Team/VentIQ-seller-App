@@ -23,6 +23,7 @@ import 'order_service.dart';
 import 'connectivity_service.dart';
 import 'currency_service.dart';
 import '../models/order.dart';
+import '../utils/price_utils.dart';
 import '../utils/uuid_generator.dart';
 
 /// Servicio para sincronización automática periódica de datos
@@ -1359,6 +1360,14 @@ class AutoSyncService {
         (aperturaData['efectivo_inicial'] as num?)?.toDouble() ?? 0.0;
     final efectivoInicialUsd =
         (aperturaData['efectivo_inicial_usd'] as num?)?.toDouble();
+    // Desglose por divisa que pide la RPC multimoneda. En una cola anterior a
+    // la migración no existe el jsonb: `_efectivoPorDivisa` lo deriva de los
+    // dos escalares de arriba para no perder el arqueo.
+    final efectivoInicialPorMoneda = _efectivoPorDivisa(
+      aperturaData,
+      mapaKey: 'efectivo_inicial_por_moneda',
+      escalares: _escalaresEfectivoInicial,
+    );
     final usuario = await _ensureEntryHasUsuario(entry, aperturaData, localId);
     if (usuario == null) return null;
     final manejaInventario =
@@ -1378,26 +1387,37 @@ class AutoSyncService {
     var rpcMissing = false;
 
     Future<void> tryAperturaRpc({required bool withFecha}) async {
-      final params = <String, dynamic>{
-        'p_client_uuid': clientUuid,
-        'p_efectivo_inicial': efectivoInicial,
-        if (efectivoInicialUsd != null)
-          'p_efectivo_inicial_usd': efectivoInicialUsd,
-        'p_id_tpv': idTpv,
-        'p_id_vendedor': idVendedor,
-        'p_usuario': usuario,
-        'p_maneja_inventario': manejaInventario,
-        'p_productos': productos,
-        'p_observaciones': observaciones,
-      };
-      if (withFecha && fechaApertura != null) {
-        params['p_fecha_apertura'] = fechaApertura;
-      }
-      final resp = await Supabase.instance.client.rpc(
-        efectivoInicialUsd == null
+      final fecha = withFecha ? fechaApertura : null;
+      final resp = await _rpcTurnoOfflineMonedas(
+        monedasRpc: 'fn_apertura_turno_offline_monedas',
+        monedasParams: <String, dynamic>{
+          'p_client_uuid': clientUuid,
+          'p_id_tpv': idTpv,
+          'p_id_vendedor': idVendedor,
+          'p_usuario': usuario,
+          'p_maneja_inventario': manejaInventario,
+          'p_productos': productos,
+          'p_efectivo_inicial_por_moneda': efectivoInicialPorMoneda,
+          'p_observaciones': observaciones,
+          if (fecha != null) 'p_fecha_apertura': fecha,
+        },
+        // Respaldo vigente: solo conoce moneda base + USD escalares.
+        respaldoRpc: efectivoInicialUsd == null
             ? 'fn_apertura_turno_offline'
             : 'fn_apertura_turno_offline_usd',
-        params: params,
+        respaldoParams: <String, dynamic>{
+          'p_client_uuid': clientUuid,
+          'p_efectivo_inicial': efectivoInicial,
+          if (efectivoInicialUsd != null)
+            'p_efectivo_inicial_usd': efectivoInicialUsd,
+          'p_id_tpv': idTpv,
+          'p_id_vendedor': idVendedor,
+          'p_usuario': usuario,
+          'p_maneja_inventario': manejaInventario,
+          'p_productos': productos,
+          'p_observaciones': observaciones,
+          if (fecha != null) 'p_fecha_apertura': fecha,
+        },
       );
       final map = _asRpcMap(resp);
       if (_rpcStatusSuccess(map)) {
@@ -1410,6 +1430,9 @@ class AutoSyncService {
       }
     }
 
+    // `functionName` es el prefijo de la familia (apertura / `_usd` /
+    // `_monedas`): `_isRpcUnavailable` compara por subcadena, así que la
+    // detección sigue cubriendo las tres variantes al decidir el v3.
     try {
       try {
         await tryAperturaRpc(withFecha: true);
@@ -1673,6 +1696,103 @@ class AutoSyncService {
     if (map == null) return false;
     final status = map['status']?.toString().toLowerCase();
     return status == 'success' || map['success'] == true;
+  }
+
+  /// Escalares heredados que respaldan cada jsonb de efectivo por divisa.
+  ///
+  /// Los pendientes encolados antes de la migración multimoneda solo traen
+  /// estos importes; el mapa se deriva de ellos cuando falta (ver
+  /// `_efectivoPorDivisa`). La divisa es un dato de la tabla, no un `if` por
+  /// código.
+  static const Map<String, String> _escalaresEfectivoInicial = {
+    'efectivo_inicial': PriceUtils.baseCurrency,
+    'efectivo_inicial_usd': 'USD',
+  };
+  static const Map<String, String> _escalaresEfectivoReal = {
+    'efectivo_final': PriceUtils.baseCurrency,
+    'efectivo_real_usd': 'USD',
+  };
+
+  /// Único punto que normaliza el efectivo por divisa de un turno.
+  ///
+  /// Devuelve el `Map<String, double>` que hablan las RPC `*_monedas` —el
+  /// jsonb `{"CUP":1000,"USD":20}`— con códigos en mayúsculas y sin
+  /// entradas vacías; es lo que el servidor replica en
+  /// `app_dat_caja_turno_moneda`.
+  ///
+  /// Los pendientes nuevos ya guardan [mapaKey]. Los de antes de la migración
+  /// multimoneda no: solo tienen los escalares de [escalares]
+  /// (`efectivo_inicial`/`efectivo_inicial_usd` en la apertura,
+  /// `efectivo_final`/`efectivo_real_usd` en el cierre). Se derivan **a
+  /// propósito** para no perder el arqueo de una cola antigua: la RPC
+  /// multimoneda exige un objeto por divisa y, sin esta derivación, un cierre
+  /// antiguo viajaría como `{}` y el servidor lo cerraría sin sembrar ninguna
+  /// divisa (efectivo real 0 → diferencia falsa en el arqueo).
+  ///
+  /// Un 0 solo se descarta cuando viene de los escalares heredados; en el
+  /// mapa explícito es un conteo real y se conserva (ver los comentarios de
+  /// cada rama).
+  Map<String, double> _efectivoPorDivisa(
+    Map<String, dynamic> data, {
+    required String mapaKey,
+    required Map<String, String> escalares,
+  }) {
+    final porDivisa = <String, double>{};
+
+    final mapa = data[mapaKey];
+    if (mapa is Map) {
+      // Mapa explícito: cada cero es un conteo del cajero («conté 0 de esa
+      // divisa»), no un hueco, así que se conserva.
+      mapa.forEach((codigo, monto) {
+        final divisa = codigo.toString().trim().toUpperCase();
+        if (divisa.isEmpty || monto is! num) return;
+        porDivisa[divisa] = (porDivisa[divisa] ?? 0) + monto.toDouble();
+      });
+    }
+
+    if (porDivisa.isEmpty) {
+      // Cola antigua sin jsonb: el desglose vive en dos columnas escalares.
+      // Ahí un 0 no se distingue de un placeholder (las pantallas antiguas
+      // escribían `?? 0` aunque la divisa ni existiera), así que se descarta
+      // para no inventar un arqueo que nunca se contó.
+      escalares.forEach((campo, divisa) {
+        final monto = data[campo];
+        if (monto is! num) return;
+        porDivisa[divisa] = (porDivisa[divisa] ?? 0) + monto.toDouble();
+      });
+      porDivisa.removeWhere((_, monto) => monto == 0);
+    }
+
+    return porDivisa;
+  }
+
+  /// Llama a la RPC multimoneda del turno offline y, si el proyecto todavía
+  /// no la tiene aplicada, cae a la variante vigente.
+  ///
+  /// Apertura y cierre comparten este único punto: la detección de «función
+  /// inexistente» vive en `_isRpcUnavailable` y no se duplica aquí. El
+  /// respaldo legacy solo entiende moneda base + USD, así que recibe su
+  /// propio payload escalar; recortar el resto del desglose es preferible a
+  /// bloquear el turno en un entorno sin la migración.
+  Future<dynamic> _rpcTurnoOfflineMonedas({
+    required String monedasRpc,
+    required Map<String, dynamic> monedasParams,
+    required String respaldoRpc,
+    required Map<String, dynamic> respaldoParams,
+  }) async {
+    try {
+      return await Supabase.instance.client.rpc(
+        monedasRpc,
+        params: monedasParams,
+      );
+    } catch (e) {
+      if (!_isRpcUnavailable(e, functionName: monedasRpc)) rethrow;
+      print(
+        '[TURNO_SYNC] ⚠️ $monedasRpc no disponible; respaldo $respaldoRpc '
+        '(desglose recortado a moneda base/USD)',
+      );
+      return Supabase.instance.client.rpc(respaldoRpc, params: respaldoParams);
+    }
   }
 
   int? _asPositiveInt(dynamic raw) {
@@ -2154,6 +2274,15 @@ class AutoSyncService {
         (cierreData['efectivo_final'] as num?)?.toDouble() ?? 0.0;
     final efectivoFinalUsd =
         (cierreData['efectivo_real_usd'] as num?)?.toDouble();
+    // Desglose por divisa que pide la RPC multimoneda. Las colas antiguas no
+    // traen el jsonb: `_efectivoPorDivisa` lo deriva de
+    // `efectivo_final`/`efectivo_real_usd` para que el cierre no se envíe con
+    // el mapa vacío (el servidor cerraría el turno sin arqueo por divisa).
+    final efectivoRealPorMoneda = _efectivoPorDivisa(
+      cierreData,
+      mapaKey: 'efectivo_real_por_moneda',
+      escalares: _escalaresEfectivoReal,
+    );
     final observaciones = cierreData['observaciones'] as String?;
     var productosRaw = cierreData['productos'] as List<dynamic>? ?? [];
     var productos =
@@ -2166,6 +2295,7 @@ class AutoSyncService {
       '(creado_por=$resolvedRealUsuario apertura_u=$aperturaUsuario '
       'entry_u=${latest['usuario']} cierre_u=${cierreData['usuario']}) '
       'efectivo_final=$efectivoFinal '
+      'efectivo_por_moneda=$efectivoRealPorMoneda '
       'productos_raw=${productos.length} '
       'server_id=$serverId '
       'uuid_cierre=${latest['client_uuid_cierre'] ?? cierreData['client_uuid']}',
@@ -2241,14 +2371,22 @@ class AutoSyncService {
     String? cierreMessage;
     Map<String, dynamic>? cierreRespMap;
 
-    bool isMissingRpc(Object e) {
-      final msg = e.toString();
-      return msg.contains('PGRST202') ||
-          msg.contains('Could not find the function');
-    }
-
     Future<void> tryCierreRpc({required bool withFecha}) async {
-      final params = <String, dynamic>{
+      final fecha =
+          withFecha
+              ? (cierreData['fecha_cierre'] ?? latest['fecha_cierre'])
+              : null;
+      final paramsMonedas = <String, dynamic>{
+        'p_client_uuid': clientUuid,
+        'p_id_tpv': idTpv,
+        'p_usuario': usuario,
+        'p_productos': productos,
+        'p_efectivo_real_por_moneda': efectivoRealPorMoneda,
+        'p_observaciones': observaciones,
+        if (fecha != null) 'p_fecha_cierre': fecha,
+      };
+      // Respaldo vigente: solo conoce moneda base + USD escalares.
+      final paramsLegacy = <String, dynamic>{
         'p_client_uuid': clientUuid,
         'p_id_tpv': idTpv,
         'p_efectivo_real': efectivoFinal,
@@ -2257,20 +2395,23 @@ class AutoSyncService {
         'p_usuario': usuario,
         'p_productos': productos,
         'p_observaciones': observaciones,
+        if (fecha != null) 'p_fecha_cierre': fecha,
       };
-      if (withFecha) {
-        final fecha = cierreData['fecha_cierre'] ?? latest['fecha_cierre'];
-        if (fecha != null) params['p_fecha_cierre'] = fecha;
-      }
+      final paramsLog = {
+        ...paramsMonedas,
+        'p_productos': '(${productos.length} items)',
+      };
       print(
-        '[TURNO_SYNC] RPC fn_cerrar_turno_offline '
-        'withFecha=$withFecha params=${{...params, 'p_productos': '(${productos.length} items)'}}',
+        '[TURNO_SYNC] RPC fn_cerrar_turno_offline_monedas '
+        'withFecha=$withFecha params=$paramsLog',
       );
-      final resp = await Supabase.instance.client.rpc(
-        efectivoFinalUsd == null
+      final resp = await _rpcTurnoOfflineMonedas(
+        monedasRpc: 'fn_cerrar_turno_offline_monedas',
+        monedasParams: paramsMonedas,
+        respaldoRpc: efectivoFinalUsd == null
             ? 'fn_cerrar_turno_offline'
             : 'fn_cerrar_turno_offline_usd',
-        params: params,
+        respaldoParams: paramsLegacy,
       );
       cierreRespMap = _asRpcMap(resp);
       cerrado = _rpcStatusSuccess(cierreRespMap);
@@ -2304,7 +2445,12 @@ class AutoSyncService {
       try {
         await tryCierreRpc(withFecha: false);
       } catch (e) {
-        if (isMissingRpc(e)) {
+        // Prefijo de la familia (`fn_cerrar_turno_offline` / `_usd` /
+        // `_monedas`): `_isRpcUnavailable` compara por subcadena.
+        if (_isRpcUnavailable(
+          e,
+          functionName: 'fn_cerrar_turno_offline',
+        )) {
           print(
             '[TURNO_SYNC] ⚠️ firma sin fecha no encontrada; reintento con fecha',
           );
@@ -2345,7 +2491,10 @@ class AutoSyncService {
         }
       }
     } catch (e) {
-      if (!isMissingRpc(e)) {
+      if (!_isRpcUnavailable(
+        e,
+        functionName: 'fn_cerrar_turno_offline',
+      )) {
         print('[TURNO_SYNC] ❌ _syncCierre falló: $e');
         cerrado = await tryFallbackCierre();
       } else {
@@ -2915,6 +3064,11 @@ class AutoSyncService {
                   (egreso) => {
                     'id_egreso': egreso.idEgreso,
                     'monto_entrega': egreso.montoEntrega,
+                    // La divisa viaja con el importe porque `monto_entrega` es
+                    // su importe NATIVO: sin ella, al bajar los egresos una
+                    // fila de 20 USD se cachearía como 20 CUP y la UI la
+                    // mostraría y sumaría contra la moneda base.
+                    'moneda': egreso.moneda,
                     'motivo_entrega': egreso.motivoEntrega,
                     'nombre_autoriza': egreso.nombreAutoriza,
                     'nombre_recibe': egreso.nombreRecibe,
@@ -3038,6 +3192,12 @@ class AutoSyncService {
 
         final contabilizarFondoCaja =
             egresoData['contabilizar_fondo_caja'] == true;
+        // Divisa NATIVA del importe. La cola de la Fase 4 ya la escribe; las
+        // anteriores no la traen y se registraron en la moneda base, así que el
+        // normalizador compartido las devuelve a ella en vez de inventar un
+        // código. Sin esto, un egreso de 20 USD se descontaba del cajón como
+        // 20 CUP.
+        final moneda = PriceUtils.paymentCurrency(egresoData);
         Map<String, dynamic>? result;
         var rpcMissing = false;
         try {
@@ -3045,22 +3205,29 @@ class AutoSyncService {
           if (contabilizarFondoCaja && storeId == null) {
             throw Exception('Sin id de tienda para Fondo de Caja');
           }
-          final resp = await Supabase.instance.client.rpc(
-            contabilizarFondoCaja
-                ? 'fn_registrar_egreso_fondo_caja'
-                : 'fn_registrar_egreso_offline',
-            params: {
-              'p_client_uuid': clientUuid,
-              if (contabilizarFondoCaja) 'p_idtienda': storeId,
-              'p_id_turno': idTurno,
-              'p_monto_entrega': montoEntrega,
-              'p_nombre_recibe': nombreRecibe,
-              'p_nombre_autoriza': nombreAutoriza,
-              'p_motivo_entrega': motivoEntrega,
-              'p_id_medio_pago': idMedioPago,
-              'p_uuid_usuario': userId,
-            },
-          );
+          // Un solo mapa para las dos firmas del egreso offline —la v2 es la
+          // vigente + `p_moneda`—, de modo que la caída de una a otra no pueda
+          // desincronizar los argumentos.
+          final params = <String, dynamic>{
+            'p_client_uuid': clientUuid,
+            if (contabilizarFondoCaja) 'p_idtienda': storeId,
+            'p_id_turno': idTurno,
+            'p_monto_entrega': montoEntrega,
+            'p_nombre_recibe': nombreRecibe,
+            'p_nombre_autoriza': nombreAutoriza,
+            'p_motivo_entrega': motivoEntrega,
+            'p_id_medio_pago': idMedioPago,
+            'p_uuid_usuario': userId,
+          };
+          // El Fondo de Caja tiene su propia RPC —con `p_idtienda`— y no
+          // participa del contrato de divisa del egreso normal.
+          final resp =
+              contabilizarFondoCaja
+                  ? await Supabase.instance.client.rpc(
+                    'fn_registrar_egreso_fondo_caja',
+                    params: params,
+                  )
+                  : await _rpcEgresoOfflineConDivisa(params, moneda);
           if (resp is Map) {
             result = Map<String, dynamic>.from(resp);
           }
@@ -3082,6 +3249,8 @@ class AutoSyncService {
         }
 
         if (result == null && rpcMissing) {
+          // Último recurso: el camino online, que también sabe de divisas
+          // (`registrar_egreso_parcial_v3` con su propia caída a la v2).
           result = await TurnoService.registrarEgresoParcial(
             idTurno: idTurno,
             montoEntrega: montoEntrega,
@@ -3089,6 +3258,7 @@ class AutoSyncService {
             nombreAutoriza: nombreAutoriza,
             nombreRecibe: nombreRecibe,
             idMedioPago: idMedioPago,
+            moneda: moneda,
           );
         }
 
@@ -3118,6 +3288,40 @@ class AutoSyncService {
     }
 
     return syncedCount;
+  }
+
+  /// Registra el egreso offline en su divisa y cae a la firma vigente.
+  ///
+  /// `fn_registrar_egreso_offline_v2` **envuelve** a `fn_registrar_egreso_offline`
+  /// y solo añade `p_moneda`: la vigente hace la idempotencia por `client_uuid`
+  /// y las validaciones, y la v2 fija la divisa en la fila que acaba de crear.
+  /// Por eso el respaldo funciona con el mismo mapa: si el proyecto todavía no
+  /// tiene la migración aplicada, el egreso se registra igual y la base le pone
+  /// su divisa por defecto —se pierde el desglose, no la operación—. La
+  /// detección de «función inexistente» vive solo en [_isRpcUnavailable] y no
+  /// se duplica aquí.
+  Future<dynamic> _rpcEgresoOfflineConDivisa(
+    Map<String, dynamic> params,
+    String moneda,
+  ) async {
+    const fn = 'fn_registrar_egreso_offline_v2';
+    try {
+      return await Supabase.instance.client.rpc(
+        fn,
+        params: {...params, 'p_moneda': moneda},
+      );
+    } catch (e) {
+      if (!_isRpcUnavailable(e, functionName: fn)) rethrow;
+      print(
+        '    ⚠️ $fn no disponible ($e). '
+        'Fallback a fn_registrar_egreso_offline '
+        '(el egreso queda en la divisa por defecto de la base).',
+      );
+      return Supabase.instance.client.rpc(
+        'fn_registrar_egreso_offline',
+        params: params,
+      );
+    }
   }
 
   /// Ventana [apertura, cierre] del turno actual (offline / pending / servidor).
@@ -3704,6 +3908,7 @@ class AutoSyncService {
       int? tipoPago,
       String? moneda,
       num? tasaUsd,
+      num? tasaCambio,
       String? denominacion,
     }) {
       if (rawId == null || rawId == pm.PaymentMethod.pagoPendienteId) return;
@@ -3715,8 +3920,19 @@ class AutoSyncService {
       final id = rawId;
       final tipo = tipoPago ?? (id == 1 ? 1 : 2);
 
-      final normalizedCurrency = moneda?.toUpperCase() == 'USD' ? 'USD' : 'CUP';
-      final rate = normalizedCurrency == 'USD' ? tasaUsd?.toDouble() : null;
+      // Moneda REAL de la línea. Antes se colapsaba a CUP/USD, así que una
+      // línea en EUR se replicaba como CUP al sincronizar.
+      final rawMoneda = (moneda ?? '').toString().trim().toUpperCase();
+      final normalizedCurrency = RegExp(r'^[A-Z]{3}$').hasMatch(rawMoneda)
+          ? rawMoneda
+          : 'CUP';
+
+      // Tasa de la divisa a CUP. `tasa_cambio` es la genérica; `tasa_usd` la
+      // histórica. CUP siempre vale 1.
+      final rate = normalizedCurrency == 'CUP'
+          ? 1.0
+          : (tasaCambio?.toDouble() ?? tasaUsd?.toDouble() ?? 0.0);
+
       final key = '$id|$normalizedCurrency';
       final existing = aggregated[key];
       if (existing == null) {
@@ -3725,19 +3941,17 @@ class AutoSyncService {
           'monto': monto,
           'tipo_pago': tipo,
           'moneda': normalizedCurrency,
-          'tasa_usd': rate,
-          'monto_cup_equivalente':
-              normalizedCurrency == 'USD' && rate != null
-                  ? monto * rate
-                  : monto,
+          'tasa_cambio': rate > 0 ? rate : null,
+          'tasa_usd': normalizedCurrency == 'USD' && rate > 0 ? rate : null,
+          'monto_cup_equivalente': rate > 0 ? monto * rate : monto,
           if (denominacion != null) 'denominacion': denominacion,
         };
       } else {
         existing['monto'] = (existing['monto'] as double) + monto;
-        existing['monto_cup_equivalente'] =
-            normalizedCurrency == 'USD' && rate != null
-                ? (existing['monto'] as double) * rate
-                : existing['monto'];
+        final rateExistente = (existing['tasa_cambio'] as num?)?.toDouble() ?? 0;
+        existing['monto_cup_equivalente'] = rateExistente > 0
+            ? (existing['monto'] as double) * rateExistente
+            : existing['monto'];
         if (tipo == 2) existing['tipo_pago'] = 2;
       }
     }
@@ -3752,6 +3966,7 @@ class AutoSyncService {
           p['monto'] as num?,
           tipoPago: _asInt(p['tipo_pago']),
           moneda: p['moneda']?.toString(),
+          tasaCambio: p['tasa_cambio'] as num?,
           tasaUsd: p['tasa_usd'] as num?,
           denominacion: p['denominacion']?.toString(),
         );
@@ -3851,8 +4066,12 @@ class AutoSyncService {
         final p = Map<String, dynamic>.from(raw);
         final id = (p['id_medio_pago'] as num?)?.toInt();
         if (id == null) continue;
-        final currency =
-            p['moneda']?.toString().toUpperCase() == 'USD' ? 'USD' : 'CUP';
+        // Código REAL de la moneda: colapsar a CUP/USD hacía que una línea en
+        // EUR se agrupara como CUP y nunca coincidiera con lo esperado.
+        final rawMoneda = p['moneda']?.toString().trim().toUpperCase();
+        final currency = RegExp(r'^[A-Z]{3}$').hasMatch(rawMoneda ?? '')
+            ? rawMoneda!
+            : 'CUP';
         final key = '$id|$currency';
         existing[key] =
             (existing[key] ?? 0.0) + ((p['monto'] as num?)?.toDouble() ?? 0.0);
@@ -3863,8 +4082,12 @@ class AutoSyncService {
         final p = Map<String, dynamic>.from(raw);
         final id = (p['id_medio_pago'] as num?)?.toInt();
         if (id == null) continue;
-        final currency =
-            p['moneda']?.toString().toUpperCase() == 'USD' ? 'USD' : 'CUP';
+        // Código REAL de la moneda: colapsar a CUP/USD hacía que una línea en
+        // EUR se agrupara como CUP y nunca coincidiera con lo esperado.
+        final rawMoneda = p['moneda']?.toString().trim().toUpperCase();
+        final currency = RegExp(r'^[A-Z]{3}$').hasMatch(rawMoneda ?? '')
+            ? rawMoneda!
+            : 'CUP';
         final key = '$id|$currency';
         expected[key] =
             (expected[key] ?? 0.0) + ((p['monto'] as num?)?.toDouble() ?? 0.0);
@@ -3980,13 +4203,26 @@ class AutoSyncService {
     await _persistPendingOrderSyncKeys(orderData);
 
     final pagos = _pagosParaSincronizar(orderData);
-    final usdSinTasa = pagos.any(
-      (pago) => pago['moneda'] == 'USD' &&
-          ((pago['tasa_usd'] as num?)?.toDouble() ?? 0) <= 0,
-    );
-    if (usdSinTasa) {
+    // Cualquier divisa distinta de CUP necesita tasa; sin ella el replay
+    // guardaría un equivalente incorrecto. Antes solo se miraba USD.
+    final divisaSinTasa = pagos
+        .where((pago) {
+          final moneda = pago['moneda']?.toString().toUpperCase() ?? 'CUP';
+          if (moneda == 'CUP') return false;
+          final tasa =
+              (pago['tasa_cambio'] as num?)?.toDouble() ??
+              (pago['tasa_usd'] as num?)?.toDouble() ??
+              0;
+          return tasa <= 0;
+        })
+        .toList();
+    if (divisaSinTasa.isNotEmpty) {
+      final monedas = divisaSinTasa
+          .map((p) => p['moneda'].toString())
+          .toSet()
+          .join(', ');
       throw Exception(
-        'La venta offline ${orderData['id']} contiene pagos USD sin tasa válida',
+        'La venta offline ${orderData['id']} contiene pagos en $monedas sin tasa válida',
       );
     }
     final requierePago = pagos.isNotEmpty || _ventaRequierePagoVenta(orderData);
@@ -4335,6 +4571,10 @@ class AutoSyncService {
         'monto': paymentData['monto'],
         'tipo_pago': tipo,
         'moneda': paymentData['moneda'] ?? 'CUP',
+        // `tasa_cambio` es la genérica y debe reenviarse o la RPC no puede
+        // consolidar una divisa distinta de USD (su `tasa_usd` es NULL).
+        'tasa_cambio':
+            paymentData['tasa_cambio'] ?? paymentData['tasa_usd'],
         'tasa_usd': paymentData['tasa_usd'],
         'monto_cup_equivalente': paymentData['monto_cup_equivalente'],
         if (paymentData['denominacion'] != null)
@@ -4366,12 +4606,41 @@ class AutoSyncService {
     await _persistPendingOrderSyncKeys(orderData);
 
     bool ok = false;
+
+    // Si el desglose trae divisas distintas de CUP/USD, SOLO sirve `_v3`:
+    // las RPC antiguas las rechazan (Fase 3.1c). No se intenta el fallback
+    // para dar un error claro en vez de uno genérico.
+    final monedasNuevas = pagos
+        .map((p) => p['moneda']?.toString().toUpperCase() ?? 'CUP')
+        .where((m) => m != 'CUP' && m != 'USD')
+        .toSet();
+
     try {
-      // Preferir v2: reescribe pagos no liquidados (repara desgloses parciales).
-      final response = await Supabase.instance.client.rpc(
-        'fn_registrar_pago_venta_v2',
-        params: {'p_id_operacion_venta': operationId, 'p_pagos': pagos},
-      );
+      // Preferir v3 (genérica). Si no está desplegada, v2 (idempotente).
+      dynamic response;
+      try {
+        response = await Supabase.instance.client.rpc(
+          'fn_registrar_pago_venta_v3',
+          params: {'p_id_operacion_venta': operationId, 'p_pagos': pagos},
+        );
+      } catch (e3) {
+        if (!_isRpcUnavailable(
+          e3,
+          functionName: 'fn_registrar_pago_venta_v3',
+        )) {
+          rethrow;
+        }
+        if (monedasNuevas.isNotEmpty) {
+          throw Exception(
+            'El servidor no soporta cobros en ${monedasNuevas.join(', ')}: '
+            'falta desplegar fn_registrar_pago_venta_v3',
+          );
+        }
+        response = await Supabase.instance.client.rpc(
+          'fn_registrar_pago_venta_v2',
+          params: {'p_id_operacion_venta': operationId, 'p_pagos': pagos},
+        );
+      }
       ok = response == true;
     } catch (e) {
       if (!_isRpcUnavailable(e, functionName: 'fn_registrar_pago_venta_v2')) {

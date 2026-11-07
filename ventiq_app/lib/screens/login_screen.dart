@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../services/auth_service.dart';
+import '../theme/ventiq_home_theme.dart';
 import '../services/user_preferences_service.dart';
 import '../services/seller_service.dart';
 import '../services/promotion_service.dart';
@@ -204,8 +205,9 @@ class _LoginScreenState extends State<LoginScreen> {
           // Verificar y cachear si es superadmin (para herramientas ocultas).
           // Se cachea para que la entrada del drawer funcione también offline.
           try {
-            final esSuperAdmin =
-                await _sellerService.isSuperAdmin(response.user!.id);
+            final esSuperAdmin = await _sellerService.isSuperAdmin(
+              response.user!.id,
+            );
             await _userPreferencesService.setIsSuperAdmin(esSuperAdmin);
             print('  - Superadmin: $esSuperAdmin');
           } catch (e) {
@@ -226,7 +228,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
             final sellerData = sellerProfile['seller'] as Map<String, dynamic>;
             final workerData = sellerProfile['worker'] as Map<String, dynamic>;
-            final entryRole = sellerProfile['entryRole']?.toString() ?? 'vendedor';
+            final entryRole =
+                sellerProfile['entryRole']?.toString() ?? 'vendedor';
 
             // Extraer IDs por separado
             final idTpv = (sellerProfile['idTpv'] as num).toInt();
@@ -281,7 +284,9 @@ class _LoginScreenState extends State<LoginScreen> {
             // entra al home de siempre.
             final rolCocina = await ComandaService().rolDeCocina();
             await _userPreferencesService.setCocinaRole(rolCocina);
-            print('  - Rol de cocina: ${rolCocina.isEmpty ? "(ninguno)" : rolCocina}');
+            print(
+              '  - Rol de cocina: ${rolCocina.isEmpty ? "(ninguno)" : rolCocina}',
+            );
 
             // Cachear rol admin (gerente/supervisor) para menú offline.
             try {
@@ -551,7 +556,9 @@ class _LoginScreenState extends State<LoginScreen> {
         if (storeId is int) {
           await _userPreferencesService.ensureOfflineStoreScope(storeId);
         } else if (storeId is num) {
-          await _userPreferencesService.ensureOfflineStoreScope(storeId.toInt());
+          await _userPreferencesService.ensureOfflineStoreScope(
+            storeId.toInt(),
+          );
         }
       }
 
@@ -670,11 +677,12 @@ class _LoginScreenState extends State<LoginScreen> {
   /// Cachear nombre/logo de tienda para impresión offline.
   Future<void> _cacheStorePrintInfo(int storeId) async {
     try {
-      final storeData = await Supabase.instance.client
-          .from('app_dat_tienda')
-          .select('denominacion, imagen_url')
-          .eq('id', storeId)
-          .maybeSingle();
+      final storeData =
+          await Supabase.instance.client
+              .from('app_dat_tienda')
+              .select('denominacion, imagen_url')
+              .eq('id', storeId)
+              .maybeSingle();
 
       if (storeData == null) return;
 
@@ -689,9 +697,10 @@ class _LoginScreenState extends State<LoginScreen> {
           const renderPrefix =
               'https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/render/image/public/images_back/';
 
-          final renderUrl = storeLogoUrl.contains(objectPrefix)
-              ? '${storeLogoUrl.replaceFirst(objectPrefix, renderPrefix)}?width=32&height=32'
-              : storeLogoUrl;
+          final renderUrl =
+              storeLogoUrl.contains(objectPrefix)
+                  ? '${storeLogoUrl.replaceFirst(objectPrefix, renderPrefix)}?width=32&height=32'
+                  : storeLogoUrl;
 
           final response = await http.get(Uri.parse(renderUrl));
           if (response.statusCode == 200) {
@@ -882,7 +891,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       const SizedBox(height: 16),
                       Text(
                         'Por favor, renueva tu suscripción para continuar disfrutando de todos los servicios sin interrupciones.',
-                        style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: VentiqHomeTheme.textSecondary,
+                        ),
                       ),
                     ],
                   ),
@@ -899,7 +911,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       Navigator.of(context).pushNamed('/subscription-detail');
                     },
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF4A90E2),
+                      backgroundColor: VentiqHomeTheme.primary,
                       foregroundColor: Colors.white,
                     ),
                     child: const Text('Ver Suscripción'),
@@ -936,7 +948,9 @@ class _LoginScreenState extends State<LoginScreen> {
       body: Stack(
         children: [
           // Solid blue background
-          Container(decoration: const BoxDecoration(color: Color(0xFF4A90E2))),
+          Container(
+            decoration: const BoxDecoration(color: VentiqHomeTheme.primary),
+          ),
           // Top section with logo
           Positioned(
             top: 0,
@@ -944,7 +958,7 @@ class _LoginScreenState extends State<LoginScreen> {
             right: 0,
             height: 320,
             child: Container(
-              color: const Color(0xFF4A90E2),
+              color: VentiqHomeTheme.primary,
               child: Center(
                 child: ColorFiltered(
                   colorFilter: const ColorFilter.mode(
@@ -999,7 +1013,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ),
                                   prefixIcon: Icon(
                                     Icons.email_outlined,
-                                    color: Color(0xFF4A90E2),
+                                    color: VentiqHomeTheme.primary,
                                   ),
                                   border: InputBorder.none,
                                   contentPadding: EdgeInsets.symmetric(
@@ -1038,7 +1052,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ),
                                   prefixIcon: const Icon(
                                     Icons.lock_outline,
-                                    color: Color(0xFF4A90E2),
+                                    color: VentiqHomeTheme.primary,
                                   ),
                                   suffixIcon: IconButton(
                                     onPressed:
@@ -1091,7 +1105,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                       _rememberMe = value ?? false;
                                     });
                                   },
-                                  activeColor: const Color(0xFF4A90E2),
+                                  activeColor: VentiqHomeTheme.primary,
                                 ),
                                 const Text(
                                   'Recordarme',
@@ -1142,7 +1156,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               height: 50,
                               child: ElevatedButton(
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF4A90E2),
+                                  backgroundColor: VentiqHomeTheme.primary,
                                   foregroundColor: Colors.white,
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(25),
@@ -1181,7 +1195,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               child: const Text(
                                 'FORGOT PASSWORD ?',
                                 style: TextStyle(
-                                  color: Color(0xFF4A90E2),
+                                  color: VentiqHomeTheme.primary,
                                   fontSize: 12,
                                   fontWeight: FontWeight.w600,
                                   letterSpacing: 0.5,

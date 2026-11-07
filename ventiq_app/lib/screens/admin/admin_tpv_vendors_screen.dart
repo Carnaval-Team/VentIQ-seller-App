@@ -1,6 +1,7 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import '../../services/admin_inventory_service.dart';
+import '../../theme/ventiq_home_theme.dart';
 
 /// Gestión lite de TPVs y vendedores (offline-first).
 class AdminTpvVendorsScreen extends StatefulWidget {
@@ -45,14 +46,15 @@ class _AdminTpvVendorsScreenState extends State<AdminTpvVendorsScreen>
     final tpvs = await _service.listCachedTpvs();
     final vendors = await _service.listCachedVendors(query: q);
     final warehouses = await _service.listCachedWarehouses();
-    final filteredTpvs = q.trim().isEmpty
-        ? tpvs
-        : tpvs
-            .where(
-              (t) => (t['denominacion']?.toString().toLowerCase() ?? '')
-                  .contains(q.trim().toLowerCase()),
-            )
-            .toList();
+    final filteredTpvs =
+        q.trim().isEmpty
+            ? tpvs
+            : tpvs
+                .where(
+                  (t) => (t['denominacion']?.toString().toLowerCase() ?? '')
+                      .contains(q.trim().toLowerCase()),
+                )
+                .toList();
     if (!mounted) return;
     setState(() {
       _tpvs = filteredTpvs;
@@ -100,65 +102,70 @@ class _AdminTpvVendorsScreenState extends State<AdminTpvVendorsScreen>
 
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) => AlertDialog(
-          title: const Text('Nuevo TPV'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Denominación',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<int>(
-                value: almacenId,
-                isExpanded: true,
-                decoration: const InputDecoration(
-                  labelText: 'Almacén',
-                  border: OutlineInputBorder(),
-                ),
-                items: _warehouses
-                    .map(
-                      (w) => DropdownMenuItem<int>(
-                        value: (w['id'] as num?)?.toInt(),
-                        child: Text(
-                          w['denominacion']?.toString() ?? '#${w['id']}',
-                          overflow: TextOverflow.ellipsis,
+      builder:
+          (ctx) => StatefulBuilder(
+            builder:
+                (ctx, setLocal) => AlertDialog(
+                  title: const Text('Nuevo TPV'),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextField(
+                        controller: nameCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Denominación',
+                          border: OutlineInputBorder(),
                         ),
                       ),
-                    )
-                    .where((i) => i.value != null)
-                    .toList(),
-                onChanged: (v) => setLocal(() => almacenId = v),
-              ),
-            ],
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<int>(
+                        value: almacenId,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Almacén',
+                          border: OutlineInputBorder(),
+                        ),
+                        items:
+                            _warehouses
+                                .map(
+                                  (w) => DropdownMenuItem<int>(
+                                    value: (w['id'] as num?)?.toInt(),
+                                    child: Text(
+                                      w['denominacion']?.toString() ??
+                                          '#${w['id']}',
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                )
+                                .where((i) => i.value != null)
+                                .toList(),
+                        onChanged: (v) => setLocal(() => almacenId = v),
+                      ),
+                    ],
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text('Cancelar'),
+                    ),
+                    FilledButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: const Text('Crear'),
+                    ),
+                  ],
+                ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Crear'),
-            ),
-          ],
-        ),
-      ),
     );
     if (ok != true || almacenId == null) return;
 
-    final almacenNombre = _warehouses
-        .cast<Map<String, dynamic>?>()
-        .firstWhere(
-          (w) => (w?['id'] as num?)?.toInt() == almacenId,
-          orElse: () => null,
-        )?['denominacion']
-        ?.toString();
+    final almacenNombre =
+        _warehouses
+            .cast<Map<String, dynamic>?>()
+            .firstWhere(
+              (w) => (w?['id'] as num?)?.toInt() == almacenId,
+              orElse: () => null,
+            )?['denominacion']
+            ?.toString();
 
     try {
       await _service.createTpvOffline(
@@ -190,33 +197,31 @@ class _AdminTpvVendorsScreenState extends State<AdminTpvVendorsScreen>
     );
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Editar TPV'),
-        content: TextField(
-          controller: nameCtrl,
-          decoration: const InputDecoration(
-            labelText: 'Denominación',
-            border: OutlineInputBorder(),
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Editar TPV'),
+            content: TextField(
+              controller: nameCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Denominación',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Guardar'),
+              ),
+            ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Guardar'),
-          ),
-        ],
-      ),
     );
     if (ok != true) return;
     try {
-      await _service.updateTpvOffline(
-        idTpv: id,
-        denominacion: nameCtrl.text,
-      );
+      await _service.updateTpvOffline(idTpv: id, denominacion: nameCtrl.text);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -244,59 +249,65 @@ class _AdminTpvVendorsScreenState extends State<AdminTpvVendorsScreen>
       );
       return;
     }
-    int? tpvId = (vendor['id_tpv'] as num?)?.toInt() ??
+    int? tpvId =
+        (vendor['id_tpv'] as num?)?.toInt() ??
         (realTpvs.first['id'] as num?)?.toInt();
 
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) => AlertDialog(
-          title: Text(
-            'Asignar TPV · ${vendor['nombres'] ?? ''} ${vendor['apellidos'] ?? ''}',
-          ),
-          content: DropdownButtonFormField<int>(
-            value: tpvId,
-            isExpanded: true,
-            decoration: const InputDecoration(
-              labelText: 'TPV',
-              border: OutlineInputBorder(),
-            ),
-            items: realTpvs
-                .map(
-                  (t) => DropdownMenuItem<int>(
-                    value: (t['id'] as num?)?.toInt(),
-                    child: Text(
-                      t['denominacion']?.toString() ?? '#${t['id']}',
-                      overflow: TextOverflow.ellipsis,
-                    ),
+      builder:
+          (ctx) => StatefulBuilder(
+            builder:
+                (ctx, setLocal) => AlertDialog(
+                  title: Text(
+                    'Asignar TPV · ${vendor['nombres'] ?? ''} ${vendor['apellidos'] ?? ''}',
                   ),
-                )
-                .where((i) => i.value != null)
-                .toList(),
-            onChanged: (v) => setLocal(() => tpvId = v),
+                  content: DropdownButtonFormField<int>(
+                    value: tpvId,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'TPV',
+                      border: OutlineInputBorder(),
+                    ),
+                    items:
+                        realTpvs
+                            .map(
+                              (t) => DropdownMenuItem<int>(
+                                value: (t['id'] as num?)?.toInt(),
+                                child: Text(
+                                  t['denominacion']?.toString() ??
+                                      '#${t['id']}',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            )
+                            .where((i) => i.value != null)
+                            .toList(),
+                    onChanged: (v) => setLocal(() => tpvId = v),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text('Cancelar'),
+                    ),
+                    FilledButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: const Text('Asignar'),
+                    ),
+                  ],
+                ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Asignar'),
-            ),
-          ],
-        ),
-      ),
     );
     if (ok != true || tpvId == null) return;
 
-    final tpvNombre = realTpvs
-        .cast<Map<String, dynamic>?>()
-        .firstWhere(
-          (t) => (t?['id'] as num?)?.toInt() == tpvId,
-          orElse: () => null,
-        )?['denominacion']
-        ?.toString();
+    final tpvNombre =
+        realTpvs
+            .cast<Map<String, dynamic>?>()
+            .firstWhere(
+              (t) => (t?['id'] as num?)?.toInt() == tpvId,
+              orElse: () => null,
+            )?['denominacion']
+            ?.toString();
 
     try {
       await _service.assignVendorToTpvOffline(
@@ -344,40 +355,39 @@ class _AdminTpvVendorsScreenState extends State<AdminTpvVendorsScreen>
     return Scaffold(
       appBar: AppBar(
         title: const Text('TPVs y vendedores'),
-        backgroundColor: Colors.blue[700],
+        backgroundColor: VentiqHomeTheme.primary,
         foregroundColor: Colors.white,
         bottom: TabBar(
           controller: _tabs,
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white70,
           indicatorColor: Colors.white,
-          tabs: const [
-            Tab(text: 'TPVs'),
-            Tab(text: 'Vendedores'),
-          ],
+          tabs: const [Tab(text: 'TPVs'), Tab(text: 'Vendedores')],
         ),
         actions: [
           IconButton(
             onPressed: _syncing ? null : _sync,
-            icon: _syncing
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Icon(Icons.cloud_download_outlined),
+            icon:
+                _syncing
+                    ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                    : const Icon(Icons.cloud_download_outlined),
           ),
         ],
       ),
-      floatingActionButton: _tabs.index == 0
-          ? FloatingActionButton(
-              onPressed: _createTpv,
-              child: const Icon(Icons.add),
-            )
-          : null,
+      floatingActionButton:
+          _tabs.index == 0
+              ? FloatingActionButton(
+                onPressed: _createTpv,
+                child: const Icon(Icons.add),
+              )
+              : null,
       body: Column(
         children: [
           Padding(
@@ -393,15 +403,13 @@ class _AdminTpvVendorsScreenState extends State<AdminTpvVendorsScreen>
             ),
           ),
           Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : TabBarView(
-                    controller: _tabs,
-                    children: [
-                      _buildTpvs(),
-                      _buildVendors(),
-                    ],
-                  ),
+            child:
+                _loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : TabBarView(
+                      controller: _tabs,
+                      children: [_buildTpvs(), _buildVendors()],
+                    ),
           ),
         ],
       ),
@@ -413,7 +421,7 @@ class _AdminTpvVendorsScreenState extends State<AdminTpvVendorsScreen>
       return Center(
         child: Text(
           'Sin TPVs en cache. Sincroniza online.',
-          style: TextStyle(color: Colors.grey[600]),
+          style: TextStyle(color: VentiqHomeTheme.textSecondary),
         ),
       );
     }
@@ -426,8 +434,8 @@ class _AdminTpvVendorsScreenState extends State<AdminTpvVendorsScreen>
         final id = (t['id'] as num?)?.toInt();
         return ListTile(
           leading: CircleAvatar(
-            backgroundColor: Colors.blue[50],
-            child: Icon(Icons.point_of_sale, color: Colors.blue[700]),
+            backgroundColor: VentiqHomeTheme.primary.withValues(alpha: 0.08),
+            child: Icon(Icons.point_of_sale, color: VentiqHomeTheme.primary),
           ),
           title: Text(t['denominacion']?.toString() ?? 'TPV'),
           subtitle: Text(
@@ -449,7 +457,7 @@ class _AdminTpvVendorsScreenState extends State<AdminTpvVendorsScreen>
       return Center(
         child: Text(
           'Sin vendedores en cache. Sincroniza online.',
-          style: TextStyle(color: Colors.grey[600]),
+          style: TextStyle(color: VentiqHomeTheme.textSecondary),
         ),
       );
     }
@@ -458,8 +466,7 @@ class _AdminTpvVendorsScreenState extends State<AdminTpvVendorsScreen>
       separatorBuilder: (_, __) => const Divider(height: 1),
       itemBuilder: (context, i) {
         final v = _vendors[i];
-        final name =
-            '${v['nombres'] ?? ''} ${v['apellidos'] ?? ''}'.trim();
+        final name = '${v['nombres'] ?? ''} ${v['apellidos'] ?? ''}'.trim();
         final canCustomize = v['permitir_customizar_precio_venta'] == true;
         final registered = v['registered_offline'] == true;
         return ListTile(
@@ -471,8 +478,7 @@ class _AdminTpvVendorsScreenState extends State<AdminTpvVendorsScreen>
           subtitle: Text(
             [
               v['tpv_nombre'] ?? 'Sin TPV',
-              if (v['email'] != null && '${v['email']}'.isNotEmpty)
-                v['email'],
+              if (v['email'] != null && '${v['email']}'.isNotEmpty) v['email'],
               if (registered) 'offline OK',
               if (v['pending_local'] == true) 'pendiente sync',
             ].join(' · '),
@@ -483,20 +489,21 @@ class _AdminTpvVendorsScreenState extends State<AdminTpvVendorsScreen>
               if (action == 'assign') _assignVendor(v);
               if (action == 'toggle') _toggleCustomize(v);
             },
-            itemBuilder: (_) => [
-              const PopupMenuItem(
-                value: 'assign',
-                child: Text('Asignar TPV'),
-              ),
-              PopupMenuItem(
-                value: 'toggle',
-                child: Text(
-                  canCustomize
-                      ? 'Quitar permiso cambiar precio'
-                      : 'Permitir cambiar precio',
-                ),
-              ),
-            ],
+            itemBuilder:
+                (_) => [
+                  const PopupMenuItem(
+                    value: 'assign',
+                    child: Text('Asignar TPV'),
+                  ),
+                  PopupMenuItem(
+                    value: 'toggle',
+                    child: Text(
+                      canCustomize
+                          ? 'Quitar permiso cambiar precio'
+                          : 'Permitir cambiar precio',
+                    ),
+                  ),
+                ],
           ),
         );
       },

@@ -12,6 +12,13 @@ class Expense {
   final String? medioPago; // Nombre del medio de pago (se enriquece después)
   final bool? esDigital; // Se enriquece después
 
+  /// Código ISO-4217 de la divisa en la que salió el dinero (columna `moneda`
+  /// de `app_dat_entregas_parciales_caja`).
+  ///
+  /// [montoEntrega] es un importe NATIVO de esta divisa: no está convertido a
+  /// la moneda base, así que el importe no se puede mostrar ni cuadrar sin ella.
+  final String moneda;
+
   Expense({
     required this.idEgreso,
     required this.montoEntrega,
@@ -23,6 +30,7 @@ class Expense {
     required this.turnoEstado,
     this.medioPago,
     this.esDigital,
+    this.moneda = PriceUtils.baseCurrency,
   });
 
   factory Expense.fromJson(Map<String, dynamic> json) {
@@ -41,6 +49,7 @@ class Expense {
           : int.tryParse('${json['turno_estado'] ?? 0}') ?? 0,
       medioPago: json['medio_pago'],
       esDigital: json['es_digital'],
+      moneda: _parseMoneda(json['moneda']),
     );
   }
 
@@ -53,8 +62,16 @@ class Expense {
     return 0;
   }
 
+  /// Divisa del egreso, tolerante: los egresos anteriores a la Fase 4 (y los
+  /// caches offline ya escritos) no traen el campo, y todos se registraron en
+  /// la moneda base. Una fila con divisa vacía o sucia también cae ahí.
+  static String _parseMoneda(dynamic raw) {
+    final divisa = (raw ?? '').toString().trim().toUpperCase();
+    return divisa.isEmpty ? PriceUtils.baseCurrency : divisa;
+  }
+
   // Método para crear una copia con datos enriquecidos
-  Expense copyWith({String? medioPago, bool? esDigital}) {
+  Expense copyWith({String? medioPago, bool? esDigital, String? moneda}) {
     return Expense(
       idEgreso: idEgreso,
       montoEntrega: montoEntrega,
@@ -66,6 +83,7 @@ class Expense {
       turnoEstado: turnoEstado,
       medioPago: medioPago ?? this.medioPago,
       esDigital: esDigital ?? this.esDigital,
+      moneda: moneda ?? this.moneda,
     );
   }
 
@@ -81,6 +99,7 @@ class Expense {
       'turno_estado': turnoEstado,
       'medio_pago': medioPago,
       'es_digital': esDigital,
+      'moneda': moneda,
     };
   }
 
@@ -91,4 +110,11 @@ class Expense {
   String get formattedAmount {
     return '\$${montoEntrega.toMoneyString(2)}';
   }
+
+  /// Importe NATIVO con la divisa en la que salió (`$450.00 CUP`).
+  ///
+  /// [formattedAmount] se conserva sin divisa para las vistas que ya la
+  /// muestran por otro medio.
+  String get formattedAmountWithCurrency =>
+      '\$${montoEntrega.toMoneyString(2)} $moneda';
 }

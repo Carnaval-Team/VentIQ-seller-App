@@ -211,11 +211,16 @@ class StoreManagementService {
     return List<Map<String, dynamic>>.from(response as List);
   }
 
-  Future<int?> getFirstSubcategoryId({required int categoryId}) async {
+  /// Primera subcategoría de [categoryId] con el estado de visibilidad pedido.
+  Future<int?> _firstSubcategoryId(
+    int categoryId, {
+    required bool oculta,
+  }) async {
     final response = await _supabase
         .from('app_dat_subcategorias')
         .select('id')
         .eq('idcategoria', categoryId)
+        .eq('oculta', oculta)
         .order('id', ascending: true)
         .limit(1)
         .maybeSingle();
@@ -226,6 +231,23 @@ class StoreManagementService {
     if (v is int) return v;
     if (v is num) return v.toInt();
     return null;
+  }
+
+  /// Primera subcategoría a la que puede quedar enlazado un producto de
+  /// [categoryId]: la visible si existe, y si no la oculta.
+  ///
+  /// Regla única del fichero: se prefieren las visibles, que son las de gestión.
+  /// Las ocultas (`oculta = true`) las crea un trigger de la base al marcar una
+  /// categoría como *especial*: son una «General» de relleno para que la
+  /// categoría siempre tenga una válida. Es un cajón del sistema, no una
+  /// subcategoría de gestión, así que no se ofrece al vendedor; pero sí es un
+  /// enlace válido, y sin este respaldo [createProductComplete] y
+  /// [updateProductCategory] no podrían trabajar con categorías especiales.
+  Future<int?> getFirstSubcategoryId({required int categoryId}) async {
+    final visible = await _firstSubcategoryId(categoryId, oculta: false);
+    if (visible != null) return visible;
+
+    return _firstSubcategoryId(categoryId, oculta: true);
   }
 
   Future<void> ensureCategoriaTiendaLink({

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/user_preferences_service.dart';
 import '../services/server_time_service.dart';
+import '../theme/ventiq_home_theme.dart';
 
 /// Visor de diagnóstico (solo lectura) de los datos guardados para trabajar
 /// offline. Entrada oculta en el drawer, visible solo para superadmins.
@@ -36,10 +37,7 @@ class _OfflineDataViewerScreenState extends State<OfflineDataViewerScreen> {
     setState(() => _loading = true);
     final sections = <_OfflineSection>[];
 
-    Future<void> add(
-      String title,
-      Future<dynamic> Function() getter,
-    ) async {
+    Future<void> add(String title, Future<dynamic> Function() getter) async {
       try {
         final value = await getter();
         sections.add(_OfflineSection(title: title, value: value));
@@ -81,8 +79,7 @@ class _OfflineDataViewerScreenState extends State<OfflineDataViewerScreen> {
     // ya sincronizadas (conservadas en local hasta recargar/purgar).
     try {
       final orders = await _prefs.getPendingOrders();
-      final noSync =
-          orders.where((o) => o['synced'] != true).toList();
+      final noSync = orders.where((o) => o['synced'] != true).toList();
       final yaSync = orders.where((o) => o['synced'] == true).toList();
       sections.add(
         _OfflineSection(
@@ -124,7 +121,9 @@ class _OfflineDataViewerScreenState extends State<OfflineDataViewerScreen> {
     }
   }
 
-  Future<Map<String, dynamic>?> _safeMap(Future<Map<String, dynamic>?> f) async {
+  Future<Map<String, dynamic>?> _safeMap(
+    Future<Map<String, dynamic>?> f,
+  ) async {
     try {
       return await f;
     } catch (_) {
@@ -207,7 +206,10 @@ class _OfflineDataViewerScreenState extends State<OfflineDataViewerScreen> {
     final sign = offsetSeconds >= 0 ? '+' : '';
 
     return Card(
-      color: hasOffset ? Colors.orange[50] : Colors.blue[50],
+      color:
+          hasOffset
+              ? Colors.orange[50]
+              : VentiqHomeTheme.primary.withValues(alpha: 0.08),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
@@ -297,8 +299,10 @@ class _OfflineDataViewerScreenState extends State<OfflineDataViewerScreen> {
           style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
         ),
         subtitle: Text(
-          count != null ? '$count elementos' : (hasData ? 'con datos' : 'vacío'),
-          style: TextStyle(color: Colors.grey[600], fontSize: 12),
+          count != null
+              ? '$count elementos'
+              : (hasData ? 'con datos' : 'vacío'),
+          style: TextStyle(color: VentiqHomeTheme.textSecondary, fontSize: 12),
         ),
         childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
         children: [
@@ -322,15 +326,12 @@ class _OfflineDataViewerScreenState extends State<OfflineDataViewerScreen> {
             width: double.infinity,
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: Colors.grey[100],
+              color: VentiqHomeTheme.surface,
               borderRadius: BorderRadius.circular(6),
             ),
             child: SelectableText(
               jsonText,
-              style: const TextStyle(
-                fontFamily: 'monospace',
-                fontSize: 11,
-              ),
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
             ),
           ),
         ],

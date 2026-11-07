@@ -288,46 +288,23 @@ class CurrencyService {
     }
   }
 
-  /// Updates the tasas_conversion table in Supabase with new rates
-  static Future<bool> updateExchangeRatesInDatabase(
-    CurrencyRatesResponse rates,
-  ) async {
-    try {
-      print('💾 Updating exchange rates in database...');
-
-      // Update each currency rate in the database
-      for (final rate in rates.rates) {
-        await _updateCurrencyRate(rate);
-      }
-
-      print('✅ All exchange rates updated successfully in database');
-      return true;
-    } catch (e) {
-      print('❌ Error updating exchange rates in database: $e');
-      return false;
-    }
-  }
-
-  /// Updates a single currency rate in the database
-  static Future<void> _updateCurrencyRate(CurrencyRate rate) async {
-    try {
-      print('💱 Updating ${rate.currency} rate: ${rate.value}');
-
-      // Update the rate where moneda_destino matches the currency
-      await _supabase
-          .from('tasas_conversion')
-          .update({
-            'tasa': rate.value,
-            'fecha_actualizacion': DateTime.now().toIso8601String(),
-          })
-          .eq('moneda_origen', rate.currency);
-
-      print('✅ ${rate.currency} rate updated successfully');
-    } catch (e) {
-      print('❌ Error updating ${rate.currency} rate: $e');
-      rethrow;
-    }
-  }
+  // ---------------------------------------------------------------------------
+  // [RETIRADO EN LA FASE 2 DEL PLAN MULTIMONEDA]
+  //
+  // Aquí vivían `updateExchangeRatesInDatabase` y `_updateCurrencyRate`, que
+  // hacían `UPDATE public.tasas_conversion` desde la app de TIENDA.
+  //
+  // Se han eliminado por dos motivos:
+  //   1. `tasas_conversion` es GLOBAL: una tienda modificaba la tasa de todas.
+  //      La RLS ahora solo permite escribirla al superadmin
+  //      (`tasas_conversion_escritura_superadmin`).
+  //   2. La tasa de cada tienda se gestiona en `tasa_cambio_extraoficial`
+  //      (pestaña «Tasas pers.»), y la automática («el toque») la mantiene el
+  //      cron del superadmin.
+  //
+  // La lectura de `tasas_conversion` se conserva: sigue siendo el respaldo
+  // global cuando una tienda no tiene tasa propia.
+  // ---------------------------------------------------------------------------
 
   /// Parses the ElToque API response to CurrencyRatesResponse
   static CurrencyRatesResponse _parseElToqueResponse(
@@ -511,14 +488,14 @@ class CurrencyService {
         print('❌ Error checking custom rate before database update: $e');
       }
 
+      // Fase 2 del plan multimoneda: `tasas_conversion` es GLOBAL y su RLS
+      // solo permite escribirla al superadmin. La app de tienda ya no la
+      // modifica (antes cambiaba la tasa de TODAS las tiendas); sigue leyéndola.
       if (shouldUpdateDatabase) {
-        final updateSuccess = await updateExchangeRatesInDatabase(rates);
-
-        if (updateSuccess) {
-          print('✅ Exchange rates fetch and update completed successfully');
-        } else {
-          print('⚠️ Exchange rates fetched but database update failed');
-        }
+        print(
+          'ℹ️ tasas_conversion no se actualiza desde la app de tienda: '
+          'es global y la gestiona el superadmin.',
+        );
       } else {
         print(
           'ℹ️ Skipped tasas_conversion update due to custom rate configuration',

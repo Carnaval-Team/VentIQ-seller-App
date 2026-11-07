@@ -23,6 +23,7 @@ import '../services/turno_service.dart';
 import '../services/auto_sync_service.dart';
 import '../services/store_config_service.dart';
 import '../services/currency_service.dart';
+import '../services/moneda_venta_service.dart';
 import '../utils/platform_utils.dart';
 import '../utils/pdf_download.dart';
 import '../utils/connection_error_handler.dart';
@@ -33,6 +34,7 @@ import '../widgets/sales_monitor_fab.dart';
 // import '../widgets/offline_status_badge.dart';
 import '../widgets/notification_widget.dart';
 import '../widgets/sync_status_chip.dart';
+import '../widgets/moneda_venta_chip.dart';
 import '../widgets/bill_count_dialog.dart';
 import '../services/bank_sms_service.dart';
 import '../widgets/transfer_sms_confirmation_banner.dart';
@@ -43,6 +45,7 @@ import '../services/product_service.dart';
 import '../services/product_detail_service.dart';
 import '../services/promotion_service.dart';
 import '../utils/promotion_rules.dart';
+import '../theme/ventiq_home_theme.dart';
 
 class OrdersScreen extends StatefulWidget {
   final String? autoOpenOrderId;
@@ -354,31 +357,38 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           'Aplicar descuento',
                           style: TextStyle(
                             fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF1F2937),
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.2,
+                            color: VentiqHomeTheme.textPrimary,
                           ),
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          'Total actual: \$${baseTotal.toMoneyString(2)}',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[700],
+                          'Total actual: ${MonedaVentaService.formatearPrecio(baseTotal, conSimbolo: true)}',
+                          style: const TextStyle(
+                            fontSize: 13.5,
+                            color: VentiqHomeTheme.textSecondary,
                           ),
                         ),
                         const SizedBox(height: 16),
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFF5F3FF),
+                            color: VentiqHomeTheme.primary.withValues(
+                              alpha: 0.06,
+                            ),
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(0xFFE0D9FF)),
+                            border: Border.all(
+                              color: VentiqHomeTheme.primary.withValues(
+                                alpha: 0.18,
+                              ),
+                            ),
                           ),
                           child: Row(
                             children: [
-                              Icon(
+                              const Icon(
                                 Icons.security_outlined,
-                                color: const Color(0xFF6B4EFF),
+                                color: VentiqHomeTheme.primary,
                               ),
                               const SizedBox(width: 10),
                               Expanded(
@@ -414,15 +424,26 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                     selectedType = 1;
                                   });
                                 },
-                                selectedColor: const Color(
-                                  0xFF6B4EFF,
-                                ).withOpacity(0.15),
-                                labelStyle: TextStyle(
+                                selectedColor: VentiqHomeTheme.primary
+                                    .withValues(alpha: 0.12),
+                                side: BorderSide(
                                   color:
                                       selectedType == 1
-                                          ? const Color(0xFF6B4EFF)
-                                          : Colors.grey[700],
-                                  fontWeight: FontWeight.w600,
+                                          ? VentiqHomeTheme.primary
+                                          : VentiqHomeTheme.border,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(
+                                    VentiqHomeTheme.radiusChip,
+                                  ),
+                                ),
+                                labelStyle: TextStyle(
+                                  fontSize: 12.5,
+                                  color:
+                                      selectedType == 1
+                                          ? VentiqHomeTheme.primary
+                                          : VentiqHomeTheme.textSecondary,
+                                  fontWeight: FontWeight.w700,
                                 ),
                               ),
                             ),
@@ -436,15 +457,26 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                     selectedType = 2;
                                   });
                                 },
-                                selectedColor: const Color(
-                                  0xFF6B4EFF,
-                                ).withOpacity(0.15),
-                                labelStyle: TextStyle(
+                                selectedColor: VentiqHomeTheme.primary
+                                    .withValues(alpha: 0.12),
+                                side: BorderSide(
                                   color:
                                       selectedType == 2
-                                          ? const Color(0xFF6B4EFF)
-                                          : Colors.grey[700],
-                                  fontWeight: FontWeight.w600,
+                                          ? VentiqHomeTheme.primary
+                                          : VentiqHomeTheme.border,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(
+                                    VentiqHomeTheme.radiusChip,
+                                  ),
+                                ),
+                                labelStyle: TextStyle(
+                                  fontSize: 12.5,
+                                  color:
+                                      selectedType == 2
+                                          ? VentiqHomeTheme.primary
+                                          : VentiqHomeTheme.textSecondary,
+                                  fontWeight: FontWeight.w700,
                                 ),
                               ),
                             ),
@@ -455,10 +487,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           selectedType == 1
                               ? 'Porcentaje (0 - 100)'
                               : 'Monto a descontar',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.grey[800],
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: VentiqHomeTheme.textSecondary,
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -477,17 +509,19 @@ class _OrdersScreenState extends State<OrdersScreen> {
                               selectedType == 1
                                   ? Icons.percent
                                   : Icons.attach_money,
-                              color: const Color(0xFF6B4EFF),
+                              color: VentiqHomeTheme.primary,
                             ),
                             hintText:
                                 selectedType == 1
                                     ? 'Ej: 10 para 10%'
                                     : 'Ej: 50.00',
                             filled: true,
-                            fillColor: Colors.grey[100],
+                            fillColor: VentiqHomeTheme.surface,
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide.none,
+                              borderSide: const BorderSide(
+                                color: VentiqHomeTheme.border,
+                              ),
                             ),
                           ),
                           onChanged: (_) {
@@ -498,11 +532,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         ),
                         const SizedBox(height: 16),
                         Container(
-                          padding: const EdgeInsets.all(12),
+                          padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
-                            color: Colors.grey[50],
+                            color: VentiqHomeTheme.surface,
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.grey[200]!),
+                            border: Border.all(color: VentiqHomeTheme.border),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -514,15 +548,15 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                   Text(
                                     'Descuento',
                                     style: TextStyle(
-                                      color: Colors.grey[700],
+                                      color: VentiqHomeTheme.textSecondary,
                                       fontWeight: FontWeight.w600,
                                     ),
                                   ),
                                   Text(
-                                    '-\$${discountAmount.toMoneyString(2)}',
+                                    '-${MonedaVentaService.formatearPrecio(discountAmount, conSimbolo: true)}',
                                     style: const TextStyle(
-                                      color: Color(0xFFEF4444),
-                                      fontWeight: FontWeight.w700,
+                                      color: VentiqHomeTheme.danger,
+                                      fontWeight: FontWeight.w800,
                                     ),
                                   ),
                                 ],
@@ -535,15 +569,18 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                   Text(
                                     'Total con descuento',
                                     style: TextStyle(
-                                      color: Colors.grey[900],
+                                      color: VentiqHomeTheme.textPrimary,
                                       fontWeight: FontWeight.w700,
-                                      fontSize: 15,
+                                      fontSize: 14,
                                     ),
                                   ),
                                   Text(
-                                    '\$${finalTotal.toMoneyString(2)}',
+                                    MonedaVentaService.formatearPrecio(
+                                      finalTotal,
+                                      conSimbolo: true,
+                                    ),
                                     style: const TextStyle(
-                                      color: Color(0xFF10B981),
+                                      color: VentiqHomeTheme.success,
                                       fontWeight: FontWeight.w800,
                                       fontSize: 16,
                                     ),
@@ -558,7 +595,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           Text(
                             error!,
                             style: const TextStyle(
-                              color: Colors.red,
+                              color: VentiqHomeTheme.danger,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
@@ -568,9 +605,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           Text(
                             percentInvalid
                                 ? 'El porcentaje debe ser mayor que 0 y menor o igual a 100.'
-                                : 'El monto debe ser mayor que 0 y no superar \$${baseTotal.toMoneyString(2)}.',
+                                : 'El monto debe ser mayor que 0 y no superar ${MonedaVentaService.formatearPrecio(baseTotal, conSimbolo: true)}.',
                             style: const TextStyle(
-                              color: Colors.red,
+                              color: VentiqHomeTheme.danger,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
@@ -625,11 +662,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                             ).showSnackBar(
                                               SnackBar(
                                                 content: Text(
-                                                  'Descuento aplicado. Total ahora: \$${(result['precioFinal'] as double).toMoneyString(2)}',
+                                                  'Descuento aplicado. Total ahora: ${MonedaVentaService.formatearPrecio(result['precioFinal'] as double, conSimbolo: true)}',
                                                 ),
-                                                backgroundColor: const Color(
-                                                  0xFF10B981,
-                                                ),
+                                                backgroundColor:
+                                                    VentiqHomeTheme.success,
                                               ),
                                             );
                                           } else {
@@ -655,10 +691,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                   isSaving ? 'Guardando...' : 'Aplicar',
                                 ),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF6B4EFF),
+                                  backgroundColor: VentiqHomeTheme.primary,
                                   foregroundColor: Colors.white,
                                   padding: const EdgeInsets.symmetric(
                                     vertical: 12,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
                                   ),
                                 ),
                               ),
@@ -882,13 +921,26 @@ class _OrdersScreenState extends State<OrdersScreen> {
     final orders = _filteredOrders;
 
     return Scaffold(
+      backgroundColor: VentiqHomeTheme.surface,
       appBar: AppBar(
-        title: const Text('Órdenes'),
-        backgroundColor: const Color(0xFF4A90E2),
+        title: const Text(
+          'Órdenes',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.2,
+            color: Colors.white,
+          ),
+        ),
+        backgroundColor: VentiqHomeTheme.primary,
         foregroundColor: Colors.white,
         centerTitle: true,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
         actions: [
           // const OfflineStatusBadge(showLabel: false),
+          MonedaVentaChip(onChanged: (_) => setState(() {})),
           const NotificationWidget(),
           if (_isPrintingAllOrders)
             const Padding(
@@ -931,19 +983,25 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     CircularProgressIndicator(
+                      strokeWidth: 2.6,
                       valueColor: AlwaysStoppedAnimation<Color>(
-                        Color(0xFF4A90E2),
+                        VentiqHomeTheme.primary,
                       ),
                     ),
                     const SizedBox(height: 16),
                     Text(
                       'Cargando órdenes...',
-                      style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: VentiqHomeTheme.textSecondary,
+                      ),
                     ),
                   ],
                 ),
               )
               : RefreshIndicator(
+                color: VentiqHomeTheme.primary,
                 onRefresh: _refreshOrders,
                 child: Column(
                   children: [
@@ -972,32 +1030,60 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   Widget _buildSearchBar() {
     return Container(
-      padding: const EdgeInsets.all(16),
-      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      decoration: const BoxDecoration(
+        color: VentiqHomeTheme.card,
+        border: Border(bottom: BorderSide(color: VentiqHomeTheme.border)),
+      ),
       child: TextField(
         controller: _searchController,
+        style: const TextStyle(
+          fontSize: 14,
+          color: VentiqHomeTheme.textPrimary,
+        ),
         decoration: InputDecoration(
           hintText: 'Buscar por nombre o teléfono del cliente...',
-          prefixIcon: const Icon(Icons.search, color: Color(0xFF4A90E2)),
+          hintStyle: const TextStyle(
+            fontSize: 13.5,
+            color: VentiqHomeTheme.textSecondary,
+          ),
+          filled: true,
+          fillColor: VentiqHomeTheme.surface,
+          prefixIcon: const Icon(
+            Icons.search,
+            color: VentiqHomeTheme.primary,
+            size: 20,
+          ),
           suffixIcon:
               _searchQuery.isNotEmpty
                   ? IconButton(
-                    icon: const Icon(Icons.clear),
+                    icon: const Icon(
+                      Icons.clear,
+                      color: VentiqHomeTheme.textSecondary,
+                      size: 18,
+                    ),
                     onPressed: () {
                       _searchController.clear();
                     },
                   )
                   : null,
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.grey[300]!),
+            borderRadius: BorderRadius.circular(VentiqHomeTheme.radiusField),
+            borderSide: const BorderSide(color: VentiqHomeTheme.border),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(VentiqHomeTheme.radiusField),
+            borderSide: const BorderSide(color: VentiqHomeTheme.border),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFF4A90E2)),
+            borderRadius: BorderRadius.circular(VentiqHomeTheme.radiusField),
+            borderSide: const BorderSide(
+              color: VentiqHomeTheme.primary,
+              width: 1.5,
+            ),
           ),
           contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
+            horizontal: 14,
             vertical: 12,
           ),
         ),
@@ -1007,40 +1093,61 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   Widget _buildEmptyState() {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.list_alt_outlined, size: 80, color: Colors.grey[400]),
-          const SizedBox(height: 16),
-          Text(
-            'No tienes órdenes aún',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w500,
-              color: Colors.grey[600],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.list_alt_outlined,
+              size: 64,
+              color: VentiqHomeTheme.textSecondary.withValues(alpha: 0.45),
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Crea tu primera orden desde el catálogo',
-            style: TextStyle(fontSize: 14, color: Colors.grey[500]),
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed:
-                () => Navigator.pushNamed(context, '/categories'), // Ir a Home
-            icon: const Icon(Icons.home),
-            label: const Text('Ir al Catálogo'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF4A90E2),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+            const SizedBox(height: 16),
+            const Text(
+              'No tienes órdenes aún',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: VentiqHomeTheme.textPrimary,
               ),
             ),
-          ),
-        ],
+            const SizedBox(height: 6),
+            const Text(
+              'Crea tu primera orden desde el catálogo',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.35,
+                color: VentiqHomeTheme.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 18),
+            FilledButton.icon(
+              onPressed:
+                  () =>
+                      Navigator.pushNamed(context, '/categories'), // Ir a Home
+              icon: const Icon(Icons.home_outlined, size: 18),
+              label: const Text(
+                'Ir al Catálogo',
+                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800),
+              ),
+              style: FilledButton.styleFrom(
+                backgroundColor: VentiqHomeTheme.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 22,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1067,7 +1174,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
             .toList(); // Completadas/Canceladas
 
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
       children: [
         // Órdenes borrador
         if (draftOrders.isNotEmpty) ...[
@@ -1104,30 +1211,33 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   Widget _buildSectionHeader(String title, int count) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 12, top: 4),
       child: Row(
         children: [
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF1F2937),
+          Expanded(
+            child: Text(
+              title,
+              style: VentiqHomeTheme.tituloSeccion,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
           const SizedBox(width: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
-              color: const Color(0xFF4A90E2).withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
+              color: VentiqHomeTheme.primary.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(VentiqHomeTheme.radiusChip),
+              border: Border.all(
+                color: VentiqHomeTheme.primary.withValues(alpha: 0.22),
+              ),
             ),
             child: Text(
               count.toString(),
               style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF4A90E2),
+                fontSize: 11.5,
+                fontWeight: FontWeight.w800,
+                color: VentiqHomeTheme.primary,
               ),
             ),
           ),
@@ -1142,20 +1252,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[300]!, width: 1),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        color: VentiqHomeTheme.card,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: VentiqHomeTheme.border),
+        boxShadow: VentiqHomeTheme.shadowCard,
       ),
       child: InkWell(
         onTap: () => _showOrderDetails(order),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(18),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -1172,9 +1276,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           child: Text(
                             order.id,
                             style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF1F2937),
+                              fontSize: 15.5,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -0.2,
+                              color: VentiqHomeTheme.textPrimary,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -1184,22 +1289,29 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           const SizedBox(width: 8),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
+                              horizontal: 8,
+                              vertical: 3,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.purple.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(4),
+                              color: VentiqHomeTheme.primary.withValues(
+                                alpha: 0.10,
+                              ),
+                              borderRadius: BorderRadius.circular(
+                                VentiqHomeTheme.radiusChip,
+                              ),
                               border: Border.all(
-                                color: Colors.purple.withOpacity(0.3),
+                                color: VentiqHomeTheme.primary.withValues(
+                                  alpha: 0.24,
+                                ),
                               ),
                             ),
                             child: const Text(
                               'Carnaval',
                               style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.purple,
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.3,
+                                color: VentiqHomeTheme.primary,
                               ),
                             ),
                           ),
@@ -1208,14 +1320,20 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           const SizedBox(width: 6),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
+                              horizontal: 8,
+                              vertical: 3,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.blue.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(4),
+                              color: VentiqHomeTheme.success.withValues(
+                                alpha: 0.10,
+                              ),
+                              borderRadius: BorderRadius.circular(
+                                VentiqHomeTheme.radiusChip,
+                              ),
                               border: Border.all(
-                                color: Colors.blue.withOpacity(0.3),
+                                color: VentiqHomeTheme.success.withValues(
+                                  alpha: 0.24,
+                                ),
                               ),
                             ),
                             child: Row(
@@ -1224,15 +1342,16 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                 const Icon(
                                   Icons.local_shipping_outlined,
                                   size: 11,
-                                  color: Colors.blue,
+                                  color: VentiqHomeTheme.success,
                                 ),
                                 const SizedBox(width: 3),
                                 Text(
                                   '#${_getPackageNumber(order)}',
                                   style: const TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.blue,
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 0.3,
+                                    color: VentiqHomeTheme.success,
                                   ),
                                 ),
                               ],
@@ -1244,14 +1363,20 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           const SizedBox(width: 6),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
+                              horizontal: 8,
+                              vertical: 3,
                             ),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFE65100).withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(4),
+                              color: VentiqHomeTheme.warning.withValues(
+                                alpha: 0.10,
+                              ),
+                              borderRadius: BorderRadius.circular(
+                                VentiqHomeTheme.radiusChip,
+                              ),
                               border: Border.all(
-                                color: const Color(0xFFE65100).withOpacity(0.3),
+                                color: VentiqHomeTheme.warning.withValues(
+                                  alpha: 0.24,
+                                ),
                               ),
                             ),
                             child: Row(
@@ -1260,7 +1385,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                 const Icon(
                                   Icons.table_restaurant,
                                   size: 11,
-                                  color: Color(0xFFE65100),
+                                  color: VentiqHomeTheme.warning,
                                 ),
                                 const SizedBox(width: 3),
                                 Text(
@@ -1268,9 +1393,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                       ? 'Mesa ${order.mesaNumero}'
                                       : 'Mesa',
                                   style: const TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                    color: Color(0xFFE65100),
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 0.3,
+                                    color: VentiqHomeTheme.warning,
                                   ),
                                 ),
                               ],
@@ -1282,18 +1408,24 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   ),
                   Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
+                      horizontal: 9,
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: statusColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(6),
+                      color: statusColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(
+                        VentiqHomeTheme.radiusChip,
+                      ),
+                      border: Border.all(
+                        color: statusColor.withValues(alpha: 0.28),
+                      ),
                     ),
                     child: Text(
                       order.status.displayName,
                       style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.2,
                         color: statusColor,
                       ),
                     ),
@@ -1305,19 +1437,19 @@ class _OrdersScreenState extends State<OrdersScreen> {
               Row(
                 children: [
                   if (order.buyerName != null) ...[
-                    Icon(
+                    const Icon(
                       Icons.person_outline,
-                      size: 16,
-                      color: Colors.grey[600],
+                      size: 15,
+                      color: VentiqHomeTheme.textSecondary,
                     ),
                     const SizedBox(width: 4),
                     Expanded(
                       child: Text(
                         order.buyerName!,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey[600],
-                          fontWeight: FontWeight.w500,
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          color: VentiqHomeTheme.textSecondary,
+                          fontWeight: FontWeight.w600,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -1325,11 +1457,18 @@ class _OrdersScreenState extends State<OrdersScreen> {
                     ),
                     const SizedBox(width: 12),
                   ],
-                  Icon(Icons.access_time, size: 16, color: Colors.grey[600]),
+                  const Icon(
+                    Icons.access_time,
+                    size: 15,
+                    color: VentiqHomeTheme.textSecondary,
+                  ),
                   const SizedBox(width: 4),
                   Text(
                     _formatDate(order.fechaCreacion),
-                    style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      color: VentiqHomeTheme.textSecondary,
+                    ),
                   ),
                 ],
               ),
@@ -1377,20 +1516,21 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           Text(
                             '${order.distinctItemCount} producto${order.distinctItemCount == 1 ? '' : 's'}',
                             style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: Color(0xFF1F2937),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: VentiqHomeTheme.textPrimary,
                             ),
                           ),
                           Text(
                             primaryTotalLabel,
                             style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
+                              fontSize: 16.5,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -0.2,
                               color:
                                   hasDiscount
-                                      ? const Color(0xFF10B981)
-                                      : const Color(0xFF4A90E2),
+                                      ? VentiqHomeTheme.success
+                                      : VentiqHomeTheme.primary,
                             ),
                           ),
                         ],
@@ -1400,9 +1540,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         Text(
                           '$label · Ahorras ${PriceUtils.formatCupAmountForPayments(saved, cardPayments, fallbackRate: _orderFallbackRate(order))} (Antes ${PriceUtils.formatCupAmountForPayments(originalTotal, cardPayments, fallbackRate: _orderFallbackRate(order))})',
                           style: const TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFF10B981),
-                            fontWeight: FontWeight.w600,
+                            fontSize: 11.5,
+                            color: VentiqHomeTheme.success,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ],
@@ -1414,9 +1554,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
                             Text(
                               secondaryLabel,
                               style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey[600],
-                                fontWeight: FontWeight.w500,
+                                fontSize: 11.5,
+                                color: VentiqHomeTheme.textSecondary,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                             if (_isLoadingUsdRate)
@@ -1429,9 +1569,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
                               Text(
                                 secondaryTotal,
                                 style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  color: Color(0xFF4A90E2),
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: VentiqHomeTheme.primary,
                                 ),
                               ),
                           ],
@@ -1444,13 +1584,16 @@ class _OrdersScreenState extends State<OrdersScreen> {
               const SizedBox(height: 8),
               // Preview de productos y botón de impresión
               if (order.items.isNotEmpty) ...[
-                const Divider(height: 16),
+                const Divider(height: 16, color: VentiqHomeTheme.border),
                 Row(
                   children: [
                     Expanded(
                       child: Text(
                         'Productos: ${order.items.take(2).map((item) => item.nombre).join(', ')}${order.items.length > 2 ? '...' : ''}',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          color: VentiqHomeTheme.textSecondary,
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -1461,20 +1604,28 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         margin: const EdgeInsets.only(left: 8),
                         child: InkWell(
                           onTap: () => _printOrder(order),
-                          borderRadius: BorderRadius.circular(16),
+                          borderRadius: BorderRadius.circular(
+                            VentiqHomeTheme.radiusTile,
+                          ),
                           child: Container(
                             padding: const EdgeInsets.all(6),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF4A90E2).withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(16),
+                              color: VentiqHomeTheme.primary.withValues(
+                                alpha: 0.08,
+                              ),
+                              borderRadius: BorderRadius.circular(
+                                VentiqHomeTheme.radiusTile,
+                              ),
                               border: Border.all(
-                                color: const Color(0xFF4A90E2).withOpacity(0.3),
+                                color: VentiqHomeTheme.primary.withValues(
+                                  alpha: 0.22,
+                                ),
                               ),
                             ),
                             child: const Icon(
                               Icons.print,
                               size: 16,
-                              color: Color(0xFF4A90E2),
+                              color: VentiqHomeTheme.primary,
                             ),
                           ),
                         ),
@@ -1492,21 +1643,21 @@ class _OrdersScreenState extends State<OrdersScreen> {
   Color _getStatusColor(OrderStatus status) {
     switch (status) {
       case OrderStatus.borrador:
-        return Colors.orange;
+        return VentiqHomeTheme.textSecondary;
       case OrderStatus.enviada:
-        return const Color(0xFF4A90E2);
+        return VentiqHomeTheme.primary;
       case OrderStatus.procesando:
-        return Colors.amber;
+        return VentiqHomeTheme.primaryLight;
       case OrderStatus.completada:
-        return Colors.green;
+        return VentiqHomeTheme.success;
       case OrderStatus.cancelada:
-        return Colors.red;
+        return VentiqHomeTheme.danger;
       case OrderStatus.devuelta:
-        return const Color(0xFFFF6B35);
+        return VentiqHomeTheme.warning;
       case OrderStatus.pagoConfirmado:
-        return const Color(0xFF10B981);
+        return VentiqHomeTheme.success;
       case OrderStatus.pendienteDeSincronizacion:
-        return const Color(0xFFFF8C00); // Naranja oscuro para offline
+        return VentiqHomeTheme.warning; // Offline: pendiente de sincronizar
     }
   }
 
@@ -1674,10 +1825,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
                     );
 
                 return Scaffold(
-                  backgroundColor: Colors.grey[50],
+                  backgroundColor: VentiqHomeTheme.surface,
                   appBar: AppBar(
-                    backgroundColor: const Color(0xFF4A90E2),
+                    backgroundColor: VentiqHomeTheme.primary,
+                    foregroundColor: Colors.white,
                     elevation: 0,
+                    scrolledUnderElevation: 0,
+                    surfaceTintColor: Colors.transparent,
                     leading: IconButton(
                       icon: const Icon(Icons.arrow_back, color: Colors.white),
                       onPressed: () => Navigator.pop(context),
@@ -1686,8 +1840,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       order.id,
                       style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
+                        fontSize: 16.5,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.2,
                       ),
                     ),
                     actions: [
@@ -1701,22 +1856,28 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           vertical: 4,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(20),
+                          color: Colors.white.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(
+                            VentiqHomeTheme.radiusChip,
+                          ),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.28),
+                          ),
                         ),
                         child: Text(
                           order.status.displayName,
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.2,
                           ),
                         ),
                       ),
                     ],
                   ),
                   body: ListView(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
                     children: [
                       // ── Resumen general ──────────────────────────────────
                       _buildDetailSection(
@@ -1737,8 +1898,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
                               formatDetailAmount(displayTotal),
                               valueStyle: const TextStyle(
                                 fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF4A90E2),
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.2,
+                                color: VentiqHomeTheme.primary,
                               ),
                             ),
                             if (detailUsdRate > 0)
@@ -1752,18 +1914,18 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                 detailCurrency == 'USD'
                                     ? '${displayTotal.toMoneyString(2)} CUP'
                                     : '${(displayTotal / detailUsdRate).toMoneyString(2)} USD',
-                                valueStyle: TextStyle(
+                                valueStyle: const TextStyle(
                                   fontSize: 13,
-                                  color: Colors.grey[500],
+                                  color: VentiqHomeTheme.textSecondary,
                                 ),
                               ),
                             if (hasDiscount) ...[
                               _buildDetailRowNew(
                                 'Precio original',
                                 formatDetailAmount(originalTotal),
-                                valueStyle: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.grey[500],
+                                valueStyle: const TextStyle(
+                                  fontSize: 13.5,
+                                  color: VentiqHomeTheme.textSecondary,
                                   decoration: TextDecoration.lineThrough,
                                 ),
                               ),
@@ -1771,9 +1933,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                 'Descuento',
                                 '$label  −${formatDetailAmount(saved)}',
                                 valueStyle: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF10B981),
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: VentiqHomeTheme.success,
                                 ),
                               ),
                             ],
@@ -1813,17 +1975,20 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                         valueStyle: TextStyle(
                                           fontSize: 14,
                                           fontWeight: FontWeight.bold,
-                                          color: Colors.orange[800],
+                                          color: VentiqHomeTheme.warning,
                                         ),
                                       ),
                                       if (montoPendiente > 0)
                                         _buildDetailRowNew(
                                           'Monto pendiente',
-                                          '\$${montoPendiente.toMoneyString(2)}',
+                                          MonedaVentaService.formatearPrecio(
+                                            montoPendiente,
+                                            conSimbolo: true,
+                                          ),
                                           valueStyle: TextStyle(
                                             fontSize: 14,
                                             fontWeight: FontWeight.bold,
-                                            color: Colors.red[700],
+                                            color: VentiqHomeTheme.danger,
                                           ),
                                         ),
                                     ],
@@ -1896,7 +2061,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                               _buildPartyBlock(
                                 title: 'Remitente',
                                 icon: Icons.outbox_outlined,
-                                color: const Color(0xFF4A90E2),
+                                color: VentiqHomeTheme.primary,
                                 data:
                                     _getPackageInfo(order)!['remitente']
                                         as Map<String, dynamic>?,
@@ -1905,7 +2070,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                               _buildPartyBlock(
                                 title: 'Destinatario',
                                 icon: Icons.move_to_inbox_outlined,
-                                color: const Color(0xFF10B981),
+                                color: VentiqHomeTheme.success,
                                 data:
                                     _getPackageInfo(order)!['destinatario']
                                         as Map<String, dynamic>?,
@@ -1949,8 +2114,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                 child: Text(
                                   'Sin datos de cliente registrados',
                                   style: TextStyle(
-                                    fontSize: 13,
-                                    color: Colors.grey[500],
+                                    fontSize: 12.5,
+                                    color: VentiqHomeTheme.textSecondary,
                                     fontStyle: FontStyle.italic,
                                   ),
                                 ),
@@ -1971,12 +2136,15 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                   ),
                                   label: const Text('Editar datos del cliente'),
                                   style: OutlinedButton.styleFrom(
-                                    foregroundColor: const Color(0xFF4A90E2),
+                                    foregroundColor: VentiqHomeTheme.primary,
                                     side: const BorderSide(
-                                      color: Color(0xFF4A90E2),
+                                      color: VentiqHomeTheme.primary,
                                     ),
                                     padding: const EdgeInsets.symmetric(
                                       vertical: 10,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
                                     ),
                                   ),
                                 ),
@@ -2099,22 +2267,15 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                           ),
                                           padding: const EdgeInsets.all(12),
                                           decoration: BoxDecoration(
-                                            color: Colors.white,
+                                            color: VentiqHomeTheme.card,
                                             borderRadius: BorderRadius.circular(
-                                              10,
+                                              14,
                                             ),
                                             border: Border.all(
-                                              color: Colors.grey[200]!,
+                                              color: VentiqHomeTheme.border,
                                             ),
-                                            boxShadow: [
-                                              BoxShadow(
-                                                color: Colors.black.withOpacity(
-                                                  0.03,
-                                                ),
-                                                blurRadius: 4,
-                                                offset: const Offset(0, 1),
-                                              ),
-                                            ],
+                                            boxShadow: VentiqHomeTheme
+                                                .shadowCard,
                                           ),
                                           child: Column(
                                             crossAxisAlignment:
@@ -2139,14 +2300,19 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                                     10,
                                                   ),
                                                   decoration: BoxDecoration(
-                                                    color: Colors.orange[50],
+                                                    color: VentiqHomeTheme.warning
+                                                        .withValues(alpha: 0.08),
                                                     borderRadius:
                                                         BorderRadius.circular(
-                                                          8,
+                                                          VentiqHomeTheme
+                                                              .radiusChip,
                                                         ),
                                                     border: Border.all(
-                                                      color:
-                                                          Colors.orange[200]!,
+                                                      color: VentiqHomeTheme
+                                                          .warning
+                                                          .withValues(
+                                                            alpha: 0.22,
+                                                          ),
                                                     ),
                                                   ),
                                                   child: Column(
@@ -2160,8 +2326,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                                             Icons.restaurant,
                                                             size: 13,
                                                             color:
-                                                                Colors
-                                                                    .orange[700],
+                                                                VentiqHomeTheme
+                                                                    .warning,
                                                           ),
                                                           const SizedBox(
                                                             width: 4,
@@ -2172,10 +2338,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                                               fontSize: 12,
                                                               fontWeight:
                                                                   FontWeight
-                                                                      .w600,
+                                                                      .w700,
                                                               color:
-                                                                  Colors
-                                                                      .orange[700],
+                                                                  VentiqHomeTheme
+                                                                      .warning,
                                                             ),
                                                           ),
                                                         ],
@@ -2332,7 +2498,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                                           ),
                                                         ),
                                                       Text(
-                                                        '\$${p.precio.toMoneyString(2)} c/u',
+                                                        '${MonedaVentaService.formatearPrecio(p.precio, conSimbolo: true)} c/u',
                                                         style: TextStyle(
                                                           fontSize: 11,
                                                           color:
@@ -2689,39 +2855,41 @@ class _OrdersScreenState extends State<OrdersScreen> {
     return Container(
       decoration: outlined
           ? BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey[200]!),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
-                ),
-              ],
+              color: VentiqHomeTheme.card,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: VentiqHomeTheme.border),
+              boxShadow: VentiqHomeTheme.shadowCard,
             )
           : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
             child: Row(
               children: [
-                Icon(icon, size: 18, color: const Color(0xFF4A90E2)),
+                Icon(icon, size: 17, color: VentiqHomeTheme.primary),
                 const SizedBox(width: 8),
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF1F2937),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.1,
+                      color: VentiqHomeTheme.textPrimary,
+                    ),
                   ),
                 ),
               ],
             ),
           ),
-          if (outlined) const Divider(height: 1, thickness: 1),
+          if (outlined)
+            const Divider(
+              height: 1,
+              thickness: 1,
+              color: VentiqHomeTheme.border,
+            ),
           Padding(padding: padding, child: child),
         ],
       ),
@@ -2742,9 +2910,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
             width: 120,
             child: Text(
               label,
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[600],
+              style: const TextStyle(
+                fontSize: 13.5,
+                color: VentiqHomeTheme.textSecondary,
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -2755,9 +2923,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
               style:
                   valueStyle ??
                   const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1F2937),
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                    color: VentiqHomeTheme.textPrimary,
                   ),
             ),
           ),
@@ -2931,11 +3099,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
     ].join(', ');
 
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.06),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withOpacity(0.25)),
+        color: color.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(VentiqHomeTheme.radiusField),
+        border: Border.all(color: color.withValues(alpha: 0.26)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3082,16 +3250,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }) {
     return Column(
       children: [
-        const Divider(),
+        const Divider(color: VentiqHomeTheme.border),
         const SizedBox(height: 16),
-        const Text(
-          'Acciones:',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF1F2937),
-          ),
-        ),
+        const Text('Acciones:', style: VentiqHomeTheme.tituloSeccion),
         const SizedBox(height: 12),
 
         // Botón de imprimir (siempre disponible para órdenes con pago confirmado o completadas)
@@ -3103,9 +3264,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
               icon: const Icon(Icons.print),
               label: const Text('Imprimir Factura'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF4A90E2),
+                backgroundColor: VentiqHomeTheme.primary,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
           ),
@@ -3143,9 +3307,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
                     : 'Generar factura cliente',
               ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF10B981),
+                backgroundColor: VentiqHomeTheme.success,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
           ),
@@ -3176,9 +3343,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 icon: const Icon(Icons.edit_note),
                 label: const Text('Editar productos de la orden'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0EA5E9),
+                  backgroundColor: VentiqHomeTheme.primaryLight,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
             ),
@@ -3221,9 +3391,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       icon: const Icon(Icons.percent),
                       label: const Text('Realizar descuento'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF6B4EFF),
+                        backgroundColor: VentiqHomeTheme.primaryLight,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                     ),
                   ),
@@ -3240,9 +3413,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       icon: const Icon(Icons.calculate_outlined),
                       label: const Text('Contar Billetes'),
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF4A90E2),
-                        side: const BorderSide(color: Color(0xFF4A90E2)),
+                        foregroundColor: VentiqHomeTheme.primary,
+                        side: const BorderSide(color: VentiqHomeTheme.primary),
                         padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                     ),
                   ),
@@ -3263,15 +3439,20 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                 OrderStatus.cancelada,
                                 'Cancelar Orden',
                                 '¿Estás seguro de que quieres cancelar esta orden?',
-                                Colors.red,
+                                VentiqHomeTheme.danger,
                                 detailContext: detailContext,
                               ),
                           icon: const Icon(Icons.cancel_outlined),
                           label: const Text('Cancelar'),
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.red,
-                            side: const BorderSide(color: Colors.red),
+                            foregroundColor: VentiqHomeTheme.danger,
+                            side: const BorderSide(
+                              color: VentiqHomeTheme.danger,
+                            ),
                             padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
                         ),
                       ),
@@ -3287,15 +3468,18 @@ class _OrdersScreenState extends State<OrdersScreen> {
                             OrderStatus.completada,
                             confirmLabel,
                             confirmMessage,
-                            const Color(0xFF10B981),
+                            VentiqHomeTheme.success,
                             detailContext: detailContext,
                           ),
                       icon: Icon(confirmIcon),
                       label: Text(confirmLabel),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF10B981),
+                        backgroundColor: VentiqHomeTheme.success,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                     ),
                   ),
@@ -3316,8 +3500,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
       context,
       MaterialPageRoute(
         builder:
-            (context) => Scaffold(
-              backgroundColor: Colors.white,
+            (context) => Scaffold(backgroundColor: VentiqHomeTheme.surface,
               body: BillCountDialog(
                 order: order,
                 expectedAmount: cashExpected,
@@ -3432,7 +3615,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                CircularProgressIndicator(color: Color(0xFF4A90E2)),
+                CircularProgressIndicator(color: VentiqHomeTheme.primary),
                 SizedBox(height: 16),
                 Text('Actualizando estado...'),
               ],
@@ -3526,7 +3709,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
         }
 
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(statusMessage), backgroundColor: Colors.green),
+          SnackBar(
+            content: Text(statusMessage),
+            backgroundColor: VentiqHomeTheme.success,
+          ),
         );
       } else {
         // Mostrar error si falló la actualización
@@ -3595,11 +3781,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
               ),
               const SizedBox(height: 8),
               Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: Colors.grey[50],
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.grey[200]!),
+                  color: VentiqHomeTheme.surface,
+                  borderRadius: BorderRadius.circular(
+                    VentiqHomeTheme.radiusField,
+                  ),
+                  border: Border.all(color: VentiqHomeTheme.border),
                 ),
                 child: const Row(
                   children: [
@@ -3640,22 +3828,29 @@ class _OrdersScreenState extends State<OrdersScreen> {
           child: Text(
             'Desglose de Pagos:',
             style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF1F2937),
+              fontSize: 14.5,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.1,
+              color: VentiqHomeTheme.textPrimary,
             ),
           ),
         ),
         if (canEdit)
           Container(
             decoration: BoxDecoration(
-              color: const Color(0xFFEEF2FF),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFC7D2FE)),
+              color: VentiqHomeTheme.primary.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(VentiqHomeTheme.radiusChip),
+              border: Border.all(
+                color: VentiqHomeTheme.primary.withValues(alpha: 0.22),
+              ),
             ),
             child: IconButton(
               tooltip: 'Editar desglose de pagos',
-              icon: const Icon(Icons.edit, size: 18, color: Color(0xFF4F46E5)),
+              icon: const Icon(
+                Icons.edit,
+                size: 18,
+                color: VentiqHomeTheme.primary,
+              ),
               onPressed:
                   () => _showPaymentBreakdownEditor(
                     order,
@@ -3689,17 +3884,17 @@ class _OrdersScreenState extends State<OrdersScreen> {
           header,
           const SizedBox(height: 8),
           Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: Colors.grey[50],
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.grey[200]!),
+              color: VentiqHomeTheme.surface,
+              borderRadius: BorderRadius.circular(VentiqHomeTheme.radiusField),
+              border: Border.all(color: VentiqHomeTheme.border),
             ),
             child: const Text(
               'No hay información de pagos disponible',
               style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey,
+                fontSize: 13,
+                color: VentiqHomeTheme.textSecondary,
                 fontStyle: FontStyle.italic,
               ),
             ),
@@ -3746,9 +3941,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
             margin: const EdgeInsets.only(bottom: 8),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.blue[50],
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.blue[200]!),
+              color: VentiqHomeTheme.primary.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: VentiqHomeTheme.primary.withValues(alpha: 0.18),
+              ),
             ),
             child: Row(
               children: [
@@ -3756,7 +3953,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(
                     color: _getPaymentMethodColor(payment),
-                    borderRadius: BorderRadius.circular(6),
+                    borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(
                     _getPaymentMethodIcon(payment),
@@ -3772,9 +3969,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       Text(
                         _resolvePaymentMethodName(payment),
                         style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                          color: Color(0xFF1F2937),
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w700,
+                          color: VentiqHomeTheme.textPrimary,
                         ),
                       ),
                       if (payment['referencia_pago'] != null &&
@@ -3782,9 +3979,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         const SizedBox(height: 2),
                         Text(
                           'Ref: ${payment['referencia_pago']}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[600],
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            color: VentiqHomeTheme.textSecondary,
                           ),
                         ),
                       ],
@@ -3797,9 +3994,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
                     Text(
                       PriceUtils.formatPaymentAmount(payment),
                       style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF4A90E2),
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w800,
+                        color: VentiqHomeTheme.primary,
                       ),
                     ),
                     if (_resolveOriginalPaymentAmount(payment) != null &&
@@ -3822,11 +4019,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
           ),
         ),
         Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: Colors.grey[50],
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.grey[200]!),
+            color: VentiqHomeTheme.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: VentiqHomeTheme.border),
           ),
           child: Column(
             children: [
@@ -3836,15 +4033,15 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   Text(
                     'Total pagos',
                     style: TextStyle(
-                      color: Colors.grey[700],
+                      color: VentiqHomeTheme.textSecondary,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                   Text(
                     primaryTotalLabel,
                     style: const TextStyle(
-                      color: Color(0xFF1F2937),
-                      fontWeight: FontWeight.w700,
+                      color: VentiqHomeTheme.textPrimary,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                 ],
@@ -3856,7 +4053,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   Text(
                     secondaryLabel,
                     style: TextStyle(
-                      color: Colors.grey[700],
+                      color: VentiqHomeTheme.textSecondary,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -3868,15 +4065,15 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       height: 16,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        color: Color(0xFF4A90E2),
+                        color: VentiqHomeTheme.primary,
                       ),
                     )
                   else
                     Text(
                       secondaryTotal,
                       style: const TextStyle(
-                        color: Color(0xFF4A90E2),
-                        fontWeight: FontWeight.w700,
+                        color: VentiqHomeTheme.primary,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
                 ],
@@ -3930,11 +4127,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   Color _getPaymentMethodColorFromMethod(PaymentMethod method) {
     if (method.esEfectivo) {
-      return Colors.green;
+      return VentiqHomeTheme.success;
     } else if (method.esDigital) {
-      return Colors.blue;
+      return VentiqHomeTheme.primary;
     }
-    return Colors.orange;
+    return VentiqHomeTheme.warning;
   }
 
   Future<List<PaymentMethod>> _loadPaymentMethodsForEdit() async {
@@ -4901,11 +5098,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
         (payment['medio_pago_es_digital'] ?? payment['es_digital']) == true;
 
     if (esEfectivo) {
-      return Colors.green;
+      return VentiqHomeTheme.success;
     } else if (esDigital) {
-      return Colors.blue;
+      return VentiqHomeTheme.primary;
     } else {
-      return Colors.orange;
+      return VentiqHomeTheme.warning;
     }
   }
 
@@ -4975,7 +5172,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     final String label =
         isPercent
             ? 'Descuento ${valor.toStringAsFixed(0)}%'
-            : 'Descuento fijo \$${valor.toMoneyString(2)}';
+            : 'Descuento fijo ${MonedaVentaService.formatearPrecio(valor, conSimbolo: true)}';
 
     return {
       'hasDiscount': true,
@@ -5450,10 +5647,16 @@ class _OrdersScreenState extends State<OrdersScreen> {
                             PriceUtils.formatQuantity(item.cantidad),
                           ),
                           _pdfBodyCell(
-                            '\$${item.displayPrice.toMoneyString(2)}',
+                            MonedaVentaService.formatearPrecio(
+                              item.displayPrice,
+                              conSimbolo: true,
+                            ),
                           ),
                           _pdfBodyCell(
-                            '\$${item.subtotal.toMoneyString(2)}',
+                            MonedaVentaService.formatearPrecio(
+                              item.subtotal,
+                              conSimbolo: true,
+                            ),
                             isBold: true,
                           ),
                         ],
@@ -5537,7 +5740,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       children: [
                         _pdfSummaryLabel('Total sin descuento'),
                         _pdfSummaryValue(
-                          '\$${originalTotal.toMoneyString(2)}',
+                          MonedaVentaService.formatearPrecio(
+                            originalTotal,
+                            conSimbolo: true,
+                          ),
                         ),
                       ],
                     ),
@@ -5552,7 +5758,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                 : 'Descuento aplicado',
                           ),
                           _pdfSummaryValue(
-                            '- \$${saved.toMoneyString(2)}',
+                            '- ${MonedaVentaService.formatearPrecio(saved, conSimbolo: true)}',
                             color: PdfColor.fromHex('#DC2626'),
                           ),
                         ],
@@ -5572,7 +5778,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           isBold: true,
                         ),
                         _pdfSummaryValue(
-                          '\$${finalTotal.toMoneyString(2)}',
+                          MonedaVentaService.formatearPrecio(
+                            finalTotal,
+                            conSimbolo: true,
+                          ),
                           fontSize: 14,
                           isBold: true,
                           color: PdfColor.fromHex('#0F172A'),
@@ -7300,7 +7509,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               Text(
-                                'Total: \$${_total.toMoneyString(2)}',
+                                'Total: ${MonedaVentaService.formatearPrecio(_total, conSimbolo: true)}',
                                 style: TextStyle(
                                   fontSize: 13,
                                   color: Colors.grey[600],
@@ -7610,7 +7819,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                   style: TextStyle(fontSize: 12, color: Colors.grey[500]),
                 ),
               Text(
-                '\$${o.total.toMoneyString(2)} · ${o.items.length} producto${o.items.length == 1 ? '' : 's'}',
+                '${MonedaVentaService.formatearPrecio(o.total, conSimbolo: true)} · ${o.items.length} producto${o.items.length == 1 ? '' : 's'}',
                 style: TextStyle(fontSize: 12, color: Colors.grey[600]),
               ),
             ],
@@ -7819,7 +8028,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                       style: TextStyle(fontSize: 11, color: Colors.grey[500]),
                     ),
                   Text(
-                    '\$${item.precioUnitario.toMoneyString(2)} c/u · Total: \$${item.subtotal.toMoneyString(2)}',
+                    '${MonedaVentaService.formatearPrecio(item.precioUnitario, conSimbolo: true)} c/u · Total: ${MonedaVentaService.formatearPrecio(item.subtotal, conSimbolo: true)}',
                     style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                   ),
                   if (widget.usdRate > 0)
@@ -8089,7 +8298,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
               Row(
                 children: [
                   Text(
-                    '\$${p.precio.toMoneyString(2)}',
+                    MonedaVentaService.formatearPrecio(p.precio, conSimbolo: true),
                     style: const TextStyle(
                       color: Color(0xFF0EA5E9),
                       fontWeight: FontWeight.w600,
@@ -8233,7 +8442,10 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                             ),
                           ),
                         Text(
-                          '\$${p.precio.toMoneyString(2)}',
+                          MonedaVentaService.formatearPrecio(
+                            p.precio,
+                            conSimbolo: true,
+                          ),
                           style: const TextStyle(
                             color: Color(0xFF0EA5E9),
                             fontWeight: FontWeight.w600,
@@ -8302,7 +8514,10 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
           Row(
             children: [
               Text(
-                '\$${product.precio.toMoneyString(2)}',
+                MonedaVentaService.formatearPrecio(
+                  product.precio,
+                  conSimbolo: true,
+                ),
                 style: const TextStyle(
                   fontSize: 16,
                   color: Color(0xFF0EA5E9),
@@ -8403,7 +8618,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              'Stock: ${stock.toStringAsFixed(stock % 1 == 0 ? 0 : 1)}  ·  \$${precio.toMoneyString(2)}',
+                              'Stock: ${stock.toStringAsFixed(stock % 1 == 0 ? 0 : 1)}  ·  ${MonedaVentaService.formatearPrecio(precio, conSimbolo: true)}',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Colors.grey[600],
@@ -8519,7 +8734,7 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                           Row(
                             children: [
                               Text(
-                                '${PriceUtils.formatQuantity(_addQuantity)} × \$${precioFinal.toMoneyString(2)}',
+                                '${PriceUtils.formatQuantity(_addQuantity)} × ${MonedaVentaService.formatearPrecio(precioFinal, conSimbolo: true)}',
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w500,
                                 ),
@@ -8527,7 +8742,10 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                               if (hasDiscount) ...[
                                 const SizedBox(width: 6),
                                 Text(
-                                  '\$${precioBase.toMoneyString(2)}',
+                                  MonedaVentaService.formatearPrecio(
+                                    precioBase,
+                                    conSimbolo: true,
+                                  ),
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: Colors.grey[500],
@@ -8539,7 +8757,10 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                           ),
                           // Total
                           Text(
-                            '\$${(_addQuantity * precioFinal).toMoneyString(2)}',
+                            MonedaVentaService.formatearPrecio(
+                              _addQuantity * precioFinal,
+                              conSimbolo: true,
+                            ),
                             style: TextStyle(
                               fontWeight: FontWeight.w700,
                               color:

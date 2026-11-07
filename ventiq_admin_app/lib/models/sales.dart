@@ -1,3 +1,85 @@
+/// Una divisa del reporte `fn_reporte_ventas_por_moneda`.
+///
+/// `importeNativo` es la suma **exacta** de lo cobrado en esa divisa, pero no es
+/// dinero homogéneo: 14 USD no se pueden sumar con 45.000 CUP. `importeBase` es
+/// el equivalente contable en CUP e `importeConsolidado` el importe de la fila ya
+/// expresado en `monedaConsolidacion` (la divisa que la tienda fuerza para
+/// vender, o CUP). El modelo expone los tres por separado para que la UI no
+/// tenga que decidir cuál es cuál: **lo que se totaliza es
+/// `importeConsolidado`**.
+///
+/// Vive aquí, con los demás modelos: antes estaba en `sales_service.dart` y eso
+/// obligaba a este fichero a importar el servicio (ciclo) solo para reutilizarlo.
+class VentasPorMoneda {
+  final String moneda;
+  final int operaciones;
+  final double importeNativo;
+  final double importeBase;
+  final double efectivoNativo;
+  final double digitalNativo;
+
+  /// `importeBase / importeNativo` ponderado por importe. Vale `0` cuando la RPC
+  /// no pudo calcularla (divisa sin importe); la UI lo muestra como «—».
+  final double tasaPromedio;
+
+  /// Divisa en la que la tienda consolida, tal como la manda cada fila del
+  /// reporte (`fn_moneda_consolidacion`). `''` cuando la columna todavía no
+  /// existe en el backend, para poder distinguir «no vino» de «vino vacía».
+  final String monedaConsolidacion;
+
+  /// El importe de **esta fila** ya expresado en [monedaConsolidacion]: exacto si
+  /// la fila es de esa misma divisa, convertido con la tasa del día si no. Es la
+  /// única columna que se puede sumar verticalmente en una app multimoneda.
+  /// `0` cuando la columna todavía no existe en el backend.
+  final double importeConsolidado;
+
+  VentasPorMoneda({
+    required this.moneda,
+    required this.operaciones,
+    required this.importeNativo,
+    required this.importeBase,
+    required this.efectivoNativo,
+    required this.digitalNativo,
+    required this.tasaPromedio,
+    this.monedaConsolidacion = '',
+    this.importeConsolidado = 0,
+  });
+
+  factory VentasPorMoneda.fromJson(Map<String, dynamic> json) {
+    // Las columnas `numeric` de Postgres llegan como int, double o texto según
+    // como las serialice PostgREST: se acepta cualquiera en vez de asumir un
+    // subtipo concreto de `num` y romper el parseo entero.
+    double asDouble(dynamic value) {
+      if (value is num) return value.toDouble();
+      return double.tryParse('${value ?? ''}') ?? 0.0;
+    }
+
+    int asInt(dynamic value) {
+      if (value is int) return value;
+      if (value is num) return value.toInt();
+      return int.tryParse('${value ?? ''}') ?? 0;
+    }
+
+    return VentasPorMoneda(
+      moneda: (json['moneda'] ?? '').toString().trim().toUpperCase(),
+      operaciones: asInt(json['operaciones']),
+      importeNativo: asDouble(json['importe_nativo']),
+      importeBase: asDouble(json['importe_base']),
+      efectivoNativo: asDouble(json['efectivo_nativo']),
+      digitalNativo: asDouble(json['digital_nativo']),
+      tasaPromedio: asDouble(json['tasa_promedio']),
+      // Las dos columnas de consolidación van al final del contrato del reporte:
+      // contra un backend que todavía no las tenga llegan ausentes y la fila se
+      // queda en «sin consolidar» en vez de romper el parseo.
+      monedaConsolidacion: (json['moneda_consolidacion'] ?? '')
+          .toString()
+          .trim()
+          .toUpperCase(),
+      importeConsolidado: asDouble(json['importe_consolidado']),
+    );
+  }
+}
+
 class Sale {
   final String id;
   final String orderId;
@@ -203,6 +285,15 @@ class SalesVendorReport {
   final DateTime? fechaApertura;
   final DateTime? fechaCierre;
 
+  /// Desglose por divisa de la v2 del reporte (`desglose_monedas`). Vacío
+  /// cuando el backend todavía no expone la v2, para que el tab TPVs muestre el
+  /// mismo informe que hoy en vez de romperse.
+  final List<VentasPorMoneda> desgloseMonedas;
+
+  /// Consolidado en moneda base calculado por la v2 (`total_base`). `null`
+  /// cuando la columna no vino, que es la señal de «no hay desglose».
+  final double? totalBase;
+
   SalesVendorReport({
     required this.uuidUsuario,
     required this.nombres,
@@ -224,6 +315,8 @@ class SalesVendorReport {
     this.estadoTurno,
     this.fechaApertura,
     this.fechaCierre,
+    this.desgloseMonedas = const [],
+    this.totalBase,
   });
 
   bool get esPorTurno => idTurno != null;
@@ -250,6 +343,25 @@ class SalesVendorReport {
         parseDt(json['fecha_apertura']) ??
         DateTime.now();
 
+    // La v2 añade `desglose_monedas` (jsonb) y `total_base` (numeric) al final
+    // del mismo contrato. Contra un backend donde aún no está desplegada esas
+    // claves no llegan: se tolera su ausencia en vez de rechazar la fila.
+    List<VentasPorMoneda> parseDesglose(dynamic value) {
+      if (value is! List) return const [];
+      return value
+          .whereType<Map>()
+          .map((row) => VentasPorMoneda.fromJson(Map<String, dynamic>.from(row)))
+          .toList(growable: false);
+    }
+
+    // `total_base` es numeric: PostgREST lo puede serializar como int, double o
+    // texto, así que no se asume un subtipo concreto de `num`.
+    double? parseTotalBase(dynamic value) {
+      if (value == null) return null;
+      if (value is num) return value.toDouble();
+      return double.tryParse(value.toString());
+    }
+
     return SalesVendorReport(
       uuidUsuario: json['uuid_usuario']?.toString() ?? '',
       nombres: json['nombres'] ?? '',
@@ -274,6 +386,8 @@ class SalesVendorReport {
       estadoTurno: (json['estado_turno'] as num?)?.toInt(),
       fechaApertura: parseDt(json['fecha_apertura']),
       fechaCierre: parseDt(json['fecha_cierre']),
+      desgloseMonedas: parseDesglose(json['desglose_monedas']),
+      totalBase: parseTotalBase(json['total_base']),
     );
   }
 
@@ -299,6 +413,8 @@ class SalesVendorReport {
       estadoTurno: estadoTurno,
       fechaApertura: fechaApertura,
       fechaCierre: fechaCierre,
+      desgloseMonedas: desgloseMonedas,
+      totalBase: totalBase,
     );
   }
 

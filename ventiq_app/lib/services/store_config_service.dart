@@ -362,6 +362,50 @@ class StoreConfigService {
     }
   }
 
+  /// Si la tienda obliga a vender en una sola divisa.
+  ///
+  /// Con esto activo el vendedor no puede cambiar la moneda de venta: ni en el
+  /// chip de la barra ni en el selector por línea del checkout.
+  static Future<bool> getForzarMonedaVenta(int storeId) async {
+    return (await getMonedaVentaForzadaConfig(storeId)).forzar;
+  }
+
+  /// Divisa que la tienda impone (`null` si no hay ninguna forzada).
+  ///
+  /// Solo devuelve el código tal cual lo declara la tienda: que además sea una
+  /// divisa **aceptada y con tasa** lo valida quien conoce las tasas, que es
+  /// `MonedaVentaService`.
+  static Future<String?> getMonedaVentaForzada(int storeId) async {
+    return (await getMonedaVentaForzadaConfig(storeId)).moneda;
+  }
+
+  /// Lee de una sola vez el par `forzar_moneda_venta` / `moneda_venta_forzada`.
+  ///
+  /// Los dos valores se consumen siempre juntos y cada `getStoreConfig` cuesta
+  /// su comprobación de conectividad: separarlos duplicaría ese trabajo sin
+  /// aportar nada. El código se normaliza aquí y se descarta si no tiene forma
+  /// de divisa ISO, para que ningún llamador tenga que defenderse de un valor
+  /// basura.
+  static Future<({bool forzar, String? moneda})> getMonedaVentaForzadaConfig(
+    int storeId,
+  ) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      final forzar = config?['forzar_moneda_venta'] == true;
+      final codigo = _normalizarCodigoMoneda(config?['moneda_venta_forzada']);
+      return (forzar: forzar, moneda: forzar ? codigo : null);
+    } catch (e) {
+      print('❌ Error al obtener forzar_moneda_venta: $e');
+      return (forzar: false, moneda: null);
+    }
+  }
+
+  /// `'USD'` a partir de `' usd '`; `null` si no es un código ISO de divisa.
+  static String? _normalizarCodigoMoneda(Object? raw) {
+    final codigo = (raw ?? '').toString().trim().toUpperCase();
+    return RegExp(r'^[A-Z]{3}$').hasMatch(codigo) ? codigo : null;
+  }
+
   /// Obtiene el valor de permitir_imprimir_pendientes
   static Future<bool> getAllowPrintPending(int storeId) async {
     try {

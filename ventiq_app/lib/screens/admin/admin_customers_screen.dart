@@ -1,6 +1,7 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import '../../services/admin_inventory_service.dart';
+import '../../theme/ventiq_home_theme.dart';
 
 /// Lista local de clientes (cache offline).
 class AdminCustomersScreen extends StatefulWidget {
@@ -67,21 +68,22 @@ class _AdminCustomersScreenState extends State<AdminCustomersScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Clientes'),
-        backgroundColor: Colors.blue[700],
+        backgroundColor: VentiqHomeTheme.primary,
         foregroundColor: Colors.white,
         actions: [
           IconButton(
             onPressed: _syncing ? null : _sync,
-            icon: _syncing
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Icon(Icons.cloud_download_outlined),
+            icon:
+                _syncing
+                    ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                    : const Icon(Icons.cloud_download_outlined),
           ),
         ],
       ),
@@ -100,39 +102,38 @@ class _AdminCustomersScreenState extends State<AdminCustomersScreen> {
             ),
           ),
           Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _items.isEmpty
+            child:
+                _loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _items.isEmpty
                     ? Center(
-                        child: Text(
-                          'Sin clientes en cache.\nSincroniza online.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: Colors.grey[600]),
-                        ),
-                      )
-                    : ListView.separated(
-                        itemCount: _items.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
-                        itemBuilder: (context, i) {
-                          final c = _items[i];
-                          return ListTile(
-                            leading: const CircleAvatar(
-                              child: Icon(Icons.person_outline),
-                            ),
-                            title: Text(
-                              c['nombre_completo']?.toString() ?? '',
-                            ),
-                            subtitle: Text(
-                              [
-                                if (c['codigo_cliente'] != null)
-                                  c['codigo_cliente'],
-                                if (c['telefono'] != null) c['telefono'],
-                                if (c['email'] != null) c['email'],
-                              ].where((e) => '$e'.isNotEmpty).join(' · '),
-                            ),
-                          );
-                        },
+                      child: Text(
+                        'Sin clientes en cache.\nSincroniza online.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: VentiqHomeTheme.textSecondary),
                       ),
+                    )
+                    : ListView.separated(
+                      itemCount: _items.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (context, i) {
+                        final c = _items[i];
+                        return ListTile(
+                          leading: const CircleAvatar(
+                            child: Icon(Icons.person_outline),
+                          ),
+                          title: Text(c['nombre_completo']?.toString() ?? ''),
+                          subtitle: Text(
+                            [
+                              if (c['codigo_cliente'] != null)
+                                c['codigo_cliente'],
+                              if (c['telefono'] != null) c['telefono'],
+                              if (c['email'] != null) c['email'],
+                            ].where((e) => '$e'.isNotEmpty).join(' · '),
+                          ),
+                        );
+                      },
+                    ),
           ),
         ],
       ),

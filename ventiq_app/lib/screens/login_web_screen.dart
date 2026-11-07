@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
+import '../theme/ventiq_home_theme.dart';
 import '../services/user_preferences_service.dart';
 import '../services/store_config_service.dart';
 import '../services/auto_sync_service.dart';
@@ -100,7 +101,8 @@ class _LoginWebScreenState extends State<LoginWebScreen> {
 
             final sellerData = sellerProfile['seller'] as Map<String, dynamic>;
             final workerData = sellerProfile['worker'] as Map<String, dynamic>;
-            final entryRole = sellerProfile['entryRole']?.toString() ?? 'vendedor';
+            final entryRole =
+                sellerProfile['entryRole']?.toString() ?? 'vendedor';
 
             final idTpv = (sellerProfile['idTpv'] as num).toInt();
             final idTienda = (sellerProfile['idTienda'] as num).toInt();
@@ -296,7 +298,11 @@ class _LoginWebScreenState extends State<LoginWebScreen> {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Color(0xFF4A90E2), Color(0xFF357ABD), Color(0xFF2E6BA8)],
+            colors: [
+              VentiqHomeTheme.primary,
+              Color(0xFF357ABD),
+              Color(0xFF2E6BA8),
+            ],
           ),
         ),
         child: Center(
@@ -322,12 +328,12 @@ class _LoginWebScreenState extends State<LoginWebScreen> {
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF4A90E2).withOpacity(0.1),
+                        color: VentiqHomeTheme.primary.withOpacity(0.1),
                         shape: BoxShape.circle,
                       ),
                       child: ColorFiltered(
                         colorFilter: const ColorFilter.mode(
-                          Color(0xFF4A90E2),
+                          VentiqHomeTheme.primary,
                           BlendMode.srcIn,
                         ),
                         child: Image.asset(
@@ -354,7 +360,10 @@ class _LoginWebScreenState extends State<LoginWebScreen> {
                     // Subtítulo
                     Text(
                       'Inicia sesión en tu cuenta',
-                      style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: VentiqHomeTheme.textSecondary,
+                      ),
                     ),
                     const SizedBox(height: 40),
 
@@ -382,7 +391,7 @@ class _LoginWebScreenState extends State<LoginWebScreen> {
                                 hintStyle: TextStyle(color: Color(0xFF9CA3AF)),
                                 prefixIcon: Icon(
                                   Icons.email_outlined,
-                                  color: Color(0xFF4A90E2),
+                                  color: VentiqHomeTheme.primary,
                                 ),
                                 border: InputBorder.none,
                                 contentPadding: EdgeInsets.symmetric(
@@ -423,7 +432,7 @@ class _LoginWebScreenState extends State<LoginWebScreen> {
                                 ),
                                 prefixIcon: const Icon(
                                   Icons.lock_outline,
-                                  color: Color(0xFF4A90E2),
+                                  color: VentiqHomeTheme.primary,
                                 ),
                                 suffixIcon: IconButton(
                                   onPressed:
@@ -462,7 +471,7 @@ class _LoginWebScreenState extends State<LoginWebScreen> {
                                     _rememberMe = value ?? false;
                                   });
                                 },
-                                activeColor: const Color(0xFF4A90E2),
+                                activeColor: VentiqHomeTheme.primary,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(4),
                                 ),
@@ -516,7 +525,7 @@ class _LoginWebScreenState extends State<LoginWebScreen> {
                             height: 56,
                             child: ElevatedButton(
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF4A90E2),
+                                backgroundColor: VentiqHomeTheme.primary,
                                 foregroundColor: Colors.white,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12),
@@ -557,7 +566,7 @@ class _LoginWebScreenState extends State<LoginWebScreen> {
                               /* TODO: forgot password flow */
                             },
                             style: TextButton.styleFrom(
-                              foregroundColor: const Color(0xFF4A90E2),
+                              foregroundColor: VentiqHomeTheme.primary,
                             ),
                             child: const Text(
                               '¿Olvidaste tu contraseña?',

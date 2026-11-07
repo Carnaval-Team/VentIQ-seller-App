@@ -3,11 +3,14 @@ import '../models/mesa.dart';
 import '../models/mesa_cuenta.dart';
 import '../models/order.dart';
 import '../services/mesa_service.dart';
+import '../theme/ventiq_home_theme.dart';
 import '../services/mesa_cuenta_service.dart';
 import '../services/order_service.dart';
 import '../services/sales_mode_service.dart';
 import '../utils/price_utils.dart';
+import '../services/moneda_venta_service.dart';
 import '../widgets/mesa_form_dialog.dart';
+import '../tutorial/tutorial_anchor.dart';
 
 /// Pantalla de detalle de una mesa específica.
 ///
@@ -50,7 +53,9 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
     try {
       // Cargamos lista de mesas con stats y filtramos la nuestra; así reutilizamos
       // el conteo de órdenes abiertas/cerradas sin RPC adicional.
-      final mesas = await _mesaService.listMesasWithStats(incluirInactivas: true);
+      final mesas = await _mesaService.listMesasWithStats(
+        incluirInactivas: true,
+      );
       Mesa? mesa;
       try {
         mesa = mesas.firstWhere((m) => m.id == widget.idMesa);
@@ -64,8 +69,9 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
         _mesaService.getOrdersForMesa(widget.idMesa),
         _cuentaService.listarCuentasMesa(widget.idMesa),
       ]);
-      final ordenes = (results[0] as List<Order>)
-        ..sort((a, b) => b.fechaCreacion.compareTo(a.fechaCreacion));
+      final ordenes =
+          (results[0] as List<Order>)
+            ..sort((a, b) => b.fechaCreacion.compareTo(a.fechaCreacion));
       final cuentas = results[1] as List<MesaCuenta>;
 
       if (!mounted) return;
@@ -83,7 +89,8 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
         );
         if (pending != null) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? true)) return;
+            if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? true))
+              return;
             _abrirDetalleOrden(pending);
           });
         }
@@ -111,7 +118,9 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
     if (!_mesa!.activa) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Esta mesa está inactiva. Actívala para abrir cuentas.'),
+          content: Text(
+            'Esta mesa está inactiva. Actívala para abrir cuentas.',
+          ),
           backgroundColor: Colors.orange,
         ),
       );
@@ -140,11 +149,7 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
       );
 
       if (!mounted) return;
-      await Navigator.pushNamed(
-        context,
-        '/cuenta-mesa',
-        arguments: idCuenta,
-      );
+      await Navigator.pushNamed(context, '/cuenta-mesa', arguments: idCuenta);
 
       // Al volver de CuentaMesaScreen refrescamos por si la cuenta cambió.
       if (mounted) _loadAll();
@@ -170,11 +175,7 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
       mesaNumero: _mesa!.numero,
       mesaZona: _mesa!.zona,
     );
-    await Navigator.pushNamed(
-      context,
-      '/cuenta-mesa',
-      arguments: cuenta.id,
-    );
+    await Navigator.pushNamed(context, '/cuenta-mesa', arguments: cuenta.id);
     if (mounted) _loadAll();
   }
 
@@ -183,7 +184,7 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
       context,
       '/orders',
       arguments: o.id, // OrdersScreen ya soporta autoOpenOrderId vía widget,
-                      // pero como las rutas son estáticas usamos el flag global.
+      // pero como las rutas son estáticas usamos el flag global.
     ).then((_) => _loadAll());
   }
 
@@ -199,9 +200,9 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: VentiqHomeTheme.surface,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF4A90E2),
+        backgroundColor: VentiqHomeTheme.primary,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         // El detalle puede quedar como raíz del stack (p. ej. tras cobrar, el
@@ -243,59 +244,63 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
           ),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _mesa == null
+      body:
+          _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _mesa == null
               ? _buildNotFound()
               : RefreshIndicator(
-                  onRefresh: _loadAll,
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-                    children: [
-                      _buildMesaHeader(),
-                      const SizedBox(height: 16),
-                      _buildNuevaCuentaButton(),
-                      const SizedBox(height: 20),
-                      // Cuentas abiertas (estado intermedio, no son ventas todavía)
-                      if (_cuentasAbiertas.isNotEmpty) ...[
-                        _buildSectionTitle(
-                          '🟢 Cuentas Abiertas',
-                          _cuentasAbiertas.length,
-                          const Color(0xFF10B981),
-                        ),
-                        const SizedBox(height: 8),
-                        ..._cuentasAbiertas.map(_buildCuentaAbiertaCard),
-                        const SizedBox(height: 20),
-                      ],
-                      // Órdenes ya registradas pero pendientes de cobro
+                onRefresh: _loadAll,
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+                  children: [
+                    _buildMesaHeader(),
+                    const SizedBox(height: 16),
+                    TutorialAnchor(
+                      id: 'mesa_agregar',
+                      child: _buildNuevaCuentaButton(),
+                    ),
+                    const SizedBox(height: 20),
+                    // Cuentas abiertas (estado intermedio, no son ventas todavía)
+                    if (_cuentasAbiertas.isNotEmpty) ...[
                       _buildSectionTitle(
-                        '🔴 Ventas Pendientes',
-                        _activas.length,
-                        Colors.red.shade700,
+                        '🟢 Cuentas Abiertas',
+                        _cuentasAbiertas.length,
+                        const Color(0xFF10B981),
                       ),
                       const SizedBox(height: 8),
-                      if (_activas.isEmpty)
+                      ..._cuentasAbiertas.map(_buildCuentaAbiertaCard),
+                      const SizedBox(height: 20),
+                    ],
+                    // Órdenes ya registradas pero pendientes de cobro
+                    _buildSectionTitle(
+                      '🔴 Ventas Pendientes',
+                      _activas.length,
+                      Colors.red.shade700,
+                    ),
+                    const SizedBox(height: 8),
+                    if (_activas.isEmpty)
+                      _buildEmptyHint(
+                        'No hay ventas pendientes en esta mesa',
+                        Icons.event_seat_outlined,
+                      )
+                    else
+                      ..._activas.map(_buildOrdenCard),
+                    const SizedBox(height: 20),
+                    _buildHistoricasHeader(),
+                    if (_showHistoricas) ...[
+                      const SizedBox(height: 8),
+                      if (_historicas.isEmpty)
                         _buildEmptyHint(
-                          'No hay ventas pendientes en esta mesa',
-                          Icons.event_seat_outlined,
+                          'Esta mesa no tiene órdenes históricas',
+                          Icons.history,
                         )
                       else
-                        ..._activas.map(_buildOrdenCard),
-                      const SizedBox(height: 20),
-                      _buildHistoricasHeader(),
-                      if (_showHistoricas) ...[
-                        const SizedBox(height: 8),
-                        if (_historicas.isEmpty)
-                          _buildEmptyHint(
-                            'Esta mesa no tiene órdenes históricas',
-                            Icons.history,
-                          )
-                        else
-                          ..._historicas.map(_buildOrdenCard),
-                      ],
+                        ..._historicas.map(_buildOrdenCard),
                     ],
-                  ),
+                  ],
                 ),
+              ),
     );
   }
 
@@ -340,7 +345,7 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
                             style: const TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w700,
-                              color: Color(0xFF1F2937),
+                              color: VentiqHomeTheme.textPrimary,
                             ),
                           ),
                           const SizedBox(width: 6),
@@ -369,7 +374,7 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
                         '${cuenta.items.isNotEmpty ? cuenta.items.length : cuenta.cantidadItems} producto(s) · $fechaStr',
                         style: TextStyle(
                           fontSize: 12,
-                          color: Colors.grey[700],
+                          color: VentiqHomeTheme.textSecondary,
                         ),
                       ),
                     ],
@@ -379,7 +384,10 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      '\$${PriceUtils.formatDiscountPrice(cuenta.total)}',
+                      MonedaVentaService.formatearPrecio(
+                        PriceUtils.roundDiscountPrice(cuenta.total),
+                        conSimbolo: true,
+                      ),
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -434,12 +442,12 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF4A90E2).withOpacity(0.1),
+                  color: VentiqHomeTheme.primary.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(
                   Icons.table_restaurant,
-                  color: Color(0xFF4A90E2),
+                  color: VentiqHomeTheme.primary,
                   size: 26,
                 ),
               ),
@@ -453,7 +461,7 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
                       style: const TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFF1F2937),
+                        color: VentiqHomeTheme.textPrimary,
                       ),
                     ),
                     if (m.zona != null && m.zona!.isNotEmpty)
@@ -461,7 +469,7 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
                         m.zona!,
                         style: TextStyle(
                           fontSize: 13,
-                          color: Colors.grey[600],
+                          color: VentiqHomeTheme.textSecondary,
                           fontStyle: FontStyle.italic,
                         ),
                       ),
@@ -469,7 +477,10 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
                 decoration: BoxDecoration(
                   color: stateColor.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(20),
@@ -527,8 +538,11 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.note_outlined,
-                      size: 16, color: Colors.amber.shade900),
+                  Icon(
+                    Icons.note_outlined,
+                    size: 16,
+                    color: Colors.amber.shade900,
+                  ),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
@@ -553,12 +567,12 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
-          color: Colors.grey[100],
+          color: VentiqHomeTheme.surface,
           borderRadius: BorderRadius.circular(8),
         ),
         child: Row(
           children: [
-            Icon(icon, size: 16, color: Colors.grey[700]),
+            Icon(icon, size: 16, color: VentiqHomeTheme.textSecondary),
             const SizedBox(width: 6),
             Expanded(
               child: Column(
@@ -566,14 +580,17 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
                 children: [
                   Text(
                     label,
-                    style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: VentiqHomeTheme.textSecondary,
+                    ),
                   ),
                   Text(
                     value,
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
-                      color: Color(0xFF1F2937),
+                      color: VentiqHomeTheme.textPrimary,
                     ),
                   ),
                 ],
@@ -591,22 +608,23 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
       height: 56,
       child: ElevatedButton.icon(
         onPressed: _busy ? null : () => _nuevaCuenta(),
-        icon: _busy
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              )
-            : const Icon(Icons.add_shopping_cart, size: 24),
+        icon:
+            _busy
+                ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+                : const Icon(Icons.add_shopping_cart, size: 24),
         label: Text(
           _busy ? 'Abriendo...' : 'Nueva Cuenta',
           style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
         ),
         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF4A90E2),
+          backgroundColor: VentiqHomeTheme.primary,
           foregroundColor: Colors.white,
           elevation: 2,
           shape: RoundedRectangleBorder(
@@ -625,7 +643,7 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
           style: const TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w600,
-            color: Color(0xFF1F2937),
+            color: VentiqHomeTheme.textPrimary,
           ),
         ),
         const SizedBox(width: 8),
@@ -658,7 +676,7 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
           children: [
             Icon(
               _showHistoricas ? Icons.expand_less : Icons.expand_more,
-              color: Colors.grey[700],
+              color: VentiqHomeTheme.textSecondary,
             ),
             const SizedBox(width: 4),
             Text(
@@ -666,7 +684,7 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
-                color: Colors.grey[800],
+                color: VentiqHomeTheme.textPrimary,
               ),
             ),
             const SizedBox(width: 8),
@@ -681,7 +699,7 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
-                  color: Colors.grey[800],
+                  color: VentiqHomeTheme.textPrimary,
                 ),
               ),
             ),
@@ -735,7 +753,7 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
                             style: const TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
-                              color: Color(0xFF1F2937),
+                              color: VentiqHomeTheme.textPrimary,
                             ),
                           ),
                           const SizedBox(width: 6),
@@ -764,7 +782,7 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
                         '${o.items.length} producto(s) · $fechaStr',
                         style: TextStyle(
                           fontSize: 12,
-                          color: Colors.grey[600],
+                          color: VentiqHomeTheme.textSecondary,
                         ),
                       ),
                       if (o.sellerName != null && o.sellerName!.isNotEmpty)
@@ -787,11 +805,14 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      '\$${PriceUtils.formatDiscountPrice(o.total)}',
+                      MonedaVentaService.formatearPrecio(
+                        PriceUtils.roundDiscountPrice(o.total),
+                        conSimbolo: true,
+                      ),
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFF4A90E2),
+                        color: VentiqHomeTheme.primary,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -810,7 +831,7 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.grey[100],
+        color: VentiqHomeTheme.surface,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: Colors.grey[300]!),
       ),
@@ -821,7 +842,10 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
           Expanded(
             child: Text(
               text,
-              style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+              style: TextStyle(
+                fontSize: 13,
+                color: VentiqHomeTheme.textSecondary,
+              ),
             ),
           ),
         ],
@@ -843,7 +867,7 @@ class _MesaDetailScreenState extends State<MesaDetailScreen> {
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w500,
-                color: Colors.grey[700],
+                color: VentiqHomeTheme.textSecondary,
               ),
             ),
             const SizedBox(height: 16),

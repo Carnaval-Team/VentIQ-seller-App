@@ -322,6 +322,11 @@ class AppDrawer extends StatelessWidget {
                       route: '/reportes',
                     ),
                     _DrawerItem(
+                      icon: Icons.payments_outlined,
+                      title: 'Monedas',
+                      route: '/monedas',
+                    ),
+                    _DrawerItem(
                       icon: Icons.settings,
                       title: 'Configuración',
                       route: '/configuracion',
@@ -493,6 +498,7 @@ class AppDrawer extends StatelessWidget {
                 item.route == '/colecciones' ||
                 item.route == '/fidelidad' ||
                 item.route == '/roles' ||
+                item.route == '/monedas' ||
                 item.route == '/flow-suscripciones' ||
                 item.route == '/flow-planes' ||
                 item.route == '/flow-config' ||

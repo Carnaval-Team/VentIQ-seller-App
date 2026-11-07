@@ -3,14 +3,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
+import '../models/home_catalogo.dart' show claveNombre;
 import '../models/product.dart';
 import '../services/order_service.dart';
 import '../models/order.dart' show OrderItem;
 import '../utils/desarme_bulto_local.dart';
 import '../widgets/cocina_chip.dart';
+import '../widgets/moneda_venta_chip.dart';
 import '../services/product_service.dart';
+import '../theme/ventiq_home_theme.dart';
 import '../services/user_preferences_service.dart';
 import '../services/currency_service.dart';
+import '../services/moneda_venta_service.dart';
 import '../utils/promotion_rules.dart';
 import '../utils/price_utils.dart';
 import '../utils/navigation_helper.dart';
@@ -38,11 +42,22 @@ class ProductsScreen extends StatefulWidget {
   final String categoryName;
   final Color categoryColor;
 
+  /// Si viene, la pantalla enseña **solo** esa subcategoría.
+  ///
+  /// Lo usa el drawer del Home al pedir "ver listado completo" desde una
+  /// subcategoría: sin esto habría que abrir el listado entero de la categoría y
+  /// dejar al vendedor buscando la sección que ya había elegido.
+  ///
+  /// Se compara por nombre y no por id porque esta pantalla ya agrupa por
+  /// `subcategoria_nombre`; el id no llega hasta aquí.
+  final String? subcategoriaNombre;
+
   const ProductsScreen({
     Key? key,
     required this.categoryId,
     required this.categoryName,
     required this.categoryColor,
+    this.subcategoriaNombre,
   }) : super(key: key);
 
   @override
@@ -174,6 +189,18 @@ class _ProductsScreenState extends State<ProductsScreen> {
           filteredProductsBySubcategory[subcategory] = filteredProducts;
         }
       });
+    }
+
+    // Filtro por subcategoría (lo pide el drawer del Home). Se compara con
+    // `claveNombre` para que "Bebidas frías" y "Bebidas Frías" sean lo mismo.
+    final String? soloSub = widget.subcategoriaNombre;
+    if (soloSub != null && soloSub.trim().isNotEmpty) {
+      final String clave = claveNombre(soloSub);
+      filteredProductsBySubcategory = Map<String, List<Product>>.fromEntries(
+        filteredProductsBySubcategory.entries.where(
+          (MapEntry<String, List<Product>> e) => claveNombre(e.key) == clave,
+        ),
+      );
     }
 
     // Debug logging
@@ -309,9 +336,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF4A90E2),
+      backgroundColor: VentiqHomeTheme.surface,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF4A90E2),
+        backgroundColor: VentiqHomeTheme.primary,
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
@@ -327,6 +354,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
         ),
         centerTitle: true,
         actions: [
+          MonedaVentaChip(onChanged: (_) => setState(() {})),
           if (_isLimitDataUsageEnabled)
             IconButton(
               icon: const Icon(
@@ -400,7 +428,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
         children: [
           Container(
             decoration: const BoxDecoration(
-              color: Color(0xFFF8F9FA),
+              color: VentiqHomeTheme.surface,
               borderRadius: BorderRadius.only(
                 topLeft: Radius.circular(20),
                 topRight: Radius.circular(20),
@@ -491,7 +519,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                               'Intenta con otros términos de búsqueda',
                               style: TextStyle(
                                 fontSize: 14,
-                                color: Colors.grey[600],
+                                color: VentiqHomeTheme.textSecondary,
                               ),
                             ),
                           ],
@@ -583,13 +611,13 @@ class _ProductsScreenState extends State<ProductsScreen> {
                                 IconButton(
                                   icon: const Icon(Icons.backspace_outlined),
                                   onPressed: _clearSearch,
-                                  color: Colors.grey[600],
+                                  color: VentiqHomeTheme.textSecondary,
                                   tooltip: 'Limpiar búsqueda',
                                 ),
                               IconButton(
                                 icon: const Icon(Icons.close),
                                 onPressed: _hideSearchOverlay,
-                                color: Colors.grey[600],
+                                color: VentiqHomeTheme.textSecondary,
                                 tooltip: 'Cerrar búsqueda',
                               ),
                             ],
@@ -627,7 +655,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF4A90E2).withOpacity(0.3)),
+        border: Border.all(color: VentiqHomeTheme.primary.withOpacity(0.3)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.1),
@@ -639,7 +667,11 @@ class _ProductsScreenState extends State<ProductsScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.attach_money, size: 16, color: Color(0xFF4A90E2)),
+          const Icon(
+            Icons.attach_money,
+            size: 16,
+            color: VentiqHomeTheme.primary,
+          ),
           const SizedBox(width: 4),
           _isLoadingUsdRate
               ? const SizedBox(
@@ -647,7 +679,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                 height: 12,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
-                  color: Color(0xFF4A90E2),
+                  color: VentiqHomeTheme.primary,
                 ),
               )
               : Text(
@@ -1035,7 +1067,10 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
               const SizedBox(height: 8),
               Text(
                 'Este producto está actualmente agotado y no se puede agregar a la orden.',
-                style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                style: TextStyle(
+                  fontSize: 14,
+                  color: VentiqHomeTheme.textSecondary,
+                ),
               ),
             ],
           ),
@@ -1157,7 +1192,7 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                           fit: BoxFit.cover,
                           errorBuilder: (context, error, stackTrace) {
                             return Container(
-                              color: Colors.grey[200],
+                              color: VentiqHomeTheme.border,
                               child: Icon(
                                 Icons.shopping_bag,
                                 size: 24,
@@ -1171,7 +1206,7 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                           fit: BoxFit.cover,
                           errorBuilder: (context, error, stackTrace) {
                             return Container(
-                              color: Colors.grey[200],
+                              color: VentiqHomeTheme.border,
                               child: Icon(
                                 Icons.shopping_bag,
                                 size: 24,
@@ -1182,7 +1217,7 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                           loadingBuilder: (context, child, loadingProgress) {
                             if (loadingProgress == null) return child;
                             return Container(
-                              color: Colors.grey[200],
+                              color: VentiqHomeTheme.border,
                               child: const Center(
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
@@ -1222,7 +1257,7 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                       style: const TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w500,
-                        color: Color(0xFF1F2937),
+                        color: VentiqHomeTheme.textPrimary,
                         height: 1.2,
                       ),
                       scrollSpeed: 30.0,
@@ -1238,7 +1273,10 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                           // Precio de venta (tachado si es mayor que oferta)
                           Flexible(
                             child: Text(
-                              '\$${precioVenta.toMoneyString(2)}',
+                              MonedaVentaService.formatearPrecio(
+                                precioVenta,
+                                conSimbolo: true,
+                              ),
                               style: TextStyle(
                                 fontSize: precioVenta > precioOferta ? 12 : 14,
                                 color:
@@ -1262,7 +1300,10 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                           // Precio de oferta (destacado si es menor que venta)
                           Flexible(
                             child: Text(
-                              '\$${precioOferta.toMoneyString(2)}',
+                              MonedaVentaService.formatearPrecio(
+                                precioOferta,
+                                conSimbolo: true,
+                              ),
                               style: TextStyle(
                                 fontSize: precioOferta < precioVenta ? 14 : 12,
                                 fontWeight:
@@ -1286,7 +1327,10 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                           // Precio normal sin promoción
                           Flexible(
                             child: Text(
-                              '\$${widget.product.precio.toMoneyString(2)}',
+                              MonedaVentaService.formatearPrecio(
+                                widget.product.precio,
+                                conSimbolo: true,
+                              ),
                               style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
@@ -1383,381 +1427,6 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _ProductCard extends StatefulWidget {
-  final Product product;
-  final Color categoryColor;
-
-  const _ProductCard({required this.product, required this.categoryColor});
-
-  @override
-  State<_ProductCard> createState() => _ProductCardState();
-}
-
-class _ProductCardState extends State<_ProductCard>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _animationController;
-  late Animation<double> _scaleAnimation;
-  bool _isPressed = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _animationController = AnimationController(
-      duration: const Duration(milliseconds: 150),
-      vsync: this,
-    );
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _animationController.dispose();
-    super.dispose();
-  }
-
-  void _onTapDown(TapDownDetails details) {
-    setState(() => _isPressed = true);
-    _animationController.forward();
-  }
-
-  void _onTapUp(TapUpDetails details) {
-    setState(() => _isPressed = false);
-    _animationController.reverse();
-    _onProductTap();
-  }
-
-  void _onTapCancel() {
-    setState(() => _isPressed = false);
-    _animationController.reverse();
-  }
-
-  void _onProductTap() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder:
-            (_) => ProductDetailsScreen(
-              product: widget.product,
-              categoryColor: widget.categoryColor,
-            ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _scaleAnimation,
-      builder: (context, child) {
-        return Transform.scale(
-          scale: _scaleAnimation.value,
-          child: Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            child: GestureDetector(
-              onTapDown: _onTapDown,
-              onTapUp: _onTapUp,
-              onTapCancel: _onTapCancel,
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color:
-                          _isPressed
-                              ? widget.categoryColor.withOpacity(0.3)
-                              : Colors.black.withOpacity(0.08),
-                      blurRadius: _isPressed ? 15 : 10,
-                      offset: Offset(0, _isPressed ? 2 : 4),
-                      spreadRadius: _isPressed ? 2 : 0,
-                    ),
-                  ],
-                  border:
-                      _isPressed
-                          ? Border.all(
-                            color: widget.categoryColor.withOpacity(0.5),
-                            width: 2,
-                          )
-                          : null,
-                ),
-                child: Row(
-                  children: [
-                    // Foto del producto - más compacta
-                    Container(
-                      width: 75,
-                      height: 75,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(8),
-                        color: widget.categoryColor.withOpacity(0.1),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child:
-                            widget.product.foto != null
-                                ? Image.network(
-                                  widget.product.foto!,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) {
-                                    return Container(
-                                      decoration: BoxDecoration(
-                                        gradient: LinearGradient(
-                                          colors: [
-                                            widget.categoryColor.withOpacity(
-                                              0.3,
-                                            ),
-                                            widget.categoryColor.withOpacity(
-                                              0.1,
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      child: Icon(
-                                        Icons.inventory_2,
-                                        color: widget.categoryColor,
-                                        size: 32,
-                                      ),
-                                    );
-                                  },
-                                  loadingBuilder: (
-                                    context,
-                                    child,
-                                    loadingProgress,
-                                  ) {
-                                    if (loadingProgress == null) return child;
-                                    return Container(
-                                      decoration: BoxDecoration(
-                                        gradient: LinearGradient(
-                                          colors: [
-                                            widget.categoryColor.withOpacity(
-                                              0.2,
-                                            ),
-                                            widget.categoryColor.withOpacity(
-                                              0.1,
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      child: Center(
-                                        child: CircularProgressIndicator(
-                                          color: widget.categoryColor,
-                                          strokeWidth: 2,
-                                          value:
-                                              loadingProgress
-                                                          .expectedTotalBytes !=
-                                                      null
-                                                  ? loadingProgress
-                                                          .cumulativeBytesLoaded /
-                                                      loadingProgress
-                                                          .expectedTotalBytes!
-                                                  : null,
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                )
-                                : Container(
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      colors: [
-                                        widget.categoryColor.withOpacity(0.3),
-                                        widget.categoryColor.withOpacity(0.1),
-                                      ],
-                                    ),
-                                  ),
-                                  child: Icon(
-                                    Icons.inventory_2,
-                                    color: widget.categoryColor,
-                                    size: 32,
-                                  ),
-                                ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    // Información del producto
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Denominación con efecto marquee
-                          MarqueeText(
-                            text: widget.product.denominacion,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF2C3E50),
-                            ),
-                            scrollSpeed: 30.0,
-                            pauseDuration: const Duration(seconds: 2),
-                          ),
-                          const SizedBox(height: 12),
-                          // Cantidad y precio
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: widget.categoryColor.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  widget.product.vaACocina
-                                      ? widget.product.etiquetaDisponibilidad
-                                      : widget.product.esElaborado
-                                      ? '(elaborado)'
-                                      : widget.product.esServicio
-                                      ? '(servicio)'
-                                      : _stockLabelConReservas(widget.product),
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: widget.categoryColor,
-                                  ),
-                                ),
-                              ),
-                              // Estacion de cocina en la vista de cuadricula.
-                              if (widget.product.vaACocina &&
-                                  widget.product.cocina != null) ...[
-                                const SizedBox(width: 6),
-                                Flexible(
-                                  child: CocinaChip(
-                                    product: widget.product,
-                                    compacto: true,
-                                  ),
-                                ),
-                              ],
-                              if (widget.product.reservadoCarnaval > 0) ...[
-                                const SizedBox(width: 6),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.orange[50],
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: Colors.orange[300]!,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    'Res: ${widget.product.reservadoCarnaval}',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.orange[800],
-                                    ),
-                                  ),
-                                ),
-                              ],
-                              const SizedBox(width: 12),
-                              Text(
-                                '\$${widget.product.precio.toMoneyString(2)}',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: widget.categoryColor,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          // Iconos de propiedades
-                          Wrap(
-                            spacing: 6,
-                            runSpacing: 3,
-                            children: [
-                              if (widget.product.esRefrigerado)
-                                _PropertyIcon(
-                                  icon: Icons.ac_unit,
-                                  color: Colors.blue,
-                                  tooltip: 'Refrigerado',
-                                ),
-                              if (widget.product.esFragil)
-                                _PropertyIcon(
-                                  icon: Icons.warning_amber_rounded,
-                                  color: Colors.orange,
-                                  tooltip: 'Frágil',
-                                ),
-                              if (widget.product.esPeligroso)
-                                _PropertyIcon(
-                                  icon: Icons.dangerous,
-                                  color: Colors.red,
-                                  tooltip: 'Peligroso',
-                                ),
-                              if (widget.product.esVendible)
-                                _PropertyIcon(
-                                  icon: Icons.sell,
-                                  color: Colors.green,
-                                  tooltip: 'Vendible',
-                                ),
-                              if (widget.product.esComprable)
-                                _PropertyIcon(
-                                  icon: Icons.shopping_cart,
-                                  color: Colors.purple,
-                                  tooltip: 'Comprable',
-                                ),
-                              if (widget.product.esInventariable)
-                                _PropertyIcon(
-                                  icon: Icons.inventory,
-                                  color: Colors.teal,
-                                  tooltip: 'Inventariable',
-                                ),
-                              if (widget.product.esPorLotes)
-                                _PropertyIcon(
-                                  icon: Icons.batch_prediction,
-                                  color: Colors.brown,
-                                  tooltip: 'Por lotes',
-                                ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _PropertyIcon extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-  final String tooltip;
-
-  const _PropertyIcon({
-    required this.icon,
-    required this.color,
-    required this.tooltip,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: Container(
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: color.withOpacity(0.3), width: 1),
-        ),
-        child: Icon(icon, size: 14, color: color),
       ),
     );
   }

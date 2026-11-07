@@ -7,6 +7,7 @@ import '../services/comanda_service.dart';
 import '../services/comanda_ticket_service.dart';
 import '../widgets/comanda_card.dart';
 import '../widgets/ticket_comanda_dialog.dart';
+import '../theme/ventiq_home_theme.dart';
 
 /// Pantalla KDS (Kitchen Display System) para el jefe de cocina y cocineros.
 ///
@@ -196,10 +197,11 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
       if (res.puedeMostrarse) {
         await showDialog<void>(
           context: context,
-          builder: (ctx) => TicketComandaDialog(
-            resultado: res,
-            onReintentar: () => _imprimirTicket(comanda),
-          ),
+          builder:
+              (ctx) => TicketComandaDialog(
+                resultado: res,
+                onReintentar: () => _imprimirTicket(comanda),
+              ),
         );
       } else {
         _aviso(res.mensaje, error: true);
@@ -216,25 +218,28 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
   Future<void> _cancelarItem(ComandaItem item) async {
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('¿Cancelar este plato?'),
-        content: Text(
-          '${item.cantidadTexto}× ${item.denominacion}\n\n'
-          'No se va a preparar. El ajuste de inventario lo decide quien maneja '
-          'la nota, desde la cuenta de la mesa.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('No'),
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('¿Cancelar este plato?'),
+            content: Text(
+              '${item.cantidadTexto}× ${item.denominacion}\n\n'
+              'No se va a preparar. El ajuste de inventario lo decide quien maneja '
+              'la nota, desde la cuenta de la mesa.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('No'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.red.shade700,
+                ),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Sí, cancelar'),
+              ),
+            ],
           ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Sí, cancelar'),
-          ),
-        ],
-      ),
     );
 
     if (ok != true) return;
@@ -268,16 +273,18 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF3F4F6),
+      backgroundColor: VentiqHomeTheme.surface,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF4A90E2),
+        backgroundColor: VentiqHomeTheme.primary,
         foregroundColor: Colors.white,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Cocina',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            const Text(
+              'Cocina',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
             Text(
               _subtitulo(),
               style: const TextStyle(fontSize: 11, color: Colors.white70),
@@ -298,23 +305,27 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
           ),
           IconButton(
             tooltip: 'Refrescar',
-            icon: _refrescando
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white),
-                  )
-                : const Icon(Icons.refresh),
+            icon:
+                _refrescando
+                    ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                    : const Icon(Icons.refresh),
             onPressed: _refrescando ? null : () => _cargar(),
           ),
         ],
-        bottom: _cocinas.length > 1
-            ? PreferredSize(
-                preferredSize: const Size.fromHeight(48),
-                child: _filtroCocinas(),
-              )
-            : null,
+        bottom:
+            _cocinas.length > 1
+                ? PreferredSize(
+                  preferredSize: const Size.fromHeight(48),
+                  child: _filtroCocinas(),
+                )
+                : null,
       ),
       body: RefreshIndicator(
         onRefresh: () => _cargar(silencioso: true),
@@ -326,9 +337,10 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
   String _subtitulo() {
     if (_verHistorico) return 'Historial';
     final n = _comandas.length;
-    final base = n == 0
-        ? 'Sin comandas activas'
-        : n == 1
+    final base =
+        n == 0
+            ? 'Sin comandas activas'
+            : n == 1
             ? '1 comanda activa'
             : '$n comandas activas';
     if (_ultimaCarga == null) return base;
@@ -361,9 +373,10 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
     final sel = _cocinaFiltro == id;
     // Cuenta de comandas por estación, para saber dónde está la carga sin
     // tener que filtrar.
-    final n = id == null
-        ? _comandas.length
-        : _comandas.where((c) => c.idCocina == id).length;
+    final n =
+        id == null
+            ? _comandas.length
+            : _comandas.where((c) => c.idCocina == id).length;
 
     return Padding(
       padding: const EdgeInsets.only(right: 6),
@@ -386,7 +399,7 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                 decoration: BoxDecoration(
-                  color: sel ? const Color(0xFF4A90E2) : Colors.white,
+                  color: sel ? VentiqHomeTheme.primary : Colors.white,
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
@@ -394,7 +407,7 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                   style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.w900,
-                    color: sel ? Colors.white : const Color(0xFF4A90E2),
+                    color: sel ? Colors.white : VentiqHomeTheme.primary,
                   ),
                 ),
               ),
@@ -402,11 +415,11 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
           ],
         ),
         selectedColor: Colors.white,
-        backgroundColor: const Color(0xFF2E6DA8),
+        backgroundColor: VentiqHomeTheme.primaryDark,
         labelStyle: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w700,
-          color: sel ? const Color(0xFF1F2937) : Colors.white,
+          color: sel ? VentiqHomeTheme.textPrimary : Colors.white,
         ),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(8),
@@ -437,22 +450,23 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
       return _mensaje(
         icono: Icons.no_meals_outlined,
         titulo: 'No tienes cocinas asignadas',
-        detalle: 'Pide al gerente que te asigne a una cocina desde '
+        detalle:
+            'Pide al gerente que te asigne a una cocina desde '
             'Gestión de cocinas en la app de administración.',
       );
     }
 
     if (_comandas.isEmpty) {
       return _mensaje(
-        icono: _verHistorico
-            ? Icons.history_toggle_off
-            : Icons.check_circle_outline,
-        titulo: _verHistorico
-            ? 'Sin comandas en el historial'
-            : 'Todo al día',
-        detalle: _verHistorico
-            ? 'Aquí aparecen las comandas entregadas y canceladas.'
-            : 'No hay platos pendientes de preparar.',
+        icono:
+            _verHistorico
+                ? Icons.history_toggle_off
+                : Icons.check_circle_outline,
+        titulo: _verHistorico ? 'Sin comandas en el historial' : 'Todo al día',
+        detalle:
+            _verHistorico
+                ? 'Aquí aparecen las comandas entregadas y canceladas.'
+                : 'No hay platos pendientes de preparar.',
       );
     }
 
@@ -512,7 +526,7 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
           style: const TextStyle(
             fontSize: 17,
             fontWeight: FontWeight.w700,
-            color: Color(0xFF1F2937),
+            color: VentiqHomeTheme.textPrimary,
           ),
         ),
         if (detalle != null) ...[

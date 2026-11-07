@@ -6,6 +6,7 @@ import '../models/product.dart';
 // para resolver el equivalente base de cada ingrediente. Ver
 // `getProductIngredients` y `docs/PLAN_CONSUMO_INGREDIENTES_ELABORADOS_PRESENTACIONES.md`.
 import '../utils/presentacion_cadena_local.dart';
+import '../utils/ttl_cache.dart';
 import 'user_preferences_service.dart';
 
 class ProductDetailService {
@@ -16,6 +17,27 @@ class ProductDetailService {
 
   final SupabaseClient _supabase = Supabase.instance.client;
   final UserPreferencesService _userPrefs = UserPreferencesService();
+
+  /// Caché de detalle con TTL 60 s (R13 del plan).
+  ///
+  /// El listado entrega `variantes: []` a propósito, así que cerrar y reabrir el
+  /// mismo producto pagaba `get_detalle_producto` + presentaciones otra vez. La
+  /// clave incluye el `fallbackStock` porque el resultado puede diferir cuando
+  /// el inventario viene vacío (offline/sin almacén).
+  static const Duration _ttlDetalle = Duration(seconds: 60);
+  final TtlCache<String, Product> _cacheDetalle = TtlCache<String, Product>(
+    ttl: _ttlDetalle,
+  );
+
+  /// Tira la caché de un producto (p. ej. tras vender, porque cambió el stock).
+  void invalidarDetalle(int idProducto) {
+    _cacheDetalle.removeWhere(
+      (String clave, Product _) => clave.startsWith('$idProducto|'),
+    );
+  }
+
+  /// Tira toda la caché de detalle.
+  void limpiarCacheDetalle() => _cacheDetalle.clear();
 
   /// Alcance con el que `getProductIngredients` midió el stock.
   ///
@@ -54,12 +76,20 @@ class ProductDetailService {
     int productId, {
     double? fallbackStock,
   }) async {
+    final String claveCache = _claveCache(productId, fallbackStock);
+    final Product? enCache = _cacheDetalle.get(claveCache);
+    if (enCache != null) {
+      debugPrint('⚡ Detalle del producto $productId desde caché (TTL 60 s)');
+      return enCache;
+    }
+
     try {
       final isOffline = await _userPrefs.shouldUseLocalData();
       if (isOffline) {
         final offlineDetail = await _getProductDetailOffline(productId);
         if (offlineDetail != null) {
           debugPrint('🔌 Detalles del producto $productId desde cache offline');
+          _cacheDetalle.put(claveCache, offlineDetail);
           return offlineDetail;
         }
         // Sin detalles completos en cache: lanzar para que el llamador caiga a
@@ -93,13 +123,21 @@ class ProductDetailService {
       debugPrint('📦 Respuesta de detalles recibida');
 
       // Transform Supabase response to Product model
-      return _transformToProduct(response, fallbackStock: fallbackStock);
+      final Product producto = _transformToProduct(
+        response,
+        fallbackStock: fallbackStock,
+      );
+      _cacheDetalle.put(claveCache, producto);
+      return producto;
     } catch (e, stackTrace) {
       debugPrint('❌ Error obteniendo detalles del producto: $e');
       debugPrint('📍 Stack trace completo:\n$stackTrace');
       rethrow;
     }
   }
+
+  static String _claveCache(int productId, double? fallbackStock) =>
+      '$productId|${fallbackStock?.toStringAsFixed(2) ?? ''}';
 
   /// Busca `detalles_completos` del producto en el cache offline y lo
   /// transforma a Product. Devuelve null si no hay datos completos guardados.
@@ -182,10 +220,23 @@ class ProductDetailService {
     return result;
   }
 
+  /// Convierte la respuesta de `get_detalle_producto` (o un `detalles_completos`
+  /// cacheado offline, que tiene la misma forma) en [Product].
+  ///
+  /// Expuesto para que la pantalla de detalle no mantenga su propia copia del
+  /// parser: antes reconstruía las variantes a mano (~140 líneas) y las dos
+  /// implementaciones podían divergir.
+  static Product productoDesdeRespuestaDetalle(
+    Map<String, dynamic> respuesta, {
+    double? fallbackStock,
+  }) {
+    return _transformToProduct(respuesta, fallbackStock: fallbackStock);
+  }
+
   /// Transform Supabase response to Product model.
   /// [fallbackStock] se usa cuando inventario viene vacío (p.ej. sync admin
   /// sin almacenes de vendedor) para alinear con el stock del listado offline.
-  Product _transformToProduct(
+  static Product _transformToProduct(
     Map<String, dynamic> response, {
     double? fallbackStock,
   }) {
@@ -330,11 +381,15 @@ class ProductDetailService {
       inventoryMetadata: productInventoryMetadata,
       reservadoCarnaval: totalReservadoCarnaval,
       enOrdenesCarnaval: totalEnOrdenesCarnaval,
+      // El alta rápida del Home decide con esto si puede añadir sin abrir el
+      // detalle (1 presentación) o si tiene que mandar al detalle (>1).
+      presentacionesCount:
+          (productData['presentaciones'] as List<dynamic>?)?.length ?? 0,
     );
   }
 
   /// Transform inventory data to ProductVariant objects
-  List<ProductVariant> _transformInventoryToVariants(
+  static List<ProductVariant> _transformInventoryToVariants(
     List<dynamic> inventoryData, [
     double? productPrice,
   ]) {
@@ -423,7 +478,7 @@ class ProductDetailService {
   }
 
   /// Extract inventory metadata from inventory item
-  Map<String, dynamic> _extractInventoryMetadata(
+  static Map<String, dynamic> _extractInventoryMetadata(
     Map<String, dynamic> inventoryItem,
   ) {
     final variante =
@@ -672,9 +727,10 @@ class ProductDetailService {
               cantidadFisica = resuelto.totalFisica;
               desglose = resuelto.desglose;
               almacenMedido = idAlmacen;
-              alcanceStock = idAlmacen == null
-                  ? ProductDetailService.alcanceTodosLosAlmacenes
-                  : ProductDetailService.alcanceAlmacenTpv;
+              alcanceStock =
+                  idAlmacen == null
+                      ? ProductDetailService.alcanceTodosLosAlmacenes
+                      : ProductDetailService.alcanceAlmacenTpv;
               debugPrint(
                 '📊 Ingrediente ${producto['denominacion']}: '
                 'base=$cantidadDisponible (física=$cantidadFisica, '
@@ -813,7 +869,11 @@ class ProductDetailService {
   ///
   /// Devuelve `null` si la RPC falla; el llamador cae al comportamiento previo.
   Future<
-    ({double totalBase, double totalFisica, List<Map<String, dynamic>> desglose})?
+    ({
+      double totalBase,
+      double totalFisica,
+      List<Map<String, dynamic>> desglose,
+    })?
   >
   _disponibleBaseIngrediente(
     int idIngrediente,
@@ -826,12 +886,13 @@ class ProductDetailService {
         params: {'p_id_producto': idIngrediente, 'p_id_almacen': idAlmacen},
       );
 
-      final filas = response is List
-          ? response
-                .whereType<Map>()
-                .map((e) => Map<String, dynamic>.from(e))
-                .toList()
-          : <Map<String, dynamic>>[];
+      final filas =
+          response is List
+              ? response
+                  .whereType<Map>()
+                  .map((e) => Map<String, dynamic>.from(e))
+                  .toList()
+              : <Map<String, dynamic>>[];
 
       final factorPorPresentacion = <int, double>{
         for (final p in cadena) p.idPresentacion: p.factorRel,
@@ -849,9 +910,10 @@ class ProductDetailService {
         final idPresentacion = (fila['id_presentacion'] as num?)?.toInt();
         // Igual que el SQL: COALESCE(factor_rel, 1) si la presentación no
         // aparece en la cadena conocida.
-        final factor = idPresentacion == null
-            ? 1.0
-            : (factorPorPresentacion[idPresentacion] ?? 1.0);
+        final factor =
+            idPresentacion == null
+                ? 1.0
+                : (factorPorPresentacion[idPresentacion] ?? 1.0);
 
         totalFisica += cantidad;
         totalBase += cantidad * factor;
@@ -947,7 +1009,7 @@ class ProductDetailService {
                         final unidad =
                             (unidadReceta == null || unidadReceta.isEmpty)
                                 ? (ingredient['presentacion_base'] as String? ??
-                                      '')
+                                    '')
                                 : unidadReceta;
                         final cantidadDisponible =
                             (ingredient['cantidad_disponible'] as num?)

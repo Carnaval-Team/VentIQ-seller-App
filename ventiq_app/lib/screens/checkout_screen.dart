@@ -15,11 +15,13 @@ import '../services/order_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/store_config_service.dart';
 import '../services/currency_service.dart';
+import '../services/moneda_venta_service.dart';
 import '../services/server_time_service.dart';
 import '../services/mesa_service.dart';
 import '../services/mesa_cuenta_service.dart';
 import '../services/sales_mode_service.dart';
 import '../services/bank_sms_service.dart';
+import '../theme/ventiq_home_theme.dart';
 import '../utils/price_utils.dart';
 import '../utils/promotion_rules.dart';
 import '../utils/uuid_generator.dart';
@@ -74,6 +76,50 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   bool _isLoadingUsdRate = false;
   bool _mostrarSelectorMoneda = false;
   final Map<int, String> _paymentCurrencyByMethodId = {};
+
+  // ===== Multimoneda (Fase 3) =====
+  // Monedas que acepta la tienda y su tasa a la moneda base (CUP).
+  List<Map<String, dynamic>> _monedasTienda = const [];
+  Map<String, double> _tasasMoneda = const {};
+
+  /// Código de la moneda base contable.
+  String get _monedaBase => PriceUtils.baseCurrency;
+
+  /// Tasa de una divisa a la moneda base. La base siempre es 1.
+  double _tasaDe(String codigo) =>
+      codigo == _monedaBase ? 1.0 : (_tasasMoneda[codigo] ?? 0.0);
+
+  /// Divisas que la tienda acepta **y** tienen tasa resoluble.
+  ///
+  /// Si solo hay una (el caso normal: CUP), el checkout se comporta igual que
+  /// siempre y no se muestra ningún selector.
+  List<String> get _divisasDisponibles => _monedasTienda
+      .map((m) => (m['codigo'] ?? '').toString().trim().toUpperCase())
+      .where((c) => c.isNotEmpty && _tasaDe(c) > 0)
+      .toList();
+
+  /// ¿Hay algo que elegir? Con una sola divisa no se pinta ningún control.
+  ///
+  /// Con la tienda forzando la divisa tampoco: el vendedor no puede cobrar en
+  /// otra, así que ofrecerle el selector sería ofrecerle un error.
+  bool get _haySelectorMoneda =>
+      _mostrarSelectorMoneda &&
+      _monedaForzada == null &&
+      _divisasDisponibles.length > 1;
+
+  /// Divisa que la tienda impone, ya validada contra las tasas que este
+  /// checkout tiene cargadas. `null` = el vendedor elige libremente (lo de
+  /// siempre).
+  ///
+  /// La valida el servicio al arrancar; aquí solo se comprueba que su tasa
+  /// esté disponible en esta pantalla. Si no lo está (p. ej. falló la consulta
+  /// de tasas), se trata como si no hubiera bloqueo: es peor dejar el cobro sin
+  /// salida que desobedecer un bloqueo en una divisa que la RPC rechazaría.
+  String? get _monedaForzada {
+    final forzada = MonedaVentaService.forzada;
+    if (forzada == null) return null;
+    return _tasaDe(forzada) > 0 ? forzada : null;
+  }
 
   // ===== Confirmación de pago por SMS (PAGOxMOVIL) =====
   final GlobalKey<TransferSmsConfirmationBannerState> _smsBannerKey =
@@ -147,27 +193,88 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       _isLoadingUsdRate = true;
     });
 
+    var monedas = const <Map<String, dynamic>>[];
+    var tasas = const <String, double>{};
+
     try {
-      final rate = await CurrencyService.getUsdRate();
-      setState(() {
-        _usdRate = rate > 0 ? rate : 0.0;
-        _isLoadingUsdRate = false;
-      });
+      // 1) Monedas que acepta ESTA tienda (app_dat_tienda_moneda).
+      monedas = await CurrencyService.getMonedasTienda();
     } catch (e) {
-      print('❌ Error loading USD rate: $e');
+      print('❌ Error cargando monedas de la tienda: $e');
+    }
+
+    try {
+      // 2) Tasas a CUP de esas monedas. Usa la MISMA `fn_tasa_cambio` que el
+      // servidor al registrar el cobro, así el importe mostrado y el guardado
+      // no pueden discrepar.
+      tasas = await CurrencyService.getRatesForStore();
+    } catch (e) {
+      print('❌ Error cargando tasas de la tienda: $e');
+    }
+
+    // Respaldo: si falla la consulta de monedas, mantener el comportamiento
+    // previo (CUP + USD con la tasa cacheada).
+    if (monedas.isEmpty) {
+      monedas = [
+        {'codigo': PriceUtils.baseCurrency, 'orden': 10},
+        {'codigo': 'USD', 'orden': 20},
+      ];
+    }
+
+    var usd = tasas['USD'] ?? 0.0;
+    if (usd <= 0) {
       try {
         final cached = await UserPreferencesService().getCambioCupUsd();
-        setState(() {
-          _usdRate = cached > 0 ? cached : 0.0;
-          _isLoadingUsdRate = false;
-        });
+        usd = cached > 0 ? cached : 0.0;
       } catch (_) {
-        setState(() {
-          _usdRate = 0.0;
-          _isLoadingUsdRate = false;
-        });
+        usd = 0.0;
       }
+      if (usd > 0) tasas = {...tasas, 'USD': usd};
     }
+
+    if (!mounted) return;
+    setState(() {
+      _monedasTienda = monedas;
+      _tasasMoneda = {...tasas, PriceUtils.baseCurrency: 1.0};
+      _usdRate = usd;
+      _isLoadingUsdRate = false;
+    });
+    _aplicarMonedaVentaPorDefecto();
+  }
+
+  /// Usa la **moneda de venta** como divisa por defecto de las líneas de pago.
+  ///
+  /// Es el último punto que faltaba del diseño: si el vendedor muestra los
+  /// precios en EUR porque va a cobrar en EUR, el cobro no debería empezar en
+  /// CUP obligándole a cambiar divisa en cada método.
+  ///
+  /// Condiciones (todas deliberadas):
+  /// * la divisa tiene que ser de la tienda y tener tasa resoluble (si no, la
+  ///   RPC rechazaría el pago);
+  /// * sin bloqueo, el vendedor tiene que haber elegido **activamente** una
+  ///   divisa distinta de la base (si no, `actual` es CUP y aquí no se hace
+  ///   nada) y no se pisa una elección previa del cajero;
+  /// * con la tienda forzando la divisa esa condición desaparece: ya no es una
+  ///   preferencia del teléfono sino la única divisa legal, así que se aplica
+  ///   aunque el cajero hubiera tocado algo antes.
+  ///
+  /// **No** se exige el flag legado `mostrar_selector_moneda`: ese flag gobernaba
+  /// el antiguo toggle CUP/USD. Si el vendedor fijó EUR como moneda de venta y la
+  /// tienda acepta EUR, el cobro tiene que ir en EUR aunque el flag esté apagado;
+  /// de lo contrario el Home mostraría los precios en EUR y el cobro se
+  /// registraría en CUP, que es justo la incoherencia que esto viene a cerrar.
+  void _aplicarMonedaVentaPorDefecto() {
+    final forzada = _monedaForzada;
+    if (forzada == null && _paymentCurrencyByMethodId.isNotEmpty) return;
+
+    final moneda = forzada ?? MonedaVentaService.actual;
+    if (moneda == _monedaBase || _tasaDe(moneda) <= 0) return;
+    for (final item in widget.order.items) {
+      final method = item.paymentMethod;
+      if (method == null || method.esPagoPendiente) continue;
+      _paymentCurrencyByMethodId[method.id] = moneda;
+    }
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadGlobalPromotion() async {
@@ -249,6 +356,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             _configLoading = false;
           });
         }
+        // `_mostrarSelectorMoneda` se resuelve aquí y `_loadUsdRate()` corre en
+        // paralelo: si esta carga termina después, es la que puede aplicar la
+        // divisa por defecto. Es idempotente.
+        _aplicarMonedaVentaPorDefecto();
       }
     } catch (e) {
       print('❌ Error cargando configuración: $e');
@@ -415,30 +526,41 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   double get finalTotal => totalAfterPromo;
 
-  bool get _displayTotalsInUsd {
-    final methodIds =
-        widget.order.items
-            .where((item) => !(item.paymentMethod?.esPagoPendiente ?? false))
-            .map((item) {
-              final id = item.paymentMethod?.id;
-              return id;
-            })
-            .whereType<int>()
-            .toSet();
-    return methodIds.isNotEmpty &&
-        _usdRate > 0 &&
-        methodIds.every(
-          (id) => (_paymentCurrencyByMethodId[id] ?? 'CUP') == 'USD',
-        );
+  /// Ids de método con pago real (ni nulo ni "Pago Pendiente").
+  Set<int> get _methodIdsCobrados => widget.order.items
+      .where((item) => !(item.paymentMethod?.esPagoPendiente ?? false))
+      .map((item) => item.paymentMethod?.id)
+      .whereType<int>()
+      .toSet();
+
+  /// Moneda en la que se presenta el total del checkout.
+  ///
+  /// Si todas las líneas comparten una divisa distinta de la base, se muestra
+  /// en esa divisa; si hay mezcla (o es la base), se muestra en la moneda base.
+  String get _monedaVisualizacion {
+    final ids = _methodIdsCobrados;
+    if (ids.isEmpty) return _monedaBase;
+    final monedas = ids
+        .map((id) => _paymentCurrencyByMethodId[id] ?? _monedaBase)
+        .toSet();
+    if (monedas.length == 1 && monedas.first != _monedaBase) {
+      return _tasaDe(monedas.first) > 0 ? monedas.first : _monedaBase;
+    }
+    return _monedaBase;
   }
 
-  double _displayAmount(double cupAmount) =>
-      _displayTotalsInUsd ? cupAmount / _usdRate : cupAmount;
+  /// Se conserva el nombre para no romper las llamadas existentes.
+  bool get _displayTotalsInUsd => _monedaVisualizacion == 'USD';
 
-  String _formatCheckoutAmount(double cupAmount) {
-    final currency = _displayTotalsInUsd ? 'USD' : 'CUP';
-    return '${_displayAmount(cupAmount).toMoneyString(2)} $currency';
+  double _displayAmount(double cupAmount) {
+    final moneda = _monedaVisualizacion;
+    if (moneda == _monedaBase) return cupAmount;
+    final tasa = _tasaDe(moneda);
+    return tasa > 0 ? cupAmount / tasa : cupAmount;
   }
+
+  String _formatCheckoutAmount(double cupAmount) =>
+      '${_displayAmount(cupAmount).toMoneyString(2)} $_monedaVisualizacion';
 
   // Calculate payment breakdown from individual product payment methods
   Map<String, double> get paymentBreakdown {
@@ -456,27 +578,38 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   List<Map<String, dynamic>> get _currencyPaymentLines {
-    final grouped = <int, Map<String, dynamic>>{};
+    // La clave es (método, moneda), no solo el método: así el MISMO método
+    // puede cobrarse en dos divisas distintas en la misma venta (decisión D1).
+    final grouped = <String, Map<String, dynamic>>{};
     for (final item in widget.order.items) {
       final method = item.paymentMethod;
       if (method == null || method.esPagoPendiente) continue;
       final methodId = method.id;
-      final currency = _paymentCurrencyByMethodId[methodId] ?? 'CUP';
+      final currency = _paymentCurrencyByMethodId[methodId] ?? _monedaBase;
+      final tasa = _tasaDe(currency);
+
+      // Sin tasa no hay forma de consolidar: la línea no se envía y la
+      // validación avisa antes de cobrar.
+      if (currency != _monedaBase && tasa <= 0) continue;
+
       final cupAmount = _calculateItemPrice(item);
+      final key = '$methodId|$currency';
       final line = grouped.putIfAbsent(
-        methodId,
+        key,
         () => {
           'id_medio_pago': methodId,
           'denominacion': method.denominacion,
           'monto': 0.0,
           'moneda': currency,
-          'tasa_usd': currency == 'USD' ? _usdRate : null,
+          'tasa_cambio': currency == _monedaBase ? 1.0 : tasa,
+          // Compatibilidad con la RPC antigua (solo entiende `tasa_usd`).
+          'tasa_usd': currency == 'USD' ? tasa : null,
           'tipo_pago': methodId == 1 ? 1 : 2,
         },
       );
       line['monto'] =
           (line['monto'] as double) +
-          (currency == 'USD' ? cupAmount / _usdRate : cupAmount);
+          (currency == _monedaBase ? cupAmount : cupAmount / tasa);
     }
     return grouped.values.toList();
   }
@@ -484,16 +617,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: VentiqHomeTheme.surface,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF4A90E2),
+        backgroundColor: VentiqHomeTheme.primary,
         elevation: 0,
         title: const Text(
           'Finalizar Orden',
           style: TextStyle(
             color: Colors.white,
             fontSize: 18,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w700,
           ),
         ),
         centerTitle: true,
@@ -554,35 +687,32 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[300]!),
+        color: VentiqHomeTheme.card,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: VentiqHomeTheme.border),
+        boxShadow: VentiqHomeTheme.shadowCard,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Resumen de la Orden',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF1F2937),
-            ),
-          ),
+          const Text('Resumen de la Orden', style: VentiqHomeTheme.tituloSeccion),
           const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
                 '${widget.order.distinctItemCount} producto${widget.order.distinctItemCount == 1 ? '' : 's'}',
-                style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: VentiqHomeTheme.textSecondary,
+                ),
               ),
               Text(
                 _formatCheckoutAmount(subtotal),
                 style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF1F2937),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: VentiqHomeTheme.textPrimary,
                 ),
               ),
             ],
@@ -596,21 +726,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[300]!),
+        color: VentiqHomeTheme.card,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: VentiqHomeTheme.border),
+        boxShadow: VentiqHomeTheme.shadowCard,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Código de Promoción',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF1F2937),
-            ),
-          ),
+          const Text('Código de Promoción', style: VentiqHomeTheme.tituloSeccion),
           const SizedBox(height: 12),
           Row(
             children: [
@@ -618,15 +742,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 child: TextFormField(
                   controller: _promoCodeController,
                   enabled: !_promoApplied,
-                  decoration: InputDecoration(
+                  decoration: const InputDecoration(
                     hintText: 'Ingresa código promocional',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
                   ),
                 ),
               ),
@@ -635,11 +752,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 onPressed: _promoApplied ? _removePromo : _applyPromo,
                 style: ElevatedButton.styleFrom(
                   backgroundColor:
-                      _promoApplied ? Colors.red : const Color(0xFF4A90E2),
+                      _promoApplied
+                          ? VentiqHomeTheme.danger
+                          : VentiqHomeTheme.primary,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16,
                     vertical: 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
                   ),
                 ),
                 child: Text(_promoApplied ? 'Quitar' : 'Aplicar'),
@@ -655,16 +777,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   'Descuento promocional:',
                   style: TextStyle(
                     fontSize: 14,
-                    color: Colors.green,
-                    fontWeight: FontWeight.w500,
+                    color: VentiqHomeTheme.success,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
                 Text(
                   '-${_formatCheckoutAmount(_promoDiscount)}',
                   style: const TextStyle(
                     fontSize: 14,
-                    color: Colors.green,
-                    fontWeight: FontWeight.w600,
+                    color: VentiqHomeTheme.success,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ],
@@ -704,14 +826,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFFBEB),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFF59E0B)),
+        color: VentiqHomeTheme.warning.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: VentiqHomeTheme.warning.withOpacity(0.45)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.account_balance_wallet, color: Color(0xFFB45309)),
+          const Icon(Icons.account_balance_wallet, color: VentiqHomeTheme.warning),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -723,15 +845,21 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       : 'Parte de esta orden quedará como Cuenta por Cobrar',
                   style: const TextStyle(
                     fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFFB45309),
+                    fontWeight: FontWeight.w700,
+                    color: VentiqHomeTheme.warning,
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Monto pendiente: \$${PriceUtils.formatAmount(monto)}. No se cobra ahora; '
+                  'Monto pendiente: '
+                  '${MonedaVentaService.formatearPrecio(monto, conSimbolo: true)}. '
+                  'No se cobra ahora; '
                   'queda como saldo a favor de la tienda contra el cliente.',
-                  style: TextStyle(fontSize: 12, color: Colors.brown[800]),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: VentiqHomeTheme.textSecondary,
+                    height: 1.35,
+                  ),
                 ),
               ],
             ),
@@ -742,44 +870,51 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Widget _buildPaymentBreakdownDetails(Map<String, double> breakdown) {
+    final forzada = _monedaForzada;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[300]!),
+        color: VentiqHomeTheme.card,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: VentiqHomeTheme.border),
+        boxShadow: VentiqHomeTheme.shadowCard,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Desglose de Pagos',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF1F2937),
-            ),
-          ),
+          const Text('Desglose de Pagos', style: VentiqHomeTheme.tituloSeccion),
+          // Aquí no llega el chip de la barra: sin este aviso, el vendedor
+          // vería desaparecer el selector por línea sin saber por qué.
+          if (forzada != null) ...[
+            const SizedBox(height: 4),
+            _buildMonedaForzadaBadge(forzada),
+          ],
           const SizedBox(height: 12),
           if (breakdown.isEmpty) ...[
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.orange.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                color: VentiqHomeTheme.warning.withOpacity(0.10),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: VentiqHomeTheme.warning.withOpacity(0.35),
+                ),
               ),
-              child: Row(
+              child: const Row(
                 children: [
-                  Icon(Icons.warning_amber, color: Colors.orange, size: 20),
-                  const SizedBox(width: 8),
-                  const Expanded(
+                  Icon(
+                    Icons.warning_amber_rounded,
+                    color: VentiqHomeTheme.warning,
+                    size: 20,
+                  ),
+                  SizedBox(width: 8),
+                  Expanded(
                     child: Text(
                       'Algunos productos no tienen método de pago asignado',
                       style: TextStyle(
                         fontSize: 14,
-                        color: Colors.orange,
-                        fontWeight: FontWeight.w500,
+                        color: VentiqHomeTheme.warning,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
@@ -794,14 +929,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               final methodInfo = _paymentMethodInfoForName(methodName);
               final methodId = methodInfo?.id;
               final esPendiente = methodInfo?.esPagoPendiente ?? false;
-              final currency =
-                  methodId == null
-                      ? 'CUP'
-                      : (_paymentCurrencyByMethodId[methodId] ?? 'CUP');
-              final displayAmount =
-                  currency == 'USD' && _usdRate > 0
-                      ? amount / _usdRate
-                      : amount;
+              final currency = methodId == null
+                  ? _monedaBase
+                  : (_paymentCurrencyByMethodId[methodId] ?? _monedaBase);
+              final tasaLinea = _tasaDe(currency);
+              final displayAmount = (currency == _monedaBase || tasaLinea <= 0)
+                  ? amount
+                  : amount / tasaLinea;
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Row(
@@ -818,27 +952,24 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                                color: Color(0xFF1F2937),
+                                fontWeight: FontWeight.w600,
+                                color: VentiqHomeTheme.textPrimary,
                               ),
                             ),
                           ),
                         ],
                       ),
                     ),
-                    if (methodId != null &&
-                        !esPendiente &&
-                        _usdRate > 0 &&
-                        _mostrarSelectorMoneda) ...[
-                      _buildCurrencyToggle(methodId, currency),
+                    if (methodId != null && !esPendiente && _haySelectorMoneda) ...[
+                      _buildCurrencySelector(methodId, currency),
                       const SizedBox(width: 8),
                     ],
                     Text(
                       '${displayAmount.toMoneyString(2)} $currency',
                       style: const TextStyle(
                         fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF4A90E2),
+                        fontWeight: FontWeight.w700,
+                        color: VentiqHomeTheme.primary,
                       ),
                     ),
                   ],
@@ -854,8 +985,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   'Total por métodos de pago:',
                   style: TextStyle(
                     fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1F2937),
+                    fontWeight: FontWeight.w700,
+                    color: VentiqHomeTheme.textPrimary,
                   ),
                 ),
                 Text(
@@ -863,14 +994,40 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     breakdown.values.fold(0.0, (sum, amount) => sum + amount),
                   ),
                   style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF4A90E2),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: VentiqHomeTheme.primary,
                   ),
                 ),
               ],
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  /// Recuerda que la divisa de cobro la impone la tienda y no se puede cambiar.
+  Widget _buildMonedaForzadaBadge(String moneda) {
+    return Tooltip(
+      message: 'La tienda fuerza esta moneda: la venta se cobra en ella.',
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.lock_outline,
+            size: 13,
+            color: VentiqHomeTheme.textSecondary,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            'Moneda fija: $moneda',
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: VentiqHomeTheme.textSecondary,
+            ),
+          ),
         ],
       ),
     );
@@ -888,52 +1045,96 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     return null;
   }
 
-  /// Toggle compacto CUP/USD para que el cajero elija la moneda de cobro de
-  /// cada método en esta venta. Actualiza [_paymentCurrencyByMethodId], que
-  /// usan `_currencyPaymentLines` y el desglose offline al persistir.
-  Widget _buildCurrencyToggle(int methodId, String currency) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.grey[100],
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: Colors.grey[300]!),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children:
-            ['CUP', 'USD'].map((c) {
-              final selected = c == currency;
-              return GestureDetector(
-                onTap: () {
-                  setState(() {
-                    if (c == 'CUP') {
-                      _paymentCurrencyByMethodId.remove(methodId);
-                    } else {
-                      _paymentCurrencyByMethodId[methodId] = 'USD';
-                    }
-                  });
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color:
-                        selected ? const Color(0xFF4A90E2) : Colors.transparent,
-                    borderRadius: BorderRadius.circular(5),
-                  ),
-                  child: Text(
-                    c,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: selected ? Colors.white : Colors.grey[700],
-                    ),
+  /// Selector de moneda de la línea, **adaptado al número de divisas**.
+  ///
+  /// - 1 divisa (lo normal: solo CUP): no se pinta nada.
+  /// - 2 divisas: toggle compacto, un solo toque (como el CUP/USD de antes).
+  /// - 3 o más: menú desplegable.
+  ///
+  /// Actualiza [_paymentCurrencyByMethodId], que usan `_currencyPaymentLines`,
+  /// el desglose offline y la validación previa al cobro.
+  Widget _buildCurrencySelector(int methodId, String currency) {
+    final opciones = _divisasDisponibles;
+    if (opciones.length < 2) return const SizedBox.shrink();
+
+    void seleccionar(String c) {
+      setState(() {
+        if (c == _monedaBase) {
+          _paymentCurrencyByMethodId.remove(methodId);
+        } else {
+          _paymentCurrencyByMethodId[methodId] = c;
+        }
+      });
+    }
+
+    if (opciones.length == 2) {
+      return Container(
+        decoration: BoxDecoration(
+          color: VentiqHomeTheme.surface,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: VentiqHomeTheme.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: opciones.map((c) {
+            final selected = c == currency;
+            return GestureDetector(
+              onTap: () => seleccionar(c),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: selected
+                      ? VentiqHomeTheme.primary
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  c,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: selected
+                        ? Colors.white
+                        : VentiqHomeTheme.textSecondary,
                   ),
                 ),
-              );
-            }).toList(),
+              ),
+            );
+          }).toList(),
+        ),
+      );
+    }
+
+    return PopupMenuButton<String>(
+      initialValue: currency,
+      tooltip: 'Moneda de cobro',
+      onSelected: seleccionar,
+      itemBuilder: (_) => opciones
+          .map((c) => PopupMenuItem<String>(value: c, child: Text(c)))
+          .toList(),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: VentiqHomeTheme.surface,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: VentiqHomeTheme.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              currency,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const Icon(Icons.arrow_drop_down, size: 16),
+          ],
+        ),
       ),
     );
   }
@@ -958,15 +1159,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        color: VentiqHomeTheme.card,
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(
           color:
               mesa == null
-                  ? Colors.orange.shade300
-                  : const Color(0xFF4A90E2).withOpacity(0.4),
-          width: mesa == null ? 1.5 : 1,
+                  ? VentiqHomeTheme.warning.withOpacity(0.5)
+                  : VentiqHomeTheme.border,
+          width: mesa == null ? 1.4 : 1,
         ),
+        boxShadow: VentiqHomeTheme.shadowCard,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -975,31 +1177,24 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             children: [
               const Icon(
                 Icons.table_restaurant,
-                color: Color(0xFFE65100),
+                color: VentiqHomeTheme.warning,
                 size: 22,
               ),
               const SizedBox(width: 8),
-              const Text(
-                'Mesa de la cuenta',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF1F2937),
-                ),
-              ),
+              const Text('Mesa de la cuenta', style: VentiqHomeTheme.tituloSeccion),
               const Spacer(),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE65100).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(10),
+                  color: VentiqHomeTheme.warning.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Text(
                   'Modo Restaurante',
                   style: TextStyle(
                     fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFFE65100),
+                    fontWeight: FontWeight.w800,
+                    color: VentiqHomeTheme.warning,
                   ),
                 ),
               ),
@@ -1007,9 +1202,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           ),
           const SizedBox(height: 12),
           if (mesa == null) ...[
-            Text(
+            const Text(
               'Selecciona una mesa para asociar esta cuenta',
-              style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+              style: TextStyle(
+                fontSize: 13,
+                color: VentiqHomeTheme.textSecondary,
+              ),
             ),
             const SizedBox(height: 10),
             SizedBox(
@@ -1019,9 +1217,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 icon: const Icon(Icons.search),
                 label: const Text('Seleccionar mesa'),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF4A90E2),
                   padding: const EdgeInsets.symmetric(vertical: 14),
-                  side: const BorderSide(color: Color(0xFF4A90E2)),
                 ),
               ),
             ),
@@ -1029,10 +1225,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: const Color(0xFF4A90E2).withOpacity(0.08),
-                borderRadius: BorderRadius.circular(10),
+                color: VentiqHomeTheme.primary.withOpacity(0.06),
+                borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: const Color(0xFF4A90E2).withOpacity(0.2),
+                  color: VentiqHomeTheme.primary.withOpacity(0.18),
                 ),
               ),
               child: Row(
@@ -1041,8 +1237,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     width: 44,
                     height: 44,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF4A90E2),
-                      borderRadius: BorderRadius.circular(10),
+                      color: VentiqHomeTheme.primary,
+                      borderRadius: BorderRadius.circular(12),
                     ),
                     alignment: Alignment.center,
                     child: Text(
@@ -1050,7 +1246,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 14,
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w800,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -1065,39 +1261,39 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                           'Mesa ${mesa.numero}',
                           style: const TextStyle(
                             fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF1F2937),
+                            fontWeight: FontWeight.w700,
+                            color: VentiqHomeTheme.textPrimary,
                           ),
                         ),
                         Row(
                           children: [
                             if (mesa.zona != null && mesa.zona!.isNotEmpty) ...[
-                              Icon(
+                              const Icon(
                                 Icons.location_on_outlined,
                                 size: 12,
-                                color: Colors.grey[600],
+                                color: VentiqHomeTheme.textSecondary,
                               ),
                               const SizedBox(width: 2),
                               Text(
                                 mesa.zona!,
-                                style: TextStyle(
+                                style: const TextStyle(
                                   fontSize: 12,
-                                  color: Colors.grey[600],
+                                  color: VentiqHomeTheme.textSecondary,
                                 ),
                               ),
                               const SizedBox(width: 8),
                             ],
-                            Icon(
+                            const Icon(
                               Icons.people_alt_outlined,
                               size: 12,
-                              color: Colors.grey[600],
+                              color: VentiqHomeTheme.textSecondary,
                             ),
                             const SizedBox(width: 2),
                             Text(
                               'Cap: ${mesa.capacidad}',
-                              style: TextStyle(
+                              style: const TextStyle(
                                 fontSize: 12,
-                                color: Colors.grey[600],
+                                color: VentiqHomeTheme.textSecondary,
                               ),
                             ),
                           ],
@@ -1107,7 +1303,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   ),
                   IconButton(
                     icon: const Icon(Icons.swap_horiz),
-                    color: const Color(0xFF4A90E2),
+                    color: VentiqHomeTheme.primary,
                     tooltip: 'Cambiar mesa',
                     onPressed: _abrirSelectorMesas,
                   ),
@@ -1163,48 +1359,50 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        color: VentiqHomeTheme.card,
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(
           color:
-              tienePagoPendiente ? const Color(0xFFF59E0B) : Colors.grey[300]!,
-          width: tienePagoPendiente ? 1.5 : 1,
+              tienePagoPendiente
+                  ? VentiqHomeTheme.warning.withOpacity(0.5)
+                  : VentiqHomeTheme.border,
+          width: tienePagoPendiente ? 1.4 : 1,
         ),
+        boxShadow: VentiqHomeTheme.shadowCard,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Datos del Comprador',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF1F2937),
-            ),
-          ),
+          const Text('Datos del Comprador', style: VentiqHomeTheme.tituloSeccion),
           if (tienePagoPendiente) ...[
             const SizedBox(height: 8),
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: const Color(0xFFFFFBEB),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFF59E0B)),
+                color: VentiqHomeTheme.warning.withOpacity(0.10),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: VentiqHomeTheme.warning.withOpacity(0.4),
+                ),
               ),
-              child: Row(
+              child: const Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.account_balance_wallet,
-                    color: Color(0xFFB45309),
+                    color: VentiqHomeTheme.warning,
                     size: 18,
                   ),
-                  const SizedBox(width: 8),
+                  SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       'Esta venta queda como cuenta por cobrar. Selecciona un '
                       'cliente existente o crea uno nuevo.',
-                      style: TextStyle(fontSize: 12, color: Colors.brown[800]),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: VentiqHomeTheme.textSecondary,
+                        height: 1.35,
+                      ),
                     ),
                   ),
                 ],
@@ -1215,24 +1413,26 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: Colors.green[50],
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.green[300]!),
+                  color: VentiqHomeTheme.success.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: VentiqHomeTheme.success.withOpacity(0.35),
+                  ),
                 ),
                 child: Row(
                   children: [
-                    Icon(
+                    const Icon(
                       Icons.check_circle,
-                      color: Colors.green[700],
+                      color: VentiqHomeTheme.success,
                       size: 18,
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         'Cliente existente: ${_buyerNameController.text}',
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontSize: 13,
-                          color: Colors.green[900],
+                          color: VentiqHomeTheme.textPrimary,
                         ),
                       ),
                     ),
@@ -1257,8 +1457,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   icon: const Icon(Icons.search),
                   label: const Text('Buscar cliente con cuenta por cobrar'),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFFB45309),
-                    side: const BorderSide(color: Color(0xFFF59E0B)),
+                    foregroundColor: VentiqHomeTheme.warning,
+                    side: const BorderSide(color: VentiqHomeTheme.warning),
                   ),
                 ),
               ),
@@ -1275,13 +1475,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       : tienePagoPendiente
                       ? 'O escribe el nombre para crear un cliente nuevo *'
                       : 'Nombre completo *',
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 8,
-              ),
             ),
             validator: (value) {
               if (value == null || value.trim().isEmpty) {
@@ -1295,15 +1488,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             controller: _buyerPhoneController,
             enabled: _selectedExistingClientId == null,
             keyboardType: TextInputType.phone,
-            decoration: InputDecoration(
+            decoration: const InputDecoration(
               labelText: 'Teléfono (opcional)',
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 8,
-              ),
             ),
             validator: (value) {
               // Phone is now optional, no validation required
@@ -1361,39 +1547,32 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[300]!),
+        color: VentiqHomeTheme.card,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: VentiqHomeTheme.border),
+        boxShadow: VentiqHomeTheme.shadowCard,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
             'Contactos Adicionales',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF1F2937),
-            ),
+            style: VentiqHomeTheme.tituloSeccion,
           ),
           const SizedBox(height: 8),
-          Text(
+          const Text(
             'Opcional - Contactos extras del cliente',
-            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            style: TextStyle(
+              fontSize: 12,
+              color: VentiqHomeTheme.textSecondary,
+            ),
           ),
           const SizedBox(height: 12),
           TextFormField(
             controller: _extraContactsController,
             maxLines: 3,
-            decoration: InputDecoration(
+            decoration: const InputDecoration(
               hintText: 'Ej: María - 555-1234, Juan - 555-5678',
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 8,
-              ),
             ),
           ),
         ],
@@ -1402,57 +1581,71 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Widget _buildFinalTotalSection() {
-    final hasRate = _usdRate > 0;
-    final secondaryLabel =
-        _displayTotalsInUsd
-            ? 'Equivalente CUP'
-            : hasRate
-            ? 'Equivalente USD (1 USD = ${_usdRate.toStringAsFixed(2)} CUP)'
-            : 'Equivalente USD';
-    final secondaryAmount =
-        _displayTotalsInUsd
-            ? '${finalTotal.toMoneyString(2)} CUP'
-            : hasRate
-            ? '${(finalTotal / _usdRate).toMoneyString(2)} USD'
-            : 'N/D';
+    final monedaVista = _monedaVisualizacion;
+    final esBase = monedaVista == _monedaBase;
+    final secondaryLabel = esBase
+        ? (_usdRate > 0
+              ? 'Equivalente USD (1 USD = ${_usdRate.toStringAsFixed(2)} $_monedaBase)'
+              : 'Equivalente USD')
+        : 'Equivalente $_monedaBase';
+    final secondaryAmount = esBase
+        ? (_usdRate > 0
+              ? '${(finalTotal / _usdRate).toMoneyString(2)} USD'
+              : 'N/D')
+        : '${finalTotal.toMoneyString(2)} $_monedaBase';
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFF4A90E2).withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF4A90E2).withOpacity(0.3)),
+        color: VentiqHomeTheme.card,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: VentiqHomeTheme.border),
+        boxShadow: VentiqHomeTheme.shadowCard,
       ),
       child: Column(
         children: [
           CheckoutAmountRow(
             label: 'Subtotal:',
             amount: _formatCheckoutAmount(subtotal),
-            labelStyle: const TextStyle(fontSize: 14),
-            amountStyle: const TextStyle(fontSize: 14),
+            labelStyle: const TextStyle(
+              fontSize: 14,
+              color: VentiqHomeTheme.textSecondary,
+            ),
+            amountStyle: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: VentiqHomeTheme.textPrimary,
+            ),
           ),
           if (_promoDiscount > 0) ...[
             const SizedBox(height: 4),
             CheckoutAmountRow(
               label: 'Descuento promocional:',
               amount: '-${_formatCheckoutAmount(_promoDiscount)}',
-              labelStyle: const TextStyle(fontSize: 14, color: Colors.green),
-              amountStyle: const TextStyle(fontSize: 14, color: Colors.green),
+              labelStyle: const TextStyle(
+                fontSize: 14,
+                color: VentiqHomeTheme.success,
+              ),
+              amountStyle: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: VentiqHomeTheme.success,
+              ),
             ),
           ],
-          const Divider(height: 16),
+          const Divider(height: 18),
           CheckoutAmountRow(
             label: 'Total Final:',
             amount: _formatCheckoutAmount(finalTotal),
             labelStyle: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF1F2937),
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: VentiqHomeTheme.textPrimary,
             ),
             amountStyle: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF4A90E2),
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
+              color: VentiqHomeTheme.primary,
             ),
           ),
           const SizedBox(height: 8),
@@ -1460,15 +1653,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             label: secondaryLabel,
             amount: secondaryAmount,
             isLoading: _isLoadingUsdRate,
-            labelStyle: TextStyle(
+            labelStyle: const TextStyle(
               fontSize: 13,
-              color: Colors.grey[700],
+              color: VentiqHomeTheme.textSecondary,
               fontWeight: FontWeight.w600,
             ),
             amountStyle: const TextStyle(
               fontSize: 14,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF4A90E2),
+              fontWeight: FontWeight.w700,
+              color: VentiqHomeTheme.textPrimary,
             ),
           ),
         ],
@@ -1478,18 +1671,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   Widget _buildOperationPhotoSection() {
     final hasPhoto = _fotoOperacionBytes != null;
+    final accent = hasPhoto ? VentiqHomeTheme.success : VentiqHomeTheme.primary;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.blue.withOpacity(0.06),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.blue.withOpacity(0.25)),
+        color: accent.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: accent.withOpacity(0.25)),
       ),
       child: Row(
         children: [
           Icon(
             hasPhoto ? Icons.check_circle_outline : Icons.add_a_photo_outlined,
-            color: hasPhoto ? Colors.green : Colors.blue,
+            color: accent,
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -1497,6 +1691,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               hasPhoto
                   ? 'Foto de la operación seleccionada'
                   : 'Debes adjuntar una foto para crear la operación',
+              style: const TextStyle(
+                fontSize: 13,
+                color: VentiqHomeTheme.textPrimary,
+              ),
             ),
           ),
           TextButton(
@@ -1512,19 +1710,23 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.orange.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.orange.withOpacity(0.3)),
+        color: VentiqHomeTheme.warning.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: VentiqHomeTheme.warning.withOpacity(0.3)),
       ),
       child: Row(
         children: [
-          const Icon(Icons.wifi_off_rounded, color: Colors.orange),
+          const Icon(Icons.wifi_off_rounded, color: VentiqHomeTheme.warning),
           const SizedBox(width: 12),
           const Expanded(
             child: Text(
               'En modo offline no se puede gestionar la imagen de la operación. '
               'La orden se creará sin foto.',
-              style: TextStyle(fontSize: 13, color: Color(0xFF78350F)),
+              style: TextStyle(
+                fontSize: 13,
+                color: VentiqHomeTheme.textSecondary,
+                height: 1.35,
+              ),
             ),
           ),
         ],
@@ -1640,10 +1842,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       child: ElevatedButton(
         onPressed: _isProcessing ? null : _createOrder,
         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF4A90E2),
+          backgroundColor: VentiqHomeTheme.primary,
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
         child:
             _isProcessing
@@ -1657,7 +1859,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 )
                 : const Text(
                   'Crear Orden',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                 ),
       ),
     );
@@ -1888,12 +2090,33 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       return;
     }
 
-    final usesUsd = _paymentCurrencyByMethodId.values.contains('USD');
-    if (usesUsd && _usdRate <= 0) {
+    // Toda divisa distinta de la base necesita tasa para poder consolidar.
+    // Antes solo se comprobaba USD; con más divisas hay que comprobarlas todas.
+    final sinTasa = _paymentCurrencyByMethodId.values
+        .where((c) => c != _monedaBase && _tasaDe(c) <= 0)
+        .toSet();
+    if (sinTasa.isNotEmpty) {
       _showErrorMessage(
-        'No hay una tasa USD válida. Sincroniza la tienda o cobra en CUP.',
+        'No hay tipo de cambio para ${sinTasa.join(", ")}. '
+        'Sincroniza la tienda o cobra en $_monedaBase.',
       );
       return;
+    }
+
+    // Offline: solo CUP y USD tienen tasas cacheables. El resto exige conexión
+    // (decisión D2 hasta la Fase 4).
+    final fueraDeOffline = _paymentCurrencyByMethodId.values
+        .where((c) => c != _monedaBase && c != 'USD')
+        .toSet();
+    if (fueraDeOffline.isNotEmpty) {
+      final offline = await _userPreferencesService.isOfflineModeEnabled();
+      if (offline) {
+        _showErrorMessage(
+          'Sin conexión solo se puede cobrar en $_monedaBase o USD. '
+          'Conéctate para cobrar en ${fueraDeOffline.join(", ")}.',
+        );
+        return;
+      }
     }
 
     // CxC ya no se crea desde el TPV (se gestiona en admin). Si quedó un
@@ -2010,24 +2233,28 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         final rawMethodId = item.paymentMethod?.id;
         final normalizedMethodId = rawMethodId;
         final paymentMethodId = normalizedMethodId?.toString() ?? 'sin_metodo';
-        final currency =
-            normalizedMethodId == null
-                ? 'CUP'
-                : (_paymentCurrencyByMethodId[normalizedMethodId] ?? 'CUP');
-        if (!paymentBreakdown.containsKey(paymentMethodId)) {
-          paymentBreakdown[paymentMethodId] = {
+        final currency = normalizedMethodId == null
+                ? _monedaBase
+                : (_paymentCurrencyByMethodId[normalizedMethodId] ??
+                      _monedaBase);
+        final tasaLinea = _tasaDe(currency);
+        // Clave (método, moneda): el mismo método puede ir en dos divisas.
+        final clave = '$paymentMethodId|$currency';
+        if (!paymentBreakdown.containsKey(clave)) {
+          paymentBreakdown[clave] = {
             'id_medio_pago': normalizedMethodId,
             'denominacion': item.paymentMethod?.denominacion ?? 'Sin método',
             'monto': 0.0,
             'moneda': currency,
-            'tasa_usd': currency == 'USD' ? _usdRate : null,
+            'tasa_cambio': currency == _monedaBase ? 1.0 : tasaLinea,
+            'tasa_usd': currency == 'USD' ? tasaLinea : null,
             'es_digital': item.paymentMethod?.esDigital ?? false,
             'es_efectivo': item.paymentMethod?.esEfectivo ?? false,
           };
         }
-        paymentBreakdown[paymentMethodId]!['monto'] =
-            (paymentBreakdown[paymentMethodId]!['monto'] as double) +
-            (currency == 'USD' ? itemTotal / _usdRate : itemTotal);
+        paymentBreakdown[clave]!['monto'] =
+            (paymentBreakdown[clave]!['monto'] as double) +
+            (currency == _monedaBase ? itemTotal : itemTotal / tasaLinea);
       }
 
       final total = subtotal - totalDescuentos;
@@ -2438,13 +2665,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   void _showSuccessMessage(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.green),
+      SnackBar(content: Text(message), backgroundColor: VentiqHomeTheme.success),
     );
   }
 
   void _showErrorMessage(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red),
+      SnackBar(content: Text(message), backgroundColor: VentiqHomeTheme.danger),
     );
   }
 }
@@ -2505,7 +2732,7 @@ class _MesaPickerSheetState extends State<_MesaPickerSheet> {
                 height: 4,
                 margin: const EdgeInsets.symmetric(vertical: 8),
                 decoration: BoxDecoration(
-                  color: Colors.grey[300],
+                  color: VentiqHomeTheme.border,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -2515,17 +2742,13 @@ class _MesaPickerSheetState extends State<_MesaPickerSheet> {
                   children: [
                     const Icon(
                       Icons.table_restaurant,
-                      color: Color(0xFFE65100),
+                      color: VentiqHomeTheme.warning,
                     ),
                     const SizedBox(width: 8),
                     const Expanded(
                       child: Text(
                         'Seleccionar Mesa',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1F2937),
-                        ),
+                        style: VentiqHomeTheme.tituloSeccion,
                       ),
                     ),
                     IconButton(
@@ -2538,13 +2761,10 @@ class _MesaPickerSheetState extends State<_MesaPickerSheet> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: TextField(
-                  decoration: InputDecoration(
+                  decoration: const InputDecoration(
                     hintText: 'Buscar mesa...',
-                    prefixIcon: const Icon(Icons.search, size: 20),
+                    prefixIcon: Icon(Icons.search, size: 20),
                     isDense: true,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
                   ),
                   onChanged: (v) => setState(() => _busqueda = v),
                 ),
@@ -2592,18 +2812,20 @@ class _MesaPickerSheetState extends State<_MesaPickerSheet> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(
-                                  Icons.search_off,
-                                  size: 56,
-                                  color: Colors.grey[400],
-                                ),
-                                const SizedBox(height: 12),
-                                Text(
-                                  widget.mesas.isEmpty
-                                      ? 'No hay mesas activas creadas.\nVe a "Mesas y Comensales" para crear una.'
-                                      : 'No hay mesas que coincidan con los filtros',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(color: Colors.grey[700]),
-                                ),
+                                   Icons.search_off,
+                                   size: 56,
+                                   color: VentiqHomeTheme.border,
+                                 ),
+                                 const SizedBox(height: 12),
+                                 Text(
+                                   widget.mesas.isEmpty
+                                       ? 'No hay mesas activas creadas.\nVe a "Mesas y Comensales" para crear una.'
+                                       : 'No hay mesas que coincidan con los filtros',
+                                   textAlign: TextAlign.center,
+                                   style: const TextStyle(
+                                     color: VentiqHomeTheme.textSecondary,
+                                   ),
+                                 ),
                               ],
                             ),
                           ),
@@ -2624,14 +2846,14 @@ class _MesaPickerSheetState extends State<_MesaPickerSheet> {
                             Color border;
                             Color bg;
                             if (m.ordenesAbiertas == 0) {
-                              border = Colors.green.shade300;
-                              bg = Colors.green.shade50;
+                              border = VentiqHomeTheme.success;
+                              bg = VentiqHomeTheme.success.withOpacity(0.07);
                             } else if (m.ordenesAbiertas == 1) {
-                              border = Colors.orange.shade300;
-                              bg = Colors.orange.shade50;
+                              border = VentiqHomeTheme.warning;
+                              bg = VentiqHomeTheme.warning.withOpacity(0.09);
                             } else {
-                              border = Colors.red.shade300;
-                              bg = Colors.red.shade50;
+                              border = VentiqHomeTheme.danger;
+                              bg = VentiqHomeTheme.danger.withOpacity(0.07);
                             }
                             return Material(
                               color: bg,
@@ -2656,8 +2878,8 @@ class _MesaPickerSheetState extends State<_MesaPickerSheet> {
                                         m.numero,
                                         style: const TextStyle(
                                           fontSize: 18,
-                                          fontWeight: FontWeight.bold,
-                                          color: Color(0xFF1F2937),
+                                          fontWeight: FontWeight.w800,
+                                          color: VentiqHomeTheme.textPrimary,
                                         ),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
@@ -2665,9 +2887,9 @@ class _MesaPickerSheetState extends State<_MesaPickerSheet> {
                                       if (m.zona != null && m.zona!.isNotEmpty)
                                         Text(
                                           m.zona!,
-                                          style: TextStyle(
+                                          style: const TextStyle(
                                             fontSize: 11,
-                                            color: Colors.grey[700],
+                                            color: VentiqHomeTheme.textSecondary,
                                             fontStyle: FontStyle.italic,
                                           ),
                                           maxLines: 1,
@@ -2676,17 +2898,17 @@ class _MesaPickerSheetState extends State<_MesaPickerSheet> {
                                       const Spacer(),
                                       Row(
                                         children: [
-                                          Icon(
+                                          const Icon(
                                             Icons.people_alt_outlined,
                                             size: 13,
-                                            color: Colors.grey[700],
+                                            color: VentiqHomeTheme.textSecondary,
                                           ),
                                           const SizedBox(width: 3),
                                           Text(
                                             '${m.capacidad}',
-                                            style: TextStyle(
+                                            style: const TextStyle(
                                               fontSize: 12,
-                                              color: Colors.grey[700],
+                                              color: VentiqHomeTheme.textSecondary,
                                             ),
                                           ),
                                           const Spacer(),
@@ -2872,21 +3094,15 @@ class _ClientPickerSheetState extends State<_ClientPickerSheet> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Buscar cliente',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-            ),
+            const Text('Buscar cliente', style: VentiqHomeTheme.tituloSeccion),
             const SizedBox(height: 12),
             TextField(
               controller: _searchController,
               autofocus: true,
               onChanged: _onQueryChanged,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 hintText: 'Nombre o teléfono',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
+                prefixIcon: Icon(Icons.search),
               ),
             ),
             const SizedBox(height: 8),
@@ -2904,10 +3120,21 @@ class _ClientPickerSheetState extends State<_ClientPickerSheet> {
                   _isLoading
                       ? const Center(child: CircularProgressIndicator())
                       : _error != null
-                      ? Center(child: Text(_error!))
+                      ? Center(
+                        child: Text(
+                          _error!,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: VentiqHomeTheme.danger,
+                          ),
+                        ),
+                      )
                       : _results.isEmpty
                       ? const Center(
-                        child: Text('Sin resultados. Crea un cliente nuevo.'),
+                        child: Text(
+                          'Sin resultados. Crea un cliente nuevo.',
+                          style: TextStyle(color: VentiqHomeTheme.textSecondary),
+                        ),
                       )
                       : ListView.builder(
                         itemCount: _results.length,
@@ -2923,7 +3150,8 @@ class _ClientPickerSheetState extends State<_ClientPickerSheet> {
                             subtitle = 'Bloqueado para cuentas por cobrar';
                           } else if (tieneDeuda && saldo != null && saldo > 0) {
                             subtitle =
-                                'Deuda: \$${PriceUtils.formatAmount(saldo)}'
+                                'Deuda: '
+                                '${MonedaVentaService.formatearPrecio(saldo, conSimbolo: true)}'
                                 '${telefono != null && telefono.isNotEmpty ? ' · $telefono' : ''}';
                           } else {
                             subtitle =
@@ -2935,37 +3163,41 @@ class _ClientPickerSheetState extends State<_ClientPickerSheet> {
                             leading: CircleAvatar(
                               backgroundColor:
                                   bloqueado
-                                      ? Colors.red[50]
+                                      ? VentiqHomeTheme.danger.withOpacity(0.12)
                                       : tieneDeuda
-                                      ? Colors.orange.withOpacity(0.15)
-                                      : const Color(
-                                        0xFF4A90E2,
-                                      ).withOpacity(0.1),
+                                      ? VentiqHomeTheme.warning.withOpacity(0.15)
+                                      : VentiqHomeTheme.primary.withOpacity(
+                                        0.10,
+                                      ),
                               child: Icon(
                                 tieneDeuda
                                     ? Icons.account_balance_wallet
                                     : Icons.person,
                                 color:
                                     bloqueado
-                                        ? Colors.red
+                                        ? VentiqHomeTheme.danger
                                         : tieneDeuda
-                                        ? Colors.orange[800]
-                                        : const Color(0xFF4A90E2),
+                                        ? VentiqHomeTheme.warning
+                                        : VentiqHomeTheme.primary,
                               ),
                             ),
                             title: Text(
                               cliente['nombre_completo']?.toString() ??
                                   'Sin nombre',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: VentiqHomeTheme.textPrimary,
+                              ),
                             ),
                             subtitle: Text(
                               subtitle,
                               style: TextStyle(
                                 color:
                                     bloqueado
-                                        ? Colors.red
+                                        ? VentiqHomeTheme.danger
                                         : tieneDeuda
-                                        ? Colors.orange[900]
-                                        : null,
+                                        ? VentiqHomeTheme.warning
+                                        : VentiqHomeTheme.textSecondary,
                               ),
                             ),
                             onTap: () => Navigator.pop(context, cliente),

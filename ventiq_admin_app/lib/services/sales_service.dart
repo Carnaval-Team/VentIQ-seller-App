@@ -1004,6 +1004,10 @@ class SalesService {
 
   /// Una fila por turno de `app_dat_caja_turno` (apertura en el rango).
   /// Usado por el tab TPVs del admin: no agrega varios turnos del mismo TPV.
+  ///
+  /// Consulta la v2 del reporte, que añade el desglose por divisa y el
+  /// consolidado en moneda base; si esa función aún no está desplegada cae a la
+  /// v1, que devuelve las mismas columnas sin las dos nuevas.
   static Future<List<SalesVendorReport>> getSalesVendorReportByTurno({
     DateTime? fechaDesde,
     DateTime? fechaHasta,
@@ -1029,14 +1033,26 @@ class SalesService {
         params['p_uuid_usuario'] = uuidUsuario;
       }
 
-      print('Calling fn_reporte_ventas_por_turno with: $params');
-      final response = await _supabase.rpc(
-        'fn_reporte_ventas_por_turno',
-        params: params,
-      );
+      // El backend y las apps se despliegan por separado: producción puede
+      // tener la v2 mientras una instalación apunta a un Supabase que aún no
+      // la tiene. Sólo la ausencia de la función justifica el fallback; los
+      // errores reales se propagan al catch de abajo.
+      const rpcV2 = 'fn_reporte_ventas_por_turno_v2';
+      const rpcV1 = 'fn_reporte_ventas_por_turno';
+      var rpcName = rpcV2;
+      print('Calling $rpcV2 with: $params');
+      dynamic response;
+      try {
+        response = await _supabase.rpc(rpcName, params: params);
+      } catch (e) {
+        if (!_isRpcUnavailable(e)) rethrow;
+        rpcName = rpcV1;
+        print('⚠️ $rpcV2 no disponible ($e). Fallback a $rpcV1');
+        response = await _supabase.rpc(rpcName, params: params);
+      }
 
       if (response == null) {
-        print('No data received from fn_reporte_ventas_por_turno');
+        print('No data received from $rpcName');
         return [];
       }
 
@@ -1057,6 +1073,68 @@ class SalesService {
       print('Error in getSalesVendorReportByTurno: $e');
       return [];
     }
+  }
+
+  /// ¿El fallo es «esa RPC no existe» y no un error real de la consulta?
+  ///
+  /// PostgREST responde PGRST202 cuando la función no está en su schema cache y
+  /// Postgres 42883 cuando el nombre no existe; ambos casos significan que el
+  /// backend va por detrás de la app y justifican el fallback. Cualquier otro
+  /// error (permisos, timeout) se propaga: repetir la consulta contra la versión
+  /// anterior ocultaría el fallo y duplicaría la carga.
+  static bool _isRpcUnavailable(Object error) {
+    if (error is! PostgrestException) return false;
+    return error.code == 'PGRST202' ||
+        error.code == '404' ||
+        error.code == '42883' ||
+        error.message.contains('Could not find the function');
+  }
+
+  /// Contabilización por divisa (`fn_reporte_ventas_por_moneda`): cuántas
+  /// operaciones se pagaron en cada moneda, cuánto se cobró realmente en ella
+  /// (nativo, exacto), su equivalente contable en CUP y su importe consolidado en
+  /// la divisa de consolidación de la tienda.
+  ///
+  /// El reporte no filtra por estado de la operación a propósito: su criterio de
+  /// aceptación es cuadrar contra `app_dat_pago_venta` en crudo. La moneda base
+  /// viene como una fila más del resultado, no como un total aparte.
+  ///
+  /// La RPC devuelve además `moneda_consolidacion` e `importe_consolidado` al
+  /// final de cada fila. Viajan en el mismo mapa que ya se le pasa a
+  /// `VentasPorMoneda.fromJson`, así que el modelo las recoge sin tocar nada
+  /// aquí: `importe_consolidado` es el importe que la UI debe sumar y
+  /// `moneda_consolidacion` la divisa en la que está.
+  ///
+  /// `idTpv` es opcional: omitido agrega todos los TPVs de la tienda.
+  ///
+  /// A diferencia de otros reportes de este servicio, aquí el error se propaga:
+  /// la pestaña «Por moneda» tiene estado de error propio y necesita distinguir
+  /// «no hubo ventas» (lista vacía) de «la consulta falló».
+  static Future<List<VentasPorMoneda>> getVentasPorMoneda({
+    required int idTienda,
+    required DateTime desde,
+    required DateTime hasta,
+    int? idTpv,
+  }) async {
+    final params = <String, dynamic>{
+      'p_id_tienda': idTienda,
+      'p_desde': desde.toIso8601String().split('T')[0],
+      'p_hasta': hasta.toIso8601String().split('T')[0],
+    };
+    if (idTpv != null) {
+      params['p_id_tpv'] = idTpv;
+    }
+
+    print('Calling fn_reporte_ventas_por_moneda with: $params');
+    final response = await _supabase.rpc(
+      'fn_reporte_ventas_por_moneda',
+      params: params,
+    );
+    if (response == null) return [];
+
+    return List<Map<String, dynamic>>.from(
+      response as List,
+    ).map(VentasPorMoneda.fromJson).toList();
   }
 
   static Future<List<VendorOrder>> getVendorOrders({

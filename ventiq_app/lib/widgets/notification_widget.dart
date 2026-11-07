@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/notification_model.dart';
 import '../services/notification_service.dart';
 import '../services/turno_service.dart';
+import '../theme/ventiq_home_theme.dart';
 
 /// Widget de notificaciones que se muestra en la parte superior
 class NotificationWidget extends StatefulWidget {
@@ -52,16 +53,10 @@ class _NotificationWidgetState extends State<NotificationWidget> {
                 top: 8,
                 child: Container(
                   padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF44336), // Rojo
+                  decoration: const BoxDecoration(
+                    color: VentiqHomeTheme.danger,
                     shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.2),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
+                    boxShadow: VentiqHomeTheme.shadowCard,
                   ),
                   constraints: const BoxConstraints(
                     minWidth: 18,
@@ -72,7 +67,7 @@ class _NotificationWidgetState extends State<NotificationWidget> {
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 10,
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w800,
                     ),
                     textAlign: TextAlign.center,
                   ),
@@ -115,14 +110,17 @@ class _NotificationsPanelState extends State<NotificationsPanel> {
       maxChildSize: 0.95,
       builder: (context, scrollController) {
         return Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-            boxShadow: [
+          decoration: BoxDecoration(
+            color: VentiqHomeTheme.card,
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(VentiqHomeTheme.radiusBlock),
+            ),
+            border: Border.all(color: VentiqHomeTheme.border),
+            boxShadow: const [
               BoxShadow(
-                color: Colors.black26,
-                blurRadius: 10,
-                offset: Offset(0, -2),
+                color: Color(0x142B3A67),
+                blurRadius: 24,
+                offset: Offset(0, -8),
               ),
             ],
           ),
@@ -134,13 +132,13 @@ class _NotificationsPanelState extends State<NotificationsPanel> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.grey[300],
+                  color: VentiqHomeTheme.border,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
               // Header
               _buildHeader(),
-              const Divider(height: 1),
+              const Divider(height: 1, color: VentiqHomeTheme.border),
               // Lista de notificaciones
               Expanded(
                 child: StreamBuilder<List<NotificationModel>>(
@@ -165,10 +163,10 @@ class _NotificationsPanelState extends State<NotificationsPanel> {
 
                     return ListView.separated(
                       controller: scrollController,
-                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      padding: const EdgeInsets.fromLTRB(0, 6, 0, 20),
                       itemCount: notifications.length,
                       separatorBuilder:
-                          (context, index) => const Divider(height: 1),
+                          (context, index) => const SizedBox(height: 2),
                       itemBuilder: (context, index) {
                         return NotificationItem(
                           notification: notifications[index],
@@ -193,67 +191,126 @@ class _NotificationsPanelState extends State<NotificationsPanel> {
     );
   }
 
-  /// Header del panel
+  /// Header del panel: título a ancho completo y filtro en una segunda línea,
+  /// para que «Notificaciones» no se corte a «Notifica…» en pantallas de 360 px.
   Widget _buildHeader() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        children: [
-          const Icon(
-            Icons.notifications_active,
-            color: Color(0xFF2196F3), // Azul
-            size: 28,
-          ),
-          const SizedBox(width: 12),
-          const Text(
-            'Notificaciones',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF1976D2), // Azul oscuro
-            ),
-          ),
-          const Spacer(),
-          // Filtro de no leídas
-          StreamBuilder<int>(
-            stream: _notificationService.unreadCountStream,
-            initialData: _notificationService.unreadCount,
-            builder: (context, snapshot) {
-              final unreadCount = snapshot.data ?? 0;
-              if (unreadCount == 0) return const SizedBox.shrink();
-
-              return FilterChip(
-                label: Text('No leídas ($unreadCount)'),
-                selected: _showOnlyUnread,
-                onSelected: (value) {
-                  setState(() {
-                    _showOnlyUnread = value;
-                  });
-                },
-                selectedColor: const Color(0xFF2196F3).withOpacity(0.2),
-                checkmarkColor: const Color(0xFF2196F3),
-              );
-            },
-          ),
-          const SizedBox(width: 8),
-          // Botón marcar todas como leídas
-          IconButton(
-            icon: const Icon(Icons.done_all, color: Color(0xFF4CAF50)),
-            tooltip: 'Marcar todas como leídas',
-            onPressed: () async {
-              await _notificationService.markAllAsRead();
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      '✅ Todas las notificaciones marcadas como leídas',
-                    ),
-                    backgroundColor: Color(0xFF4CAF50),
-                    duration: Duration(seconds: 2),
+      padding: const EdgeInsets.fromLTRB(16, 2, 8, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: VentiqHomeTheme.primary.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: const Icon(
+                  Icons.notifications_active_rounded,
+                  color: VentiqHomeTheme.primary,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Notificaciones',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.2,
+                    color: VentiqHomeTheme.textPrimary,
                   ),
-                );
-              }
-            },
+                ),
+              ),
+              IconButton(
+                icon: const Icon(
+                  Icons.done_all_rounded,
+                  color: VentiqHomeTheme.success,
+                ),
+                tooltip: 'Marcar todas como leídas',
+                visualDensity: VisualDensity.compact,
+                onPressed: () async {
+                  await _notificationService.markAllAsRead();
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          '✅ Todas las notificaciones marcadas como leídas',
+                        ),
+                        backgroundColor: VentiqHomeTheme.success,
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  }
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: <Widget>[
+              StreamBuilder<int>(
+                stream: _notificationService.unreadCountStream,
+                initialData: _notificationService.unreadCount,
+                builder: (context, snapshot) {
+                  final int unreadCount = snapshot.data ?? 0;
+                  return Text(
+                    unreadCount > 0 ? '$unreadCount sin leer' : 'Todo al día',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color:
+                          unreadCount > 0
+                              ? VentiqHomeTheme.primary
+                              : VentiqHomeTheme.textSecondary,
+                    ),
+                  );
+                },
+              ),
+              const Spacer(),
+              StreamBuilder<int>(
+                stream: _notificationService.unreadCountStream,
+                initialData: _notificationService.unreadCount,
+                builder: (context, snapshot) {
+                  final int unreadCount = snapshot.data ?? 0;
+                  if (unreadCount == 0) return const SizedBox.shrink();
+
+                  return FilterChip(
+                    label: Text('No leídas ($unreadCount)'),
+                    labelStyle: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                      color:
+                          _showOnlyUnread
+                              ? VentiqHomeTheme.primary
+                              : VentiqHomeTheme.textSecondary,
+                    ),
+                    selected: _showOnlyUnread,
+                    onSelected: (bool value) {
+                      setState(() => _showOnlyUnread = value);
+                    },
+                    backgroundColor: VentiqHomeTheme.card,
+                    selectedColor: VentiqHomeTheme.primary.withValues(
+                      alpha: 0.12,
+                    ),
+                    checkmarkColor: VentiqHomeTheme.primary,
+                    side: BorderSide(
+                      color:
+                          _showOnlyUnread
+                              ? VentiqHomeTheme.primary.withValues(alpha: 0.30)
+                              : VentiqHomeTheme.border,
+                    ),
+                    visualDensity: VisualDensity.compact,
+                  );
+                },
+              ),
+            ],
           ),
         ],
       ),
@@ -266,31 +323,49 @@ class _NotificationsPanelState extends State<NotificationsPanel> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            _showOnlyUnread
-                ? Icons.notifications_off_outlined
-                : Icons.notifications_none,
-            size: 80,
-            color: Colors.grey[400],
+          Container(
+            padding: const EdgeInsets.all(22),
+            decoration: BoxDecoration(
+              color: VentiqHomeTheme.primary.withValues(alpha: 0.07),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              _showOnlyUnread
+                  ? Icons.notifications_off_outlined
+                  : Icons.notifications_none,
+              size: 42,
+              color: VentiqHomeTheme.primary.withValues(alpha: 0.55),
+            ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 18),
           Text(
             _showOnlyUnread
                 ? 'No hay notificaciones sin leer'
                 : 'No hay notificaciones',
-            style: TextStyle(
-              fontSize: 18,
-              color: Colors.grey[600],
-              fontWeight: FontWeight.w500,
+            style: const TextStyle(
+              fontSize: 16,
+              color: VentiqHomeTheme.textPrimary,
+              fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Text(
             _showOnlyUnread
                 ? 'Todas tus notificaciones están al día'
                 : 'Aquí aparecerán tus notificaciones',
-            style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+            style: const TextStyle(
+              fontSize: 13,
+              color: VentiqHomeTheme.textSecondary,
+            ),
           ),
+          if (_showOnlyUnread) ...<Widget>[
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              onPressed: () => setState(() => _showOnlyUnread = false),
+              icon: const Icon(Icons.done_all_rounded, size: 17),
+              label: const Text('Ver todas'),
+            ),
+          ],
         ],
       ),
     );
@@ -318,7 +393,7 @@ class _NotificationsPanelState extends State<NotificationsPanel> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('🗑️ Notificación eliminada'),
-          backgroundColor: Colors.grey[700],
+          backgroundColor: VentiqHomeTheme.textPrimary,
           duration: const Duration(seconds: 2),
           action: SnackBarAction(
             label: 'Deshacer',
@@ -359,208 +434,301 @@ class _NotificationItemState extends State<NotificationItem> {
   Widget build(BuildContext context) {
     final color = widget.notification.getColor();
     final icon = widget.notification.getIcon();
+    final bool noLeida = !widget.notification.leida;
 
     return Dismissible(
       key: Key('notification_${widget.notification.id}'),
       direction: DismissDirection.endToStart,
       onDismissed: (_) => widget.onDismiss(),
       background: Container(
-        color: const Color(0xFFF44336), // Rojo
+        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        decoration: BoxDecoration(
+          color: VentiqHomeTheme.danger,
+          borderRadius: BorderRadius.circular(16),
+        ),
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 20),
-        child: const Icon(Icons.delete_outline, color: Colors.white, size: 28),
-      ),
-      child: InkWell(
-        onTap: () {
-          setState(() {
-            _isExpanded = !_isExpanded;
-          });
-          // Marcar como leída al expandir
-          if (!_isExpanded && !widget.notification.leida) {
-            widget.onTap();
-          }
-        },
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          color:
-              widget.notification.leida
-                  ? Colors.white
-                  : color.withOpacity(0.05),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Icono
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(icon, color: color, size: 24),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(Icons.delete_outline_rounded, color: Colors.white, size: 22),
+            SizedBox(width: 6),
+            Text(
+              'Eliminar',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
               ),
-              const SizedBox(width: 12),
-              // Contenido
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Título y badge de prioridad
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            widget.notification.titulo,
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight:
-                                  widget.notification.leida
-                                      ? FontWeight.w500
-                                      : FontWeight.bold,
-                              color: const Color(0xFF212121),
-                            ),
-                            maxLines: _isExpanded ? null : 2,
-                            overflow:
-                                _isExpanded ? null : TextOverflow.ellipsis,
-                          ),
-                        ),
-                        if (widget.notification.isUrgent)
-                          Container(
-                            margin: const EdgeInsets.only(left: 8),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF44336),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: const Text(
-                              'URGENTE',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 9,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                      ],
+            ),
+          ],
+        ),
+      ),
+      child: Semantics(
+        button: true,
+        label: '${noLeida ? 'Sin leer. ' : ''}${widget.notification.titulo}',
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () {
+                setState(() => _isExpanded = !_isExpanded);
+                // Marcar como leída al abrirla.
+                if (!widget.notification.leida) widget.onTap();
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOut,
+                decoration: BoxDecoration(
+                  color:
+                      noLeida
+                          ? VentiqHomeTheme.primary.withValues(alpha: 0.05)
+                          : VentiqHomeTheme.card,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color:
+                        noLeida
+                            ? VentiqHomeTheme.primary.withValues(alpha: 0.22)
+                            : VentiqHomeTheme.border,
+                  ),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    // Barra de acento: solo en no leídas.
+                    Container(
+                      width: 4,
+                      color: noLeida ? color : Colors.transparent,
                     ),
-                    const SizedBox(height: 4),
-                    // Mensaje con animación de expansión
-                    AnimatedCrossFade(
-                      firstChild: Text(
-                        widget.notification.mensaje,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[700],
-                          height: 1.3,
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 12, 10, 10),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: <Widget>[
+                                Container(
+                                  width: 38,
+                                  height: 38,
+                                  decoration: BoxDecoration(
+                                    color: color.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(11),
+                                  ),
+                                  child: Icon(icon, color: color, size: 20),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: <Widget>[
+                                      Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: <Widget>[
+                                          Expanded(
+                                            child: Text(
+                                              widget.notification.titulo,
+                                              maxLines: _isExpanded ? null : 2,
+                                              overflow:
+                                                  _isExpanded
+                                                      ? null
+                                                      : TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontSize: 14.5,
+                                                height: 1.2,
+                                                fontWeight:
+                                                    noLeida
+                                                        ? FontWeight.w800
+                                                        : FontWeight.w600,
+                                                color:
+                                                    VentiqHomeTheme.textPrimary,
+                                              ),
+                                            ),
+                                          ),
+                                          if (widget.notification.isUrgent)
+                                            Container(
+                                              margin: const EdgeInsets.only(
+                                                left: 6,
+                                              ),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 6,
+                                                    vertical: 2,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: VentiqHomeTheme.danger,
+                                                borderRadius:
+                                                    BorderRadius.circular(6),
+                                              ),
+                                              child: const Text(
+                                                'URGENTE',
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 9,
+                                                  fontWeight: FontWeight.w800,
+                                                  letterSpacing: 0.4,
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 4),
+                                      AnimatedCrossFade(
+                                        firstChild: Text(
+                                          widget.notification.mensaje,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontSize: 12.5,
+                                            height: 1.35,
+                                            color:
+                                                VentiqHomeTheme.textSecondary,
+                                          ),
+                                        ),
+                                        secondChild: Text(
+                                          widget.notification.mensaje,
+                                          style: const TextStyle(
+                                            fontSize: 13,
+                                            height: 1.4,
+                                            color:
+                                                VentiqHomeTheme.textSecondary,
+                                          ),
+                                        ),
+                                        crossFadeState:
+                                            _isExpanded
+                                                ? CrossFadeState.showSecond
+                                                : CrossFadeState.showFirst,
+                                        duration: const Duration(
+                                          milliseconds: 220,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: <Widget>[
+                                const Icon(
+                                  Icons.access_time_rounded,
+                                  size: 13,
+                                  color: VentiqHomeTheme.textSecondary,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  timeago.format(
+                                    widget.notification.createdAt,
+                                    locale: 'es',
+                                  ),
+                                  style: const TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: VentiqHomeTheme.textSecondary,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                _buildTypeChip(color),
+                                const Spacer(),
+                                if (noLeida)
+                                  Container(
+                                    width: 7,
+                                    height: 7,
+                                    margin: const EdgeInsets.only(right: 6),
+                                    decoration: const BoxDecoration(
+                                      color: VentiqHomeTheme.primary,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                Icon(
+                                  _isExpanded
+                                      ? Icons.expand_less_rounded
+                                      : Icons.expand_more_rounded,
+                                  size: 17,
+                                  color: VentiqHomeTheme.textSecondary,
+                                ),
+                              ],
+                            ),
+                            if (_isExpanded && _shouldShowReceiveOrderButton())
+                              Padding(
+                                padding: const EdgeInsets.only(top: 10),
+                                child: SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton.icon(
+                                    onPressed: _handleReceiveOrder,
+                                    icon: const Icon(
+                                      Icons.check_circle_outline_rounded,
+                                      size: 19,
+                                    ),
+                                    label: const Text(
+                                      'Recibir Orden',
+                                      style: TextStyle(
+                                        fontSize: 13.5,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: VentiqHomeTheme.success,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 11,
+                                      ),
+                                      elevation: 0,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
                       ),
-                      secondChild: Text(
-                        widget.notification.mensaje,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[700],
-                          height: 1.3,
-                        ),
-                      ),
-                      crossFadeState:
-                          _isExpanded
-                              ? CrossFadeState.showSecond
-                              : CrossFadeState.showFirst,
-                      duration: const Duration(milliseconds: 300),
                     ),
-                    const SizedBox(height: 6),
-                    // Tiempo, estado e indicador de expansión
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.access_time,
-                          size: 14,
-                          color: Colors.grey[500],
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          timeago.format(
-                            widget.notification.createdAt,
-                            locale: 'es',
-                          ),
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[600],
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        // Indicador de expansión
-                        Icon(
-                          _isExpanded ? Icons.expand_less : Icons.expand_more,
-                          size: 18,
-                          color: color,
-                        ),
-                        Text(
-                          _isExpanded ? 'Ver menos' : 'Ver más',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: color,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const Spacer(),
-                        if (!widget.notification.leida)
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: color,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                      ],
-                    ),
-                    // Botón "Recibir Orden" para notificaciones tipo venta
-                    if (_isExpanded && _shouldShowReceiveOrderButton())
-                      Padding(
-                        padding: const EdgeInsets.only(top: 12),
-                        child: SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: _handleReceiveOrder,
-                            icon: const Icon(
-                              Icons.check_circle_outline,
-                              size: 20,
-                            ),
-                            label: const Text(
-                              'Recibir Orden',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF4CAF50), // Verde
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 12,
-                              ),
-                              elevation: 2,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
                   ],
                 ),
               ),
-            ],
+            ),
           ),
+        ),
+      ),
+    );
+  }
+
+  /// Píldora con el tipo de notificación (Venta, Pedido, Sistema…).
+  Widget _buildTypeChip(Color color) {
+    final String label = switch (widget.notification.tipo) {
+      NotificationType.alerta => 'Alerta',
+      NotificationType.info => 'Info',
+      NotificationType.warning => 'Aviso',
+      NotificationType.success => 'Hecho',
+      NotificationType.error => 'Error',
+      NotificationType.promocion => 'Promo',
+      NotificationType.sistema => 'Sistema',
+      NotificationType.pedido => 'Pedido',
+      NotificationType.inventario => 'Inventario',
+      NotificationType.venta => 'Venta',
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 9.5,
+          fontWeight: FontWeight.w800,
+          color: color,
+          letterSpacing: 0.2,
         ),
       ),
     );
@@ -604,7 +772,9 @@ class _NotificationItemState extends State<NotificationItem> {
         builder:
             (context) => const Center(
               child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4CAF50)),
+                valueColor: const AlwaysStoppedAnimation<Color>(
+                  VentiqHomeTheme.success,
+                ),
               ),
             ),
       );
@@ -636,13 +806,14 @@ class _NotificationItemState extends State<NotificationItem> {
       );
 
       // 2.5 Verificar que el último estado de la operación sea 1 (pendiente)
-      final estadoResponse = await supabase
-          .from('app_dat_estado_operacion')
-          .select('estado')
-          .eq('id_operacion', operacionId)
-          .order('id', ascending: false)
-          .limit(1)
-          .maybeSingle();
+      final estadoResponse =
+          await supabase
+              .from('app_dat_estado_operacion')
+              .select('estado')
+              .eq('id_operacion', operacionId)
+              .order('id', ascending: false)
+              .limit(1)
+              .maybeSingle();
 
       final ultimoEstado = estadoResponse?['estado'] as int?;
       if (ultimoEstado != null && ultimoEstado != 1) {
@@ -678,7 +849,7 @@ class _NotificationItemState extends State<NotificationItem> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('✅ Orden recibida exitosamente'),
-            backgroundColor: Color(0xFF4CAF50),
+            backgroundColor: VentiqHomeTheme.success,
             duration: Duration(seconds: 3),
           ),
         );
@@ -705,7 +876,7 @@ class _NotificationItemState extends State<NotificationItem> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('❌ $message'),
-        backgroundColor: const Color(0xFFF44336),
+        backgroundColor: VentiqHomeTheme.danger,
         duration: const Duration(seconds: 4),
       ),
     );

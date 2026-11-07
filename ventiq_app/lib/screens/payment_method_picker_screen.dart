@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/payment_method.dart';
+import '../theme/ventiq_home_theme.dart';
 
 /// Pantalla a pantalla completa para elegir un método de pago.
 /// Reemplaza el DropdownButton apretado cuando hay varios métodos.
@@ -45,7 +46,7 @@ class PaymentMethodPickerScreen extends StatelessWidget {
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
         title: Text(title),
-        backgroundColor: const Color(0xFF4A90E2),
+        backgroundColor: VentiqHomeTheme.primary,
         foregroundColor: Colors.white,
         elevation: 0,
       ),
@@ -57,7 +58,10 @@ class PaymentMethodPickerScreen extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
               child: Text(
                 subtitle!,
-                style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+                style: TextStyle(
+                  fontSize: 14,
+                  color: VentiqHomeTheme.textSecondary,
+                ),
               ),
             ),
           Expanded(
@@ -66,7 +70,7 @@ class PaymentMethodPickerScreen extends StatelessWidget {
                     ? Center(
                       child: Text(
                         'No hay métodos de pago disponibles',
-                        style: TextStyle(color: Colors.grey[600]),
+                        style: TextStyle(color: VentiqHomeTheme.textSecondary),
                       ),
                     )
                     : ListView.separated(
@@ -107,7 +111,7 @@ class PaymentMethodPickerField extends StatelessWidget {
     required this.value,
     required this.onSelected,
     this.hint = 'Seleccionar método de pago',
-    this.accentColor = const Color(0xFF4A90E2),
+    this.accentColor = VentiqHomeTheme.primary,
     this.pickerTitle = 'Seleccionar método de pago',
     this.pickerSubtitle,
     this.height = 40,
@@ -144,7 +148,7 @@ class PaymentMethodPickerField extends StatelessWidget {
               color:
                   hasValue
                       ? accentColor.withOpacity(0.45)
-                      : Colors.grey[300]!,
+                      : VentiqHomeTheme.border,
             ),
             borderRadius: BorderRadius.circular(8),
           ),
@@ -154,7 +158,10 @@ class PaymentMethodPickerField extends StatelessWidget {
                 Icon(
                   value!.typeIcon,
                   size: 18,
-                  color: isSpecialCash ? Colors.red[700] : Colors.grey[600],
+                  color:
+                      isSpecialCash
+                          ? Colors.red[700]
+                          : VentiqHomeTheme.textSecondary,
                 ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -166,8 +173,7 @@ class PaymentMethodPickerField extends StatelessWidget {
                       fontSize: 14,
                       fontWeight:
                           isSpecialCash ? FontWeight.w600 : FontWeight.w500,
-                      color:
-                          isSpecialCash ? Colors.red[700] : Colors.black87,
+                      color: isSpecialCash ? Colors.red[700] : Colors.black87,
                     ),
                   ),
                 ),
@@ -201,7 +207,7 @@ class PaymentMethodPickerField extends StatelessWidget {
                     style: const TextStyle(fontSize: 14, color: Colors.grey),
                   ),
                 ),
-              Icon(Icons.chevron_right, color: Colors.grey[600]),
+              Icon(Icons.chevron_right, color: VentiqHomeTheme.textSecondary),
             ],
           ),
         ),
@@ -229,7 +235,7 @@ class _PaymentMethodTile extends StatelessWidget {
             ? Colors.red
             : isSelected
             ? const Color(0xFF10B981)
-            : const Color(0xFF4A90E2);
+            : VentiqHomeTheme.primary;
     final Color iconColor =
         isSpecialCash
             ? Colors.red.shade700
@@ -259,7 +265,7 @@ class _PaymentMethodTile extends StatelessWidget {
                       ? accent
                       : isSpecialCash
                       ? Colors.red.withOpacity(0.35)
-                      : Colors.grey[300]!,
+                      : VentiqHomeTheme.border,
               width: isSelected ? 2 : 1.2,
             ),
           ),
@@ -287,7 +293,7 @@ class _PaymentMethodTile extends StatelessWidget {
                         color:
                             isSpecialCash
                                 ? Colors.red[800]
-                                : const Color(0xFF1F2937),
+                                : VentiqHomeTheme.textPrimary,
                       ),
                     ),
                     if (method.descripcion != null &&
@@ -297,7 +303,10 @@ class _PaymentMethodTile extends StatelessWidget {
                         method.descripcion!,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: VentiqHomeTheme.textSecondary,
+                        ),
                       ),
                     ] else if (isSpecialCash) ...[
                       const SizedBox(height: 4),
@@ -332,7 +341,7 @@ class _PaymentMethodTile extends StatelessWidget {
               ],
               Icon(
                 isSelected ? Icons.check_circle : Icons.circle_outlined,
-                color: isSelected ? accent : Colors.grey[400],
+                color: isSelected ? accent : VentiqHomeTheme.textSecondary,
                 size: 26,
               ),
             ],

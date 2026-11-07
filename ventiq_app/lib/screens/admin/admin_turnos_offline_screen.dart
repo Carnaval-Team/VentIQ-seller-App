@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import '../../services/admin_ticket_printer_service.dart';
 import '../../services/auto_sync_service.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/user_preferences_service.dart';
 import '../../utils/price_utils.dart';
+import '../../theme/ventiq_home_theme.dart';
 
 /// Lista de turnos offline (abiertos y cerrados pendientes de sync) con su
 /// cuadre local. El gerente puede subir la cola al servidor cuando hay red.
@@ -53,19 +54,20 @@ class _AdminTurnosOfflineScreenState extends State<AdminTurnosOfflineScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error cargando turnos: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error cargando turnos: $e')));
     }
   }
 
-  int get _closedPendingCount => _turnos
-      .where(
-        (t) =>
-            t['status']?.toString() ==
-            UserPreferencesService.offlineTurnoStatusClosedPending,
-      )
-      .length;
+  int get _closedPendingCount =>
+      _turnos
+          .where(
+            (t) =>
+                t['status']?.toString() ==
+                UserPreferencesService.offlineTurnoStatusClosedPending,
+          )
+          .length;
 
   Future<void> _syncTurnos() async {
     if (_syncing) return;
@@ -84,32 +86,35 @@ class _AdminTurnosOfflineScreenState extends State<AdminTurnosOfflineScreen> {
 
     if (_turnos.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No hay turnos pendientes de sincronizar')),
+        const SnackBar(
+          content: Text('No hay turnos pendientes de sincronizar'),
+        ),
       );
       return;
     }
 
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Sincronizar turnos'),
-        content: Text(
-          'Se subirán ${_turnos.length} turno(s) offline '
-          '(apertura, ventas, egresos y cierres pendientes) al servidor.\n\n'
-          'Cerrados pendientes: $_closedPendingCount.\n'
-          'El modo offline se reactivará al terminar.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Sincronizar turnos'),
+            content: Text(
+              'Se subirán ${_turnos.length} turno(s) offline '
+              '(apertura, ventas, egresos y cierres pendientes) al servidor.\n\n'
+              'Cerrados pendientes: $_closedPendingCount.\n'
+              'El modo offline se reactivará al terminar.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Sincronizar'),
+              ),
+            ],
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Sincronizar'),
-          ),
-        ],
-      ),
     );
     if (confirm != true) return;
 
@@ -119,16 +124,18 @@ class _AdminTurnosOfflineScreenState extends State<AdminTurnosOfflineScreen> {
       if (!mounted) return;
 
       final queue = result['queue'];
-      final q = queue is Map ? Map<String, dynamic>.from(queue) : <String, dynamic>{};
+      final q =
+          queue is Map ? Map<String, dynamic>.from(queue) : <String, dynamic>{};
       final closedRemaining = (q['closed_remaining'] as num?)?.toInt() ?? 0;
       final cierres = (q['cierres'] as num?)?.toInt() ?? 0;
 
-      final msg = closedRemaining > 0
-          ? 'Parcial · cierres OK $cierres, '
-              'aún pendientes de cierre $closedRemaining. Reintenta.'
-          : 'Sync OK · aperturas ${q['turnos'] ?? 0}, '
-              'ventas ${q['sales'] ?? 0}, egresos ${q['egresos'] ?? 0}, '
-              'cierres $cierres';
+      final msg =
+          closedRemaining > 0
+              ? 'Parcial · cierres OK $cierres, '
+                  'aún pendientes de cierre $closedRemaining. Reintenta.'
+              : 'Sync OK · aperturas ${q['turnos'] ?? 0}, '
+                  'ventas ${q['sales'] ?? 0}, egresos ${q['egresos'] ?? 0}, '
+                  'cierres $cierres';
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -207,22 +214,23 @@ class _AdminTurnosOfflineScreenState extends State<AdminTurnosOfflineScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Cuadres offline'),
-        backgroundColor: Colors.blue[700],
+        backgroundColor: VentiqHomeTheme.primary,
         foregroundColor: Colors.white,
         actions: [
           IconButton(
             tooltip: 'Sincronizar turnos al servidor',
             onPressed: canSync ? _syncTurnos : null,
-            icon: _syncing
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Icon(Icons.cloud_upload_outlined),
+            icon:
+                _syncing
+                    ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                    : const Icon(Icons.cloud_upload_outlined),
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -230,89 +238,92 @@ class _AdminTurnosOfflineScreenState extends State<AdminTurnosOfflineScreen> {
           ),
         ],
       ),
-      floatingActionButton: canSync
-          ? FloatingActionButton.extended(
-              onPressed: _syncTurnos,
-              icon: const Icon(Icons.cloud_upload_outlined),
-              label: Text(
-                _closedPendingCount > 0
-                    ? 'Sync ($_closedPendingCount cierres)'
-                    : 'Sincronizar',
-              ),
-            )
-          : null,
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _turnos.isEmpty
+      floatingActionButton:
+          canSync
+              ? FloatingActionButton.extended(
+                onPressed: _syncTurnos,
+                icon: const Icon(Icons.cloud_upload_outlined),
+                label: Text(
+                  _closedPendingCount > 0
+                      ? 'Sync ($_closedPendingCount cierres)'
+                      : 'Sincronizar',
+                ),
+              )
+              : null,
+      body:
+          _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _turnos.isEmpty
               ? Center(
-                  child: Text(
-                    'No hay turnos offline pendientes de sincronizar.',
-                    style: TextStyle(color: Colors.grey[600]),
-                  ),
-                )
+                child: Text(
+                  'No hay turnos offline pendientes de sincronizar.',
+                  style: TextStyle(color: VentiqHomeTheme.textSecondary),
+                ),
+              )
               : Column(
-                  children: [
-                    if (_syncing)
-                      const LinearProgressIndicator(minHeight: 3),
-                    Material(
-                      color: Colors.blue.shade50,
-                      child: ListTile(
-                        leading: Icon(
-                          Icons.info_outline,
-                          color: Colors.blue.shade700,
-                        ),
-                        title: Text(
-                          '${_turnos.length} turno(s) en cola · '
-                          '$_closedPendingCount cerrado(s) por subir',
-                        ),
-                        subtitle: Text(
-                          _connectivity.isConnected
-                              ? 'Hay red: puedes sincronizar desde aquí'
-                              : 'Sin red: el sync estará disponible al conectarte',
-                        ),
-                        dense: true,
+                children: [
+                  if (_syncing) const LinearProgressIndicator(minHeight: 3),
+                  Material(
+                    color: VentiqHomeTheme.primary.withValues(alpha: 0.08),
+                    child: ListTile(
+                      leading: Icon(
+                        Icons.info_outline,
+                        color: VentiqHomeTheme.primary,
                       ),
+                      title: Text(
+                        '${_turnos.length} turno(s) en cola · '
+                        '$_closedPendingCount cerrado(s) por subir',
+                      ),
+                      subtitle: Text(
+                        _connectivity.isConnected
+                            ? 'Hay red: puedes sincronizar desde aquí'
+                            : 'Sin red: el sync estará disponible al conectarte',
+                      ),
+                      dense: true,
                     ),
-                    Expanded(
-                      child: RefreshIndicator(
-                        onRefresh: _load,
-                        child: ListView.separated(
-                          itemCount: _turnos.length,
-                          separatorBuilder: (_, __) => const Divider(height: 1),
-                          itemBuilder: (context, index) {
-                            final t = _turnos[index];
-                            final id = t['local_id']?.toString() ?? '';
-                            final cuadre = _cuadres[id] ?? {};
-                            final status = t['status']?.toString();
-                            final diff =
-                                (cuadre['diferencia'] as num?)?.toDouble() ??
-                                    0.0;
-                            final closedPending = status ==
-                                UserPreferencesService
-                                    .offlineTurnoStatusClosedPending;
+                  ),
+                  Expanded(
+                    child: RefreshIndicator(
+                      onRefresh: _load,
+                      child: ListView.separated(
+                        itemCount: _turnos.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final t = _turnos[index];
+                          final id = t['local_id']?.toString() ?? '';
+                          final cuadre = _cuadres[id] ?? {};
+                          final status = t['status']?.toString();
+                          final diff =
+                              (cuadre['diferencia'] as num?)?.toDouble() ?? 0.0;
+                          final closedPending =
+                              status ==
+                              UserPreferencesService
+                                  .offlineTurnoStatusClosedPending;
 
-                            return ListTile(
-                              leading: CircleAvatar(
-                                backgroundColor:
-                                    _statusColor(status).withValues(alpha: 0.15),
-                                child: Icon(
-                                  closedPending
-                                      ? Icons.cloud_upload_outlined
-                                      : Icons.lock_open,
-                                  color: _statusColor(status),
-                                ),
+                          return ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: _statusColor(
+                                status,
+                              ).withValues(alpha: 0.15),
+                              child: Icon(
+                                closedPending
+                                    ? Icons.cloud_upload_outlined
+                                    : Icons.lock_open,
+                                color: _statusColor(status),
                               ),
-                              title: Text(
-                                'TPV ${t['id_tpv'] ?? '—'} · ${_statusLabel(status)}',
-                              ),
-                              subtitle: Text(
-                                'Apertura: ${_fmtFecha(t['fecha_apertura'])}\n'
-                                'Ventas: ${_fmtMoney(cuadre['ventas_totales'])}'
-                                ' · Esperado: ${_fmtMoney(cuadre['efectivo_esperado'])}',
-                              ),
-                              isThreeLine: true,
-                              trailing: closedPending
-                                  ? Column(
+                            ),
+                            title: Text(
+                              'TPV ${t['id_tpv'] ?? '—'} · ${_statusLabel(status)}',
+                            ),
+                            subtitle: Text(
+                              'Apertura: ${_fmtFecha(t['fecha_apertura'])}\n'
+                              'Ventas: ${_fmtMoney(cuadre['ventas_totales'])}'
+                              ' · Esperado: ${_fmtMoney(cuadre['efectivo_esperado'])}',
+                            ),
+                            isThreeLine: true,
+                            trailing:
+                                closedPending
+                                    ? Column(
                                       mainAxisAlignment:
                                           MainAxisAlignment.center,
                                       crossAxisAlignment:
@@ -321,9 +332,10 @@ class _AdminTurnosOfflineScreenState extends State<AdminTurnosOfflineScreen> {
                                         Text(
                                           'Diff ${_fmtMoney(diff)}',
                                           style: TextStyle(
-                                            color: diff.abs() < 0.01
-                                                ? Colors.green
-                                                : Colors.red,
+                                            color:
+                                                diff.abs() < 0.01
+                                                    ? Colors.green
+                                                    : Colors.red,
                                             fontWeight: FontWeight.w600,
                                           ),
                                         ),
@@ -331,33 +343,31 @@ class _AdminTurnosOfflineScreenState extends State<AdminTurnosOfflineScreen> {
                                           'Final: ${_fmtMoney(cuadre['efectivo_final'])}',
                                           style: TextStyle(
                                             fontSize: 11,
-                                            color: Colors.grey[600],
+                                            color:
+                                                VentiqHomeTheme.textSecondary,
                                           ),
                                         ),
                                       ],
                                     )
-                                  : Text(
+                                    : Text(
                                       'Efectivo inicial: ${_fmtMoney(_efectivoInicialOf(t, cuadre))}',
                                       style: TextStyle(
                                         fontSize: 12,
-                                        color: Colors.grey[700],
+                                        color: VentiqHomeTheme.textSecondary,
                                       ),
                                     ),
-                              onTap: () => _showDetail(t, cuadre),
-                            );
-                          },
-                        ),
+                            onTap: () => _showDetail(t, cuadre),
+                          );
+                        },
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
+              ),
     );
   }
 
-  void _showDetail(
-    Map<String, dynamic> turno,
-    Map<String, dynamic> cuadre,
-  ) {
+  void _showDetail(Map<String, dynamic> turno, Map<String, dynamic> cuadre) {
     final status = turno['status']?.toString();
     final closedPending =
         status == UserPreferencesService.offlineTurnoStatusClosedPending;
@@ -385,16 +395,16 @@ class _AdminTurnosOfflineScreenState extends State<AdminTurnosOfflineScreen> {
                     height: 4,
                     margin: const EdgeInsets.only(bottom: 16),
                     decoration: BoxDecoration(
-                      color: Colors.grey[300],
+                      color: VentiqHomeTheme.border,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
                 ),
                 Text(
                   'Cuadre del turno',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -405,7 +415,10 @@ class _AdminTurnosOfflineScreenState extends State<AdminTurnosOfflineScreen> {
                   const SizedBox(height: 8),
                   Text(
                     'Resumen reconstruido desde ventas locales (cierre anterior a esta versión).',
-                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: VentiqHomeTheme.textSecondary,
+                    ),
                   ),
                 ],
                 const SizedBox(height: 16),
@@ -424,7 +437,10 @@ class _AdminTurnosOfflineScreenState extends State<AdminTurnosOfflineScreen> {
                   'Egresos digitales',
                   _fmtMoney(cuadre['egresos_digitales']),
                 ),
-                _row('Efectivo esperado', _fmtMoney(cuadre['efectivo_esperado'])),
+                _row(
+                  'Efectivo esperado',
+                  _fmtMoney(cuadre['efectivo_esperado']),
+                ),
                 if (closedPending) ...[
                   _row('Efectivo final', _fmtMoney(cuadre['efectivo_final'])),
                   _row(
@@ -434,18 +450,12 @@ class _AdminTurnosOfflineScreenState extends State<AdminTurnosOfflineScreen> {
                   ),
                 ],
                 const Divider(height: 24),
-                _row(
-                  'Operaciones',
-                  '${cuadre['operaciones_totales'] ?? 0}',
-                ),
+                _row('Operaciones', '${cuadre['operaciones_totales'] ?? 0}'),
                 _row(
                   'Productos vendidos',
                   '${cuadre['productos_vendidos'] ?? 0}',
                 ),
-                _row(
-                  'Ticket promedio',
-                  _fmtMoney(cuadre['ticket_promedio']),
-                ),
+                _row('Ticket promedio', _fmtMoney(cuadre['ticket_promedio'])),
                 const SizedBox(height: 16),
                 if (closedPending) ...[
                   FilledButton.icon(
@@ -463,12 +473,13 @@ class _AdminTurnosOfflineScreenState extends State<AdminTurnosOfflineScreen> {
                   ),
                   const SizedBox(height: 8),
                   FilledButton.icon(
-                    onPressed: _syncing
-                        ? null
-                        : () {
-                            Navigator.pop(context);
-                            _syncTurnos();
-                          },
+                    onPressed:
+                        _syncing
+                            ? null
+                            : () {
+                              Navigator.pop(context);
+                              _syncTurnos();
+                            },
                     icon: const Icon(Icons.cloud_upload_outlined),
                     label: const Text('Sincronizar cola de turnos'),
                   ),
@@ -480,12 +491,13 @@ class _AdminTurnosOfflineScreenState extends State<AdminTurnosOfflineScreen> {
                 // turnos que quedaron "Abierto" localmente por días sin
                 // poder sincronizar la apertura.
                 OutlinedButton.icon(
-                  onPressed: _syncing
-                      ? null
-                      : () {
-                          Navigator.pop(context);
-                          _forceResolveTurno(turno);
-                        },
+                  onPressed:
+                      _syncing
+                          ? null
+                          : () {
+                            Navigator.pop(context);
+                            _forceResolveTurno(turno);
+                          },
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.deepOrange,
                     side: const BorderSide(color: Colors.deepOrange),
@@ -532,7 +544,9 @@ class _AdminTurnosOfflineScreenState extends State<AdminTurnosOfflineScreen> {
     if (!_connectivity.isConnected) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Sin conexión. Conéctate a internet para diagnosticar.'),
+          content: Text(
+            'Sin conexión. Conéctate a internet para diagnosticar.',
+          ),
           backgroundColor: Colors.orange,
         ),
       );
@@ -558,21 +572,22 @@ class _AdminTurnosOfflineScreenState extends State<AdminTurnosOfflineScreen> {
     final canAct = diag['found'] == true;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Diagnóstico del turno'),
-        content: Text(diag['message']?.toString() ?? 'Sin información.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cerrar'),
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Diagnóstico del turno'),
+            content: Text(diag['message']?.toString() ?? 'Sin información.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cerrar'),
+              ),
+              if (canAct)
+                FilledButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('Forzar resolución'),
+                ),
+            ],
           ),
-          if (canAct)
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Forzar resolución'),
-            ),
-        ],
-      ),
     );
     if (confirmed != true) return;
 
@@ -595,8 +610,7 @@ class _AdminTurnosOfflineScreenState extends State<AdminTurnosOfflineScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(result['message']?.toString() ?? 'Sin resultado'),
-        backgroundColor:
-            result['success'] == true ? Colors.green : Colors.red,
+        backgroundColor: result['success'] == true ? Colors.green : Colors.red,
         duration: const Duration(seconds: 5),
       ),
     );
@@ -609,7 +623,10 @@ class _AdminTurnosOfflineScreenState extends State<AdminTurnosOfflineScreen> {
       child: Row(
         children: [
           Expanded(
-            child: Text(label, style: TextStyle(color: Colors.grey[700])),
+            child: Text(
+              label,
+              style: TextStyle(color: VentiqHomeTheme.textSecondary),
+            ),
           ),
           Text(
             value,

@@ -497,6 +497,10 @@ class VariantService {
           .from('app_dat_subcategorias')
           .select('id, denominacion, idcategoria')
           .eq('idcategoria', categoryId)
+          // Excluye las subcategorías que el sistema crea para las categorías
+          // especiales (la «General» oculta): no deben poder asignarse a una
+          // variante ni aparecer en el diálogo de selección.
+          .eq('oculta', false)
           .order('denominacion');
 
       if (response == null || response.isEmpty) {

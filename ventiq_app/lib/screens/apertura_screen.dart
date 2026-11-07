@@ -13,6 +13,7 @@ import '../utils/uuid_generator.dart';
 import '../utils/price_utils.dart';
 import '../utils/connection_error_handler.dart';
 import '../models/inventory_product.dart';
+import '../theme/ventiq_home_theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/global_navigator.dart';
 import '../widgets/connection_status_widget.dart';
@@ -29,8 +30,21 @@ class AperturaScreen extends StatefulWidget {
 class _AperturaScreenState extends State<AperturaScreen>
     with RouteAware, WidgetsBindingObserver {
   final _formKey = GlobalKey<FormState>();
-  final _montoInicialController = TextEditingController();
-  final _montoInicialUsdController = TextEditingController(text: '0');
+
+  /// Divisas habilitadas en la tienda: una entrada por campo de efectivo.
+  /// Arranca con el par histórico CUP + USD para que el primer frame sea el de
+  /// siempre y, en cuanto se resuelve la configuración, se ajusta a lo que la
+  /// tienda acepta de verdad.
+  List<String> _divisasCaja = const [PriceUtils.baseCurrency, 'USD'];
+
+  /// Efectivo inicial por divisa en importes NATIVOS. Es la única fuente de
+  /// verdad del formulario: no hay un campo fijo por divisa ni ramas por código
+  /// de moneda.
+  final Map<String, TextEditingController> _montoInicialControllers = {
+    PriceUtils.baseCurrency: TextEditingController(),
+    'USD': TextEditingController(text: '0'),
+  };
+
   final _observacionesController = TextEditingController();
   final UserPreferencesService _userPrefs = UserPreferencesService();
   final NotificationService _notificationService = NotificationService();
@@ -86,6 +100,7 @@ class _AperturaScreenState extends State<AperturaScreen>
     _checkExistingShift();
     _loadStoreConfig();
     _loadWorkerConfig(); // Load worker inventory control settings
+    _loadDivisasCaja();
   }
 
   @override
@@ -105,11 +120,41 @@ class _AperturaScreenState extends State<AperturaScreen>
     for (final c in _inventoryControllers.values) {
       c.dispose();
     }
-    _montoInicialController.dispose();
-    _montoInicialUsdController.dispose();
+    _montoInicialControllers.forEach((_, controller) => controller.dispose());
     _observacionesController.dispose();
     super.dispose();
   }
+
+  /// Ajusta los campos de efectivo a las divisas que acepta la tienda.
+  ///
+  /// Solo añade/ordena: los controladores ya creados se conservan para no
+  /// perder lo que el vendedor haya escrito mientras se resolvía la consulta.
+  Future<void> _loadDivisasCaja() async {
+    final divisas = await TurnoService.divisasDeCaja();
+    if (!mounted) return;
+    setState(() {
+      for (final divisa in divisas) {
+        _montoInicialControllers.putIfAbsent(
+          divisa,
+          () => TextEditingController(text: '0'),
+        );
+      }
+      _divisasCaja = divisas;
+    });
+  }
+
+  /// Importe tecleado en un campo opcional (vacío o inválido = 0).
+  double _montoDeCampo(String divisa) =>
+      double.tryParse(_montoInicialControllers[divisa]?.text.trim() ?? '') ??
+      0.0;
+
+  /// Efectivo inicial por divisa tal como está en los campos (nativo).
+  ///
+  /// Se enumeran las divisas habilitadas —no el mapa de controladores— para que
+  /// el mapa tenga exactamente una entrada por campo visible.
+  Map<String, double> get _montoInicialPorDivisa => {
+    for (final divisa in _divisasCaja) divisa: _montoDeCampo(divisa),
+  };
 
   @override
   void didPopNext() {
@@ -220,7 +265,7 @@ class _AperturaScreenState extends State<AperturaScreen>
                 ElevatedButton(
                   onPressed: () => Navigator.pop(ctx, true),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF4CAF50),
+                    backgroundColor: VentiqHomeTheme.success,
                   ),
                   child: const Text('Recibir'),
                 ),
@@ -240,7 +285,7 @@ class _AperturaScreenState extends State<AperturaScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Órdenes recibidas: $processed'),
-          backgroundColor: Colors.green,
+          backgroundColor: VentiqHomeTheme.success,
           duration: const Duration(seconds: 3),
         ),
       );
@@ -845,7 +890,7 @@ class _AperturaScreenState extends State<AperturaScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error cargando inventario: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: VentiqHomeTheme.danger,
           ),
         );
       }
@@ -1043,16 +1088,16 @@ class _AperturaScreenState extends State<AperturaScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: VentiqHomeTheme.surface,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF4A90E2),
+        backgroundColor: VentiqHomeTheme.primary,
         elevation: 0,
         title: Text(
           _existingOpenTurno != null ? 'Turno abierto' : 'Crear Apertura',
           style: const TextStyle(
             color: Colors.white,
             fontSize: 18,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w700,
           ),
         ),
         centerTitle: true,
@@ -1073,7 +1118,9 @@ class _AperturaScreenState extends State<AperturaScreen>
           _checkingExistingShift
               ? const Center(
                 child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4A90E2)),
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    VentiqHomeTheme.primary,
+                  ),
                 ),
               )
               : _existingOpenTurno != null
@@ -1088,28 +1135,25 @@ class _AperturaScreenState extends State<AperturaScreen>
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey[300]!),
+                          color: VentiqHomeTheme.card,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: VentiqHomeTheme.border),
+                          boxShadow: VentiqHomeTheme.shadowCard,
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
                               children: [
-                                Icon(
+                                const Icon(
                                   Icons.lock_open,
-                                  color: const Color(0xFF4A90E2),
+                                  color: VentiqHomeTheme.primary,
                                   size: 24,
                                 ),
                                 const SizedBox(width: 8),
                                 const Text(
                                   'Apertura de Caja',
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w600,
-                                    color: Color(0xFF1F2937),
-                                  ),
+                                  style: VentiqHomeTheme.tituloSeccion,
                                 ),
                               ],
                             ),
@@ -1132,9 +1176,10 @@ class _AperturaScreenState extends State<AperturaScreen>
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey[300]!),
+                          color: VentiqHomeTheme.card,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: VentiqHomeTheme.border),
+                          boxShadow: VentiqHomeTheme.shadowCard,
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1165,7 +1210,7 @@ class _AperturaScreenState extends State<AperturaScreen>
                                 child: const Center(
                                   child: CircularProgressIndicator(
                                     valueColor: AlwaysStoppedAnimation<Color>(
-                                      Color(0xFF4A90E2),
+                                      VentiqHomeTheme.primary,
                                     ),
                                   ),
                                 ),
@@ -1174,20 +1219,20 @@ class _AperturaScreenState extends State<AperturaScreen>
                               Container(
                                 padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
-                                  color:
-                                      _inventorySet
-                                          ? Colors.green[50]
+                                  color: (_inventorySet
+                                          ? VentiqHomeTheme.success
                                           : (_inventoryAlreadyDone
-                                              ? Colors.blue[50]
-                                              : Colors.orange[50]),
-                                  borderRadius: BorderRadius.circular(8),
+                                              ? VentiqHomeTheme.primary
+                                              : VentiqHomeTheme.warning))
+                                      .withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(12),
                                   border: Border.all(
-                                    color:
-                                        _inventorySet
-                                            ? Colors.green[200]!
+                                    color: (_inventorySet
+                                            ? VentiqHomeTheme.success
                                             : (_inventoryAlreadyDone
-                                                ? Colors.blue[200]!
-                                                : Colors.orange[200]!),
+                                                ? VentiqHomeTheme.primary
+                                                : VentiqHomeTheme.warning))
+                                        .withValues(alpha: 0.35),
                                   ),
                                 ),
                                 child: Column(
@@ -1203,10 +1248,11 @@ class _AperturaScreenState extends State<AperturaScreen>
                                                   : Icons.warning_amber),
                                           color:
                                               _inventorySet
-                                                  ? Colors.green[700]
+                                                  ? VentiqHomeTheme.success
                                                   : (_inventoryAlreadyDone
-                                                      ? Colors.blue[700]
-                                                      : Colors.orange[700]),
+                                                      ? VentiqHomeTheme.primary
+                                                      : VentiqHomeTheme
+                                                          .warning),
                                           size: 18,
                                         ),
                                         const SizedBox(width: 8),
@@ -1218,13 +1264,15 @@ class _AperturaScreenState extends State<AperturaScreen>
                                                   : 'Inventario Requerido'),
                                           style: TextStyle(
                                             fontSize: 14,
-                                            fontWeight: FontWeight.w600,
+                                            fontWeight: FontWeight.w800,
                                             color:
                                                 _inventorySet
-                                                    ? Colors.green[700]
+                                                    ? VentiqHomeTheme.success
                                                     : (_inventoryAlreadyDone
-                                                        ? Colors.blue[700]
-                                                        : Colors.orange[700]),
+                                                        ? VentiqHomeTheme
+                                                            .primary
+                                                        : VentiqHomeTheme
+                                                            .warning),
                                           ),
                                         ),
                                       ],
@@ -1236,9 +1284,9 @@ class _AperturaScreenState extends State<AperturaScreen>
                                           : (_inventoryAlreadyDone
                                               ? 'Ya se realizó un inventario en este almacén. Puedes realizar otro si lo deseas.'
                                               : 'Debes establecer el inventario inicial del turno anterior antes de continuar'),
-                                      style: TextStyle(
+                                      style: const TextStyle(
                                         fontSize: 13,
-                                        color: Colors.grey[700],
+                                        color: VentiqHomeTheme.textSecondary,
                                       ),
                                     ),
                                     const SizedBox(height: 12),
@@ -1259,13 +1307,19 @@ class _AperturaScreenState extends State<AperturaScreen>
                                         style: ElevatedButton.styleFrom(
                                           backgroundColor:
                                               _inventorySet
-                                                  ? Colors.green
+                                                  ? VentiqHomeTheme.success
                                                   : (_inventoryAlreadyDone
-                                                      ? Colors.blue
-                                                      : Colors.orange),
+                                                      ? VentiqHomeTheme.primary
+                                                      : VentiqHomeTheme
+                                                          .warning),
                                           foregroundColor: Colors.white,
                                           padding: const EdgeInsets.symmetric(
                                             vertical: 12,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
                                           ),
                                         ),
                                       ),
@@ -1277,28 +1331,33 @@ class _AperturaScreenState extends State<AperturaScreen>
                               Container(
                                 padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
-                                  color: Colors.blue[50],
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Colors.blue[200]!),
+                                  color: VentiqHomeTheme.primary.withValues(
+                                    alpha: 0.06,
+                                  ),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: VentiqHomeTheme.primary.withValues(
+                                      alpha: 0.25,
+                                    ),
+                                  ),
                                 ),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Row(
                                       children: [
-                                        Icon(
+                                        const Icon(
                                           Icons.info_outline,
-                                          color: const Color(0xFF4A90E2),
+                                          color: VentiqHomeTheme.primary,
                                           size: 18,
                                         ),
                                         const SizedBox(width: 8),
-                                        const Text(
+                                        Text(
                                           'Opciones de Inventario',
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w600,
-                                            color: Color(0xFF4A90E2),
-                                          ),
+                                          style: VentiqHomeTheme.rotuloBloque
+                                              .copyWith(
+                                                color: VentiqHomeTheme.primary,
+                                              ),
                                         ),
                                       ],
                                     ),
@@ -1311,16 +1370,17 @@ class _AperturaScreenState extends State<AperturaScreen>
                                           '1. ',
                                           style: TextStyle(
                                             fontSize: 13,
-                                            fontWeight: FontWeight.w600,
-                                            color: Color(0xFF1F2937),
+                                            fontWeight: FontWeight.w700,
+                                            color: VentiqHomeTheme.textPrimary,
                                           ),
                                         ),
                                         Expanded(
                                           child: Text(
                                             'Este turno no manejará inventario (solo ventas)',
-                                            style: TextStyle(
+                                            style: const TextStyle(
                                               fontSize: 13,
-                                              color: Colors.grey[700],
+                                              color:
+                                                  VentiqHomeTheme.textSecondary,
                                             ),
                                           ),
                                         ),
@@ -1335,16 +1395,17 @@ class _AperturaScreenState extends State<AperturaScreen>
                                           '2. ',
                                           style: TextStyle(
                                             fontSize: 13,
-                                            fontWeight: FontWeight.w600,
-                                            color: Color(0xFF1F2937),
+                                            fontWeight: FontWeight.w700,
+                                            color: VentiqHomeTheme.textPrimary,
                                           ),
                                         ),
                                         Expanded(
                                           child: Text(
                                             'La apertura se realizará sin conteo de productos',
-                                            style: TextStyle(
+                                            style: const TextStyle(
                                               fontSize: 13,
-                                              color: Colors.grey[700],
+                                              color:
+                                                  VentiqHomeTheme.textSecondary,
                                             ),
                                           ),
                                         ),
@@ -1362,82 +1423,73 @@ class _AperturaScreenState extends State<AperturaScreen>
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey[300]!),
+                          color: VentiqHomeTheme.card,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: VentiqHomeTheme.border),
+                          boxShadow: VentiqHomeTheme.shadowCard,
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text(
                               'Monto Inicial en Caja',
+                              style: VentiqHomeTheme.tituloSeccion,
+                            ),
+                            const SizedBox(height: 8),
+                            const Text(
+                              'Efectivo con el que se abre el turno, por divisa',
                               style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF1F2937),
+                                fontSize: 12,
+                                color: VentiqHomeTheme.textSecondary,
                               ),
                             ),
                             const SizedBox(height: 12),
-                            TextFormField(
-                              controller: _montoInicialController,
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                    decimal: true,
+                            // Un campo por divisa habilitada. La moneda base es
+                            // obligatoria (es la unidad contable); el resto son
+                            // opcionales y arrancan en 0.
+                            for (final divisa in _divisasCaja) ...[
+                              TextFormField(
+                                controller: _montoInicialControllers[divisa],
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.allow(
+                                    RegExp(r'^\d+\.?\d{0,2}'),
                                   ),
-                              inputFormatters: [
-                                FilteringTextInputFormatter.allow(
-                                  RegExp(r'^\d+\.?\d{0,2}'),
-                                ),
-                              ],
-                              decoration: InputDecoration(
-                                labelText: 'Monto inicial (\$)',
-                                prefixIcon: const Icon(Icons.attach_money),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 8,
-                                ),
-                              ),
-                              validator: (value) {
-                                if (value == null || value.trim().isEmpty) {
-                                  return 'El monto inicial es requerido';
-                                }
-                                final monto = double.tryParse(value);
-                                if (monto == null || monto < 0) {
-                                  return 'Ingrese un monto válido';
-                                }
-                                return null;
-                              },
-                            ),
-                            const SizedBox(height: 12),
-                            TextFormField(
-                              controller: _montoInicialUsdController,
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                    decimal: true,
+                                ],
+                                decoration: InputDecoration(
+                                  labelText: 'Monto inicial $divisa',
+                                  prefixIcon: const Icon(Icons.attach_money),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(
+                                      VentiqHomeTheme.radiusField,
+                                    ),
                                   ),
-                              inputFormatters: [
-                                FilteringTextInputFormatter.allow(
-                                  RegExp(r'^\d+\.?\d{0,2}'),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
                                 ),
-                              ],
-                              decoration: InputDecoration(
-                                labelText: 'Efectivo inicial USD (opcional)',
-                                prefixIcon: const Icon(Icons.attach_money),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
+                                validator: (value) {
+                                  final texto = value?.trim() ?? '';
+                                  final esBase =
+                                      divisa == PriceUtils.baseCurrency;
+                                  if (texto.isEmpty) {
+                                    return esBase
+                                        ? 'El monto inicial es requerido'
+                                        : null;
+                                  }
+                                  final monto = double.tryParse(texto);
+                                  if (monto == null || monto < 0) {
+                                    return 'Ingrese un monto válido';
+                                  }
+                                  return null;
+                                },
                               ),
-                              validator: (value) {
-                                final monto = double.tryParse(value ?? '0');
-                                if (monto == null || monto < 0) {
-                                  return 'Ingrese un monto USD válido';
-                                }
-                                return null;
-                              },
-                            ),
+                              const SizedBox(height: 12),
+                            ],
                           ],
                         ),
                       ),
@@ -1448,27 +1500,24 @@ class _AperturaScreenState extends State<AperturaScreen>
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey[300]!),
+                          color: VentiqHomeTheme.card,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: VentiqHomeTheme.border),
+                          boxShadow: VentiqHomeTheme.shadowCard,
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text(
                               'Observaciones',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF1F2937),
-                              ),
+                              style: VentiqHomeTheme.tituloSeccion,
                             ),
                             const SizedBox(height: 8),
-                            Text(
+                            const Text(
                               'Opcional - Notas adicionales sobre la apertura',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: Colors.grey[600],
+                                color: VentiqHomeTheme.textSecondary,
                               ),
                             ),
                             const SizedBox(height: 12),
@@ -1479,7 +1528,9 @@ class _AperturaScreenState extends State<AperturaScreen>
                                 hintText:
                                     'Ej: Apertura normal del día, billetes verificados...',
                                 border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(8),
+                                  borderRadius: BorderRadius.circular(
+                                    VentiqHomeTheme.radiusField,
+                                  ),
                                 ),
                                 contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 12,
@@ -1498,11 +1549,11 @@ class _AperturaScreenState extends State<AperturaScreen>
                         child: ElevatedButton(
                           onPressed: _isProcessing ? null : _crearApertura,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF4A90E2),
+                            backgroundColor: VentiqHomeTheme.primary,
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: BorderRadius.circular(12),
                             ),
                           ),
                           child:
@@ -1521,7 +1572,7 @@ class _AperturaScreenState extends State<AperturaScreen>
                                     'Crear Apertura',
                                     style: TextStyle(
                                       fontSize: 16,
-                                      fontWeight: FontWeight.w600,
+                                      fontWeight: FontWeight.w700,
                                     ),
                                   ),
                         ),
@@ -1536,10 +1587,10 @@ class _AperturaScreenState extends State<AperturaScreen>
   Widget _buildExistingOpenTurnoView() {
     final turno = _existingOpenTurno!;
     final isOffline = _existingTurnoIsOffline;
-    final typeColor = isOffline ? Colors.orange : const Color(0xFF059669);
-    final typeBg = isOffline ? Colors.orange.shade50 : const Color(0xFFECFDF5);
-    final typeBorder =
-        isOffline ? Colors.orange.shade200 : const Color(0xFFA7F3D0);
+    final typeColor =
+        isOffline ? VentiqHomeTheme.warning : VentiqHomeTheme.success;
+    final typeBg = typeColor.withValues(alpha: 0.08);
+    final typeBorder = typeColor.withValues(alpha: 0.30);
 
     final fechaRaw = turno['fecha_apertura']?.toString();
     DateTime? fecha;
@@ -1576,8 +1627,9 @@ class _AperturaScreenState extends State<AperturaScreen>
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               color: typeBg,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(16),
               border: Border.all(color: typeBorder),
+              boxShadow: VentiqHomeTheme.shadowCard,
             ),
             child: Row(
               children: [
@@ -1603,7 +1655,10 @@ class _AperturaScreenState extends State<AperturaScreen>
                         isOffline
                             ? 'Turno creado sin conexión (pendiente de sincronizar o local).'
                             : 'Turno registrado en el servidor.',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: VentiqHomeTheme.textSecondary,
+                        ),
                       ),
                     ],
                   ),
@@ -1615,14 +1670,16 @@ class _AperturaScreenState extends State<AperturaScreen>
                   ),
                   decoration: BoxDecoration(
                     color: typeColor,
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(
+                      VentiqHomeTheme.radiusChip,
+                    ),
                   ),
                   child: Text(
                     isOffline ? 'Offline' : 'Online',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 12,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
@@ -1634,9 +1691,10 @@ class _AperturaScreenState extends State<AperturaScreen>
             width: double.infinity,
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey[300]!),
+              color: VentiqHomeTheme.card,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: VentiqHomeTheme.border),
+              boxShadow: VentiqHomeTheme.shadowCard,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1645,17 +1703,13 @@ class _AperturaScreenState extends State<AperturaScreen>
                   children: [
                     const Icon(
                       Icons.lock_open,
-                      color: Color(0xFF4A90E2),
+                      color: VentiqHomeTheme.primary,
                       size: 22,
                     ),
                     const SizedBox(width: 8),
                     const Text(
                       'Detalles de la apertura',
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF1F2937),
-                      ),
+                      style: VentiqHomeTheme.tituloSeccion,
                     ),
                   ],
                 ),
@@ -1696,21 +1750,23 @@ class _AperturaScreenState extends State<AperturaScreen>
             width: double.infinity,
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: Colors.amber.shade50,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.amber.shade200),
+              color: VentiqHomeTheme.warning.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: VentiqHomeTheme.warning.withValues(alpha: 0.30),
+              ),
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.info_outline, color: Colors.amber.shade800),
+                const Icon(Icons.info_outline, color: VentiqHomeTheme.warning),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     'Ya existe un turno abierto para este TPV. Debe cerrarlo antes de abrir uno nuevo.',
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 13,
-                      color: Colors.amber.shade900,
+                      color: VentiqHomeTheme.textPrimary,
                     ),
                   ),
                 ),
@@ -1723,16 +1779,16 @@ class _AperturaScreenState extends State<AperturaScreen>
             child: ElevatedButton(
               onPressed: () => Navigator.pop(context),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF4A90E2),
+                backgroundColor: VentiqHomeTheme.primary,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(12),
                 ),
               ),
               child: const Text(
                 'Volver',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
               ),
             ),
           ),
@@ -1753,7 +1809,13 @@ class _AperturaScreenState extends State<AperturaScreen>
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: TextStyle(fontSize: 14, color: Colors.grey[600])),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 14,
+              color: VentiqHomeTheme.textSecondary,
+            ),
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
@@ -1761,8 +1823,8 @@ class _AperturaScreenState extends State<AperturaScreen>
               textAlign: TextAlign.right,
               style: const TextStyle(
                 fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: Color(0xFF1F2937),
+                fontWeight: FontWeight.w600,
+                color: VentiqHomeTheme.textPrimary,
               ),
             ),
           ),
@@ -1825,7 +1887,7 @@ class _AperturaScreenState extends State<AperturaScreen>
           content: Text(
             'Debes establecer el inventario inicial antes de continuar',
           ),
-          backgroundColor: Colors.orange,
+          backgroundColor: VentiqHomeTheme.warning,
         ),
       );
       return;
@@ -1848,7 +1910,7 @@ class _AperturaScreenState extends State<AperturaScreen>
             content: Text(
               'Debes ingresar la cantidad para todos los productos ($productosVacios pendientes)',
             ),
-            backgroundColor: Colors.orange,
+            backgroundColor: VentiqHomeTheme.warning,
             duration: const Duration(seconds: 4),
           ),
         );
@@ -1856,7 +1918,8 @@ class _AperturaScreenState extends State<AperturaScreen>
       }
     }
 
-    final montoInicial = double.parse(_montoInicialController.text);
+    // Un solo mapa para todo el flujo: campos → RPC online / cola offline.
+    final efectivoInicialPorDivisa = _montoInicialPorDivisa;
 
     setState(() {
       _isProcessing = true;
@@ -1983,9 +2046,7 @@ class _AperturaScreenState extends State<AperturaScreen>
       if (isOfflineModeEnabled) {
         print('🔌 Modo offline - Creando apertura offline...');
         await _createOfflineApertura(
-          efectivoInicial: double.parse(_montoInicialController.text),
-          efectivoInicialUsd:
-              double.tryParse(_montoInicialUsdController.text) ?? 0,
+          efectivoInicialPorDivisa: efectivoInicialPorDivisa,
           idTpv: tpvId,
           idVendedor: sellerId,
           usuario: userUuid,
@@ -1996,9 +2057,7 @@ class _AperturaScreenState extends State<AperturaScreen>
         print('🌐 Modo online - Creando apertura en Supabase...');
         // Usar el nuevo método del TurnoService
         final result = await TurnoService.registrarAperturaTurno(
-          efectivoInicial: double.parse(_montoInicialController.text),
-          efectivoInicialUsd:
-              double.tryParse(_montoInicialUsdController.text) ?? 0,
+          efectivoInicialPorDivisa: efectivoInicialPorDivisa,
           idTpv: tpvId,
           idVendedor: sellerId,
           usuario: userUuid,
@@ -2033,7 +2092,7 @@ class _AperturaScreenState extends State<AperturaScreen>
                 content: Text(
                   result['message'] ?? 'Apertura creada exitosamente',
                 ),
-                backgroundColor: Colors.green,
+                backgroundColor: VentiqHomeTheme.success,
               ),
             );
             Navigator.of(context).pop(true);
@@ -2047,7 +2106,7 @@ class _AperturaScreenState extends State<AperturaScreen>
                       ? 'Sin conexión al servidor. Intenta nuevamente cuando tengas conexión.'
                       : (result['message'] ?? 'Error desconocido'),
                 ),
-                backgroundColor: Colors.red,
+                backgroundColor: VentiqHomeTheme.danger,
                 duration: const Duration(seconds: 4),
               ),
             );
@@ -2060,7 +2119,7 @@ class _AperturaScreenState extends State<AperturaScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error: ${e.toString()}'),
-            backgroundColor: Colors.red,
+            backgroundColor: VentiqHomeTheme.danger,
           ),
         );
       }
@@ -2077,24 +2136,25 @@ class _AperturaScreenState extends State<AperturaScreen>
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[300]!),
+        color: VentiqHomeTheme.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: VentiqHomeTheme.border),
+        boxShadow: VentiqHomeTheme.shadowCard,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.history, color: const Color(0xFF4A90E2), size: 24),
+              const Icon(
+                Icons.history,
+                color: VentiqHomeTheme.primary,
+                size: 24,
+              ),
               const SizedBox(width: 8),
               const Text(
                 'Resumen Turno Anterior',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF1F2937),
-                ),
+                style: VentiqHomeTheme.tituloSeccion,
               ),
             ],
           ),
@@ -2104,7 +2164,9 @@ class _AperturaScreenState extends State<AperturaScreen>
               child: Padding(
                 padding: EdgeInsets.all(20),
                 child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4A90E2)),
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    VentiqHomeTheme.primary,
+                  ),
                 ),
               ),
             )
@@ -2136,16 +2198,24 @@ class _AperturaScreenState extends State<AperturaScreen>
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.grey[50],
-                borderRadius: BorderRadius.circular(8),
+                color: VentiqHomeTheme.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: VentiqHomeTheme.border),
               ),
               child: Row(
                 children: [
-                  Icon(Icons.info_outline, color: Colors.grey[600], size: 20),
+                  const Icon(
+                    Icons.info_outline,
+                    color: VentiqHomeTheme.textSecondary,
+                    size: 20,
+                  ),
                   const SizedBox(width: 8),
-                  Text(
+                  const Text(
                     'No hay datos del turno anterior',
-                    style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                    style: TextStyle(
+                      color: VentiqHomeTheme.textSecondary,
+                      fontSize: 14,
+                    ),
                   ),
                 ],
               ),
@@ -2170,7 +2240,7 @@ class _AperturaScreenState extends State<AperturaScreen>
                 MediaQuery.viewInsetsOf(modalContext).bottom > 0;
             return Container(
               decoration: const BoxDecoration(
-                color: Colors.white,
+                color: VentiqHomeTheme.card,
                 borderRadius: BorderRadius.only(
                   topLeft: Radius.circular(20),
                   topRight: Radius.circular(20),
@@ -2181,7 +2251,7 @@ class _AperturaScreenState extends State<AperturaScreen>
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF4A90E2),
+                      color: VentiqHomeTheme.primary,
                       borderRadius: const BorderRadius.only(
                         topLeft: Radius.circular(20),
                         topRight: Radius.circular(20),
@@ -2196,7 +2266,7 @@ class _AperturaScreenState extends State<AperturaScreen>
                             'Conteo de Inventario',
                             style: TextStyle(
                               fontSize: 20,
-                              fontWeight: FontWeight.bold,
+                              fontWeight: FontWeight.w800,
                               color: Colors.white,
                             ),
                           ),
@@ -2212,17 +2282,23 @@ class _AperturaScreenState extends State<AperturaScreen>
                   if (!keyboardOpen)
                     Container(
                       padding: const EdgeInsets.all(16),
-                      color: Colors.blue[50],
+                      color: VentiqHomeTheme.primary.withValues(alpha: 0.06),
                       child: Row(
                         children: [
-                          Icon(Icons.info_outline, color: Colors.blue[700]),
+                          const Icon(
+                            Icons.info_outline,
+                            color: VentiqHomeTheme.primary,
+                          ),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
                               _mostrarDebeHaberEnConteo
                                   ? 'Compara el "debe haber" e ingresa la cantidad real contada'
                                   : 'Ingresa la cantidad real contada de cada producto (sin rellenar por defecto)',
-                              style: const TextStyle(fontSize: 14),
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: VentiqHomeTheme.textPrimary,
+                              ),
                             ),
                           ),
                         ],
@@ -2237,7 +2313,7 @@ class _AperturaScreenState extends State<AperturaScreen>
                         horizontal: 16,
                         vertical: 8,
                       ),
-                      color: Colors.grey[50],
+                      color: VentiqHomeTheme.surface,
                       child: Wrap(
                         spacing: 8,
                         runSpacing: 4,
@@ -2313,22 +2389,25 @@ class _AperturaScreenState extends State<AperturaScreen>
                                   decoration: BoxDecoration(
                                     color:
                                         isMissing
-                                            ? Colors.red[50]
-                                            : Colors.grey[50],
-                                    borderRadius: BorderRadius.circular(8),
+                                            ? VentiqHomeTheme.danger.withValues(
+                                              alpha: 0.06,
+                                            )
+                                            : VentiqHomeTheme.surface,
+                                    borderRadius: BorderRadius.circular(12),
                                     border: Border.all(
                                       color:
                                           isMissing
-                                              ? Colors.red[400]!
-                                              : Colors.grey[200]!,
+                                              ? VentiqHomeTheme.danger
+                                                  .withValues(alpha: 0.30)
+                                              : VentiqHomeTheme.border,
                                     ),
                                   ),
                                   child: Row(
                                     children: [
                                       if (isMissing) ...[
-                                        Icon(
+                                        const Icon(
                                           Icons.warning_amber_rounded,
-                                          color: Colors.red[700],
+                                          color: VentiqHomeTheme.danger,
                                           size: 20,
                                         ),
                                         const SizedBox(width: 8),
@@ -2342,18 +2421,20 @@ class _AperturaScreenState extends State<AperturaScreen>
                                               product.nombreProducto,
                                               style: const TextStyle(
                                                 fontSize: 14,
-                                                fontWeight: FontWeight.w500,
-                                                color: Color(0xFF1F2937),
+                                                fontWeight: FontWeight.w600,
+                                                color:
+                                                    VentiqHomeTheme.textPrimary,
                                               ),
                                             ),
                                             if (_mostrarDebeHaberEnConteo) ...[
                                               const SizedBox(height: 4),
                                               Text(
                                                 'Debe haber: ${_formatInventoryQty(debeHaber)}',
-                                                style: TextStyle(
+                                                style: const TextStyle(
                                                   fontSize: 12,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.blue[700],
+                                                  fontWeight: FontWeight.w700,
+                                                  color:
+                                                      VentiqHomeTheme.primary,
                                                 ),
                                               ),
                                             ],
@@ -2383,7 +2464,9 @@ class _AperturaScreenState extends State<AperturaScreen>
                                             hintText: '0',
                                             border: OutlineInputBorder(
                                               borderRadius:
-                                                  BorderRadius.circular(8),
+                                                  BorderRadius.circular(
+                                                    VentiqHomeTheme.radiusField,
+                                                  ),
                                             ),
                                             contentPadding:
                                                 const EdgeInsets.symmetric(
@@ -2416,16 +2499,11 @@ class _AperturaScreenState extends State<AperturaScreen>
 
                   Container(
                     padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.grey.withOpacity(0.2),
-                          spreadRadius: 1,
-                          blurRadius: 5,
-                          offset: const Offset(0, -2),
-                        ),
-                      ],
+                    decoration: const BoxDecoration(
+                      color: VentiqHomeTheme.card,
+                      border: Border(
+                        top: BorderSide(color: VentiqHomeTheme.border),
+                      ),
                     ),
                     child: Row(
                       children: [
@@ -2434,7 +2512,12 @@ class _AperturaScreenState extends State<AperturaScreen>
                             onPressed: () => Navigator.pop(context),
                             style: OutlinedButton.styleFrom(
                               padding: const EdgeInsets.symmetric(vertical: 12),
-                              side: BorderSide(color: Colors.grey[400]!),
+                              side: const BorderSide(
+                                color: VentiqHomeTheme.border,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                             ),
                             child: const Text('Cancelar'),
                           ),
@@ -2466,7 +2549,7 @@ class _AperturaScreenState extends State<AperturaScreen>
                                     content: Text(
                                       'Faltan ${missing.length} productos por contar',
                                     ),
-                                    backgroundColor: Colors.orange,
+                                    backgroundColor: VentiqHomeTheme.warning,
                                   ),
                                 );
                                 return;
@@ -2485,20 +2568,23 @@ class _AperturaScreenState extends State<AperturaScreen>
                                   content: Text(
                                     'Inventario establecido: ${_inventoryProducts.length} productos contados',
                                   ),
-                                  backgroundColor: Colors.green,
+                                  backgroundColor: VentiqHomeTheme.success,
                                 ),
                               );
                             },
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF4A90E2),
+                              backgroundColor: VentiqHomeTheme.primary,
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                             ),
                             child: const Text(
                               'Guardar Inventario',
                               style: TextStyle(
                                 fontSize: 16,
-                                fontWeight: FontWeight.w600,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
                           ),
@@ -2516,9 +2602,13 @@ class _AperturaScreenState extends State<AperturaScreen>
   }
 
   /// Crear apertura offline
+  ///
+  /// [efectivoInicialPorDivisa] son importes NATIVOS. El payload conserva la
+  /// columna escalar `efectivo_inicial` (moneda base) y `efectivo_inicial_usd`
+  /// porque el sync offline vigente todavía las lee; el mapa completo va en
+  /// `efectivo_inicial_por_moneda`.
   Future<void> _createOfflineApertura({
-    required double efectivoInicial,
-    required double efectivoInicialUsd,
+    required Map<String, double> efectivoInicialPorDivisa,
     required int idTpv,
     required int idVendedor,
     required String usuario,
@@ -2546,8 +2636,10 @@ class _AperturaScreenState extends State<AperturaScreen>
         'usuario': usuario,
         'tipo_operacion': 'apertura',
         'origen_apertura': 'offline',
-        'efectivo_inicial': efectivoInicial,
-        'efectivo_inicial_usd': efectivoInicialUsd,
+        'efectivo_inicial':
+            efectivoInicialPorDivisa[PriceUtils.baseCurrency] ?? 0,
+        'efectivo_inicial_usd': efectivoInicialPorDivisa['USD'] ?? 0,
+        'efectivo_inicial_por_moneda': efectivoInicialPorDivisa,
         'fecha_apertura': nowServerCorrected.toIso8601String(),
         'observaciones': observaciones ?? '',
         'maneja_inventario': _manejaInventario,
@@ -2566,7 +2658,7 @@ class _AperturaScreenState extends State<AperturaScreen>
             content: Text(
               'Apertura creada offline. Se sincronizará al desactivar el modo offline.',
             ),
-            backgroundColor: Colors.orange,
+            backgroundColor: VentiqHomeTheme.warning,
             duration: Duration(seconds: 3),
           ),
         );
@@ -2582,7 +2674,7 @@ class _AperturaScreenState extends State<AperturaScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error creando apertura offline: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: VentiqHomeTheme.danger,
           ),
         );
       }

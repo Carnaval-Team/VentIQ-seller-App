@@ -1,7 +1,8 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../services/admin_inventory_service.dart';
+import '../../theme/ventiq_home_theme.dart';
 
 /// Lista de productos + editar precio/costo + alta rápida.
 class AdminProductsScreen extends StatefulWidget {
@@ -40,25 +41,25 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
   }
 
   Future<void> _editPrices(Map<String, dynamic> p) async {
-    final ventaCtrl = TextEditingController(
-      text: '${p['precio'] ?? ''}',
-    );
+    final ventaCtrl = TextEditingController(text: '${p['precio'] ?? ''}');
     double? costoActual;
     int? presentationId;
     final detalles = p['detalles_completos'];
     if (detalles is Map) {
       final precios = detalles['precios'];
       if (precios is Map) {
-        costoActual = (precios['precio_costo'] as num?)?.toDouble() ??
+        costoActual =
+            (precios['precio_costo'] as num?)?.toDouble() ??
             (precios['precio_promedio'] as num?)?.toDouble();
       }
       final presentaciones = detalles['presentaciones'];
       if (presentaciones is List && presentaciones.isNotEmpty) {
         final base = presentaciones.cast<Map>().firstWhere(
-              (x) => x['es_base'] == true,
-              orElse: () => presentaciones.first as Map,
-            );
-        presentationId = (base['id'] as num?)?.toInt() ??
+          (x) => x['es_base'] == true,
+          orElse: () => presentaciones.first as Map,
+        );
+        presentationId =
+            (base['id'] as num?)?.toInt() ??
             (base['id_presentacion'] as num?)?.toInt();
         costoActual ??= (base['precio_promedio'] as num?)?.toDouble();
       }
@@ -69,49 +70,52 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
 
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(p['denominacion']?.toString() ?? 'Editar precios'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: ventaCtrl,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+      builder:
+          (ctx) => AlertDialog(
+            title: Text(p['denominacion']?.toString() ?? 'Editar precios'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: ventaCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+                  ],
+                  decoration: const InputDecoration(
+                    labelText: 'Precio venta (CUP)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: costoCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+                  ],
+                  decoration: const InputDecoration(
+                    labelText: 'Costo (USD / promedio)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
               ],
-              decoration: const InputDecoration(
-                labelText: 'Precio venta (CUP)',
-                border: OutlineInputBorder(),
-              ),
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: costoCtrl,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
-              ],
-              decoration: const InputDecoration(
-                labelText: 'Costo (USD / promedio)',
-                border: OutlineInputBorder(),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar'),
               ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Guardar'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Guardar'),
-          ),
-        ],
-      ),
     );
 
     if (ok != true || !mounted) return;
@@ -150,51 +154,54 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
 
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Alta rápida de producto'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Nombre',
-                border: OutlineInputBorder(),
-              ),
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Alta rápida de producto'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombre',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: ventaCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Precio venta CUP',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: costoCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Costo',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: ventaCtrl,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                labelText: 'Precio venta CUP',
-                border: OutlineInputBorder(),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar'),
               ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: costoCtrl,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                labelText: 'Costo',
-                border: OutlineInputBorder(),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Crear'),
               ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Crear'),
-          ),
-        ],
-      ),
     );
 
     if (ok != true || !mounted) return;
@@ -230,7 +237,7 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Productos'),
-        backgroundColor: Colors.blue[700],
+        backgroundColor: VentiqHomeTheme.primary,
         foregroundColor: Colors.white,
         actions: [
           IconButton(
@@ -260,29 +267,30 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
             ),
           ),
           Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : ListView.separated(
-                    itemCount: _products.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (context, i) {
-                      final p = _products[i];
-                      return ListTile(
-                        title: Text(p['denominacion']?.toString() ?? ''),
-                        subtitle: Text(
-                          'Precio: ${p['precio'] ?? '-'}  ·  Stock: ${p['cantidad'] ?? 0}',
-                        ),
-                        trailing: const Icon(Icons.edit_outlined),
-                        onTap: () => _editPrices(p),
-                      );
-                    },
-                  ),
+            child:
+                _loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : ListView.separated(
+                      itemCount: _products.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (context, i) {
+                        final p = _products[i];
+                        return ListTile(
+                          title: Text(p['denominacion']?.toString() ?? ''),
+                          subtitle: Text(
+                            'Precio: ${p['precio'] ?? '-'}  ·  Stock: ${p['cantidad'] ?? 0}',
+                          ),
+                          trailing: const Icon(Icons.edit_outlined),
+                          onTap: () => _editPrices(p),
+                        );
+                      },
+                    ),
           ),
         ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _createQuick,
-        backgroundColor: Colors.blue[700],
+        backgroundColor: VentiqHomeTheme.primary,
         child: const Icon(Icons.add, color: Colors.white),
       ),
     );

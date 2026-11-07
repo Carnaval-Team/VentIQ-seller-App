@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/carnaval_service.dart';
+import '../services/moneda_consolidacion_service.dart';
 import '../services/user_preferences_service.dart';
 import 'carnaval_order_detail_sheet.dart';
 
@@ -20,6 +22,15 @@ class _PaqueteriaTabState extends State<PaqueteriaTab> {
     'Completado',
     'Cancelado',
   ];
+
+  /// Unidad **de datos** de una orden de paquetería que no trae `moneda`.
+  ///
+  /// Las crea `fn_registrar_orden_paqueteria_v2` con `moneda = 'CUP'`, así que
+  /// una clave ausente solo puede ser una orden anterior y su dinero siempre
+  /// fue CUP: es un hecho del registro, no una decisión de pantalla. La unidad
+  /// en la que esta pestaña **consolida** ya no vive aquí: la fija la tienda y
+  /// la devuelve `MonedaConsolidacionService` (ver [_consolidacion]).
+  static const String _monedaBase = 'CUP';
 
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
@@ -76,8 +87,28 @@ class _PaqueteriaTabState extends State<PaqueteriaTab> {
       return;
     }
     _idTienda = storeId;
+    // La unidad de consolidación la decide la tienda, así que se pide en cuanto
+    // se conoce el id. No se espera aquí: la lista de órdenes no debe costar un
+    // viaje más, y cuando la divisa llegue la pestaña se repinta. `cargar` no
+    // lanza y deja CUP mientras tanto, así que nunca hay un hueco sin unidad.
+    unawaited(_cargarMonedaConsolidacion(storeId));
     _carnavalStoreId = await CarnavalService.getCarnavalStoreId(storeId);
     await _loadOrders();
+  }
+
+  /// Trae la moneda de consolidación de la tienda y repinta los importes que ya
+  /// se hubieran construido con la anterior (CUP).
+  ///
+  /// No se llama a `limpiar()` ni aquí ni en `dispose`: el servicio guarda una
+  /// única carga y la comparte el resto de la pantalla de Ventas, así que
+  /// vaciarla desde esta pestaña dejaría a las demás en CUP hasta que alguien
+  /// volviera a pedirla.
+  Future<void> _cargarMonedaConsolidacion(int idTienda) async {
+    await MonedaConsolidacionService.cargar(idTienda);
+    if (!mounted) return;
+    // El repintado es lo único que falta: los importes se leen del servicio en
+    // cada `build`, así que no hay ningún campo que actualizar.
+    setState(() {});
   }
 
   void _openOrderDetail(Map<String, dynamic> order) {
@@ -732,9 +763,91 @@ class _PaqueteriaTabState extends State<PaqueteriaTab> {
     );
   }
 
+  /// Normaliza el código de divisa que trae la orden.
+  ///
+  /// Una clave ausente o vacía significa **moneda base**: las órdenes de
+  /// paquetería nacen sin concepto de multimoneda y su dinero siempre fue CUP.
+  /// Se normaliza en un solo sitio —igual que hace Ventas con sus pagos— para
+  /// que la tarjeta no pueda leer la divisa de una forma y el resto de la app
+  /// de otra.
+  String _monedaDeOrden(dynamic valor) {
+    final codigo = (valor?.toString() ?? '').trim().toUpperCase();
+    return codigo.isEmpty ? _monedaBase : codigo;
+  }
+
+  /// Unidad en la que la tienda consolida, tal como la devuelve el servicio.
+  ///
+  /// Antes de la primera carga —y si la carga falla— el servicio responde CUP,
+  /// que es la consolidación histórica: la pestaña nunca inventa una divisa.
+  /// Se lee del servicio en cada uso, no se copia a un campo: si la sesión
+  /// cambia de tienda o alguien llama a `limpiar()`, la pestaña no puede
+  /// quedarse pintando la unidad anterior.
+  MonedaConsolidacion get _consolidacion => MonedaConsolidacionService.actual;
+
+  /// ¿El importe ya está en la unidad en la que la tienda consolida? Es la
+  /// **única** comparación de divisa de este fichero y no fija ningún código:
+  /// pregunta a la moneda de consolidación si el importe nativo es por sí solo
+  /// el consolidado, para no repetir el mismo dinero con un equivalente.
+  bool _esMonedaConsolidada(String moneda) =>
+      moneda == _consolidacion.moneda.trim().toUpperCase();
+
+  /// Importe numérico opcional del JSON. Devuelve `null` (no `0`) cuando la
+  /// clave no viene o no se puede interpretar, para que quien llama distinga
+  /// «no hay dato» de «el dato vale cero» y no invente una cifra.
+  double? _importeOpcional(dynamic valor) {
+    if (valor is num) return valor.toDouble();
+    if (valor is String) return double.tryParse(valor.trim());
+    return null;
+  }
+
+  /// Importe de una orden, etiquetado con su divisa **real**.
+  ///
+  /// `total` es dinero **nativo**: vale lo que vale en la divisa de la orden,
+  /// no en CUP. Escribir la divisa fija en el `Text` —como se hacía antes—
+  /// etiqueta como CUP un importe que puede haberse cobrado en otra moneda.
+  /// Hoy `fn_registrar_orden_paqueteria_v2` crea todas las órdenes de
+  /// paquetería con `moneda = 'CUP'`, así que con una sola divisa el resultado
+  /// es exactamente el histórico (`$938.00 CUP`); el cambio solo se nota en una
+  /// orden que llegue en otra divisa.
+  ///
+  /// Formato acordado para toda la app: el importe nativo va **siempre** con su
+  /// código al lado, porque dos nativos de divisas distintas no son sumables ni
+  /// comparables. El equivalente solo se pinta cuando la orden lo trae
+  /// (`monto_cup_equivalente`) y su divisa no es ya la de consolidación, y se
+  /// pinta **desglosado**, nunca sumado al nativo: sumarlos mezclaría dos
+  /// unidades en una cifra que no significa nada. Si el equivalente no viene, se
+  /// queda solo el nativo y la tarjeta se comporta como siempre.
+  String _importeOrden(Map<String, dynamic> order) {
+    final total = (order['total'] as num?)?.toDouble() ?? 0;
+    final moneda = _monedaDeOrden(order['moneda']);
+    final nativo = '\$${total.toStringAsFixed(2)} $moneda';
+    if (_esMonedaConsolidada(moneda)) return nativo;
+
+    final equivalente = _importeOpcional(order['monto_cup_equivalente']);
+    if (equivalente == null || equivalente <= 0) return nativo;
+    return '$nativo (≈ ${_equivalenteConsolidado(equivalente)})';
+  }
+
+  /// Equivalente consolidado de un importe que es **CUP por construcción**
+  /// (`monto_cup_equivalente`, calculado por el TPV con la tasa del día).
+  ///
+  /// Ese número no puede quedarse en CUP cuando la tienda consolida en otra
+  /// unidad: sería un segundo importe en una divisa que la tienda ya no usa.
+  /// `formatear` convierte CUP → consolidación y etiqueta la unidad, de modo
+  /// que la pestaña no hace tasas por su cuenta ni pregunta por un código
+  /// concreto.
+  ///
+  /// Con la tienda sin forzar (`esBase`) la consolidación **es** la base y se
+  /// conserva la salida histórica exacta (`≈ $938.00`, sin código): el
+  /// equivalente ya está en la unidad correcta y añadirle el código cambiaría
+  /// la pantalla de las tiendas que hoy no fuerzan nada.
+  String _equivalenteConsolidado(double importeCup) {
+    if (_consolidacion.esBase) return '\$${importeCup.toStringAsFixed(2)}';
+    return MonedaConsolidacionService.formatear(importeCup);
+  }
+
   Widget _buildOrderCard(Map<String, dynamic> order) {
     final status = order['status'] as String? ?? 'Desconocido';
-    final total = (order['total'] as num?)?.toDouble() ?? 0;
     final createdAt = order['created_at'] as String?;
     final orderId = order['id'];
     final metodoPago = order['metodo_pago'] as String? ?? '-';
@@ -935,7 +1048,7 @@ class _PaqueteriaTabState extends State<PaqueteriaTab> {
                 const SizedBox(width: 16),
                 Icon(Icons.attach_money,
                     size: 14, color: Colors.grey[600]),
-                Text('\$${total.toStringAsFixed(2)} CUP',
+                Text(_importeOrden(order),
                     style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,

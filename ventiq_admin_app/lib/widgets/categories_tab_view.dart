@@ -7,6 +7,7 @@ import '../models/category_generation_plan.dart';
 import '../models/subcategory.dart';
 import '../services/category_generation_service.dart';
 import '../services/category_service.dart';
+import '../services/image_picker_service.dart';
 import '../services/subcategory_service.dart';
 
 class CategoriesTabView extends StatefulWidget {
@@ -26,6 +27,8 @@ class _CategoriesTabViewState extends State<CategoriesTabView> {
   String _sortBy = 'Nombre';
   final TextEditingController _searchController = TextEditingController();
   final CategoryService _categoryService = CategoryService();
+  /// IDs con una escritura de «especial»/orden en vuelo (evita dobles toques).
+  final Set<int> _procesandoEspecial = {};
 
   @override
   void initState() {
@@ -39,8 +42,10 @@ class _CategoriesTabViewState extends State<CategoriesTabView> {
     super.dispose();
   }
 
-  Future<void> _loadCategories() async {
-    if (mounted) {
+  /// [silent] evita el spinner de pantalla completa en recargas internas
+  /// (por ejemplo después de reordenar las especiales del Home).
+  Future<void> _loadCategories({bool silent = false}) async {
+    if (mounted && !silent) {
       setState(() => _isLoading = true);
     }
 
@@ -114,6 +119,134 @@ class _CategoriesTabViewState extends State<CategoriesTabView> {
         }
         return 0;
       });
+  }
+
+  /// Especiales ordenadas como en el Home: `orden_home` y luego nombre.
+  List<Category> get _especialesOrdenadas {
+    final especiales = _categories.where((category) => category.especial).toList();
+    especiales.sort((a, b) {
+      final porOrden = a.ordenHome.compareTo(b.ordenHome);
+      return porOrden != 0 ? porOrden : a.name.compareTo(b.name);
+    });
+    return especiales;
+  }
+
+  /// Siguiente `orden_home` (igual criterio que `CategoryService.setEspecial`).
+  int _siguienteOrdenHome() {
+    var maximo = 0;
+    for (final category in _categories) {
+      if (category.especial && category.ordenHome > maximo) {
+        maximo = category.ordenHome;
+      }
+    }
+    return maximo + 1;
+  }
+
+  /// Sustituye una categoría en la lista por su versión actualizada.
+  void _replaceCategory(Category updated) {
+    final index = _categories.indexWhere((c) => c.id == updated.id);
+    if (index >= 0) {
+      _categories[index] = updated;
+    }
+  }
+
+  /// Marca/desmarca «especial» con actualización optimista y rollback.
+  Future<bool> _aplicarEspecial(int categoryId, bool valor) async {
+    if (_procesandoEspecial.contains(categoryId)) return false;
+
+    final index = _categories.indexWhere((c) => c.id == categoryId);
+    if (index < 0) return false;
+
+    final anterior = _categories[index];
+    final ordenNuevo = valor ? _siguienteOrdenHome() : anterior.ordenHome;
+
+    setState(() {
+      _procesandoEspecial.add(categoryId);
+      _replaceCategory(
+        anterior.copyWith(especial: valor, ordenHome: ordenNuevo),
+      );
+    });
+
+    final ok = await _categoryService.setEspecial(categoryId, valor);
+    if (!mounted) return ok;
+
+    setState(() {
+      _procesandoEspecial.remove(categoryId);
+      if (!ok) {
+        // Rollback: se restaura el estado anterior a la escritura.
+        _replaceCategory(anterior);
+      }
+    });
+
+    _mostrarSnackEspecial(ok, valor);
+    return ok;
+  }
+
+  void _mostrarSnackEspecial(bool ok, bool valor) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ok
+              ? (valor
+                  ? '✅ Categoría marcada como especial en el Home'
+                  : '✅ Categoría quitada de las especiales del Home')
+              : '❌ No se pudo actualizar el Home. Inténtalo de nuevo.',
+        ),
+        backgroundColor: ok ? Colors.green : Colors.red,
+      ),
+    );
+  }
+
+  /// Mueve una especial ±1 posiciones dentro del grupo y reescribe
+  /// `orden_home` de todo el grupo (posiciones 1..N).
+  Future<bool> _moverEspecial(int categoryId, int delta) async {
+    final especiales = _especialesOrdenadas;
+    final index = especiales.indexWhere((c) => c.id == categoryId);
+    final destino = index + delta;
+    if (index < 0 || destino < 0 || destino >= especiales.length) {
+      return false;
+    }
+
+    final ids = especiales.map((c) => c.id).toList();
+    ids.removeAt(index);
+    ids.insert(destino, categoryId);
+
+    final ordenPrevio = <int, int>{
+      for (final category in especiales) category.id: category.ordenHome,
+    };
+
+    // Optimista: el grupo queda numerado 1..N en el nuevo orden.
+    setState(() {
+      for (var i = 0; i < ids.length; i++) {
+        final actual = _categories.where((c) => c.id == ids[i]).first;
+        _replaceCategory(actual.copyWith(ordenHome: i + 1));
+      }
+    });
+
+    final ok = await _categoryService.reorderEspeciales(ids);
+    if (!mounted) return ok;
+
+    if (!ok) {
+      // Rollback y resincronización desde la base (la escritura es secuencial
+      // y pudo quedar a medias): la BD es la fuente de verdad.
+      setState(() {
+        for (final category in _categories) {
+          final previo = ordenPrevio[category.id];
+          if (previo != null) {
+            _replaceCategory(category.copyWith(ordenHome: previo));
+          }
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('❌ No se pudo guardar el nuevo orden del Home'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      await _loadCategories(silent: true);
+    }
+
+    return ok;
   }
 
   @override
@@ -222,6 +355,8 @@ class _CategoriesTabViewState extends State<CategoriesTabView> {
             ),
             onChanged: (value) => setState(() => _searchQuery = value),
           ),
+          const SizedBox(height: 8),
+          _buildHomeResumen(),
           const SizedBox(height: 12),
           Row(
             children: [
@@ -428,35 +563,93 @@ class _CategoriesTabViewState extends State<CategoriesTabView> {
                 overflow: TextOverflow.ellipsis,
               ),
               const Spacer(),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  // Row(
-                  //   children: [
-                  //     Icon(Icons.inventory_2, size: 14, color: Colors.grey[600]),
-                  //     const SizedBox(width: 4),
-                  //     Text(
-                  //       '${category.productCount}',
-                  //       style: TextStyle(
-                  //         color: Colors.grey[600],
-                  //         fontSize: 12,
-                  //         fontWeight: FontWeight.w500,
-                  //       ),
-                  //     ),
-                  //   ],
-                  // ),
-                  if (category.commission != null)
-                    Text(
-                      '${category.commission!.toStringAsFixed(1)}%',
-                      style: TextStyle(
-                        color: color,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                  _buildProductosChip(category.productCount),
+                  _buildEspecialChip(category),
                 ],
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Resumen del Home del TPV: cuántas tarjetas serán especiales y cuántas
+  /// categorías tienen productos vendibles (las demás no aparecen en el Home).
+  Widget _buildHomeResumen() {
+    final total = _categories.length;
+    final especiales = _categories.where((c) => c.especial).length;
+    final conProductos = _categories.where((c) => c.productCount > 0).length;
+
+    return Row(
+      children: [
+        const Icon(Icons.home_rounded, size: 14, color: AppColors.primary),
+        const SizedBox(width: 4),
+        Expanded(
+          child: Text(
+            '$especiales especiales de $total categorías · '
+            '$conProductos con productos vendibles',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Interruptor optimista «Especial» de la tarjeta. Se deja compacto (icono)
+  /// para que quepa junto al contador en la rejilla de 2 columnas; el texto
+  /// «Categoría especial» y el switch completo están en el detalle.
+  Widget _buildEspecialChip(Category category) {
+    final activa = category.especial;
+    final cargando = _procesandoEspecial.contains(category.id);
+
+    return Semantics(
+      button: true,
+      label: activa
+          ? 'Quitar de las especiales del Home'
+          : 'Marcar como especial en el Home',
+      child: Tooltip(
+        message: activa
+            ? 'Especial · quitar del Home del TPV'
+            : 'Marcar como especial en el Home del TPV',
+        child: InkWell(
+          onTap: cargando ? null : () => _aplicarEspecial(category.id, !activa),
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: activa ? AppColors.primary : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: activa
+                    ? AppColors.primary
+                    : Colors.grey.withOpacity(0.4),
+              ),
+            ),
+            child: cargando
+                ? SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 1.5,
+                      color: activa ? Colors.white : AppColors.primary,
+                    ),
+                  )
+                : Icon(
+                    activa ? Icons.star_rounded : Icons.star_border_rounded,
+                    size: 14,
+                    color: activa ? Colors.white : Colors.grey[600],
+                  ),
           ),
         ),
       ),
@@ -594,10 +787,14 @@ class _CategoriesTabViewState extends State<CategoriesTabView> {
                         child: _CategoryDetailView(
                           category: category,
                           scrollController: scrollController,
+                          especialesOrdenadas: _especialesOrdenadas,
                           onCategoryUpdated: () {
                             Navigator.pop(context); // Close modal
                             _loadCategories(); // Refresh categories list
                           },
+                          onToggleEspecial: (valor) =>
+                              _aplicarEspecial(category.id, valor),
+                          onMoveEspecial: _moverEspecial,
                         ),
                       ),
                     ],
@@ -1036,12 +1233,12 @@ class _AddCategoryDialogState extends State<_AddCategoryDialog> {
   final _descriptionController = TextEditingController();
   final _skuController = TextEditingController();
   final CategoryService _categoryService = CategoryService();
-  final ImagePicker _imagePicker = ImagePicker();
 
   Uint8List? _selectedImageBytes;
   String? _selectedImageName;
   bool _isLoading = false;
   bool _visibleVendedor = true; // Por defecto visible para vendedores
+  bool _especial = false; // Tarjeta destacada en el Home del TPV
 
   @override
   void dispose() {
@@ -1082,18 +1279,24 @@ class _AddCategoryDialogState extends State<_AddCategoryDialog> {
       );
 
       if (source != null) {
-        final XFile? image = await _imagePicker.pickImage(
-          source: source,
-          maxWidth: 800,
-          maxHeight: 800,
-          imageQuality: 80,
+        // Se usa el servicio y no `image_picker` directo: en web `XFile.path` es
+        // una URL `blob:` que puede quedar revocada antes de leerse (con
+        // `imageQuality`/`maxWidth` la imagen se re-codifica por canvas) y la
+        // subida falla. El servicio lee los bytes con FileReader y devuelve
+        // siempre bytes + nombre, sin URLs intermedias.
+        final picked = await ImagePickerService.pickImage(
+          context: context,
+          source: source == ImageSource.camera
+              ? ImagePickSource.camera
+              : ImagePickSource.gallery,
         );
 
-        if (image != null) {
-          final bytes = await image.readAsBytes();
+        if (picked != null) {
           if (mounted) {
             setState(() {
-              _selectedImageBytes = bytes;
+              _selectedImageBytes = picked.bytes;
+              // Se conserva el nombre que ya usaba esta pantalla: cambiarlo por
+              // el real del fichero alteraría la ruta/MIME esperados al subir.
               _selectedImageName =
                   'category_${DateTime.now().millisecondsSinceEpoch}.jpg';
             });
@@ -1131,6 +1334,7 @@ class _AddCategoryDialogState extends State<_AddCategoryDialog> {
         imageBytes: _selectedImageBytes,
         imageFileName: _selectedImageName,
         visibleVendedor: _visibleVendedor,
+        especial: _especial,
       );
 
       if (success) {
@@ -1262,6 +1466,13 @@ class _AddCategoryDialogState extends State<_AddCategoryDialog> {
                 ],
               ),
             ),
+            const SizedBox(height: 12),
+
+            // Categoría especial en el Home del TPV
+            _buildEspecialHomeControl(
+              especial: _especial,
+              onChanged: (value) => setState(() => _especial = value),
+            ),
             const SizedBox(height: 16),
 
             // Selector de imagen
@@ -1392,6 +1603,7 @@ class _EditCategoryDialogState extends State<_EditCategoryDialog> {
 
   bool _isLoading = false;
   bool _visibleVendedor = true;
+  bool _especial = false;
 
   @override
   void initState() {
@@ -1400,6 +1612,7 @@ class _EditCategoryDialogState extends State<_EditCategoryDialog> {
     _descriptionController.text = widget.category.description;
     _skuController.text = widget.category.skuCodigo;
     _visibleVendedor = widget.category.visibleVendedor;
+    _especial = widget.category.especial;
   }
 
   @override
@@ -1431,6 +1644,7 @@ class _EditCategoryDialogState extends State<_EditCategoryDialog> {
         descripcion: _descriptionController.text.trim(),
         skuCodigo: _skuController.text.trim(),
         visibleVendedor: _visibleVendedor,
+        especial: _especial,
       );
 
       if (success) {
@@ -1566,6 +1780,13 @@ class _EditCategoryDialogState extends State<_EditCategoryDialog> {
                 ],
               ),
             ),
+            const SizedBox(height: 12),
+
+            // Categoría especial en el Home del TPV
+            _buildEspecialHomeControl(
+              especial: _especial,
+              onChanged: (value) => setState(() => _especial = value),
+            ),
             const SizedBox(height: 8),
           ],
         ),
@@ -1600,10 +1821,22 @@ class _CategoryDetailView extends StatefulWidget {
   final ScrollController scrollController;
   final VoidCallback? onCategoryUpdated;
 
+  /// Especiales ordenadas como en el Home (para mostrar la posición).
+  final List<Category> especialesOrdenadas;
+
+  /// Actualiza «especial» de forma optimista en el padre; devuelve el éxito.
+  final Future<bool> Function(bool valor)? onToggleEspecial;
+
+  /// Mueve ±1 la categoría dentro del grupo de especiales; devuelve el éxito.
+  final Future<bool> Function(int categoryId, int delta)? onMoveEspecial;
+
   const _CategoryDetailView({
     required this.category,
     required this.scrollController,
+    required this.especialesOrdenadas,
     this.onCategoryUpdated,
+    this.onToggleEspecial,
+    this.onMoveEspecial,
   });
 
   @override
@@ -1617,10 +1850,79 @@ class _CategoryDetailViewState extends State<_CategoryDetailView> {
   bool _isLoading = true;
   String _error = '';
 
+  // Estado local del Home del TPV (optimista sobre la copia del padre).
+  late bool _especial;
+  late int _ordenHome;
+  late int _productCount;
+  late int _posicionHome; // 1..N dentro de las especiales; 0 si no es especial
+  late int _totalEspeciales;
+  bool _guardandoHome = false;
+
   @override
   void initState() {
     super.initState();
+    _especial = widget.category.especial;
+    _ordenHome = widget.category.ordenHome;
+    _productCount = widget.category.productCount;
+    _totalEspeciales = widget.especialesOrdenadas.length;
+    final posicion = widget.especialesOrdenadas.indexWhere(
+      (c) => c.id == widget.category.id,
+    );
+    _posicionHome = posicion >= 0 ? posicion + 1 : 0;
     _loadSubcategories();
+  }
+
+  /// Cambia «especial» con actualización optimista; rollback si la escritura
+  /// falla. El padre muestra el mensaje de error.
+  Future<void> _cambiarEspecial(bool valor) async {
+    final anterior = _especial;
+    final posicionAnterior = _posicionHome;
+    final totalAnterior = _totalEspeciales;
+
+    setState(() {
+      _especial = valor;
+      _guardandoHome = true;
+      if (valor) {
+        _totalEspeciales = totalAnterior + 1;
+        _posicionHome = _totalEspeciales;
+      } else {
+        _totalEspeciales = totalAnterior > 0 ? totalAnterior - 1 : 0;
+        _posicionHome = 0;
+      }
+    });
+
+    final ok = await widget.onToggleEspecial?.call(valor) ?? false;
+    if (!mounted) return;
+
+    setState(() {
+      _guardandoHome = false;
+      if (!ok) {
+        _especial = anterior;
+        _posicionHome = posicionAnterior;
+        _totalEspeciales = totalAnterior;
+      }
+    });
+  }
+
+  /// Mueve la tarjeta dentro del grupo de especiales del Home.
+  Future<void> _moverEnHome(int delta) async {
+    final destino = _posicionHome + delta;
+    if (destino < 1 || destino > _totalEspeciales) return;
+
+    final posicionAnterior = _posicionHome;
+    setState(() {
+      _posicionHome = destino;
+      _guardandoHome = true;
+    });
+
+    final ok =
+        await widget.onMoveEspecial?.call(widget.category.id, delta) ?? false;
+    if (!mounted) return;
+
+    setState(() {
+      _guardandoHome = false;
+      if (!ok) _posicionHome = posicionAnterior;
+    });
   }
 
   Future<void> _loadSubcategories() async {
@@ -1668,6 +1970,10 @@ class _CategoryDetailViewState extends State<_CategoryDetailView> {
         children: [
           // Category Info Header
           _buildCategoryHeader(color),
+          const SizedBox(height: 16),
+
+          // Configuración del Home del TPV: especial, orden y contador
+          _buildHomeSection(),
           const SizedBox(height: 24),
 
           // Add Subcategory Button
@@ -1791,6 +2097,149 @@ class _CategoryDetailViewState extends State<_CategoryDetailView> {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// Bloque «Home del TPV»: switch de especial, orden entre especiales y aviso
+  /// cuando la categoría no tiene productos vendibles.
+  Widget _buildHomeSection() {
+    final sinProductos = _productCount <= 0;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.home_rounded,
+                color: AppColors.primary,
+                size: 20,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Categoría especial',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w500,
+                        fontSize: 14,
+                      ),
+                    ),
+                    Text(
+                      _especial
+                          ? 'Se mostrará como tarjeta destacada en el Home del TPV'
+                          : 'Se agrupará bajo “Tienda” en el Home del TPV',
+                      style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              Switch.adaptive(
+                value: _especial,
+                onChanged: _guardandoHome ? null : _cambiarEspecial,
+                activeColor: AppColors.primary,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              _buildProductosChip(_productCount),
+              if (_especial)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'ESPECIAL',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                ),
+              if (_especial)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Orden $_posicionHome de $_totalEspeciales',
+                      style: TextStyle(fontSize: 11, color: Colors.grey[700]),
+                    ),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      tooltip: 'Mover antes en el Home',
+                      onPressed:
+                          _guardandoHome || _posicionHome <= 1
+                              ? null
+                              : () => _moverEnHome(-1),
+                      icon: const Icon(Icons.arrow_upward_rounded, size: 18),
+                    ),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      tooltip: 'Mover después en el Home',
+                      onPressed:
+                          _guardandoHome || _posicionHome >= _totalEspeciales
+                              ? null
+                              : () => _moverEnHome(1),
+                      icon: const Icon(Icons.arrow_downward_rounded, size: 18),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+          if (sinProductos) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.warning_amber_rounded,
+                    color: Colors.orange,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'No aparecerá en el Home del TPV hasta que tenga productos vendibles.',
+                      style: TextStyle(
+                        color: Colors.orange,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -2422,7 +2871,13 @@ class _CategoryDetailViewState extends State<_CategoryDetailView> {
       context: context,
       builder:
           (context) => _EditCategoryDialog(
-            category: widget.category,
+            // Copia con el estado local del Home: si el gerente acaba de
+            // cambiar el switch, el diálogo no debe pisarlo con el valor viejo.
+            category: widget.category.copyWith(
+              especial: _especial,
+              ordenHome: _ordenHome,
+              productCount: _productCount,
+            ),
             onCategoryUpdated: () {
               // Trigger refresh in parent first
               if (widget.onCategoryUpdated != null) {
@@ -2530,7 +2985,6 @@ class _ChangeImageDialog extends StatefulWidget {
 
 class _ChangeImageDialogState extends State<_ChangeImageDialog> {
   final CategoryService _categoryService = CategoryService();
-  final ImagePicker _imagePicker = ImagePicker();
 
   Uint8List? _selectedImageBytes;
   String? _currentImageUrl;
@@ -2573,18 +3027,18 @@ class _ChangeImageDialogState extends State<_ChangeImageDialog> {
       );
 
       if (source != null) {
-        final XFile? image = await _imagePicker.pickImage(
-          source: source,
-          maxWidth: 800,
-          maxHeight: 800,
-          imageQuality: 80,
+        // Mismo motivo que arriba: el servicio evita la URL `blob:` de web.
+        final picked = await ImagePickerService.pickImage(
+          context: context,
+          source: source == ImageSource.camera
+              ? ImagePickSource.camera
+              : ImagePickSource.gallery,
         );
 
-        if (image != null) {
-          final bytes = await image.readAsBytes();
+        if (picked != null) {
           if (mounted) {
             setState(() {
-              _selectedImageBytes = bytes;
+              _selectedImageBytes = picked.bytes;
             });
           }
         }
@@ -2827,4 +3281,90 @@ class _ChangeImageDialogState extends State<_ChangeImageDialog> {
       ],
     );
   }
+}
+
+/// Control «Categoría especial» de los diálogos de alta/edición. Mismo bloque
+/// visual que el de «Visible para vendedores», con la paleta del admin.
+Widget _buildEspecialHomeControl({
+  required bool especial,
+  required ValueChanged<bool> onChanged,
+}) {
+  return Container(
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: AppColors.primary.withOpacity(0.05),
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+    ),
+    child: Row(
+      children: [
+        const Icon(Icons.home_rounded, color: AppColors.primary, size: 20),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Categoría especial',
+                style: TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
+              ),
+              Text(
+                especial
+                    ? 'Se mostrará como tarjeta destacada en el Home del TPV'
+                    : 'Se agrupará bajo “Tienda” en el Home del TPV',
+                style: TextStyle(color: Colors.grey[600], fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+        Switch(
+          value: especial,
+          onChanged: onChanged,
+          activeColor: AppColors.primary,
+        ),
+      ],
+    ),
+  );
+}
+
+/// Chip «N productos» / «Sin productos» compartido por la tarjeta del listado y
+/// el detalle. Si no hay productos vendibles, la categoría no aparecerá en el
+/// Home del TPV (`get_home_catalogo_tpv` descarta las que no tienen).
+Widget _buildProductosChip(int productCount) {
+  final sinProductos = productCount <= 0;
+  final color = sinProductos ? Colors.orange : AppColors.primary;
+
+  return Tooltip(
+    message: sinProductos
+        ? 'No aparecerá en el Home del TPV: no tiene productos vendibles'
+        : 'Productos vendibles en esta categoría',
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            sinProductos
+                ? Icons.warning_amber_rounded
+                : Icons.inventory_2_outlined,
+            size: 10,
+            color: color,
+          ),
+          const SizedBox(width: 3),
+          Text(
+            sinProductos ? 'Sin productos' : '$productCount productos',
+            style: TextStyle(
+              color: color,
+              fontSize: 9,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }

@@ -241,4 +241,121 @@ class CurrencyService {
 
     return null;
   }
+
+  // ==========================================================================
+  // MULTIMONEDA (Fase 3 del plan)
+  // ==========================================================================
+
+  /// Tasa de un par cualquiera (origen → destino) para la tienda actual.
+  ///
+  /// Delega en `fn_tasa_cambio`, que es **la misma función que usa el servidor
+  /// al registrar el cobro**. Así el importe que ve el cajero y el que guarda
+  /// la base no pueden discrepar por resolver la tasa con reglas distintas.
+  ///
+  /// Precedencia en servidor: tasa de tienda → tasa global manual → automática
+  /// («el toque»). Devuelve **0** si no hay ninguna.
+  ///
+  /// Offline: la única tasa cacheada es USD→CUP. Por eso, sin conexión solo se
+  /// puede cobrar en CUP y USD; cualquier otra divisa exige conexión
+  /// (decisión D2, hasta la Fase 4).
+  static Future<double> getRate(String origen, String destino) async {
+    final o = origen.trim().toUpperCase();
+    final d = destino.trim().toUpperCase();
+    if (o == d) return 1;
+    if (o.isEmpty || d.isEmpty) return 0;
+
+    try {
+      final storeId = await UserPreferencesService().getIdTienda();
+      final res = await _supabase.rpc(
+        'fn_tasa_cambio',
+        params: {
+          'p_moneda_origen': o,
+          'p_moneda_destino': d,
+          if (storeId != null) 'p_id_tienda': storeId,
+        },
+      );
+      final valor = res is num
+          ? res.toDouble()
+          : double.tryParse(res?.toString() ?? '');
+      if (valor != null && valor > 0) return valor;
+    } catch (e) {
+      print('❌ getRate($o→$d): $e');
+    }
+
+    // Respaldo offline: la única tasa disponible sin red es USD→CUP.
+    if (o == 'USD' && d == 'CUP') {
+      return await UserPreferencesService().getCambioCupUsd();
+    }
+    return 0;
+  }
+
+  /// Monedas que acepta la tienda actual, ordenadas por `orden`.
+  ///
+  /// Devuelve `[{codigo, nombre, simbolo, decimales, orden}]`.
+  /// Si la tienda no tiene configuración o falla la consulta, devuelve una
+  /// lista vacía y el llamador decide el respaldo (CUP/USD).
+  static Future<List<Map<String, dynamic>>> getMonedasTienda() async {
+    try {
+      final storeId = await UserPreferencesService().getIdTienda();
+      if (storeId == null) return const [];
+
+      final asignadas = await _supabase
+          .from('app_dat_tienda_moneda')
+          .select('moneda, activo, orden')
+          .eq('id_tienda', storeId)
+          .eq('activo', true)
+          .order('orden');
+      final filas = List<Map<String, dynamic>>.from(asignadas as List);
+      if (filas.isEmpty) return const [];
+
+      final catalogo = await _supabase
+          .from('monedas')
+          .select('codigo, nombre, simbolo, decimales')
+          .eq('activo', true);
+      final porCodigo = <String, Map<String, dynamic>>{};
+      for (final c in List<Map<String, dynamic>>.from(catalogo as List)) {
+        porCodigo[(c['codigo'] ?? '').toString().trim()] = c;
+      }
+
+      final salida = <Map<String, dynamic>>[];
+      for (final a in filas) {
+        final codigo = (a['moneda'] ?? '').toString().trim();
+        final meta = porCodigo[codigo];
+        // Moneda desactivada en el catálogo global: no se ofrece.
+        if (meta == null) continue;
+        salida.add({
+          'codigo': codigo,
+          'nombre': (meta['nombre'] ?? codigo).toString(),
+          'simbolo': (meta['simbolo'] ?? '').toString(),
+          'decimales': (meta['decimales'] as num?)?.toInt() ?? 2,
+          'orden': (a['orden'] as num?)?.toInt() ?? 100,
+        });
+      }
+      return salida;
+    } catch (e) {
+      print('❌ getMonedasTienda: $e');
+      return const [];
+    }
+  }
+
+  /// Tasas a CUP de todas las monedas aceptadas por la tienda.
+  ///
+  /// Ejemplo: `{'CUP': 1, 'USD': 900, 'EUR': 990}`.
+  /// Las divisas sin tasa resoluble se **omiten**: el cobro en ellas queda
+  /// bloqueado en la UI, que es la decisión B4 del plan.
+  static Future<Map<String, double>> getRatesForStore() async {
+    final monedas = await getMonedasTienda();
+    final tasas = <String, double>{};
+    for (final m in monedas) {
+      final codigo = (m['codigo'] ?? '').toString().trim();
+      if (codigo.isEmpty) continue;
+      if (codigo == 'CUP') {
+        tasas[codigo] = 1;
+        continue;
+      }
+      final tasa = await getRate(codigo, 'CUP');
+      if (tasa > 0) tasas[codigo] = tasa;
+    }
+    return tasas;
+  }
 }

@@ -13,7 +13,9 @@ import '../services/user_preferences_service.dart';
 import '../services/store_config_service.dart';
 import '../services/bank_sms_service.dart';
 import '../services/server_time_service.dart';
+import '../theme/ventiq_home_theme.dart';
 import '../utils/price_utils.dart';
+import '../services/moneda_venta_service.dart';
 import '../utils/navigation_helper.dart';
 import '../utils/desarme_bulto_local.dart';
 import '../utils/presentacion_cadena_local.dart';
@@ -27,6 +29,7 @@ import '../widgets/bill_count_dialog.dart';
 import 'checkout_screen.dart';
 import 'orders_screen.dart';
 import 'payment_method_picker_screen.dart';
+import '../tutorial/tutorial_anchor.dart';
 
 class PreorderScreen extends StatefulWidget {
   const PreorderScreen({Key? key}) : super(key: key);
@@ -93,7 +96,8 @@ class _PreorderScreenState extends State<PreorderScreen> {
   /// Offline o ante error no hace nada: [_esElaboradoCached] resuelve por id
   /// con la lógica offline-aware de siempre.
   Future<void> _precargarEsElaborado(List<int> ids) async {
-    final faltan = ids.where((id) => !_esElaboradoCache.containsKey(id)).toSet();
+    final faltan =
+        ids.where((id) => !_esElaboradoCache.containsKey(id)).toSet();
     if (faltan.isEmpty) return;
     if (await _userPreferencesService.shouldUseLocalData()) return;
     try {
@@ -113,8 +117,8 @@ class _PreorderScreenState extends State<PreorderScreen> {
     }
   }
 
-  Future<bool> _esElaboradoCached(int idProducto) => _esElaboradoCache
-      .putIfAbsent(
+  Future<bool> _esElaboradoCached(int idProducto) =>
+      _esElaboradoCache.putIfAbsent(
         idProducto,
         () => _productDetailService.isProductElaborated(idProducto),
       );
@@ -238,19 +242,44 @@ class _PreorderScreenState extends State<PreorderScreen> {
       barrierDismissible: false,
       builder:
           (context) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(VentiqHomeTheme.radiusBlock),
+            ),
             title: Row(
               children: [
-                Icon(
-                  Icons.warning_amber_rounded,
-                  color: Colors.orange,
-                  size: 28,
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: VentiqHomeTheme.warning.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.warning_amber_rounded,
+                    color: VentiqHomeTheme.warning,
+                    size: 22,
+                  ),
                 ),
-                const SizedBox(width: 8),
-                const Text('Turno Requerido'),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Turno Requerido',
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.2,
+                      color: VentiqHomeTheme.textPrimary,
+                    ),
+                  ),
+                ),
               ],
             ),
             content: const Text(
               'Debe tener un turno abierto para crear órdenes. Por favor, vaya a la sección de Apertura para abrir un turno.',
+              style: TextStyle(
+                fontSize: 14,
+                height: 1.4,
+                color: VentiqHomeTheme.textSecondary,
+              ),
             ),
             actions: [
               ElevatedButton(
@@ -259,7 +288,11 @@ class _PreorderScreenState extends State<PreorderScreen> {
                   Navigator.pushReplacementNamed(context, '/apertura');
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF4A90E2),
+                  backgroundColor: VentiqHomeTheme.primary,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
                 child: const Text('Ir a Apertura'),
               ),
@@ -307,26 +340,35 @@ class _PreorderScreenState extends State<PreorderScreen> {
   @override
   Widget build(BuildContext context) {
     if (_checkingShift) {
-      return Scaffold(body: Center(child: CircularProgressIndicator()));
+      return Scaffold(
+        backgroundColor: VentiqHomeTheme.surface,
+        body: Center(child: CircularProgressIndicator()),
+      );
     }
 
     if (!_hasOpenShift) {
-      return Scaffold(body: Center(child: Text('No tiene un turno abierto')));
+      return Scaffold(
+        backgroundColor: VentiqHomeTheme.surface,
+        body: Center(child: Text('No tiene un turno abierto')),
+      );
     }
 
     final currentOrder = _orderService.currentOrder;
 
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: VentiqHomeTheme.surface,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF4A90E2),
+        backgroundColor: VentiqHomeTheme.primary,
+        foregroundColor: Colors.white,
         elevation: 0,
+        scrolledUnderElevation: 0,
         title: const Text(
           'Preorden Abierta',
           style: TextStyle(
             color: Colors.white,
             fontSize: 18,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.2,
           ),
         ),
         centerTitle: true,
@@ -362,39 +404,63 @@ class _PreorderScreenState extends State<PreorderScreen> {
 
   Widget _buildEmptyState() {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.shopping_cart_outlined, size: 80, color: Colors.grey[400]),
-          const SizedBox(height: 16),
-          Text(
-            'No hay productos en la preorden',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w500,
-              color: Colors.grey[600],
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Agrega productos desde el catálogo',
-            style: TextStyle(fontSize: 14, color: Colors.grey[500]),
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: () => _onBottomNavTap(0), // Ir a Home
-            icon: const Icon(Icons.home),
-            label: const Text('Ir al Catálogo'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF4A90E2),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.all(VentiqHomeTheme.sectionPadding),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 96,
+              height: 96,
+              decoration: BoxDecoration(
+                color: VentiqHomeTheme.primary.withValues(alpha: 0.08),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.shopping_cart_outlined,
+                size: 44,
+                color: VentiqHomeTheme.primary,
               ),
             ),
-          ),
-        ],
+            const SizedBox(height: 20),
+            const Text(
+              'No hay productos en la preorden',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.2,
+                color: VentiqHomeTheme.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Agrega productos desde el catálogo',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                color: VentiqHomeTheme.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: () => _onBottomNavTap(0), // Ir a Home
+              icon: const Icon(Icons.home_rounded, size: 20),
+              label: const Text('Ir al Catálogo'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: VentiqHomeTheme.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 14,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -405,10 +471,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
         // Header con información de la orden
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
           decoration: const BoxDecoration(
-            color: Colors.white,
-            border: Border(bottom: BorderSide(color: Colors.grey, width: 0.2)),
+            color: VentiqHomeTheme.card,
+            border: Border(bottom: BorderSide(color: VentiqHomeTheme.border)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -418,27 +484,25 @@ class _PreorderScreenState extends State<PreorderScreen> {
                 children: [
                   Text(
                     'Orden: ${order.id}',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF1F2937),
-                    ),
+                    style: VentiqHomeTheme.tituloSeccion,
                   ),
                   Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
+                      horizontal: 10,
+                      vertical: 5,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.orange.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(6),
+                      color: VentiqHomeTheme.warning.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(
+                        VentiqHomeTheme.radiusChip,
+                      ),
                     ),
                     child: Text(
                       order.status.displayName,
                       style: const TextStyle(
                         fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.orange,
+                        fontWeight: FontWeight.w700,
+                        color: VentiqHomeTheme.warning,
                       ),
                     ),
                   ),
@@ -446,10 +510,13 @@ class _PreorderScreenState extends State<PreorderScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                '${order.distinctItemCount} producto${order.distinctItemCount == 1 ? '' : 's'} • Total: \$${PriceUtils.formatDiscountPrice(order.total)}',
-                style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                '${order.distinctItemCount} producto${order.distinctItemCount == 1 ? '' : 's'} • Total: ${MonedaVentaService.formatearPrecio(PriceUtils.roundDiscountPrice(order.total), conSimbolo: true)}',
+                style: const TextStyle(
+                  fontSize: 13.5,
+                  color: VentiqHomeTheme.textSecondary,
+                ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
               // Global payment method selector
               _buildGlobalPaymentMethodSelector(),
             ],
@@ -467,7 +534,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
           ),
         ),
         // Footer con acciones
-        _buildOrderFooter(order),
+        TutorialAnchor(id: 'preorder_footer', child: _buildOrderFooter(order)),
       ],
     );
   }
@@ -477,9 +544,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[300]!, width: 1),
+        color: VentiqHomeTheme.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: VentiqHomeTheme.border),
+        boxShadow: VentiqHomeTheme.shadowCard,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -492,19 +560,22 @@ class _PreorderScreenState extends State<PreorderScreen> {
                   item.nombre,
                   style: const TextStyle(
                     fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1F2937),
+                    fontWeight: FontWeight.w700,
+                    color: VentiqHomeTheme.textPrimary,
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
               Text(
-                '\$${PriceUtils.formatDiscountPrice(item.subtotal)}',
+                MonedaVentaService.formatearPrecio(
+                  PriceUtils.roundDiscountPrice(item.subtotal),
+                  conSimbolo: true,
+                ),
                 style: const TextStyle(
                   fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF4A90E2),
+                  fontWeight: FontWeight.w800,
+                  color: VentiqHomeTheme.primary,
                 ),
               ),
             ],
@@ -515,14 +586,17 @@ class _PreorderScreenState extends State<PreorderScreen> {
               Icon(
                 Icons.location_on_outlined,
                 size: 16,
-                color: Colors.grey[600],
+                color: VentiqHomeTheme.textSecondary,
               ),
               const SizedBox(width: 4),
               Expanded(
                 flex: 2,
                 child: ScrollingText(
                   text: item.ubicacionAlmacen,
-                  style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    color: VentiqHomeTheme.textSecondary,
+                  ),
                   maxWidth: 180, // Further increased width for longer text
                   scrollDuration: const Duration(
                     seconds: 4,
@@ -533,8 +607,11 @@ class _PreorderScreenState extends State<PreorderScreen> {
               const SizedBox(width: 16),
               Expanded(
                 child: Text(
-                  'Precio: \$${PriceUtils.formatDiscountPrice(item.displayPrice)}',
-                  style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                  'Precio: ${MonedaVentaService.formatearPrecio(PriceUtils.roundDiscountPrice(item.displayPrice), conSimbolo: true)}',
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    color: VentiqHomeTheme.textSecondary,
+                  ),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -547,9 +624,9 @@ class _PreorderScreenState extends State<PreorderScreen> {
               Text(
                 'Cantidad: ${PriceUtils.formatQuantity(item.cantidad)}',
                 style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: Color(0xFF1F2937),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: VentiqHomeTheme.textSecondary,
                 ),
               ),
               Row(
@@ -562,13 +639,14 @@ class _PreorderScreenState extends State<PreorderScreen> {
                       _updateItemQuantity(item.id, item.cantidad - step);
                     },
                     icon: const Icon(Icons.remove_circle_outline),
-                    color: Colors.red,
+                    color: VentiqHomeTheme.danger,
+                    iconSize: 22,
                     constraints: const BoxConstraints(
                       minWidth: 32,
                       minHeight: 32,
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 4),
                   IconButton(
                     onPressed: () {
                       final step =
@@ -576,17 +654,19 @@ class _PreorderScreenState extends State<PreorderScreen> {
                       _updateItemQuantity(item.id, item.cantidad + step);
                     },
                     icon: const Icon(Icons.add_circle_outline),
-                    color: const Color(0xFF4A90E2),
+                    color: VentiqHomeTheme.primary,
+                    iconSize: 22,
                     constraints: const BoxConstraints(
                       minWidth: 32,
                       minHeight: 32,
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 4),
                   IconButton(
                     onPressed: () => _removeItem(item.id),
                     icon: const Icon(Icons.delete_outline),
-                    color: Colors.red,
+                    color: VentiqHomeTheme.danger,
+                    iconSize: 22,
                     constraints: const BoxConstraints(
                       minWidth: 32,
                       minHeight: 32,
@@ -609,16 +689,11 @@ class _PreorderScreenState extends State<PreorderScreen> {
       (item) => item.paymentMethod?.esEfectivo ?? false,
     );
     return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, -2),
-          ),
-        ],
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      decoration: const BoxDecoration(
+        color: VentiqHomeTheme.card,
+        border: Border(top: BorderSide(color: VentiqHomeTheme.border)),
+        boxShadow: VentiqHomeTheme.shadowCard,
       ),
       child: Column(
         children: [
@@ -628,22 +703,26 @@ class _PreorderScreenState extends State<PreorderScreen> {
               const Text(
                 'Total de la Orden:',
                 style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF1F2937),
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  color: VentiqHomeTheme.textPrimary,
                 ),
               ),
               Text(
-                '\$${PriceUtils.formatDiscountPrice(order.total)}',
+                MonedaVentaService.formatearPrecio(
+                  PriceUtils.roundDiscountPrice(order.total),
+                  conSimbolo: true,
+                ),
                 style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF4A90E2),
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.4,
+                  color: VentiqHomeTheme.primary,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
           if (hasEfectivo)
             SizedBox(
               width: double.infinity,
@@ -652,11 +731,14 @@ class _PreorderScreenState extends State<PreorderScreen> {
                 icon: const Icon(Icons.calculate_outlined, size: 18),
                 label: const Text('Contar Billetes'),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF4A90E2),
-                  side: const BorderSide(color: Color(0xFF4A90E2)),
+                  foregroundColor: VentiqHomeTheme.primary,
+                  side: const BorderSide(color: VentiqHomeTheme.primary),
+                  backgroundColor: VentiqHomeTheme.primary.withValues(
+                    alpha: 0.04,
+                  ),
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                 ),
               ),
@@ -668,11 +750,11 @@ class _PreorderScreenState extends State<PreorderScreen> {
                 child: OutlinedButton(
                   onPressed: _showClearOrderDialog,
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.red,
-                    side: const BorderSide(color: Colors.red),
+                    foregroundColor: VentiqHomeTheme.danger,
+                    side: const BorderSide(color: VentiqHomeTheme.danger),
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(12),
                     ),
                   ),
                   child: const Text('Cancelar Orden'),
@@ -689,11 +771,11 @@ class _PreorderScreenState extends State<PreorderScreen> {
                           ? null
                           : _finalizeOrder,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF4A90E2),
+                    backgroundColor: VentiqHomeTheme.primary,
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(12),
                     ),
                   ),
                   child:
@@ -725,7 +807,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
                             'Enviar Orden',
                             style: TextStyle(
                               fontSize: 16,
-                              fontWeight: FontWeight.w600,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                 ),
@@ -746,11 +828,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
       MaterialPageRoute(
         builder:
             (context) => Scaffold(
-              backgroundColor: Colors.white,
+              backgroundColor: VentiqHomeTheme.card,
               body: BillCountDialog(
                 order: order,
-                expectedAmount:
-                    cashExpected > 0 ? cashExpected : order.total,
+                expectedAmount: cashExpected > 0 ? cashExpected : order.total,
                 userPreferencesService: _userPreferencesService,
                 closeOnly: true,
                 confirmLabel: 'Cerrar',
@@ -766,17 +847,23 @@ class _PreorderScreenState extends State<PreorderScreen> {
       return Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.blue[50],
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.blue[200]!),
+          color: VentiqHomeTheme.primary.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: VentiqHomeTheme.primary.withValues(alpha: 0.18),
+          ),
         ),
         child: Row(
           children: [
-            Icon(Icons.payment, size: 18, color: Colors.blue[600]),
+            const Icon(Icons.payment, size: 18, color: VentiqHomeTheme.primary),
             const SizedBox(width: 10),
             const Text(
               'Cargando métodos de pago...',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w500,
+                color: VentiqHomeTheme.textSecondary,
+              ),
             ),
           ],
         ),
@@ -787,17 +874,27 @@ class _PreorderScreenState extends State<PreorderScreen> {
       return Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.orange[50],
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.orange[200]!),
+          color: VentiqHomeTheme.warning.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: VentiqHomeTheme.warning.withValues(alpha: 0.25),
+          ),
         ),
         child: Row(
           children: [
-            Icon(Icons.warning, size: 18, color: Colors.orange[600]),
+            const Icon(
+              Icons.warning_amber_rounded,
+              size: 18,
+              color: VentiqHomeTheme.warning,
+            ),
             const SizedBox(width: 10),
             const Text(
               'Sin métodos de pago disponibles',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w500,
+                color: VentiqHomeTheme.textSecondary,
+              ),
             ),
           ],
         ),
@@ -807,18 +904,18 @@ class _PreorderScreenState extends State<PreorderScreen> {
     // Highlight if no payment method is selected
     final bool hasPaymentMethod = item.paymentMethod != null;
     final Color borderColor =
-        hasPaymentMethod ? const Color(0xFF10B981) : Colors.red[300]!;
+        hasPaymentMethod ? VentiqHomeTheme.success : VentiqHomeTheme.danger;
     final Color backgroundColor =
         hasPaymentMethod
-            ? const Color(0xFF10B981).withOpacity(0.05)
-            : Colors.red[50]!;
+            ? VentiqHomeTheme.success.withValues(alpha: 0.06)
+            : VentiqHomeTheme.danger.withValues(alpha: 0.06);
 
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: backgroundColor,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: borderColor, width: 1.5),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: borderColor, width: 1.2),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -828,10 +925,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
               Icon(
                 hasPaymentMethod ? Icons.check_circle : Icons.payment,
                 size: 18,
-                color:
-                    hasPaymentMethod
-                        ? const Color(0xFF10B981)
-                        : Colors.red[600],
+                color: borderColor,
               ),
               const SizedBox(width: 8),
               Text(
@@ -840,11 +934,11 @@ class _PreorderScreenState extends State<PreorderScreen> {
                     : 'Método de pago requerido:',
                 style: TextStyle(
                   fontSize: 13,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w700,
                   color:
                       hasPaymentMethod
-                          ? const Color(0xFF10B981)
-                          : Colors.red[700],
+                          ? VentiqHomeTheme.success
+                          : VentiqHomeTheme.danger,
                 ),
               ),
             ],
@@ -858,8 +952,8 @@ class _PreorderScreenState extends State<PreorderScreen> {
             pickerSubtitle: item.nombre,
             accentColor:
                 hasPaymentMethod
-                    ? const Color(0xFF10B981)
-                    : const Color(0xFF4A90E2),
+                    ? VentiqHomeTheme.success
+                    : VentiqHomeTheme.primary,
             onSelected: (method) => _updateItemPaymentMethod(item.id, method),
           ),
         ],
@@ -893,9 +987,25 @@ class _PreorderScreenState extends State<PreorderScreen> {
       context: context,
       builder:
           (context) => AlertDialog(
-            title: const Text('Cancelar Orden'),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(VentiqHomeTheme.radiusBlock),
+            ),
+            title: const Text(
+              'Cancelar Orden',
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.2,
+                color: VentiqHomeTheme.textPrimary,
+              ),
+            ),
             content: const Text(
               '¿Estás seguro de que quieres cancelar esta orden? Se perderán todos los productos agregados.',
+              style: TextStyle(
+                fontSize: 14,
+                height: 1.4,
+                color: VentiqHomeTheme.textSecondary,
+              ),
             ),
             actions: [
               TextButton(
@@ -908,7 +1018,9 @@ class _PreorderScreenState extends State<PreorderScreen> {
                   Navigator.pop(context);
                   setState(() {});
                 },
-                style: TextButton.styleFrom(foregroundColor: Colors.red),
+                style: TextButton.styleFrom(
+                  foregroundColor: VentiqHomeTheme.danger,
+                ),
                 child: const Text('Confirmar'),
               ),
             ],
@@ -935,7 +1047,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
       AppSnackBar.showPersistent(
         context,
         message: 'No hay productos en la orden',
-        backgroundColor: Colors.red,
+        backgroundColor: VentiqHomeTheme.danger,
       );
       return;
     }
@@ -1054,7 +1166,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
         AppSnackBar.showPersistent(
           context,
           message: 'No se pudo verificar el stock: ${e.toString()}',
-          backgroundColor: Colors.red[700],
+          backgroundColor: VentiqHomeTheme.danger,
         );
         return;
       }
@@ -1086,7 +1198,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
         context,
         message:
             'No se pudo cargar la configuración de la tienda. Intenta nuevamente.',
-        backgroundColor: Colors.red[700],
+        backgroundColor: VentiqHomeTheme.danger,
       );
       return;
     }
@@ -1126,7 +1238,9 @@ class _PreorderScreenState extends State<PreorderScreen> {
           setState(() {});
         });
       }
-    } else if (noSolicitarCliente && !solicitarImagenOperacion && !tienePagoPendiente) {
+    } else if (noSolicitarCliente &&
+        !solicitarImagenOperacion &&
+        !tienePagoPendiente) {
       // MODO DIRECTO: No se requieren datos del cliente, crear orden inmediatamente
       print('⚡ No se solicita cliente - Creando orden directamente');
       await _processElaboratedProducts(
@@ -1200,15 +1314,18 @@ class _PreorderScreenState extends State<PreorderScreen> {
                   (inv['cantidad_disponible'] as num?)?.toDouble() ?? 0.0;
               invSum += qty;
 
-              final ubicacion = inv['ubicacion'] is Map
-                  ? Map<String, dynamic>.from(inv['ubicacion'] as Map)
-                  : null;
-              final variante = inv['variante'] is Map
-                  ? Map<String, dynamic>.from(inv['variante'] as Map)
-                  : null;
-              final presentacion = inv['presentacion'] is Map
-                  ? Map<String, dynamic>.from(inv['presentacion'] as Map)
-                  : null;
+              final ubicacion =
+                  inv['ubicacion'] is Map
+                      ? Map<String, dynamic>.from(inv['ubicacion'] as Map)
+                      : null;
+              final variante =
+                  inv['variante'] is Map
+                      ? Map<String, dynamic>.from(inv['variante'] as Map)
+                      : null;
+              final presentacion =
+                  inv['presentacion'] is Map
+                      ? Map<String, dynamic>.from(inv['presentacion'] as Map)
+                      : null;
 
               final invUbicacionId = ubicacion?['id'] as int?;
               final invVarianteId = variante?['id'] as int?;
@@ -1222,8 +1339,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
                   invVarianteId == null ||
                   invVarianteId == idVariante;
               final presentacionMatch =
-                  idPresentacion == null ||
-                  invPresentacionId == idPresentacion;
+                  idPresentacion == null || invPresentacionId == idPresentacion;
 
               if (ubicacionMatch && varianteMatch && presentacionMatch) {
                 matched = qty;
@@ -1256,7 +1372,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
   /// `detalles_completos.inventario`; si el cache no trae nada utilizable se
   /// devuelve null y se conserva el problema original de stock.
   Future<({List<PresentacionLocal> cadena, Map<int, double> stocks})?>
-      _cadenaYStocksOffline(int idProducto) async {
+  _cadenaYStocksOffline(int idProducto) async {
     try {
       final offlineData = await _userPreferencesService.getOfflineData();
       final productsData = offlineData?['products'] as Map<String, dynamic>?;
@@ -1276,15 +1392,17 @@ class _PreorderScreenState extends State<PreorderScreen> {
           final detalles = prodData['detalles_completos'];
           if (detalles is Map) {
             final d = Map<String, dynamic>.from(detalles);
-            crudas = (d['presentaciones'] as List?)
-                ?.whereType<Map>()
-                .map((e) => Map<String, dynamic>.from(e))
-                .toList();
+            crudas =
+                (d['presentaciones'] as List?)
+                    ?.whereType<Map>()
+                    .map((e) => Map<String, dynamic>.from(e))
+                    .toList();
           }
-          crudas ??= (prodData['presentaciones'] as List?)
-              ?.whereType<Map>()
-              .map((e) => Map<String, dynamic>.from(e))
-              .toList();
+          crudas ??=
+              (prodData['presentaciones'] as List?)
+                  ?.whereType<Map>()
+                  .map((e) => Map<String, dynamic>.from(e))
+                  .toList();
           if (crudas == null || crudas.isEmpty) return null;
 
           final cadena = PresentacionCadenaLocal.resolverDesdeCrudas(crudas);
@@ -1296,9 +1414,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
             for (final invRaw in d['inventario'] as List? ?? []) {
               if (invRaw is! Map) continue;
               final inv = Map<String, dynamic>.from(invRaw);
-              final pres = inv['presentacion'] is Map
-                  ? Map<String, dynamic>.from(inv['presentacion'] as Map)
-                  : null;
+              final pres =
+                  inv['presentacion'] is Map
+                      ? Map<String, dynamic>.from(inv['presentacion'] as Map)
+                      : null;
               final idPres = (pres?['id'] as num?)?.toInt();
               final qty =
                   (inv['cantidad_disponible'] as num?)?.toDouble() ?? 0.0;
@@ -1312,7 +1431,9 @@ class _PreorderScreenState extends State<PreorderScreen> {
         }
       }
     } catch (e) {
-      print('⚠️ Error leyendo cadena/stocks offline para producto $idProducto: $e');
+      print(
+        '⚠️ Error leyendo cadena/stocks offline para producto $idProducto: $e',
+      );
     }
     return null;
   }
@@ -1324,23 +1445,25 @@ class _PreorderScreenState extends State<PreorderScreen> {
   /// Usa `get_detalle_producto`, que ya incluye la fila de la presentación
   /// base aunque esté en cero (migración get_detalle_producto_incluir_base_cero).
   Future<({List<PresentacionLocal> cadena, Map<int, double> stocks})?>
-      _cadenaYStocksOnline(int idProducto) async {
+  _cadenaYStocksOnline(int idProducto) async {
     try {
       final supabase = Supabase.instance.client;
-      final detalle =
-          await supabase.rpc('get_detalle_producto', params: {
-        'id_producto_param': idProducto,
-      });
+      final detalle = await supabase.rpc(
+        'get_detalle_producto',
+        params: {'id_producto_param': idProducto},
+      );
       if (detalle is! Map) return null;
       final d = Map<String, dynamic>.from(detalle);
 
-      final prod = d['producto'] is Map
-          ? Map<String, dynamic>.from(d['producto'] as Map)
-          : null;
-      var crudas = (prod?['presentaciones'] as List?)
-          ?.whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList();
+      final prod =
+          d['producto'] is Map
+              ? Map<String, dynamic>.from(d['producto'] as Map)
+              : null;
+      var crudas =
+          (prod?['presentaciones'] as List?)
+              ?.whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
       // get_detalle_producto no siempre anida las presentaciones: consultar
       // la tabla directamente, igual que hace ProductDetailService.
       if (crudas == null || crudas.isEmpty) {
@@ -1350,10 +1473,11 @@ class _PreorderScreenState extends State<PreorderScreen> {
               'id, cantidad, es_base, presentacion:app_nom_presentacion(id, denominacion, sku_codigo)',
             )
             .eq('id_producto', idProducto);
-        crudas = presRows
-            .whereType<Map>()
-            .map((e) => Map<String, dynamic>.from(e))
-            .toList();
+        crudas =
+            presRows
+                .whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList();
       }
       if (crudas.isEmpty) return null;
 
@@ -1364,9 +1488,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
       for (final invRaw in d['inventario'] as List? ?? []) {
         if (invRaw is! Map) continue;
         final inv = Map<String, dynamic>.from(invRaw);
-        final pres = inv['presentacion'] is Map
-            ? Map<String, dynamic>.from(inv['presentacion'] as Map)
-            : null;
+        final pres =
+            inv['presentacion'] is Map
+                ? Map<String, dynamic>.from(inv['presentacion'] as Map)
+                : null;
         final idPres = (pres?['id'] as num?)?.toInt();
         final qty = (inv['cantidad_disponible'] as num?)?.toDouble() ?? 0.0;
         if (idPres != null) {
@@ -1376,7 +1501,9 @@ class _PreorderScreenState extends State<PreorderScreen> {
 
       return (cadena: cadena, stocks: stocks);
     } catch (e) {
-      print('⚠️ Error leyendo cadena/stocks online para producto $idProducto: $e');
+      print(
+        '⚠️ Error leyendo cadena/stocks online para producto $idProducto: $e',
+      );
       return null;
     }
   }
@@ -1421,7 +1548,8 @@ class _PreorderScreenState extends State<PreorderScreen> {
           (conteoPorProducto[i.producto.id] ?? 0) + 1;
     }
     final productosMultilinea = {
-      for (final e in conteoPorProducto.entries) if (e.value > 1) e.key,
+      for (final e in conteoPorProducto.entries)
+        if (e.value > 1) e.key,
     };
 
     // Online: todas las consultas de red se lanzan EN PARALELO antes de
@@ -1549,8 +1677,8 @@ class _PreorderScreenState extends State<PreorderScreen> {
             // una RPC por item.
             final idAlmacenVenta =
                 (item.producto.esServicio && !item.producto.esElaborado)
-                ? null
-                : await _almacenVentaCached(item.producto.id);
+                    ? null
+                    : await _almacenVentaCached(item.producto.id);
             final ingredientes = await _ingredientesCached(
               item.producto.id,
               idAlmacen: idAlmacenVenta,
@@ -1716,9 +1844,8 @@ class _PreorderScreenState extends State<PreorderScreen> {
                         item.inventoryData?['id_opcion_variante'] as int?,
                   },
                 );
-                final estrategia = preview is Map
-                    ? preview['estrategia']?.toString()
-                    : null;
+                final estrategia =
+                    preview is Map ? preview['estrategia']?.toString() : null;
                 // 'abrir' = desarmar bultos; 'empaquetar' = juntar unidades
                 // en la presentación pedida (vender Caja teniendo Latas).
                 cubreConDesarme =
@@ -1731,9 +1858,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
                   );
                 }
               } catch (e) {
-                print(
-                  '⚠️ fn_preview_rebalanceo falló para ${item.nombre}: $e',
-                );
+                print('⚠️ fn_preview_rebalanceo falló para ${item.nombre}: $e');
               }
             }
 
@@ -1843,11 +1968,12 @@ class _PreorderScreenState extends State<PreorderScreen> {
     required double reservadoBase,
   }) {
     if (idPresentacionPedida != null) {
-      final disp = DesarmeBultoLocal.disponiblesPorPresentacion(
-        cadena: cadena,
-        stocks: stocks,
-        reservadoBase: reservadoBase,
-      )[idPresentacionPedida];
+      final disp =
+          DesarmeBultoLocal.disponiblesPorPresentacion(
+            cadena: cadena,
+            stocks: stocks,
+            reservadoBase: reservadoBase,
+          )[idPresentacionPedida];
       if (disp != null) return cantidadPedida <= disp.disponible;
     }
     final eval = DesarmeBultoLocal.evaluar(
@@ -1971,34 +2097,43 @@ class _PreorderScreenState extends State<PreorderScreen> {
       builder:
           (context) => AlertDialog(
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(VentiqHomeTheme.radiusBlock),
             ),
             title: Row(
               children: [
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.orange[50],
+                    color: VentiqHomeTheme.warning.withValues(alpha: 0.12),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(
+                  child: const Icon(
                     Icons.wifi_off_rounded,
-                    color: Colors.orange[700],
-                    size: 24,
+                    color: VentiqHomeTheme.warning,
+                    size: 22,
                   ),
                 ),
                 const SizedBox(width: 12),
                 const Expanded(
                   child: Text(
                     'Sin conexión',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.2,
+                      color: VentiqHomeTheme.textPrimary,
+                    ),
                   ),
                 ),
               ],
             ),
             content: const Text(
               'No se pudo verificar el stock disponible porque hay un problema de conexión con el servidor.\n\nRevisa tu conexión a internet e inténtalo de nuevo.',
-              style: TextStyle(fontSize: 14, height: 1.4),
+              style: TextStyle(
+                fontSize: 14,
+                height: 1.4,
+                color: VentiqHomeTheme.textSecondary,
+              ),
             ),
             actions: [
               TextButton(
@@ -2016,18 +2151,33 @@ class _PreorderScreenState extends State<PreorderScreen> {
       context: context,
       builder:
           (context) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(VentiqHomeTheme.radiusBlock),
+            ),
             title: Row(
               children: [
-                Icon(
-                  Icons.inventory_2_outlined,
-                  color: Colors.orange[700],
-                  size: 26,
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: VentiqHomeTheme.warning.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.inventory_2_outlined,
+                    color: VentiqHomeTheme.warning,
+                    size: 22,
+                  ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 12),
                 const Expanded(
                   child: Text(
                     'Problema de Inventario',
-                    style: TextStyle(fontSize: 17),
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.2,
+                      color: VentiqHomeTheme.textPrimary,
+                    ),
                   ),
                 ),
               ],
@@ -2038,9 +2188,12 @@ class _PreorderScreenState extends State<PreorderScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  const Text(
                     'Los siguientes productos no tienen suficiente existencia:',
-                    style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      color: VentiqHomeTheme.textSecondary,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   ...problems.map((p) {
@@ -2061,11 +2214,13 @@ class _PreorderScreenState extends State<PreorderScreen> {
                     ].join(' · ');
                     return Container(
                       margin: const EdgeInsets.only(bottom: 10),
-                      padding: const EdgeInsets.all(10),
+                      padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.red[50],
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.red[200]!),
+                        color: VentiqHomeTheme.danger.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: VentiqHomeTheme.danger.withValues(alpha: 0.22),
+                        ),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2075,6 +2230,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
                             style: const TextStyle(
                               fontWeight: FontWeight.w700,
                               fontSize: 14,
+                              color: VentiqHomeTheme.textPrimary,
                             ),
                           ),
                           const SizedBox(height: 6),
@@ -2084,8 +2240,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
                                 child: _buildStockChip(
                                   'Pedido',
                                   cantPedida,
-                                  Colors.blue[700]!,
-                                  Colors.blue[50]!,
+                                  VentiqHomeTheme.primary,
+                                  VentiqHomeTheme.primary.withValues(
+                                    alpha: 0.08,
+                                  ),
                                 ),
                               ),
                               const SizedBox(width: 6),
@@ -2093,8 +2251,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
                                 child: _buildStockChip(
                                   'En stock',
                                   stock,
-                                  Colors.green[700]!,
-                                  Colors.green[50]!,
+                                  VentiqHomeTheme.success,
+                                  VentiqHomeTheme.success.withValues(
+                                    alpha: 0.08,
+                                  ),
                                 ),
                               ),
                               const SizedBox(width: 6),
@@ -2102,8 +2262,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
                                 child: _buildStockChip(
                                   'Faltante',
                                   diff,
-                                  Colors.red[700]!,
-                                  Colors.red[100]!,
+                                  VentiqHomeTheme.danger,
+                                  VentiqHomeTheme.danger.withValues(
+                                    alpha: 0.08,
+                                  ),
                                 ),
                               ),
                             ],
@@ -2112,9 +2274,9 @@ class _PreorderScreenState extends State<PreorderScreen> {
                             const SizedBox(height: 6),
                             Text(
                               nota,
-                              style: TextStyle(
+                              style: const TextStyle(
                                 fontSize: 11,
-                                color: Colors.grey[700],
+                                color: VentiqHomeTheme.textSecondary,
                               ),
                             ),
                           ],
@@ -2133,8 +2295,11 @@ class _PreorderScreenState extends State<PreorderScreen> {
               ElevatedButton(
                 onPressed: () => Navigator.pop(context),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange[700],
+                  backgroundColor: VentiqHomeTheme.warning,
                   foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
                 child: const Text('Entendido'),
               ),
@@ -2150,19 +2315,19 @@ class _PreorderScreenState extends State<PreorderScreen> {
     Color bgColor,
   ) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
+      padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 6),
       decoration: BoxDecoration(
         color: bgColor,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(VentiqHomeTheme.radiusChip),
       ),
       child: Column(
         children: [
           Text(
             label,
             style: TextStyle(
-              fontSize: 11,
+              fontSize: 10.5,
               color: textColor,
-              fontWeight: FontWeight.w500,
+              fontWeight: FontWeight.w600,
             ),
           ),
           Text(
@@ -2172,7 +2337,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
             style: TextStyle(
               fontSize: 13,
               color: textColor,
-              fontWeight: FontWeight.bold,
+              fontWeight: FontWeight.w800,
             ),
           ),
         ],
@@ -2181,10 +2346,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
   }
 
   /// Crea la orden directamente sin pasar por CheckoutScreen (cuando no_solicitar_cliente=true)
-  Future<void> _submitOrderDirect(
-    Order order, {
-    bool offline = false,
-  }) async {
+  Future<void> _submitOrderDirect(Order order, {bool offline = false}) async {
     setState(() {
       _elaboratingProducts = true;
     });
@@ -2220,7 +2382,8 @@ class _PreorderScreenState extends State<PreorderScreen> {
       );
 
       // Full offline / modo offline: guardar pendiente local, sin RPC.
-      final useOffline = offline ||
+      final useOffline =
+          offline ||
           await _userPreferencesService.shouldStayFullyOffline() ||
           await _userPreferencesService.isOfflineModeEnabled();
 
@@ -2248,7 +2411,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('¡Orden registrada exitosamente!'),
-            backgroundColor: Colors.green,
+            backgroundColor: VentiqHomeTheme.success,
             duration: Duration(seconds: 2),
           ),
         );
@@ -2263,7 +2426,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error al registrar la venta: ${result['error']}'),
-            backgroundColor: Colors.red,
+            backgroundColor: VentiqHomeTheme.danger,
           ),
         );
       }
@@ -2272,7 +2435,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error al crear la orden: $e'),
-          backgroundColor: Colors.red,
+          backgroundColor: VentiqHomeTheme.danger,
         ),
       );
     } finally {
@@ -2300,13 +2463,16 @@ class _PreorderScreenState extends State<PreorderScreen> {
     for (final item in order.items) {
       final itemTotal = item.subtotal;
       subtotal += itemTotal;
-      final paymentMethodId =
-          item.paymentMethod?.id.toString() ?? 'sin_metodo';
+      final paymentMethodId = item.paymentMethod?.id.toString() ?? 'sin_metodo';
       if (!paymentBreakdown.containsKey(paymentMethodId)) {
         paymentBreakdown[paymentMethodId] = {
           'id_medio_pago': item.paymentMethod?.id,
           'denominacion': item.paymentMethod?.denominacion ?? 'Sin método',
           'monto': 0.0,
+          // Explícito a propósito: la preorden no ofrece selección de moneda,
+          // así que sus líneas son en CUP. Sin declararlo, el sincronizador
+          // tendría que adivinarlo y una divisa nueva se leería como CUP.
+          'moneda': 'CUP',
           'es_digital': item.paymentMethod?.esDigital ?? false,
           'es_efectivo': item.paymentMethod?.esEfectivo ?? false,
         };
@@ -2338,28 +2504,30 @@ class _PreorderScreenState extends State<PreorderScreen> {
       'buyer_name': order.buyerName ?? 'Cliente',
       'buyer_phone': order.buyerPhone ?? '',
       'extra_contacts': '',
-      'items': order.items.map((item) {
-        return {
-          'id_producto': item.producto.id,
-          'denominacion': item.producto.denominacion,
-          'cantidad': item.cantidad,
-          'precio_unitario': item.precioUnitario,
-          'subtotal': item.subtotal,
-          'id_medio_pago': item.paymentMethod?.id,
-          'metodo_pago': item.paymentMethod?.denominacion,
-          'inventory_metadata': item.inventoryData,
-          // FASE 4: igual que en checkout_screen — la cantidad está en la
-          // presentación elegida, así que la preorden pendiente debe llevarla.
-          'id_presentacion': item.idPresentacion,
-          'presentacion_nombre': item.presentacionNombre,
-          'presentacion_factor': item.presentacionFactor,
-        };
-      }).toList(),
+      'items':
+          order.items.map((item) {
+            return {
+              'id_producto': item.producto.id,
+              'denominacion': item.producto.denominacion,
+              'cantidad': item.cantidad,
+              'precio_unitario': item.precioUnitario,
+              'subtotal': item.subtotal,
+              'id_medio_pago': item.paymentMethod?.id,
+              'metodo_pago': item.paymentMethod?.denominacion,
+              'inventory_metadata': item.inventoryData,
+              // FASE 4: igual que en checkout_screen — la cantidad está en la
+              // presentación elegida, así que la preorden pendiente debe llevarla.
+              'id_presentacion': item.idPresentacion,
+              'presentacion_nombre': item.presentacionNombre,
+              'presentacion_factor': item.presentacionFactor,
+            };
+          }).toList(),
       'desglose_pagos': paymentBreakdown.values.toList(),
     };
 
     final openTurno = await _userPreferencesService.getOfflineTurno();
-    final localTurnoId = openTurno?['local_id']?.toString() ??
+    final localTurnoId =
+        openTurno?['local_id']?.toString() ??
         openTurno?['local_turno_id']?.toString();
     if (localTurnoId != null) {
       pending['local_turno_id'] = localTurnoId;
@@ -2379,7 +2547,8 @@ class _PreorderScreenState extends State<PreorderScreen> {
           item.cantidad,
           inventoryId: (inventoryMetadata['id_inventario'] as num?)?.toInt(),
           locationId: (inventoryMetadata['id_ubicacion'] as num?)?.toInt(),
-          presentationId: item.idPresentacion ??
+          presentationId:
+              item.idPresentacion ??
               (inventoryMetadata['id_presentacion'] as num?)?.toInt(),
         );
       } else {
@@ -2400,7 +2569,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
         content: Text(
           '¡Orden offline creada exitosamente!\nSe sincronizará cuando tengas conexión.',
         ),
-        backgroundColor: Colors.green,
+        backgroundColor: VentiqHomeTheme.success,
         duration: Duration(seconds: 2),
       ),
     );
@@ -2475,15 +2644,11 @@ class _PreorderScreenState extends State<PreorderScreen> {
                   vertical: 24,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.15),
-                      blurRadius: 24,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
+                  color: VentiqHomeTheme.card,
+                  borderRadius: BorderRadius.circular(
+                    VentiqHomeTheme.radiusBlock,
+                  ),
+                  boxShadow: VentiqHomeTheme.shadowBuscador,
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -2494,7 +2659,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
                       child: CircularProgressIndicator(
                         strokeWidth: 3,
                         valueColor: AlwaysStoppedAnimation<Color>(
-                          const Color(0xFF4A90E2),
+                          VentiqHomeTheme.primary,
                         ),
                       ),
                     ),
@@ -2503,16 +2668,16 @@ class _PreorderScreenState extends State<PreorderScreen> {
                       'Procesando venta',
                       style: TextStyle(
                         fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF2C3E50),
+                        fontWeight: FontWeight.w700,
+                        color: VentiqHomeTheme.textPrimary,
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Text(
+                    const Text(
                       'Un momento...',
                       style: TextStyle(
                         fontSize: 12,
-                        color: Colors.grey.shade600,
+                        color: VentiqHomeTheme.textSecondary,
                       ),
                     ),
                   ],
@@ -2647,7 +2812,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
                 ],
               ],
             ),
-            backgroundColor: Colors.green[600],
+            backgroundColor: VentiqHomeTheme.success,
             duration: const Duration(seconds: 3),
           ),
         );
@@ -2669,7 +2834,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
               Expanded(child: Text('Error procesando productos: $e')),
             ],
           ),
-          backgroundColor: Colors.red[600],
+          backgroundColor: VentiqHomeTheme.danger,
           duration: const Duration(seconds: 3),
         ),
       );
@@ -2886,17 +3051,23 @@ class _PreorderScreenState extends State<PreorderScreen> {
       return Container(
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
-          color: Colors.blue[50],
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.blue[200]!),
+          color: VentiqHomeTheme.primary.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: VentiqHomeTheme.primary.withValues(alpha: 0.18),
+          ),
         ),
         child: Row(
           children: [
-            Icon(Icons.payment, size: 16, color: Colors.blue[600]),
+            const Icon(Icons.payment, size: 16, color: VentiqHomeTheme.primary),
             const SizedBox(width: 8),
             const Text(
               'Cargando métodos de pago...',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: VentiqHomeTheme.textSecondary,
+              ),
             ),
           ],
         ),
@@ -2907,17 +3078,27 @@ class _PreorderScreenState extends State<PreorderScreen> {
       return Container(
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
-          color: Colors.orange[50],
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.orange[200]!),
+          color: VentiqHomeTheme.warning.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: VentiqHomeTheme.warning.withValues(alpha: 0.25),
+          ),
         ),
         child: Row(
           children: [
-            Icon(Icons.warning, size: 16, color: Colors.orange[600]),
+            const Icon(
+              Icons.warning_amber_rounded,
+              size: 16,
+              color: VentiqHomeTheme.warning,
+            ),
             const SizedBox(width: 8),
             const Text(
               'Sin métodos de pago disponibles',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: VentiqHomeTheme.textSecondary,
+              ),
             ),
           ],
         ),
@@ -2927,11 +3108,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF4A90E2).withOpacity(0.08),
-        borderRadius: BorderRadius.circular(12),
+        color: VentiqHomeTheme.primary.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: const Color(0xFF4A90E2).withOpacity(0.3),
-          width: 1.5,
+          color: VentiqHomeTheme.primary.withValues(alpha: 0.22),
         ),
       ),
       child: Column(
@@ -2940,10 +3120,12 @@ class _PreorderScreenState extends State<PreorderScreen> {
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(6),
+                padding: const EdgeInsets.all(7),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF4A90E2),
-                  borderRadius: BorderRadius.circular(6),
+                  color: VentiqHomeTheme.primary,
+                  borderRadius: BorderRadius.circular(
+                    VentiqHomeTheme.radiusChip,
+                  ),
                 ),
                 child: const Icon(Icons.payment, size: 18, color: Colors.white),
               ),
@@ -2952,9 +3134,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
                 child: Text(
                   'Aplicar método de pago a todos los productos',
                   style: TextStyle(
-                    fontSize: 15,
+                    fontSize: 14,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF4A90E2),
+                    letterSpacing: -0.1,
+                    color: VentiqHomeTheme.primary,
                   ),
                 ),
               ),
@@ -2963,14 +3146,8 @@ class _PreorderScreenState extends State<PreorderScreen> {
           const SizedBox(height: 12),
           Container(
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF4A90E2).withOpacity(0.1),
-                  blurRadius: 4,
-                  offset: const Offset(0, 2),
-                ),
-              ],
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: VentiqHomeTheme.shadowCard,
             ),
             child: PaymentMethodPickerField(
               methods: _paymentMethods,
@@ -2979,7 +3156,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
               pickerTitle: 'Aplicar a todos los productos',
               pickerSubtitle:
                   'El método elegido se asignará a cada producto del carrito',
-              accentColor: const Color(0xFF4A90E2),
+              accentColor: VentiqHomeTheme.primary,
               onSelected: _applyGlobalPaymentMethod,
             ),
           ),
@@ -2987,10 +3164,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
             const SizedBox(height: 8),
             Row(
               children: [
-                Icon(
+                const Icon(
                   Icons.check_circle,
                   size: 16,
-                  color: const Color(0xFF10B981),
+                  color: VentiqHomeTheme.success,
                 ),
                 const SizedBox(width: 6),
                 Expanded(
@@ -2998,15 +3175,15 @@ class _PreorderScreenState extends State<PreorderScreen> {
                     'Método "${_globalPaymentMethod!.displayName}" seleccionado',
                     style: const TextStyle(
                       fontSize: 12,
-                      color: Color(0xFF10B981),
-                      fontWeight: FontWeight.w500,
+                      color: VentiqHomeTheme.success,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
                 TextButton(
                   onPressed: _clearGlobalPaymentMethod,
                   style: TextButton.styleFrom(
-                    foregroundColor: Colors.grey[600],
+                    foregroundColor: VentiqHomeTheme.textSecondary,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 8,
                       vertical: 4,
@@ -3151,21 +3328,41 @@ class _PreorderScreenState extends State<PreorderScreen> {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(VentiqHomeTheme.radiusBlock),
+          ),
           title: Row(
             children: [
-              Icon(
-                isError ? Icons.error_outline : Icons.warning_amber_rounded,
-                color: isError ? Colors.red : Colors.orange,
-                size: 28,
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: (isError
+                          ? VentiqHomeTheme.danger
+                          : VentiqHomeTheme.warning)
+                      .withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  isError ? Icons.error_outline : Icons.warning_amber_rounded,
+                  color:
+                      isError
+                          ? VentiqHomeTheme.danger
+                          : VentiqHomeTheme.warning,
+                  size: 22,
+                ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 12),
               Expanded(
                 child: Text(
                   title,
                   style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: isError ? Colors.red : Colors.orange,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.2,
+                    color:
+                        isError
+                            ? VentiqHomeTheme.danger
+                            : VentiqHomeTheme.warning,
                   ),
                 ),
               ),
@@ -3180,8 +3377,9 @@ class _PreorderScreenState extends State<PreorderScreen> {
                 Text(
                   message,
                   style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
+                    fontSize: 13.5,
+                    height: 1.35,
+                    color: VentiqHomeTheme.textSecondary,
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -3199,10 +3397,16 @@ class _PreorderScreenState extends State<PreorderScreen> {
                     margin: const EdgeInsets.only(bottom: 8),
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: isError ? Colors.red[50] : Colors.orange[50],
-                      borderRadius: BorderRadius.circular(8),
+                      color: (isError
+                              ? VentiqHomeTheme.danger
+                              : VentiqHomeTheme.warning)
+                          .withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: isError ? Colors.red[200]! : Colors.orange[200]!,
+                        color: (isError
+                                ? VentiqHomeTheme.danger
+                                : VentiqHomeTheme.warning)
+                            .withValues(alpha: 0.22),
                       ),
                     ),
                     child: Column(
@@ -3215,8 +3419,8 @@ class _PreorderScreenState extends State<PreorderScreen> {
                               size: 16,
                               color:
                                   isError
-                                      ? Colors.red[700]
-                                      : Colors.orange[700],
+                                      ? VentiqHomeTheme.danger
+                                      : VentiqHomeTheme.warning,
                             ),
                             const SizedBox(width: 6),
                             Expanded(
@@ -3224,11 +3428,11 @@ class _PreorderScreenState extends State<PreorderScreen> {
                                 nombre,
                                 style: TextStyle(
                                   fontSize: 13,
-                                  fontWeight: FontWeight.w600,
+                                  fontWeight: FontWeight.w700,
                                   color:
                                       isError
-                                          ? Colors.red[900]
-                                          : Colors.orange[900],
+                                          ? VentiqHomeTheme.danger
+                                          : VentiqHomeTheme.warning,
                                 ),
                               ),
                             ),
@@ -3237,9 +3441,9 @@ class _PreorderScreenState extends State<PreorderScreen> {
                         const SizedBox(height: 4),
                         Text(
                           'Para: $producto',
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontSize: 12,
-                            color: Colors.grey[700],
+                            color: VentiqHomeTheme.textSecondary,
                           ),
                         ),
                         const SizedBox(height: 4),
@@ -3248,17 +3452,20 @@ class _PreorderScreenState extends State<PreorderScreen> {
                           children: [
                             Text(
                               'Necesario: ${necesaria.toStringAsFixed(2)} $unidad',
-                              style: const TextStyle(fontSize: 12),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: VentiqHomeTheme.textPrimary,
+                              ),
                             ),
                             Text(
                               'Disponible: ${disponible.toStringAsFixed(2)} $unidad',
                               style: TextStyle(
                                 fontSize: 12,
-                                fontWeight: FontWeight.w600,
+                                fontWeight: FontWeight.w700,
                                 color:
                                     isError
-                                        ? Colors.red[700]
-                                        : Colors.orange[700],
+                                        ? VentiqHomeTheme.danger
+                                        : VentiqHomeTheme.warning,
                               ),
                             ),
                           ],
@@ -3267,9 +3474,9 @@ class _PreorderScreenState extends State<PreorderScreen> {
                           const SizedBox(height: 4),
                           Text(
                             'Medido en: $etiquetaAlcance',
-                            style: TextStyle(
+                            style: const TextStyle(
                               fontSize: 11,
-                              color: Colors.grey[700],
+                              color: VentiqHomeTheme.textSecondary,
                             ),
                           ),
                         ],

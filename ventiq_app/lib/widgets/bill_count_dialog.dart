@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/order.dart';
+import '../services/currency_service.dart';
 import '../services/user_preferences_service.dart';
 import '../utils/price_utils.dart';
 
@@ -17,6 +18,12 @@ class BillCountDialog extends StatefulWidget {
   /// Si es null, se usa [order.total].
   final double? expectedAmount;
 
+  /// Opcional y **aditivo**: recibe el importe nativo contado por divisa
+  /// (`{'USD': 18.0}`) al confirmar, para quien necesite persistirlo sin volver
+  /// a leer los controles. [onConfirmPayment] se sigue llamando igual, así que
+  /// los llamadores actuales no cambian de comportamiento.
+  final ValueChanged<Map<String, double>>? onConfirmWithTotals;
+
   const BillCountDialog({
     Key? key,
     required this.order,
@@ -26,6 +33,7 @@ class BillCountDialog extends StatefulWidget {
     this.confirmLabel = 'Confirmar Pago',
     this.cancelLabel = 'Cancelar',
     this.expectedAmount,
+    this.onConfirmWithTotals,
   }) : super(key: key);
 
   @override
@@ -42,8 +50,14 @@ class _BillCountDialogState extends State<BillCountDialog> {
   Map<int, int> _billCounts = {};
   double _totalAmount = 0.0;
   double _remainingAmount = 0.0;
-  double _cambioCupUsd = 0.0;
   bool _isLoading = true;
+
+  /// Tasa hacia la moneda base de cada divisa de la tienda (`{'CUP': 1,
+  /// 'USD': 900}`). Única fuente de conversión: nada convierte «a mano».
+  Map<String, double> _rates = const {};
+
+  /// Importe NATIVO contado de la divisa seleccionada, sin convertir.
+  double _nativeAmount = 0.0;
 
   /// Objetivo del conteo: efectivo de la orden (o total si no se pasó override).
   double get _targetAmount =>
@@ -64,21 +78,48 @@ class _BillCountDialogState extends State<BillCountDialog> {
     _hiddenDenominations =
         await widget.userPreferencesService.getHiddenDenominations();
     await _loadCurrencies();
-    _loadCambioCupUsd();
+    await _loadRates();
+    final inicial = _selectedCurrency;
+    if (inicial != null) await _resolverTasaFaltante(inicial);
   }
 
-  Future<void> _loadCambioCupUsd() async {
+  /// Completa la tasa de [divisa] si el mapa de la tienda no la trae.
+  ///
+  /// `getRatesForStore()` lista la tienda con una consulta, así que sin conexión
+  /// vuelve vacío. `getRate()` es el camino documentado que resuelve USD con la
+  /// última tasa cacheada (decisión D2), de modo que el conteo offline sigue
+  /// funcionando sin duplicar aquí reglas de conversión.
+  Future<void> _resolverTasaFaltante(String divisa) async {
+    if (divisa == PriceUtils.baseCurrency || (_rates[divisa] ?? 0) > 0) return;
+    final tasa = await CurrencyService.getRate(divisa, PriceUtils.baseCurrency);
+    if (!mounted || tasa <= 0) return;
+    setState(() => _rates = {..._rates, divisa: tasa});
+  }
+
+  /// Tasa de [divisa] hacia la moneda base. La base es 1 por definición; el
+  /// resto solo si el servidor pudo resolverla (`0` = desconocida).
+  double _rateToBase(String? divisa) {
+    if (divisa == null || divisa.isEmpty) return 0;
+    if (divisa == PriceUtils.baseCurrency) return 1;
+    return _rates[divisa] ?? 0;
+  }
+
+  /// Importe nativo contado, por divisa, para el llamador aditivo.
+  Map<String, double> get _nativeTotals {
+    final divisa = _selectedCurrency;
+    if (divisa == null) return const {};
+    return {divisa: _nativeAmount};
+  }
+
+  Future<void> _loadRates() async {
     try {
-      final cambio = await widget.userPreferencesService.getCambioCupUsd();
-      setState(() {
-        _cambioCupUsd = cambio;
-      });
-      print('💱 Tipo de cambio CUP-USD cargado: $_cambioCupUsd');
+      final rates = await CurrencyService.getRatesForStore();
+      if (!mounted) return;
+      setState(() => _rates = rates);
     } catch (e) {
-      print('❌ Error cargando tipo de cambio: $e');
-      setState(() {
-        _cambioCupUsd = 0.0;
-      });
+      print('❌ Error cargando tasas de cambio: $e');
+      if (!mounted) return;
+      setState(() => _rates = const {});
     }
   }
 
@@ -98,10 +139,9 @@ class _BillCountDialogState extends State<BillCountDialog> {
         _availableCurrencies = currencies;
         _isLoading = false;
 
-        if (currencies.contains('CUP')) {
-          _selectedCurrency = 'CUP';
-          _loadDenominations('CUP');
-        } else if (currencies.isNotEmpty) {
+        // Sin preferencia cableada por ninguna divisa: se arranca en la primera
+        // de la tienda (ya viene ordenada desde preferencias).
+        if (currencies.isNotEmpty) {
           _selectedCurrency = currencies.first;
           _loadDenominations(currencies.first);
         }
@@ -130,6 +170,7 @@ class _BillCountDialogState extends State<BillCountDialog> {
                 .toList();
         _billCounts.clear();
         _totalAmount = 0.0;
+        _nativeAmount = 0.0;
         _remainingAmount = _targetAmount;
 
         for (final controller in _controllers.values) {
@@ -191,27 +232,27 @@ class _BillCountDialogState extends State<BillCountDialog> {
   }
 
   void _calculateTotals() {
-    double total = 0.0;
-
+    // Se acumula primero el importe NATIVO y se consolida una sola vez: el
+    // nativo es el dato que importa al arqueo y queda disponible tal cual.
+    var nativo = 0.0;
     for (final denom in _denominations) {
       final denominationValue = (denom['denominacion'] as num).toDouble();
-      final count = _billCounts[denom['id']] ?? 0;
-
-      if (_selectedCurrency == 'USD') {
-        total += denominationValue * count * _cambioCupUsd;
-      } else {
-        total += denominationValue * count;
-      }
+      nativo += denominationValue * (_billCounts[denom['id']] ?? 0);
     }
 
-    _totalAmount = total;
-    _remainingAmount = _targetAmount - total;
+    _nativeAmount = nativo;
+    _totalAmount = nativo * _rateToBase(_selectedCurrency);
+    _remainingAmount = _targetAmount - _totalAmount;
 
     print('💰 Cálculo de totales:');
     print('  - Moneda: $_selectedCurrency');
     print('  - Objetivo (efectivo): $_targetAmount');
+    print('  - Contado nativo: $_nativeAmount');
+    print(
+      '  - Tasa a ${PriceUtils.baseCurrency}: '
+      '${_rateToBase(_selectedCurrency)}',
+    );
     print('  - Total contado: $_totalAmount');
-    print('  - Tipo de cambio USD: $_cambioCupUsd');
     print('  - Falta/Sobra: $_remainingAmount');
   }
 
@@ -274,6 +315,14 @@ class _BillCountDialogState extends State<BillCountDialog> {
     );
   }
 
+  /// Confirma el conteo. El mapa nativo se entrega **además** del callback de
+  /// siempre, nunca en su lugar: los consumidores actuales no cambian.
+  void _confirm() {
+    Navigator.pop(context);
+    widget.onConfirmWithTotals?.call(_nativeTotals);
+    widget.onConfirmPayment();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -323,6 +372,13 @@ class _BillCountDialogState extends State<BillCountDialog> {
 
     final viewPadding = MediaQuery.of(context).viewPadding;
     final bottomPadding = MediaQuery.of(context).padding.bottom;
+    // La divisa seleccionada solo se convierte si no es la base y su tasa es
+    // conocida; así el aviso y el total hablan del mismo número.
+    final tasaSeleccionada = _rateToBase(_selectedCurrency);
+    final mostrarAvisoConversion =
+        _selectedCurrency != null &&
+        _selectedCurrency != PriceUtils.baseCurrency &&
+        tasaSeleccionada > 0;
     return Container(
           decoration: const BoxDecoration(
             color: Colors.white,
@@ -404,11 +460,14 @@ class _BillCountDialogState extends State<BillCountDialog> {
                               _selectedCurrency = value;
                             });
                             _loadDenominations(value);
+                            _resolverTasaFaltante(value);
                           }
                         },
                       ),
                     ],
-                    if (_selectedCurrency == 'USD') ...[
+                    // Aviso de conversión para cualquier divisa distinta de la
+                    // base con tasa conocida: en la base no aplica.
+                    if (mostrarAvisoConversion) ...[
                       const SizedBox(height: 4),
                       Container(
                         padding: const EdgeInsets.all(6),
@@ -427,7 +486,9 @@ class _BillCountDialogState extends State<BillCountDialog> {
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                'Conversión USD → CUP: 1 USD = ${_cambioCupUsd.toMoneyString(2)} CUP',
+                                '1 $_selectedCurrency = '
+                                '${tasaSeleccionada.toMoneyString(2)} '
+                                '${PriceUtils.baseCurrency}',
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: Colors.amber[700],
@@ -456,9 +517,10 @@ class _BillCountDialogState extends State<BillCountDialog> {
                     final denominationId = denom['id'] as int;
                     final count = _billCounts[denominationId] ?? 0;
 
-                    final subtotal = _selectedCurrency == 'USD'
-                        ? denominationValue * count * _cambioCupUsd
-                        : denominationValue * count;
+                    // Nativo del renglón y su consolidado, que es lo que se
+                    // compara contra el objetivo (siempre en moneda base).
+                    final nativo = denominationValue * count;
+                    final subtotal = nativo * _rateToBase(_selectedCurrency);
 
                     return Container(
                       margin: const EdgeInsets.only(bottom: 3),
@@ -562,9 +624,13 @@ class _BillCountDialogState extends State<BillCountDialog> {
                                     fontWeight: FontWeight.w500,
                                   ),
                                 ),
-                                if (_selectedCurrency == 'USD' && count > 0)
+                                if (_selectedCurrency != null &&
+                                    _selectedCurrency !=
+                                        PriceUtils.baseCurrency &&
+                                    count > 0)
                                   Text(
-                                    '(${(denominationValue * count).toMoneyString(2)} USD)',
+                                    '(${nativo.toMoneyString(2)} '
+                                    '$_selectedCurrency)',
                                     textAlign: TextAlign.right,
                                     style: TextStyle(
                                       fontSize: 9,
@@ -636,7 +702,8 @@ class _BillCountDialogState extends State<BillCountDialog> {
                                 ),
                               ),
                               Text(
-                                '\$${_targetAmount.toMoneyString(2)} CUP',
+                                '\$${_targetAmount.toMoneyString(2)} '
+                                '${PriceUtils.baseCurrency}',
                                 style: const TextStyle(
                                   fontSize: 15,
                                   fontWeight: FontWeight.bold,
@@ -658,7 +725,8 @@ class _BillCountDialogState extends State<BillCountDialog> {
                                   ),
                                 ),
                                 Text(
-                                  '\$${widget.order.total.toMoneyString(2)} CUP',
+                                  '\$${widget.order.total.toMoneyString(2)} '
+                                  '${PriceUtils.baseCurrency}',
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: Colors.grey[600],
@@ -679,7 +747,8 @@ class _BillCountDialogState extends State<BillCountDialog> {
                                 ),
                               ),
                               Text(
-                                '\$${_totalAmount.toMoneyString(2)}',
+                                '\$${_totalAmount.toMoneyString(2)} '
+                                '${PriceUtils.baseCurrency}',
                                 style: const TextStyle(
                                   fontSize: 15,
                                   fontWeight: FontWeight.bold,
@@ -687,6 +756,23 @@ class _BillCountDialogState extends State<BillCountDialog> {
                               ),
                             ],
                           ),
+                          // El nativo es el dato que se persiste; el consolidado
+                          // es solo para comparar contra el objetivo.
+                          if (_selectedCurrency != null &&
+                              _selectedCurrency != PriceUtils.baseCurrency &&
+                              _nativeAmount > 0)
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: Text(
+                                '(${_nativeAmount.toMoneyString(2)} '
+                                '$_selectedCurrency)',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.grey[600],
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ),
                           const Divider(height: 12),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -747,10 +833,7 @@ class _BillCountDialogState extends State<BillCountDialog> {
                             onPressed: widget.closeOnly
                                 ? () => Navigator.pop(context)
                                 : _remainingAmount <= 0
-                                    ? () {
-                                        Navigator.pop(context);
-                                        widget.onConfirmPayment();
-                                      }
+                                    ? _confirm
                                     : null,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF10B981),

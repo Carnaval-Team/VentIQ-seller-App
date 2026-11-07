@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/admin_inventory_service.dart';
 import '../../services/offline_database_service.dart';
+import '../../theme/ventiq_home_theme.dart';
 
 /// Cola e historial local de operaciones Admin Lite (offline-first).
 class AdminPendingOpsScreen extends StatefulWidget {
@@ -209,22 +210,23 @@ class _AdminPendingOpsScreenState extends State<AdminPendingOpsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Ops / movimientos'),
-        backgroundColor: Colors.blue[700],
+        backgroundColor: VentiqHomeTheme.primary,
         foregroundColor: Colors.white,
         actions: [
           IconButton(
             tooltip: 'Sincronizar pendientes',
             onPressed: _syncing ? null : _syncNow,
-            icon: _syncing
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Icon(Icons.cloud_upload_outlined),
+            icon:
+                _syncing
+                    ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                    : const Icon(Icons.cloud_upload_outlined),
           ),
           IconButton(
             tooltip: 'Actualizar',
@@ -233,123 +235,135 @@ class _AdminPendingOpsScreenState extends State<AdminPendingOpsScreen> {
           ),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Material(
-                  color: _pendingCount > 0
-                      ? Colors.orange.shade50
-                      : Colors.green.shade50,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                    child: Text(
-                      _pendingCount > 0
-                          ? '$_pendingCount operación(es) pendiente(s) de sync'
-                          : 'Sin pendientes — historial local reciente',
-                      style: TextStyle(
-                        color: _pendingCount > 0
-                            ? Colors.orange.shade900
-                            : Colors.green.shade900,
-                        fontWeight: FontWeight.w600,
+      body:
+          _loading
+              ? const Center(child: CircularProgressIndicator())
+              : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Material(
+                    color:
+                        _pendingCount > 0
+                            ? VentiqHomeTheme.warning.withValues(alpha: 0.08)
+                            : Colors.green.shade50,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      child: Text(
+                        _pendingCount > 0
+                            ? '$_pendingCount operación(es) pendiente(s) de sync'
+                            : 'Sin pendientes — historial local reciente',
+                        style: TextStyle(
+                          color:
+                              _pendingCount > 0
+                                  ? Colors.orange.shade900
+                                  : Colors.green.shade900,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ),
-                ),
-                Expanded(
-                  child: _ops.isEmpty
-                      ? Center(
-                          child: Text(
-                            'Aún no hay operaciones admin en este dispositivo',
-                            style: TextStyle(color: Colors.grey[600]),
-                            textAlign: TextAlign.center,
-                          ),
-                        )
-                      : ListView.separated(
-                          itemCount: _ops.length,
-                          separatorBuilder: (_, __) =>
-                              const Divider(height: 1),
-                          itemBuilder: (context, i) {
-                            final op = _ops[i];
-                            final synced = op['synced'] == true ||
-                                op['synced'] == 1;
-                            final err = op['last_error']?.toString();
-                            return ListTile(
-                              leading: CircleAvatar(
-                                backgroundColor: synced
-                                    ? Colors.green.shade50
-                                    : (err != null && err.isNotEmpty
-                                        ? Colors.red.shade50
-                                        : Colors.orange.shade50),
-                                child: Icon(
-                                  _typeIcon(op['op_type']?.toString()),
-                                  color: synced
-                                      ? Colors.green.shade700
-                                      : (err != null && err.isNotEmpty
-                                          ? Colors.red.shade700
-                                          : Colors.orange.shade800),
+                  Expanded(
+                    child:
+                        _ops.isEmpty
+                            ? Center(
+                              child: Text(
+                                'Aún no hay operaciones admin en este dispositivo',
+                                style: TextStyle(
+                                  color: VentiqHomeTheme.textSecondary,
                                 ),
+                                textAlign: TextAlign.center,
                               ),
-                              title: Text(_typeLabel(op['op_type']?.toString())),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(_summary(op)),
-                                  Text(
-                                    op['created_at']?.toString() ?? '',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.grey[600],
+                            )
+                            : ListView.separated(
+                              itemCount: _ops.length,
+                              separatorBuilder:
+                                  (_, __) => const Divider(height: 1),
+                              itemBuilder: (context, i) {
+                                final op = _ops[i];
+                                final synced =
+                                    op['synced'] == true || op['synced'] == 1;
+                                final err = op['last_error']?.toString();
+                                return ListTile(
+                                  leading: CircleAvatar(
+                                    backgroundColor:
+                                        synced
+                                            ? Colors.green.shade50
+                                            : (err != null && err.isNotEmpty
+                                                ? Colors.red.shade50
+                                                : VentiqHomeTheme.warning
+                                                    .withValues(alpha: 0.08)),
+                                    child: Icon(
+                                      _typeIcon(op['op_type']?.toString()),
+                                      color:
+                                          synced
+                                              ? Colors.green.shade700
+                                              : (err != null && err.isNotEmpty
+                                                  ? Colors.red.shade700
+                                                  : Colors.orange.shade800),
                                     ),
                                   ),
-                                  if (err != null && err.isNotEmpty)
-                                    Text(
-                                      err,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.red[700],
-                                      ),
-                                    ),
-                                ],
-                              ),
-                              isThreeLine: true,
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (!synced)
-                                    IconButton(
-                                      icon: const Icon(
-                                        Icons.delete_outline,
-                                        color: Colors.red,
-                                        size: 20,
-                                      ),
-                                      onPressed:
-                                          () => _deleteOp(op),
-                                    ),
-                                  Text(
-                                    synced ? 'OK' : 'Pendiente',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                      color: synced
-                                          ? Colors.green[700]
-                                          : Colors.orange[800],
-                                    ),
+                                  title: Text(
+                                    _typeLabel(op['op_type']?.toString()),
                                   ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
-                ),
-              ],
-            ),
+                                  subtitle: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(_summary(op)),
+                                      Text(
+                                        op['created_at']?.toString() ?? '',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: VentiqHomeTheme.textSecondary,
+                                        ),
+                                      ),
+                                      if (err != null && err.isNotEmpty)
+                                        Text(
+                                          err,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.red[700],
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                  isThreeLine: true,
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (!synced)
+                                        IconButton(
+                                          icon: const Icon(
+                                            Icons.delete_outline,
+                                            color: Colors.red,
+                                            size: 20,
+                                          ),
+                                          onPressed: () => _deleteOp(op),
+                                        ),
+                                      Text(
+                                        synced ? 'OK' : 'Pendiente',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color:
+                                              synced
+                                                  ? Colors.green[700]
+                                                  : Colors.orange[800],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                  ),
+                ],
+              ),
     );
   }
 }

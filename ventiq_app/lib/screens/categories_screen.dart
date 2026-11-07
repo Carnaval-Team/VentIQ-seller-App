@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'products_screen.dart';
 import 'barcode_scanner_screen.dart';
 // import '../widgets/offline_status_badge.dart';
-import 'fluid_mode_screen.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
 import '../services/category_service.dart';
@@ -18,6 +17,7 @@ import '../widgets/sync_status_chip.dart';
 import '../services/notification_service.dart';
 import '../utils/connection_error_handler.dart';
 import '../utils/price_utils.dart';
+import '../services/moneda_venta_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/smart_offline_manager.dart';
 import '../services/connectivity_service.dart';
@@ -30,6 +30,7 @@ import '../models/product.dart';
 import 'product_details_screen.dart';
 import 'dart:async';
 import '../utils/navigation_helper.dart';
+import '../theme/ventiq_home_theme.dart';
 
 class CategoriesScreen extends StatefulWidget {
   const CategoriesScreen({super.key});
@@ -513,8 +514,7 @@ class _CategoriesScreenState extends State<CategoriesScreen>
                     ilimitado: p['ilimitado'] as bool? ?? false,
                     idCocina: (p['id_cocina'] as num?)?.toInt(),
                     modoElaboracion: p['modo_elaboracion'] as String?,
-                    stockEquivalenteBase:
-                        p['stock_equivalente_base'] as num?,
+                    stockEquivalenteBase: p['stock_equivalente_base'] as num?,
                     variantes:
                         (p['variantes'] as List<dynamic>? ?? const []).map((
                           variant,
@@ -527,8 +527,7 @@ class _CategoriesScreenState extends State<CategoriesScreen>
                   ),
                 )
                 .where(
-                  (product) =>
-                      product.id > 0 && product.disponibleParaVenta,
+                  (product) => product.id > 0 && product.disponibleParaVenta,
                 )
                 .toList();
         if (!mounted) return;
@@ -743,7 +742,12 @@ class _CategoriesScreenState extends State<CategoriesScreen>
                                   ),
                                   const SizedBox(width: 8),
                                   Text(
-                                    '\$${PriceUtils.formatDiscountPrice(product.precio)}',
+                                    MonedaVentaService.formatearPrecio(
+                                      PriceUtils.roundDiscountPrice(
+                                        product.precio,
+                                      ),
+                                      conSimbolo: true,
+                                    ),
                                     style: const TextStyle(
                                       fontWeight: FontWeight.bold,
                                       color: Color(0xFF4A90E2),
@@ -921,7 +925,7 @@ class _CategoriesScreenState extends State<CategoriesScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA),
+      backgroundColor: VentiqHomeTheme.surface,
       appBar: AppBar(
         leading: Container(
           margin: const EdgeInsets.only(left: 12, top: 12, bottom: 12),
@@ -1526,29 +1530,19 @@ class _CategoryCardState extends State<_CategoryCard>
     setState(() => _isPressed = false);
     _animationController.reverse();
 
-    // Check if fluid mode is enabled
-    if (widget.isFluidModeEnabled) {
-      print('🚀 Modo fluido activado - Navegando a FluidModeScreen');
-      // Navigate to fluid mode screen
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const FluidModeScreen()),
-      ).then((_) => widget.onReturn?.call());
-    } else {
-      print('📱 Modo tradicional - Navegando a ProductsScreen');
-      // Navigate to products list for this category (traditional mode)
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder:
-              (_) => ProductsScreen(
-                categoryId: widget.id,
-                categoryName: widget.name,
-                categoryColor: widget.color,
-              ),
-        ),
-      ).then((_) => widget.onReturn?.call());
-    }
+    // El modo fluido se retiró (D4): el nuevo Home ya es el camino rápido, así que
+    // tocar una categoría va siempre al listado de productos.
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder:
+            (_) => ProductsScreen(
+              categoryId: widget.id,
+              categoryName: widget.name,
+              categoryColor: widget.color,
+            ),
+      ),
+    ).then((_) => widget.onReturn?.call());
   }
 
   void _onTapCancel() {

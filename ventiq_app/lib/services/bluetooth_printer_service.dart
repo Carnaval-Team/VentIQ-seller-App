@@ -1363,7 +1363,11 @@ class BluetoothPrinterService {
     for (final entry in totalsByMethod.entries) {
       var label = entry.key;
       if (label.length > 20) label = '${label.substring(0, 20)}...';
-      final isUsd = entry.key.endsWith('(USD)');
+      // La moneda viaja en el sufijo del rótulo: "Efectivo (USD)". Con EUR u
+      // otras divisas hay que leerla del sufijo; antes solo se distinguía USD
+      // y todo lo demás se imprimía como CUP.
+      final monedaMatch = RegExp(r'\(([A-Z]{3})\)\s*$').firstMatch(entry.key);
+      final moneda = monedaMatch?.group(1) ?? 'CUP';
       bytes += generator.row([
         PosColumn(
           text: label,
@@ -1371,11 +1375,11 @@ class BluetoothPrinterService {
           styles: PosStyles(align: PosAlign.left),
         ),
         PosColumn(
-          text: isUsd
-              ? '${entry.value.toStringAsFixed(2)} USD'
-              : entry.value >= 100
-                  ? '${entry.value.toStringAsFixed(0)} CUP'
-                  : '${entry.value.toStringAsFixed(2)} CUP',
+          text: moneda == 'CUP'
+              ? (entry.value >= 100
+                    ? '${entry.value.toStringAsFixed(0)} CUP'
+                    : '${entry.value.toStringAsFixed(2)} CUP')
+              : '${entry.value.toStringAsFixed(2)} $moneda',
           width: 4,
           styles: PosStyles(align: PosAlign.right),
         ),

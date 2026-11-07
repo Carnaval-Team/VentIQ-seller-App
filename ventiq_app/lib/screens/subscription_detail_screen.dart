@@ -11,6 +11,7 @@ import '../services/subscription_guard_service.dart';
 import '../services/auth_service.dart';
 import '../services/connectivity_service.dart';
 import '../services/offline_license_service.dart';
+import '../theme/ventiq_home_theme.dart';
 
 class SubscriptionDetailScreen extends StatefulWidget {
   const SubscriptionDetailScreen({super.key});
@@ -104,7 +105,7 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
             fontWeight: FontWeight.w600,
           ),
         ),
-        backgroundColor: const Color(0xFF4A90E2),
+        backgroundColor: VentiqHomeTheme.primary,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
@@ -308,7 +309,7 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
                       : 'Sin conexión — conéctate para revalidar',
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF4A90E2),
+                  backgroundColor: VentiqHomeTheme.primary,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
@@ -413,7 +414,11 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
           children: [
             const Row(
               children: [
-                Icon(Icons.support_agent, color: Color(0xFF4A90E2), size: 28),
+                Icon(
+                  Icons.support_agent,
+                  color: VentiqHomeTheme.primary,
+                  size: 28,
+                ),
                 SizedBox(width: 12),
                 Text(
                   'Soporte y Contacto',
@@ -456,7 +461,7 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
           children: [
             const Row(
               children: [
-                Icon(Icons.history, color: Color(0xFF4A90E2), size: 28),
+                Icon(Icons.history, color: VentiqHomeTheme.primary, size: 28),
                 SizedBox(width: 12),
                 Text(
                   'Historial de Suscripciones',
@@ -526,12 +531,12 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          border: Border.all(color: const Color(0xFF4A90E2).withOpacity(0.3)),
+          border: Border.all(color: VentiqHomeTheme.primary.withOpacity(0.3)),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Row(
           children: [
-            Icon(icon, color: const Color(0xFF4A90E2)),
+            Icon(icon, color: VentiqHomeTheme.primary),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
