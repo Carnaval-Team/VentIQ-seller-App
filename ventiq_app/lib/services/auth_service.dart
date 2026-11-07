@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/supabase_config.dart';
 import 'admin_access_service.dart';
@@ -6,6 +9,8 @@ import 'subscription_guard_service.dart';
 import 'user_preferences_service.dart';
 import 'auto_sync_service.dart';
 import 'settings_integration_service.dart';
+import 'session_refresh_service.dart';
+import 'server_time_service.dart';
 
 class AuthService {
   static final AuthService _instance = AuthService._internal();
@@ -16,10 +21,16 @@ class AuthService {
 
   // Inicializar Supabase
   static Future<void> initialize() async {
+    await ServerTimeService().loadPersistedOffset();
+    await ServerTimeService().refreshFromNetwork();
     await Supabase.initialize(
       url: SupabaseConfig.supabaseUrl,
       anonKey: SupabaseConfig.supabaseAnonKey,
     );
+
+    // Rotación automática del token: refresca antes de expirar, mantiene el
+    // token persistido al día y reautentica si el refresh token falla.
+    SessionRefreshService().start();
   }
 
   // Obtener usuario actual
@@ -36,14 +47,53 @@ class AuthService {
     required String email,
     required String password,
   }) async {
+    final elapsed = Stopwatch()..start();
+    final attempt = DateTime.now().microsecondsSinceEpoch.toString();
+    void log(String event, [Map<String, Object?> fields = const {}]) {
+      if (!kDebugMode) return;
+      debugPrint(
+        jsonEncode({
+          'event': event,
+          'attempt': attempt,
+          'elapsed_ms': elapsed.elapsedMilliseconds,
+          ...fields,
+        }),
+      );
+    }
+
+    log('login_auth_started', {
+      'host': Uri.parse(SupabaseConfig.supabaseUrl).host,
+    });
+    final pendingTimer =
+        kDebugMode
+            ? Timer(const Duration(seconds: 15), () {
+              log('login_auth_pending');
+            })
+            : null;
     try {
       final response = await client.auth.signInWithPassword(
         email: email,
         password: password,
       );
+      SessionRefreshService().alignCurrentSession();
+      log('login_auth_completed', {
+        'has_user': response.user != null,
+        'has_session': response.session != null,
+      });
       return response;
-    } catch (e) {
+    } on AuthException catch (e) {
+      log('login_auth_failed', {
+        'type': e.runtimeType.toString(),
+        'status': e.statusCode,
+        'code': e.code,
+      });
       rethrow;
+    } catch (e) {
+      log('login_auth_failed', {'type': e.runtimeType.toString()});
+      rethrow;
+    } finally {
+      pendingTimer?.cancel();
+      elapsed.stop();
     }
   }
 
@@ -125,11 +175,7 @@ class AuthService {
   }) async {
     try {
       final response = await client.auth.updateUser(
-        UserAttributes(
-          email: email,
-          password: password,
-          data: data,
-        ),
+        UserAttributes(email: email, password: password, data: data),
       );
       return response;
     } catch (e) {

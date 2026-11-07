@@ -5,6 +5,7 @@ import '../models/inventtia_payment_model.dart';
 import '../services/inventtia_payment_service.dart';
 import '../utils/platform_utils.dart';
 import '../widgets/app_drawer.dart';
+import 'pago_inventtia_resumen.dart';
 
 class PagoInventtiaScreen extends StatefulWidget {
   const PagoInventtiaScreen({super.key});
@@ -13,125 +14,71 @@ class PagoInventtiaScreen extends StatefulWidget {
   State<PagoInventtiaScreen> createState() => _PagoInventtiaScreenState();
 }
 
-class _PagoInventtiaScreenState extends State<PagoInventtiaScreen> {
-  // Configurar fechas por defecto: primer día del mes actual hasta hoy
+class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
+    with SingleTickerProviderStateMixin {
   late DateTime _fechaInicio;
   late DateTime _fechaFin;
+  late DateTime _licenciaMes;
+  late TabController _tabController;
 
   InventtiaPaymentModel? _paymentData;
+  List<AgentPaymentSummary> _agentPayments = [];
+  List<InventtiaAgent> _agents = [];
+  List<Map<String, dynamic>> _proveedores = [];
   ExchangeRates? _exchangeRates;
   double _commissionPercentage = 1.0;
   bool _isLoading = false;
   String? _errorMessage;
 
+  final NumberFormat _moneyFmt = NumberFormat('#,##0.00', 'es');
+
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     _initializeDefaultDates();
-    _loadCommissionPercentage();
-    _loadReport();
+    _loadAll();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   void _initializeDefaultDates() {
     final now = DateTime.now();
-    _fechaInicio = DateTime(now.year, now.month, 1); // Primer día del mes
-    _fechaFin = now; // Hoy
+    // El día de pago se liquidan las ventas del mes cerrado y la licencia del mes en curso.
+    _fechaInicio = DateTime(now.year, now.month - 1, 1);
+    _fechaFin = DateTime(now.year, now.month, 0);
+    _licenciaMes = DateTime(now.year, now.month, 1);
   }
 
-  Future<void> _loadCommissionPercentage() async {
-    final percentage =
-        await InventtiaPaymentService.getInventtiaCommissionPercentage();
-    if (mounted) {
-      setState(() {
-        _commissionPercentage = percentage;
-      });
-    }
-  }
-
-  Future<void> _showConfigDialog() async {
-    final controller = TextEditingController(
-      text: _commissionPercentage.toString(),
-    );
-
-    final result = await showDialog<bool>(
-      context: context,
-      builder:
-          (_) => AlertDialog(
-            title: const Text('Configurar Comisión Inventtia'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: controller,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: const InputDecoration(
-                    labelText: '% Comisión',
-                    suffixText: '%',
-                    border: OutlineInputBorder(),
-                    helperText:
-                        'Ingrese el porcentaje de comisión (ej: 1.0 para 1%)',
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancelar'),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('Guardar'),
-              ),
-            ],
-          ),
-    );
-
-    if (result == true) {
-      final newPercentage =
-          double.tryParse(controller.text) ?? _commissionPercentage;
-      final ok =
-          await InventtiaPaymentService.updateInventtiaCommissionPercentage(
-            newPercentage,
-          );
-
-      if (ok && mounted) {
-        setState(() {
-          _commissionPercentage = newPercentage;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Porcentaje de comisión actualizado')),
-        );
-        // Recargar el reporte con el nuevo porcentaje
-        _loadReport();
-      }
-    }
-    controller.dispose();
-  }
-
-  Future<void> _loadReport() async {
+  Future<void> _loadAll() async {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
-
     try {
-      final exchangeRates = await InventtiaPaymentService.getExchangeRates();
-      final paymentData = await InventtiaPaymentService.getInventtiaPayments(
-        _fechaInicio,
-        _fechaFin,
-      );
+      final results = await Future.wait([
+        InventtiaPaymentService.getExchangeRates(),
+        InventtiaPaymentService.getInventtiaPayments(_fechaInicio, _fechaFin),
+        InventtiaPaymentService.getAgentPayments(_fechaInicio, _fechaFin),
+        InventtiaPaymentService.getAgents(),
+        InventtiaPaymentService.getProveedores(),
+      ]);
 
-      if (mounted) {
-        setState(() {
-          _exchangeRates = exchangeRates;
-          _paymentData = paymentData;
-          _commissionPercentage = paymentData.commissionPercentage;
-          _isLoading = false;
-        });
-      }
+      if (!mounted) return;
+      final payment = results[1] as InventtiaPaymentModel;
+      setState(() {
+        _exchangeRates = results[0] as ExchangeRates;
+        _paymentData = payment;
+        _commissionPercentage = payment.commissionPercentage;
+        _agentPayments = results[2] as List<AgentPaymentSummary>;
+        _agents = results[3] as List<InventtiaAgent>;
+        _proveedores = results[4] as List<Map<String, dynamic>>;
+        _isLoading = false;
+      });
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -142,6 +89,56 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen> {
     }
   }
 
+  Future<void> _showConfigDialog() async {
+    final controller = TextEditingController(
+      text: _commissionPercentage.toString(),
+    );
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Configurar Comisión Inventtia'),
+        content: TextField(
+          controller: controller,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(
+            labelText: '% Comisión sobre precio costo',
+            suffixText: '%',
+            border: OutlineInputBorder(),
+            helperText: 'Ej: 1.0 = 1% del costo de las órdenes',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Guardar'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == true) {
+      final newPercentage =
+          double.tryParse(controller.text) ?? _commissionPercentage;
+      final ok =
+          await InventtiaPaymentService.updateInventtiaCommissionPercentage(
+        newPercentage,
+      );
+      if (ok && mounted) {
+        setState(() => _commissionPercentage = newPercentage);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Porcentaje de comisión actualizado')),
+        );
+        _loadAll();
+      }
+    }
+    controller.dispose();
+  }
+
   void _setDateRange(String range) {
     final now = DateTime.now();
     setState(() {
@@ -149,6 +146,10 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen> {
         case 'week':
           _fechaInicio = now.subtract(const Duration(days: 7));
           _fechaFin = now;
+          break;
+        case 'previous':
+          _fechaInicio = DateTime(now.year, now.month - 1, 1);
+          _fechaFin = DateTime(now.year, now.month, 0);
           break;
         case 'month':
           _fechaInicio = DateTime(now.year, now.month, 1);
@@ -164,7 +165,321 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen> {
           break;
       }
     });
-    _loadReport();
+    _loadAll();
+  }
+
+  Future<void> _openAgentForm({InventtiaAgent? agent}) async {
+    final nombreCtrl = TextEditingController(text: agent?.nombre ?? '');
+    final apellidosCtrl = TextEditingController(text: agent?.apellidos ?? '');
+    final selected = <int>{...?(agent?.proveedorIds)};
+    var activo = agent?.activo ?? true;
+
+    if (_proveedores.isEmpty) {
+      _proveedores = await InventtiaPaymentService.getProveedores();
+    }
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: Text(agent == null ? 'Nuevo agente' : 'Editar agente'),
+          content: SizedBox(
+            width: 480,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: nombreCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Nombre',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: apellidosCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Apellidos',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Tiendas asociadas',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 6),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 260),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: _proveedores.length,
+                      itemBuilder: (context, index) {
+                        final p = _proveedores[index];
+                        final id = (p['id'] as num).toInt();
+                        final name = p['name']?.toString() ?? 'Tienda #$id';
+                        final checked = selected.contains(id);
+                        return CheckboxListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          value: checked,
+                          title: Text(name),
+                          controlAffinity: ListTileControlAffinity.leading,
+                          onChanged: (v) {
+                            setLocal(() {
+                              if (v == true) {
+                                selected.add(id);
+                              } else {
+                                selected.remove(id);
+                              }
+                            });
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                  if (agent != null) ...[
+                    const SizedBox(height: 8),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Activo'),
+                      value: activo,
+                      onChanged: (v) => setLocal(() => activo = v),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (nombreCtrl.text.trim().isEmpty ||
+                    apellidosCtrl.text.trim().isEmpty ||
+                    selected.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content:
+                          Text('Completa nombre, apellidos y al menos una tienda'),
+                    ),
+                  );
+                  return;
+                }
+                Navigator.pop(ctx, true);
+              },
+              child: const Text('Guardar'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (saved != true) {
+      nombreCtrl.dispose();
+      apellidosCtrl.dispose();
+      return;
+    }
+
+    try {
+      if (agent == null) {
+        await InventtiaPaymentService.createAgent(
+          nombre: nombreCtrl.text,
+          apellidos: apellidosCtrl.text,
+          proveedorIds: selected.toList(),
+        );
+      } else {
+        await InventtiaPaymentService.updateAgent(
+          id: agent.id,
+          nombre: nombreCtrl.text,
+          apellidos: apellidosCtrl.text,
+          proveedorIds: selected.toList(),
+          activo: activo,
+        );
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Agente guardado')),
+        );
+        await _loadAll();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      nombreCtrl.dispose();
+      apellidosCtrl.dispose();
+    }
+  }
+
+  void _showAgentDetail(AgentPaymentSummary summary) {
+    final dateFormat = DateFormat('dd/MM/yyyy');
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720, maxHeight: 720),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 8, 8),
+                child: Row(
+                  children: [
+                    const Icon(Icons.storefront, color: AppColors.warning),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            summary.agent.fullName,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          Text(
+                            'Comisión ${_moneyFmt.format(summary.commissionCup)} CUP · '
+                            'Ventas ${_moneyFmt.format(summary.salesCup)} CUP · '
+                            '${summary.ordersCount} órdenes',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.all(12),
+                  itemCount: summary.byStore.length,
+                  itemBuilder: (context, index) {
+                    final store = summary.byStore[index];
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      child: ExpansionTile(
+                        initiallyExpanded: index == 0,
+                        title: Text(
+                          store.proveedorName ??
+                              'Tienda #${store.proveedorId}',
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        subtitle: Text(
+                          'Ventas ${_moneyFmt.format(store.salesCup)} CUP · '
+                          'Comisión ${_moneyFmt.format(store.commissionCup)} CUP · '
+                          '${store.ordersCount} órdenes',
+                        ),
+                        children: store.orders.isEmpty
+                            ? const [
+                                ListTile(
+                                  dense: true,
+                                  title: Text('Sin órdenes en el período'),
+                                ),
+                              ]
+                            : store.orders
+                                .map(
+                                  (o) => ListTile(
+                                    dense: true,
+                                    leading: const Icon(Icons.receipt, size: 18),
+                                    title: Text('Orden #${o.orderId}'),
+                                    subtitle: Text(
+                                      o.createdAt != null
+                                          ? dateFormat.format(o.createdAt!)
+                                          : '—',
+                                    ),
+                                    trailing: Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.end,
+                                      children: [
+                                        Text(
+                                          '${_moneyFmt.format(o.commissionCup)} CUP',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            color: AppColors.warning,
+                                          ),
+                                        ),
+                                        Text(
+                                          'Venta ${_moneyFmt.format(o.salesCup)}',
+                                          style: const TextStyle(fontSize: 11),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                )
+                                .toList(),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cerrar'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _deleteAgent(InventtiaAgent agent) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Eliminar agente'),
+        content: Text('¿Eliminar a ${agent.fullName}?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await InventtiaPaymentService.deleteAgent(agent.id);
+      await _loadAll();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   @override
@@ -175,238 +490,171 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          isDesktop ? 'Reporte de Pago a Inventtia' : 'Pago a Inventtia',
+          isDesktop ? 'Pago a Inventtia y Agentes' : 'Pago Inventtia',
+        ),
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: 'Reparto', icon: Icon(Icons.account_balance_wallet)),
+            Tab(text: 'Agentes', icon: Icon(Icons.people)),
+          ],
         ),
         actions: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            margin: const EdgeInsets.symmetric(vertical: 10),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Comisión: ${_commissionPercentage.toStringAsFixed(1)}%',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
           if (_exchangeRates != null)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'USD: ${_exchangeRates!.valorUsd.toStringAsFixed(2)}  |  EUR: ${_exchangeRates!.valorEuro.toStringAsFixed(2)}',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+              child: Center(
+                child: Text(
+                  'USD ${_exchangeRates!.valorUsd.toStringAsFixed(2)} | EUR ${_exchangeRates!.valorEuro.toStringAsFixed(2)}',
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                ),
               ),
             ),
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: _showConfigDialog,
-            tooltip: 'Configurar comisión',
+            tooltip: 'Comisión Inventtia',
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _loadReport,
+            onPressed: _loadAll,
             tooltip: 'Actualizar',
           ),
           const SizedBox(width: 8),
         ],
       ),
       drawer: const AppDrawer(),
-      body: _buildBody(isDesktop),
+      body: Column(
+        children: [
+          Padding(
+            padding: EdgeInsets.all(PlatformUtils.getScreenPadding()),
+            child: _buildDateFilters(),
+          ),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                PagoInventtiaResumen(
+                  fechaInicio: _fechaInicio,
+                  fechaFin: _fechaFin,
+                  licenciaMes: _licenciaMes,
+                ),
+                _isLoading && _agents.isEmpty
+                    ? const Center(child: CircularProgressIndicator())
+                    : _buildAgentsTab(isDesktop),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildBody(bool isDesktop) {
-    if (_isLoading && _paymentData == null) {
-      return const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text('Generando reporte...'),
-          ],
-        ),
-      );
-    }
-
-    if (_errorMessage != null && _paymentData == null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.error_outline, size: 64, color: AppColors.error),
-            const SizedBox(height: 16),
-            Text(
-              'Error al generar reporte',
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: Text(
-                _errorMessage!,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: AppColors.textSecondary),
-              ),
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: _loadReport,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Reintentar'),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return RefreshIndicator(
-      onRefresh: _loadReport,
-      child: SingleChildScrollView(
-        padding: EdgeInsets.all(PlatformUtils.getScreenPadding()),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildDateFilters(),
-            const SizedBox(height: 24),
-            if (_paymentData != null) ...[
-              _buildStatsSection(isDesktop),
-              const SizedBox(height: 24),
-              _buildCommissionCard(isDesktop),
-              const SizedBox(height: 24),
-              _buildOrdersList(),
-            ],
-          ],
-        ),
+  Widget _buildError() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.error_outline, size: 64, color: AppColors.error),
+          const SizedBox(height: 16),
+          Text(_errorMessage ?? 'Error', textAlign: TextAlign.center),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            onPressed: _loadAll,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Reintentar'),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildDateFilters() {
     final dateFormat = DateFormat('dd/MM/yyyy');
-
+    final mesLicencia = DateFormat('MMMM yyyy', 'es_ES').format(_licenciaMes);
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Filtros de Fecha',
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
+            Text('Pagos de', style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 FilterChip(
-                  label: const Text('Última semana'),
+                  label: const Text('Mes anterior'),
                   selected: false,
-                  onSelected: (_) => _setDateRange('week'),
+                  onSelected: (_) => _setDateRange('previous'),
                 ),
                 FilterChip(
-                  label: const Text('Mes actual'),
+                  label: const Text('Este mes'),
                   selected: false,
                   onSelected: (_) => _setDateRange('month'),
                 ),
                 FilterChip(
-                  label: const Text('Últimos 3 meses'),
+                  label: const Text('3 meses'),
                   selected: false,
                   onSelected: (_) => _setDateRange('3months'),
                 ),
-                FilterChip(
-                  label: const Text('Este año'),
-                  selected: false,
-                  onSelected: (_) => _setDateRange('year'),
+                InkWell(
+                  onTap: () async {
+                    final date = await showDatePicker(
+                      context: context,
+                      initialDate: _fechaInicio,
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime.now(),
+                    );
+                    if (date != null) setState(() => _fechaInicio = date);
+                  },
+                  child: Chip(
+                    avatar: const Icon(Icons.calendar_today, size: 16),
+                    label: Text('Desde ${dateFormat.format(_fechaInicio)}'),
+                  ),
+                ),
+                InkWell(
+                  onTap: () async {
+                    final date = await showDatePicker(
+                      context: context,
+                      initialDate: _fechaFin,
+                      firstDate: _fechaInicio,
+                      lastDate: DateTime.now(),
+                    );
+                    if (date != null) setState(() => _fechaFin = date);
+                  },
+                  child: Chip(
+                    avatar: const Icon(Icons.event, size: 16),
+                    label: Text('Hasta ${dateFormat.format(_fechaFin)}'),
+                  ),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
+            Text('Licencias de', style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 4),
             Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Expanded(
-                  child: InkWell(
-                    onTap: () async {
-                      final date = await showDatePicker(
-                        context: context,
-                        initialDate: _fechaInicio,
-                        firstDate: DateTime(2020),
-                        lastDate: DateTime.now(),
-                      );
-                      if (date != null) {
-                        setState(() => _fechaInicio = date);
-                      }
-                    },
-                    child: InputDecorator(
-                      decoration: const InputDecoration(
-                        labelText: 'Fecha Inicio',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.calendar_today),
-                      ),
-                      child: Text(dateFormat.format(_fechaInicio)),
-                    ),
-                  ),
+                IconButton(
+                  tooltip: 'Mes anterior',
+                  onPressed: () => setState(() {
+                    _licenciaMes = DateTime(_licenciaMes.year, _licenciaMes.month - 1, 1);
+                  }),
+                  icon: const Icon(Icons.chevron_left),
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: InkWell(
-                    onTap: () async {
-                      final date = await showDatePicker(
-                        context: context,
-                        initialDate: _fechaFin,
-                        firstDate: _fechaInicio,
-                        lastDate: DateTime.now(),
-                      );
-                      if (date != null) {
-                        setState(() => _fechaFin = date);
-                      }
-                    },
-                    child: InputDecorator(
-                      decoration: const InputDecoration(
-                        labelText: 'Fecha Fin',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.calendar_today),
-                      ),
-                      child: Text(dateFormat.format(_fechaFin)),
-                    ),
-                  ),
+                Text(
+                  mesLicencia,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
-                const SizedBox(width: 16),
-                ElevatedButton.icon(
-                  onPressed: _isLoading ? null : _loadReport,
-                  icon: const Icon(Icons.bar_chart),
-                  label: const Text('Generar'),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 20,
-                    ),
-                  ),
+                IconButton(
+                  tooltip: 'Mes siguiente',
+                  onPressed: () => setState(() {
+                    _licenciaMes = DateTime(_licenciaMes.year, _licenciaMes.month + 1, 1);
+                  }),
+                  icon: const Icon(Icons.chevron_right),
                 ),
               ],
             ),
@@ -416,119 +664,90 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen> {
     );
   }
 
-  Widget _buildStatsSection(bool isDesktop) {
-    final numberFormat = NumberFormat('#,##0.00', 'es');
-
-    return isDesktop
-        ? Row(
-          children: [
-            Expanded(
-              child: _buildStatCard(
-                'Total en USD',
-                '\$${numberFormat.format(_paymentData!.totalUsd)}',
-                Icons.attach_money,
-                AppColors.success,
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: _buildStatCard(
-                'Total en EUR',
-                '€${numberFormat.format(_paymentData!.totalEuro)}',
-                Icons.euro,
-                AppColors.warning,
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: _buildStatCard(
-                'Total en CUP',
-                '\$${numberFormat.format(_paymentData!.totalCup)}',
-                Icons.payments,
-                AppColors.primary,
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: _buildStatCard(
-                'Órdenes',
-                '${_paymentData!.ordersCount}',
-                Icons.receipt,
-                AppColors.info,
-              ),
-            ),
-          ],
-        )
-        : Column(
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: _buildStatCard(
-                    'Total USD',
-                    '\$${numberFormat.format(_paymentData!.totalUsd)}',
-                    Icons.attach_money,
-                    AppColors.success,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _buildStatCard(
-                    'Total EUR',
-                    '€${numberFormat.format(_paymentData!.totalEuro)}',
-                    Icons.euro,
-                    AppColors.warning,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildStatCard(
-                    'Total CUP',
-                    '\$${numberFormat.format(_paymentData!.totalCup)}',
-                    Icons.payments,
-                    AppColors.primary,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _buildStatCard(
-                    'Órdenes',
-                    '${_paymentData!.ordersCount}',
-                    Icons.receipt,
-                    AppColors.info,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        );
+  Widget _buildInventtiaTab(bool isDesktop) {
+    if (_paymentData == null) {
+      return const Center(child: Text('Sin datos'));
+    }
+    return RefreshIndicator(
+      onRefresh: _loadAll,
+      child: ListView(
+        padding: EdgeInsets.all(PlatformUtils.getScreenPadding()),
+        children: [
+          _buildStatsSection(isDesktop),
+          const SizedBox(height: 16),
+          _buildCommissionCard(isDesktop),
+          const SizedBox(height: 16),
+          _buildOrdersList(),
+        ],
+      ),
+    );
   }
 
-  Widget _buildStatCard(
-    String title,
-    String value,
-    IconData icon,
-    Color color,
-  ) {
+  Widget _buildStatsSection(bool isDesktop) {
+    final d = _paymentData!;
+    final cards = [
+      _buildStatCard(
+        'Base costo CUP',
+        '\$${_moneyFmt.format(d.costBaseCup)}',
+        Icons.payments,
+        AppColors.primary,
+      ),
+      _buildStatCard(
+        'Base costo USD',
+        '\$${_moneyFmt.format(d.costBaseUsd)}',
+        Icons.attach_money,
+        AppColors.success,
+      ),
+      _buildStatCard(
+        'Base costo EUR',
+        '€${_moneyFmt.format(d.costBaseEuro)}',
+        Icons.euro,
+        AppColors.warning,
+      ),
+      _buildStatCard(
+        'Órdenes',
+        '${d.ordersCount}',
+        Icons.receipt,
+        AppColors.info,
+      ),
+    ];
+
+    if (isDesktop) {
+      return Row(
+        children: [
+          for (var i = 0; i < cards.length; i++) ...[
+            if (i > 0) const SizedBox(width: 12),
+            Expanded(child: cards[i]),
+          ],
+        ],
+      );
+    }
+    return Column(
+      children: [
+        Row(children: [Expanded(child: cards[0]), const SizedBox(width: 8), Expanded(child: cards[1])]),
+        const SizedBox(height: 8),
+        Row(children: [Expanded(child: cards[2]), const SizedBox(width: 8), Expanded(child: cards[3])]),
+      ],
+    );
+  }
+
+  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
     return Card(
       elevation: 2,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Icon(icon, color: color, size: 20),
-                const SizedBox(width: 8),
+                Icon(icon, color: color, size: 18),
+                const SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     title,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    style: const TextStyle(
+                      fontSize: 12,
                       color: AppColors.textSecondary,
                     ),
                   ),
@@ -538,7 +757,8 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen> {
             const SizedBox(height: 8),
             Text(
               value,
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              style: TextStyle(
+                fontSize: 18,
                 fontWeight: FontWeight.bold,
                 color: color,
               ),
@@ -550,46 +770,48 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen> {
   }
 
   Widget _buildCommissionCard(bool isDesktop) {
-    final numberFormat = NumberFormat('#,##0.00', 'es');
-
+    final d = _paymentData!;
     return Card(
       color: AppColors.primary.withValues(alpha: 0.05),
-      elevation: 4,
+      elevation: 3,
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
                     color: AppColors.primary,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Icon(
                     Icons.account_balance_wallet,
                     color: Colors.white,
-                    size: 32,
+                    size: 28,
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Comisión a Pagar a Inventtia (${_commissionPercentage.toStringAsFixed(1)}%)',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        'A pagar a Inventtia (${d.commissionPercentage.toStringAsFixed(1)}%)',
+                        style: const TextStyle(
+                          fontSize: 18,
                           fontWeight: FontWeight.bold,
                           color: AppColors.primary,
                         ),
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Calculado sobre órdenes pagadas con Stripe y Tropipay (Estados: Entregando, Completado, Asignado)',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        'Sobre precio costo (misma base que pago a proveedores). '
+                        '${d.linesCount} líneas · excluye canceladas/devueltas y productos excluidos de referidos.',
+                        style: const TextStyle(
+                          fontSize: 12,
                           color: AppColors.textSecondary,
                         ),
                       ),
@@ -598,177 +820,90 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen> {
                 ),
               ],
             ),
-            const Divider(height: 32),
-            isDesktop
-                ? Row(
-                  children: [
-                    Expanded(
-                      child: _buildCommissionDetail(
-                        'Comisión USD',
-                        '\$${numberFormat.format(_paymentData!.commissionUsd)}',
-                        Icons.attach_money,
-                        AppColors.success,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: _buildCommissionDetail(
-                        'Comisión EUR',
-                        '€${numberFormat.format(_paymentData!.commissionEuro)}',
-                        Icons.euro,
-                        AppColors.warning,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: _buildCommissionDetail(
-                        'Total en CUP',
-                        '\$${numberFormat.format(_paymentData!.commissionCup)}',
-                        Icons.payments,
-                        AppColors.primary,
-                        isHighlighted: true,
-                      ),
-                    ),
-                  ],
-                )
-                : Column(
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _buildCommissionDetail(
-                            'Comisión USD',
-                            '\$${numberFormat.format(_paymentData!.commissionUsd)}',
-                            Icons.attach_money,
-                            AppColors.success,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _buildCommissionDetail(
-                            'Comisión EUR',
-                            '€${numberFormat.format(_paymentData!.commissionEuro)}',
-                            Icons.euro,
-                            AppColors.warning,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    _buildCommissionDetail(
-                      'Total a Pagar en CUP',
-                      '\$${numberFormat.format(_paymentData!.commissionCup)}',
-                      Icons.payments,
-                      AppColors.primary,
-                      isHighlighted: true,
-                    ),
-                  ],
-                ),
+            const Divider(height: 28),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                _commissionBox('CUP', _moneyFmt.format(d.commissionCup), AppColors.primary, true),
+                _commissionBox('USD', _moneyFmt.format(d.commissionUsd), AppColors.success, false),
+                _commissionBox('EUR', _moneyFmt.format(d.commissionEuro), AppColors.warning, false),
+              ],
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildCommissionDetail(
-    String title,
-    String value,
-    IconData icon,
-    Color color, {
-    bool isHighlighted = false,
-  }) {
+  Widget _commissionBox(String label, String value, Color color, bool highlight) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      width: 160,
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: isHighlighted ? color.withValues(alpha: 0.1) : Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: isHighlighted ? Border.all(color: color, width: 2) : null,
+        color: highlight ? color.withValues(alpha: 0.12) : Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: highlight ? Border.all(color: color, width: 2) : Border.all(color: AppColors.info),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(icon, color: color, size: 20),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  title,
-                  style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: isHighlighted ? 14 : 13,
-                    fontWeight:
-                        isHighlighted ? FontWeight.w600 : FontWeight.normal,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: isHighlighted ? 24 : 20,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
-          ),
+          Text(label, style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
+          Text(value, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: color)),
         ],
       ),
     );
   }
 
   Widget _buildOrdersList() {
-    if (_paymentData!.orders.isEmpty) {
-      return Card(
+    final orders = _paymentData!.orders;
+    if (orders.isEmpty) {
+      return const Card(
         child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Center(
-            child: Column(
-              children: [
-                Icon(Icons.inbox_outlined, size: 64, color: AppColors.textHint),
-                const SizedBox(height: 16),
-                Text(
-                  'No hay órdenes para el rango seleccionado',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
+          padding: EdgeInsets.all(32),
+          child: Center(child: Text('No hay órdenes en el rango')),
         ),
       );
     }
 
+    final dateFormat = DateFormat('dd/MM/yyyy');
     return Card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                const Icon(Icons.receipt_long, color: AppColors.primary),
-                const SizedBox(width: 8),
-                Text(
-                  'Órdenes (${_paymentData!.orders.length})',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
+            padding: const EdgeInsets.all(14),
+            child: Text(
+              'Órdenes por costo (${orders.length})',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
             ),
           ),
           const Divider(height: 1),
           ListView.separated(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            itemCount: _paymentData!.orders.length,
-            separatorBuilder: (context, index) => const Divider(height: 1),
+            itemCount: orders.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
             itemBuilder: (context, index) {
-              final order = _paymentData!.orders[index];
-              return _buildOrderItem(order);
+              final o = orders[index];
+              return ListTile(
+                leading: const Icon(Icons.receipt, color: AppColors.primary),
+                title: Text(
+                  'Orden #${o.orderId}',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                subtitle: Text(
+                  '${dateFormat.format(o.createdAt)} · ${o.linesCount} líneas · Costo ${_moneyFmt.format(o.costCup)} CUP',
+                ),
+                trailing: Text(
+                  '${_moneyFmt.format(o.commissionCup)} CUP',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.primary,
+                  ),
+                ),
+              );
             },
           ),
         ],
@@ -776,118 +911,171 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen> {
     );
   }
 
-  Widget _buildOrderItem(OrderDetail order) {
-    final dateFormat = DateFormat('dd/MM/yyyy HH:mm');
-    final numberFormat = NumberFormat('#,##0.00', 'es');
-    final commission = order.totalInCurrency * (_commissionPercentage / 100);
+  Widget _buildAgentsTab(bool isDesktop) {
+    return RefreshIndicator(
+      onRefresh: _loadAll,
+      child: ListView(
+        padding: EdgeInsets.all(PlatformUtils.getScreenPadding()),
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Agentes (1% de ventas de sus tiendas)',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                ),
+              ),
+              ElevatedButton.icon(
+                onPressed: () => _openAgentForm(),
+                icon: const Icon(Icons.person_add, size: 18),
+                label: const Text('Nuevo agente'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'La comisión es el ${InventtiaPaymentService.agentCommissionPercentage.toStringAsFixed(0)}% '
+            'sobre la suma de ventas Carnaval de todas sus tiendas. '
+            'No incluyen canceladas/devueltas ni productos excluidos de referidos. '
+            'Toca un agente en el resumen para ver órdenes por tienda.',
+            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 16),
+          if (_agentPayments.isNotEmpty) ...[
+            _buildAgentPayouts(isDesktop),
+            const SizedBox(height: 20),
+          ],
+          const Text(
+            'Gestión de agentes',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 8),
+          if (_agents.isEmpty)
+            const Card(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'No hay agentes. Crea uno y asígnalo a una tienda. '
+                  'Si falla al guardar, aplica sql_updates/inventtia_agentes.sql.',
+                ),
+              ),
+            )
+          else
+            ..._agents.map(_buildAgentCard),
+        ],
+      ),
+    );
+  }
 
-    Color currencyColor;
-    String currencySymbol;
-
-    switch (order.moneda) {
-      case 'USD':
-        currencyColor = AppColors.success;
-        currencySymbol = '\$';
-        break;
-      case 'EUR':
-        currencyColor = AppColors.warning;
-        currencySymbol = '€';
-        break;
-      default:
-        currencyColor = AppColors.primary;
-        currencySymbol = '\$';
-    }
-
-    return ListTile(
-      leading: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: currencyColor.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(8),
+  Widget _buildAgentPayouts(bool isDesktop) {
+    final total = _agentPayments.fold<double>(0, (s, a) => s + a.commissionCup);
+    return Card(
+      color: AppColors.warning.withValues(alpha: 0.06),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.payments, color: AppColors.warning),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'A pagar a agentes en el período: ${_moneyFmt.format(total)} CUP',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
+            ),
+            const Divider(),
+            ..._agentPayments.map((p) {
+              return ListTile(
+                contentPadding: EdgeInsets.zero,
+                onTap: () => _showAgentDetail(p),
+                title: Text(
+                  p.agent.fullName,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: Text(
+                  '${p.agent.tiendas.length} tienda(s) · '
+                  'Ventas ${_moneyFmt.format(p.salesCup)} CUP · ${p.ordersCount} órdenes',
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          '${_moneyFmt.format(p.commissionCup)} CUP',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.warning,
+                          ),
+                        ),
+                        Text(
+                          'USD ${_moneyFmt.format(p.commissionUsd)}',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Icon(Icons.chevron_right, color: AppColors.textSecondary),
+                  ],
+                ),
+              );
+            }),
+          ],
         ),
-        child: Icon(Icons.receipt, color: currencyColor, size: 24),
       ),
-      title: Row(
-        children: [
-          Text(
-            'Orden #${order.orderId}',
-            style: const TextStyle(fontWeight: FontWeight.bold),
+    );
+  }
+
+  Widget _buildAgentCard(InventtiaAgent agent) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: agent.activo
+              ? AppColors.primary.withValues(alpha: 0.15)
+              : Colors.grey.shade300,
+          child: Icon(
+            Icons.person,
+            color: agent.activo ? AppColors.primary : Colors.grey,
           ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: currencyColor.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: currencyColor, width: 1),
-            ),
-            child: Text(
-              order.moneda,
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-                color: currencyColor,
-              ),
-            ),
+        ),
+        title: Text(
+          agent.fullName,
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            decoration: agent.activo ? null : TextDecoration.lineThrough,
           ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: AppColors.info.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
+        ),
+        subtitle: Text(
+          '${agent.tiendasLabel}'
+          '${agent.activo ? '' : ' · Inactivo'}',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.edit_outlined),
+              tooltip: 'Editar',
+              onPressed: () => _openAgentForm(agent: agent),
             ),
-            child: Text(
-              order.metodoPago,
-              style: const TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: AppColors.info,
-              ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline, color: Colors.red),
+              tooltip: 'Eliminar',
+              onPressed: () => _deleteAgent(agent),
             ),
-          ),
-        ],
-      ),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 4),
-          Text(
-            dateFormat.format(order.createdAt),
-            style: const TextStyle(
-              fontSize: 12,
-              color: AppColors.textSecondary,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Total: $currencySymbol${numberFormat.format(order.totalInCurrency)}',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-              color: currencyColor,
-            ),
-          ),
-        ],
-      ),
-      trailing: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Text(
-            'Comisión ${_commissionPercentage.toStringAsFixed(1)}%',
-            style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            '$currencySymbol${numberFormat.format(commission)}',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: currencyColor,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

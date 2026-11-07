@@ -7,6 +7,7 @@ import 'network_request_queue.dart';
 import 'store_config_service.dart';
 import 'offline_license_service.dart';
 import 'subscription_guard_service.dart';
+import 'session_refresh_service.dart';
 
 /// Gestor inteligente del modo offline
 /// Coordina la activación automática del modo offline y la sincronización automática
@@ -378,6 +379,13 @@ class SmartOfflineManager {
       print('✅ Conexión confirmada al reintentar - reintentando cola');
       _connectionLostDialogPending = false;
       _lastNetworkFailureReport = null;
+      // Rotar el token antes de reintentar la cola: si expiró mientras
+      // estábamos offline, las peticiones encoladas saldrían 401.
+      try {
+        await SessionRefreshService().ensureFreshSession();
+      } catch (e) {
+        print('⚠️ Refresh de sesión previo a cola falló: $e');
+      }
       await NetworkRequestQueue().retryAll();
 
       _eventController.add(
@@ -428,7 +436,12 @@ class SmartOfflineManager {
       await _userPreferencesService.setOfflineMode(false);
       _wasOfflineModeManuallyEnabled = false;
 
-      // Reautenticar si es necesario
+      // Reautenticar si es necesario (primero refresh barato del token)
+      try {
+        await SessionRefreshService().ensureFreshSession();
+      } catch (e) {
+        print('⚠️ Refresh de sesión al volver online falló: $e');
+      }
       try {
         final needsReauth = await _reauthService.needsReauthentication();
         if (needsReauth) {
@@ -641,6 +654,9 @@ class SmartOfflineManager {
           'subiendo cola de turnos al detectar red',
         );
         try {
+          // Subir la cola necesita JWT válido: refrescar antes si la sesión
+          // existe (no-op en sesión offline_mode sin sesión Supabase).
+          await SessionRefreshService().ensureFreshSession();
           await _autoSyncService.syncOfflineTurnosFromAdmin(
             includeRelatedUploads: true,
           );
@@ -685,6 +701,14 @@ class SmartOfflineManager {
       print('🔐 Verificando autenticación tras restauración de conexión...');
 
       try {
+        // Rotación de token primero: si el JWT expiró offline, un refresh
+        // barato evita el relogin completo con password.
+        try {
+          await SessionRefreshService().ensureFreshSession();
+        } catch (e) {
+          print('⚠️ Refresh de sesión tras reconexión falló: $e');
+        }
+
         // Verificar si necesita reautenticación
         final needsReauth = await _reauthService.needsReauthentication();
 

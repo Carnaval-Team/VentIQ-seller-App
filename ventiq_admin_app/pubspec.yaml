@@ -101,7 +101,7 @@ flutter:
     - assets/changelog.json
     - assets/ai_assistant_knowledge.json
 
-a:
+flutter_launcher_icons:
   android: "launcher_icon"
   ios: true
   image_path: "assets/images/ic.png"

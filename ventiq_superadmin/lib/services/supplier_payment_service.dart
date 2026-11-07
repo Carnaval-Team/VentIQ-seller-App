@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/supplier_payment_model.dart';
+import 'referral_payments_service.dart';
 
 double supplierBasePrice(double price, double pct) =>
     pct > 0 && pct < 100 ? price / (1 + pct / 100) : price;
@@ -228,6 +229,7 @@ class SupplierPaymentService {
         fechaInicio: fechaInicio,
         fechaFin: fechaFin,
       );
+      final excludedProducts = await ReferralPaymentsService.getExcludedProductIds();
 
       final Map<int, Map<String, dynamic>> supplierTotals = {};
       final Map<int, Set<int>> orderIdsBySupplier = {};
@@ -235,6 +237,7 @@ class SupplierPaymentService {
       for (final order in lines) {
         final proveedorId = _asInt(order['proveedor']) ?? 3;
         final orderId = _asInt(order['order_id']);
+        final productId = _asInt(order['product_id']);
         final quantity = _asInt(order['quantity']) ?? 0;
         final price = (order['price'] as num?)?.toDouble() ?? 0.0;
         final precioUsd = (order['precio_usd'] as num?)?.toDouble() ?? 0.0;
@@ -253,6 +256,7 @@ class SupplierPaymentService {
             'total_transfer': 0.0,
             'net_cash': 0.0,
             'net_transfer': 0.0,
+            'excluido_cup': 0.0,
           };
         });
         orderIdsBySupplier.putIfAbsent(proveedorId, () => <int>{});
@@ -263,6 +267,9 @@ class SupplierPaymentService {
         supplierTotals[proveedorId]!['total_cup'] += totalRow;
         supplierTotals[proveedorId]!['total_usd'] += precioUsd * quantity;
         supplierTotals[proveedorId]!['total_euro'] += precioEuro * quantity;
+        if (productId != null && excludedProducts.contains(productId)) {
+          supplierTotals[proveedorId]!['excluido_cup'] += totalRow;
+        }
 
         if (isTransfer) {
           supplierTotals[proveedorId]!['total_transfer'] += totalRow;
@@ -310,6 +317,7 @@ class SupplierPaymentService {
             totalTransfer: totals['total_transfer'] as double,
             netCash: totals['net_cash'] as double,
             netTransfer: totals['net_transfer'] as double,
+            excluidoCup: totals['excluido_cup'] as double? ?? 0,
             totalOrders: orderIdsBySupplier[id]?.length ?? 0,
           ),
         );
@@ -329,8 +337,9 @@ class SupplierPaymentService {
   static Future<List<OrderPaymentDetail>> getSupplierOrders(
     int proveedorId,
     DateTime fechaInicio,
-    DateTime fechaFin,
-  ) async {
+    DateTime fechaFin, {
+    bool markExcluded = false,
+  }) async {
     try {
       debugPrint('📦 Obteniendo órdenes para proveedor $proveedorId...');
 
@@ -339,6 +348,9 @@ class SupplierPaymentService {
         fechaFin: fechaFin,
         proveedorId: proveedorId,
       );
+      final excludedProducts = markExcluded
+          ? await ReferralPaymentsService.getExcludedProductIds()
+          : const <int>{};
 
       final Map<int, OrderPaymentDetail> ordersMap = {};
       final Map<int, List<ProductPaymentDetail>> orderProductsMap = {};
@@ -359,6 +371,7 @@ class SupplierPaymentService {
           quantity: quantity,
           price: price,
           subtotal: price * quantity,
+          isExcluded: excludedProducts.contains(productId),
         );
 
         if (!orderProductsMap.containsKey(orderId)) {
@@ -417,6 +430,19 @@ class SupplierPaymentService {
       return [];
     }
   }
+
+  /// Líneas con precio costo (misma lógica que pago a proveedores).
+  /// Usado también por pago a Inventtia / agentes.
+  static Future<List<Map<String, dynamic>>> getCostPaymentLines({
+    required DateTime fechaInicio,
+    required DateTime fechaFin,
+    int? proveedorId,
+  }) =>
+      _fetchPaymentLines(
+        fechaInicio: fechaInicio,
+        fechaFin: fechaFin,
+        proveedorId: proveedorId,
+      );
 
   /// Órdenes Carnaval creadas en el rango, excluyendo canceladas/devueltas
   /// (Carnaval status y estado actual Inventtia 3/4/5).

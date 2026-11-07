@@ -107,6 +107,15 @@ class _ServicentroScreenState extends State<ServicentroScreen> {
     return Color.lerp(base, Colors.grey.shade700, 0.55) ?? Colors.grey;
   }
 
+  /// Texto legible sobre el color del combustible: blanco solo si el fondo
+  /// es suficientemente oscuro (colores claros quedaban invisibles).
+  Color _onColor(Color bg, {bool subdued = false}) {
+    final dark = bg.computeLuminance() < 0.45;
+    return dark
+        ? (subdued ? Colors.white70 : Colors.white)
+        : (subdued ? Colors.black54 : Colors.black87);
+  }
+
   double _aspectRatioForColumns(int cols) {
     switch (cols) {
       case 1:
@@ -190,12 +199,23 @@ class _ServicentroScreenState extends State<ServicentroScreen> {
     return Scaffold(
       drawer: const AppDrawer(),
       appBar: AppBar(
-        title: Text(_titulo),
+        backgroundColor: const Color(0xFF4A90E2),
+        elevation: 0,
+        centerTitle: true,
+        title: Text(
+          _titulo,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           IconButton(
             tooltip: 'Actualizar',
             onPressed: _loading ? null : _cargar,
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh, color: Colors.white),
           ),
         ],
       ),
@@ -324,8 +344,8 @@ class _ServicentroScreenState extends State<ServicentroScreen> {
                   item.denominacion,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: _onColor(color),
                     fontSize: 17,
                     fontWeight: FontWeight.w700,
                   ),
@@ -334,7 +354,9 @@ class _ServicentroScreenState extends State<ServicentroScreen> {
                 Text(
                   enabled ? 'Stock: ${_formatStock(item)}' : 'Sin stock',
                   style: TextStyle(
-                    color: enabled ? Colors.white70 : Colors.orangeAccent,
+                    color: enabled
+                        ? _onColor(color, subdued: true)
+                        : Colors.orangeAccent,
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                   ),
@@ -346,7 +368,9 @@ class _ServicentroScreenState extends State<ServicentroScreen> {
                       : '${MonedaVentaService.formatearPrecio(item.precioVenta, conSimbolo: true)}'
                           '${item.um != null && item.um!.isNotEmpty ? ' / ${item.um}' : ''}',
                   style: TextStyle(
-                    color: sinPrecio ? Colors.orangeAccent : Colors.white70,
+                    color: sinPrecio
+                        ? Colors.orangeAccent
+                        : _onColor(color, subdued: true),
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                   ),

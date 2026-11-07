@@ -1399,6 +1399,8 @@ class ExportService {
         fileBytes = await _generateSimpleExcel(
           warehouseName,
           inventoryData,
+          filterDateFrom: filterDateFrom,
+          filterDateTo: filterDateTo,
           includeSku: includeSku,
           includeNombreCorto: includeNombreCorto,
           includeMarca: includeMarca,
@@ -1456,6 +1458,11 @@ class ExportService {
                         now,
                       ),
                       style: pw.TextStyle(fontSize: 16, font: regularFont),
+                    ),
+                    pw.SizedBox(height: 4),
+                    pw.Text(
+                      'Fecha de consulta: ${dateFormatter.format(now)} - ${timeFormatter.format(now)}',
+                      style: pw.TextStyle(fontSize: 12, font: regularFont),
                     ),
                     pw.SizedBox(height: 16),
                     pw.Text(
@@ -1541,7 +1548,7 @@ class ExportService {
                   crossAxisAlignment: pw.CrossAxisAlignment.end,
                   children: [
                     pw.Text(
-                      'Fecha: ${dateFormatter.format(now)} - ${timeFormatter.format(now)}',
+                      'Fecha de consulta: ${dateFormatter.format(now)} - ${timeFormatter.format(now)}',
                       style: pw.TextStyle(
                         fontSize: 10,
                         color: PdfColors.grey600,
@@ -1734,13 +1741,13 @@ class ExportService {
     DateTime now,
   ) {
     if (filterDateFrom != null && filterDateTo != null) {
-      return 'Período: ${dateFormatter.format(filterDateFrom)} - ${dateFormatter.format(filterDateTo)}';
+      return 'Período consultado: ${dateFormatter.format(filterDateFrom)} - ${dateFormatter.format(filterDateTo)}';
     } else if (filterDateFrom != null) {
-      return 'Desde: ${dateFormatter.format(filterDateFrom)}';
+      return 'Período consultado: desde ${dateFormatter.format(filterDateFrom)}';
     } else if (filterDateTo != null) {
-      return 'Hasta: ${dateFormatter.format(filterDateTo)}';
+      return 'Período consultado: hasta ${dateFormatter.format(filterDateTo)}';
     } else {
-      return 'Período: Histórico';
+      return 'Período consultado: Histórico';
     }
   }
 
@@ -1896,6 +1903,8 @@ class ExportService {
   Future<Uint8List> _generateSimpleExcel(
     String warehouseName,
     List<Map<String, dynamic>> inventoryData, {
+    DateTime? filterDateFrom,
+    DateTime? filterDateTo,
     bool includeSku = false,
     bool includeNombreCorto = false,
     bool includeMarca = false,
@@ -1914,8 +1923,23 @@ class ExportService {
     // Agrupar datos por almacén y ubicación usando método común
     final groupedData = _groupInventoryData(inventoryData);
 
+    final periodText = _buildPeriodText(
+      filterDateFrom,
+      filterDateTo,
+      DateFormat('dd/MM/yyyy'),
+      DateTime.now(),
+    );
+    final consultaText =
+        'Fecha de consulta: ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}';
+
     // Crear una página de resumen general
-    _createSummarySheet(excel, warehouseName, inventoryData);
+    _createSummarySheet(
+      excel,
+      warehouseName,
+      inventoryData,
+      periodText: periodText,
+      consultaText: consultaText,
+    );
 
     // Crear una página para cada almacén-ubicación
     for (final almacenEntry in groupedData.entries) {
@@ -1940,6 +1964,8 @@ class ExportService {
           ubicacionName,
           inventoryProducts,
           rawData: productos,
+          periodText: periodText,
+          consultaText: consultaText,
           includeSku: includeSku,
           includeNombreCorto: includeNombreCorto,
           includeMarca: includeMarca,
@@ -1960,8 +1986,10 @@ class ExportService {
   void _createSummarySheet(
     Excel excel,
     String warehouseName,
-    List<Map<String, dynamic>> inventoryData,
-  ) {
+    List<Map<String, dynamic>> inventoryData, {
+    String? periodText,
+    String? consultaText,
+  }) {
     final sheet = excel['RESUMEN GENERAL'];
 
     // Configurar anchos de columna
@@ -1988,11 +2016,20 @@ class ExportService {
     warehouseCell.cellStyle = CellStyle(bold: true, fontSize: 14);
     currentRow++;
 
+    if (periodText != null) {
+      final periodCell = sheet.cell(
+        CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
+      );
+      periodCell.value = TextCellValue(periodText);
+      currentRow++;
+    }
+
     final dateCell = sheet.cell(
       CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
     );
     dateCell.value = TextCellValue(
-      'Fecha: ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}',
+      consultaText ??
+          'Fecha de consulta: ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}',
     );
     currentRow += 2;
 
@@ -2140,6 +2177,8 @@ class ExportService {
     String ubicacionName,
     List<InventoryProduct> products, {
     List<Map<String, dynamic>>? rawData,
+    String? periodText,
+    String? consultaText,
     bool includeSku = false,
     bool includeNombreCorto = false,
     bool includeMarca = false,
@@ -2264,11 +2303,20 @@ class ExportService {
     ubicacionCell.cellStyle = CellStyle(bold: true, fontSize: 14);
     currentRow++;
 
+    if (periodText != null) {
+      final periodCell = sheet.cell(
+        CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
+      );
+      periodCell.value = TextCellValue(periodText);
+      currentRow++;
+    }
+
     final dateCell = sheet.cell(
       CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
     );
     dateCell.value = TextCellValue(
-      'Fecha: ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}',
+      consultaText ??
+          'Fecha de consulta: ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}',
     );
     currentRow += 2;
 

@@ -8,6 +8,7 @@ import 'analytics/rotation_detail_screen.dart';
 import 'analytics/stock_alerts_detail_screen.dart';
 import 'caducidades_screen.dart';
 import '../utils/number_formatter.dart';
+import '../services/permissions_service.dart';
 
 class InventoryDashboard extends StatefulWidget {
   const InventoryDashboard({super.key});
@@ -29,12 +30,20 @@ class _InventoryDashboardState extends State<InventoryDashboard> {
   double _gananciaDelMesUsd = 0.0;
   double _costoDelMes = 0.0; // CUP (= compras del mes)
   double _costoDelMesUsd = 0.0;
+  bool _canViewGanancias = false;
 
   @override
   void initState() {
     super.initState();
     _loadDashboard();
+    _loadProfitPermission();
     _loadMonthlySalesMetrics();
+  }
+
+  Future<void> _loadProfitPermission() async {
+    final allowed = await PermissionsService().canViewGanancias();
+    if (!mounted) return;
+    setState(() => _canViewGanancias = allowed);
   }
 
   Future<void> _loadDashboard() async {
@@ -231,23 +240,24 @@ class _InventoryDashboardState extends State<InventoryDashboard> {
               ),
             ),
             const SizedBox(width: 12),
-            Expanded(
-              child: MetricCard(
-                title: 'Ganancia del Mes',
-                value: _isLoadingSalesMetrics
-                    ? '—'
-                    : 'CUP \$${NumberFormatter.formatCurrency(_gananciaDelMes)}',
-                icon: Icons.trending_up,
-                color: _gananciaDelMes < 0
-                    ? Colors.red
-                    : (_gananciaDelMes > 0
-                          ? Colors.deepPurple
-                          : Colors.grey),
-                subtitle: _isLoadingSalesMetrics
-                    ? 'Calculando...'
-                    : 'USD \$${NumberFormatter.formatCurrency(_gananciaDelMesUsd)} • ${margenPct.toStringAsFixed(1)}%',
+            if (_canViewGanancias)
+              Expanded(
+                child: MetricCard(
+                  title: 'Ganancia del Mes',
+                  value: _isLoadingSalesMetrics
+                      ? '—'
+                      : 'CUP \$${NumberFormatter.formatCurrency(_gananciaDelMes)}',
+                  icon: Icons.trending_up,
+                  color: _gananciaDelMes < 0
+                      ? Colors.red
+                      : (_gananciaDelMes > 0
+                            ? Colors.deepPurple
+                            : Colors.grey),
+                  subtitle: _isLoadingSalesMetrics
+                      ? 'Calculando...'
+                      : 'USD \$${NumberFormatter.formatCurrency(_gananciaDelMesUsd)} • ${margenPct.toStringAsFixed(1)}%',
+                ),
               ),
-            ),
           ],
         ),
       ],

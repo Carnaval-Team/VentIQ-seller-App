@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 
 import '../../services/admin_access_service.dart';
 import '../../services/admin_inventory_service.dart';
@@ -293,7 +293,8 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                       subtitle: 'Turnos locales pendientes de sincronizar',
                       route: '/admin-turnos-offline',
                     ),
-                    if (_inventoryOnly)
+                    if (_inventoryOnly &&
+                        UserPreferencesService.enableDeviceFullOffline)
                       _tile(
                         icon: Icons.phonelink_setup,
                         title: 'Preparar dispositivo offline',

@@ -81,6 +81,8 @@ class AdminAiAssistantService {
   /// Get role name string from UserRole enum
   String _getRoleKey(UserRole role) {
     switch (role) {
+      case UserRole.dueno:
+        return 'gerente';
       case UserRole.gerente:
         return 'gerente';
       case UserRole.supervisor:

@@ -152,14 +152,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
     }
   }
 
-  /// Tasa USD→CUP aplicable a una orden: la vigente en su fecha de creación.
-  /// Usa la tasa actual solo si no hay historial (offline sin timelines).
+  /// Tasa USD→CUP aplicable a una orden: la vigente en su [Order.fechaCreacion].
+  /// Prioridad: historial cacheado (online o offline) → tasa actual cacheada.
   double _orderFallbackRate(Order order) {
     final timelines = _usdTimelines;
-    final fecha = order.fechaCreacion;
-    if (timelines != null) {
+    if (timelines != null &&
+        (timelines.storeRates.isNotEmpty || timelines.globalRates.isNotEmpty)) {
       final historical = CurrencyService.resolveUsdToCupRateAt(
-        fecha,
+        order.fechaCreacion,
         timelines,
       );
       if (historical != null && historical > 0) return historical;
@@ -6313,7 +6313,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
             onOrderUpdated: onOrderUpdated ?? _loadOrdersFromSupabase,
             isOfflineMode: _isOfflineMode,
             showSkuEnabled: _isShowSkuEnabled,
-            usdRate: _usdRate,
+            usdRate: _orderFallbackRate(order),
             defaultOrderItems: _defaultOrderItems,
             pendingOrders:
                 _orderService.orders

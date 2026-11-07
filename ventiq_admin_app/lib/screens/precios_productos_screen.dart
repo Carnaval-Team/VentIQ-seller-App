@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/app_colors.dart';
+import '../services/costos_adicionales_service.dart';
 import '../services/currency_service.dart';
 import '../services/product_service.dart';
 import '../services/user_preferences_service.dart';
 import '../widgets/admin_bottom_navigation.dart';
 import '../utils/navigation_guard.dart';
+import '../services/permissions_service.dart';
 
 enum _StockFilter { todos, conStock, sinStock }
 
@@ -24,6 +26,8 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
 
   List<Map<String, dynamic>> _productos = [];
   List<Map<String, dynamic>> _filteredProductos = [];
+  /// id_producto → costos adicionales activos
+  Map<int, List<Map<String, dynamic>>> _costosAdicionalesByProducto = {};
   bool _isLoading = true;
   String _searchQuery = '';
   bool _filterSinPrecioVenta = false;
@@ -34,6 +38,7 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
   double? _filterMarginPercent;
   double _usdRate = 0.0;
   bool _filterExpanded = false;
+  bool _canViewGanancias = false;
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _filterPrecioController = TextEditingController();
   final TextEditingController _filterMarginController = TextEditingController();
@@ -41,7 +46,14 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
   @override
   void initState() {
     super.initState();
+    _loadProfitPermission();
     _loadData();
+  }
+
+  Future<void> _loadProfitPermission() async {
+    final allowed = await PermissionsService().canViewGanancias();
+    if (!mounted) return;
+    setState(() => _canViewGanancias = allowed);
   }
 
   @override
@@ -102,9 +114,23 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
         });
       }
 
+      final ids = combined.map((p) => p['id'] as int).toList();
+      Map<int, List<Map<String, dynamic>>> costosMap = {};
+      try {
+        final costosRows =
+            await CostosAdicionalesService().listarActivosPorProductos(ids);
+        for (final row in costosRows) {
+          final idProd = row['id_producto'] as int;
+          costosMap.putIfAbsent(idProd, () => []).add(row);
+        }
+      } catch (_) {
+        // Tabla aún no desplegada o sin acceso: la pantalla sigue sin desglose.
+      }
+
       if (!mounted) return;
       setState(() {
         _productos = combined;
+        _costosAdicionalesByProducto = costosMap;
         _applyFilter();
         _isLoading = false;
       });
@@ -600,6 +626,17 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
       );
     }
 
+    final idProducto = producto['id'] as int?;
+    final adicionales = idProducto == null
+        ? const <Map<String, dynamic>>[]
+        : (_costosAdicionalesByProducto[idProducto] ?? const []);
+    final sumaAdicionales = adicionales.fold<double>(
+      0,
+      (s, c) => s + ((c['monto_promedio_usd'] as num?)?.toDouble() ?? 0),
+    );
+    // precio_promedio ya incluye adicionales; el puro se estima restando.
+    final costoPuro = (costoUsdVal - sumaAdicionales).clamp(0.0, double.infinity);
+
     return Column(
       children: [
         Row(
@@ -641,6 +678,48 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
             ),
           ],
         ),
+        if (adicionales.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.teal.shade50,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.teal.shade100),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Desglose',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.teal[800],
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Costo puro ≈ \$${costoPuro.toStringAsFixed(2)}',
+                  style: TextStyle(fontSize: 11, color: Colors.grey[800]),
+                ),
+                ...adicionales.map((c) {
+                  final tipo = c['app_cont_tipo_costo'];
+                  final nombre = tipo is Map
+                      ? (tipo['denominacion']?.toString() ?? 'Concepto')
+                      : 'Concepto';
+                  final avg =
+                      (c['monto_promedio_usd'] as num?)?.toDouble() ?? 0;
+                  return Text(
+                    '+ $nombre: \$${avg.toStringAsFixed(2)}',
+                    style: TextStyle(fontSize: 11, color: Colors.grey[800]),
+                  );
+                }),
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: 4),
         Row(
           mainAxisAlignment: MainAxisAlignment.end,
@@ -1350,6 +1429,7 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
                             _applyFilter();
                           }),
                         ),
+                        if (_canViewGanancias) ...[
                         const SizedBox(height: 8),
                         // Filtro por % ganancia
                         Row(
@@ -1438,6 +1518,7 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
                             ),
                           ],
                         ),
+                        ],
                         const SizedBox(height: 4),
                       ],
                     ),
@@ -1851,7 +1932,7 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
               _buildStockBadge(stockTotal),
               const Spacer(),
               // Ganancia alineada a la derecha
-              if (gananciaUsd != null)
+              if (_canViewGanancias && gananciaUsd != null)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(

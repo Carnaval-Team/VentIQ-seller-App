@@ -9,6 +9,7 @@ class Store {
   final int? totalTrabajadores;
   final double? ventasDelMes;
   final bool? activa;
+  final bool esPrueba;
   final String? planSuscripcion;
   final DateTime? fechaVencimientoSuscripcion;
 
@@ -23,6 +24,7 @@ class Store {
     this.totalTrabajadores,
     this.ventasDelMes,
     this.activa,
+    this.esPrueba = false,
     this.planSuscripcion,
     this.fechaVencimientoSuscripcion,
   });
@@ -39,6 +41,7 @@ class Store {
       totalTrabajadores: json['total_trabajadores'],
       ventasDelMes: json['ventas_del_mes']?.toDouble(),
       activa: json['activa'] ?? true,
+      esPrueba: json['es_prueba'] == true,
       planSuscripcion: json['plan_suscripcion'],
       fechaVencimientoSuscripcion: json['fecha_vencimiento_suscripcion'] != null
           ? DateTime.parse(json['fecha_vencimiento_suscripcion'])

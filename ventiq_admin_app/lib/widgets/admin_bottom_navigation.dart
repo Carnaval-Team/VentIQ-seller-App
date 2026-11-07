@@ -57,8 +57,9 @@ class _AdminBottomNavigationState extends State<AdminBottomNavigation> {
     );
     routes.add('/dashboard');
 
-    // Productos - Gerente, Supervisor, Auditor y Almacenero (solo lectura)
-    if (userRole == UserRole.gerente ||
+    // Productos - Dueño, Gerente, Supervisor, Auditor y Almacenero
+    if (userRole == UserRole.dueno ||
+        userRole == UserRole.gerente ||
         userRole == UserRole.supervisor ||
         userRole == UserRole.auditor ||
         userRole == UserRole.almacenero) {
@@ -72,8 +73,9 @@ class _AdminBottomNavigationState extends State<AdminBottomNavigation> {
       routes.add('/products-dashboard');
     }
 
-    // Inventario - Gerente, Supervisor, Auditor y Almacenero
-    if (userRole == UserRole.gerente ||
+    // Inventario - Dueño, Gerente, Supervisor, Auditor y Almacenero
+    if (userRole == UserRole.dueno ||
+        userRole == UserRole.gerente ||
         userRole == UserRole.supervisor ||
         userRole == UserRole.auditor ||
         userRole == UserRole.almacenero) {
@@ -97,8 +99,10 @@ class _AdminBottomNavigationState extends State<AdminBottomNavigation> {
     );
     routes.add('/warehouse');
 
-    // Configuración - Gerente y Supervisor
-    if (userRole == UserRole.gerente || userRole == UserRole.supervisor) {
+    // Configuración - Dueño, Gerente y Supervisor
+    if (userRole == UserRole.dueno ||
+        userRole == UserRole.gerente ||
+        userRole == UserRole.supervisor) {
       items.add(
         const BottomNavigationBarItem(
           icon: Icon(Icons.settings_outlined),

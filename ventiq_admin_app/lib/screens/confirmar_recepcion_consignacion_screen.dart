@@ -6,6 +6,7 @@ import '../services/consignacion_envio_service.dart';
 import '../services/consignacion_envio_listado_service.dart';
 import '../services/currency_service.dart';
 import '../services/user_preferences_service.dart';
+import '../services/permissions_service.dart';
 
 class ConfirmarRecepcionConsignacionScreen extends StatefulWidget {
   final int idContrato;
@@ -34,6 +35,7 @@ class _ConfirmarRecepcionConsignacionScreenState
     extends State<ConfirmarRecepcionConsignacionScreen> {
   List<Map<String, dynamic>> _productosPendientes = [];
   bool _isLoading = true;
+  bool _canViewGanancias = false;
   bool _isConfirming = false;
   bool _aceptarTodo = false;
 
@@ -50,8 +52,15 @@ class _ConfirmarRecepcionConsignacionScreenState
   @override
   void initState() {
     super.initState();
+    _loadProfitPermission();
     _loadProductosPendientes();
     _loadTasaCambio();
+  }
+
+  Future<void> _loadProfitPermission() async {
+    final allowed = await PermissionsService().canViewGanancias();
+    if (!mounted) return;
+    setState(() => _canViewGanancias = allowed);
   }
 
   Future<void> _loadTasaCambio() async {
@@ -598,13 +607,14 @@ class _ConfirmarRecepcionConsignacionScreenState
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 12),
-                            // Ganancias
-                            _buildGananciasColumn(
-                              idProductoConsignacion,
-                              precioCostoCUP,
-                              precioCostoUSD,
-                            ),
+                            if (_canViewGanancias) ...[
+                              const SizedBox(height: 12),
+                              _buildGananciasColumn(
+                                idProductoConsignacion,
+                                precioCostoCUP,
+                                precioCostoUSD,
+                              ),
+                            ],
                             const SizedBox(height: 12),
                             // Botón Rechazar (ancho completo)
                             SizedBox(
@@ -677,14 +687,15 @@ class _ConfirmarRecepcionConsignacionScreenState
                               ),
                             ),
                             const SizedBox(width: 8),
-                            Expanded(
-                              flex: 2,
-                              child: _buildGananciasColumn(
-                                idProductoConsignacion,
-                                precioCostoCUP,
-                                precioCostoUSD,
+                            if (_canViewGanancias)
+                              Expanded(
+                                flex: 2,
+                                child: _buildGananciasColumn(
+                                  idProductoConsignacion,
+                                  precioCostoCUP,
+                                  precioCostoUSD,
+                                ),
                               ),
-                            ),
                             const SizedBox(width: 8),
                             Expanded(
                               flex: 1,

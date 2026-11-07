@@ -6,6 +6,7 @@ import '../services/warehouse_service.dart';
 import '../services/inventory_service.dart';
 import '../services/export_service.dart';
 import '../services/user_preferences_service.dart';
+import '../services/permissions_service.dart';
 
 class InventoryExportDialog extends StatefulWidget {
   const InventoryExportDialog({super.key});
@@ -38,6 +39,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
   bool _includeDescripcion = false;
 
   bool _includePrecios = false;
+  bool _canViewGanancias = false;
 
   // Opciones de filtrado
   bool _includeZeroStock = false; // Incluir productos con stock cero
@@ -47,7 +49,17 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
   @override
   void initState() {
     super.initState();
+    _loadProfitPermission();
     _loadWarehouses();
+  }
+
+  Future<void> _loadProfitPermission() async {
+    final allowed = await PermissionsService().canViewGanancias();
+    if (!mounted) return;
+    setState(() {
+      _canViewGanancias = allowed;
+      if (!allowed) _includePrecios = false;
+    });
   }
 
   Future<void> _loadWarehouses() async {
@@ -638,6 +650,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                             activeColor: AppColors.primary,
                             contentPadding: EdgeInsets.zero,
                           ),
+                          if (_canViewGanancias)
                           CheckboxListTile(
                             title: const Text(
                               'Incluir Precios',

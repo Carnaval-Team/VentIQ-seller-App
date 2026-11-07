@@ -64,7 +64,8 @@ class _TiendasScreenState extends State<TiendasScreen> {
         final matchesFilter = _selectedFilter == 'todas' ||
                             (_selectedFilter == 'activas' && (tienda.activa ?? true)) ||
                             (_selectedFilter == 'inactivas' && !(tienda.activa ?? true)) ||
-                            (_selectedFilter == 'renovacion' && _necesitaRenovacion(tienda));
+                            (_selectedFilter == 'renovacion' && _necesitaRenovacion(tienda)) ||
+                            (_selectedFilter == 'prueba' && tienda.esPrueba);
         
         return matchesSearch && matchesFilter;
       }).toList();
@@ -165,6 +166,7 @@ class _TiendasScreenState extends State<TiendasScreen> {
                       DropdownMenuItem(value: 'activas', child: Text('Activas')),
                       DropdownMenuItem(value: 'inactivas', child: Text('Inactivas')),
                       DropdownMenuItem(value: 'renovacion', child: Text('Necesitan Renovación')),
+                      DropdownMenuItem(value: 'prueba', child: Text('De prueba')),
                     ],
                     onChanged: (value) {
                       setState(() {
@@ -367,6 +369,11 @@ class _TiendasScreenState extends State<TiendasScreen> {
                                     style: const TextStyle(fontWeight: FontWeight.w600),
                                     overflow: TextOverflow.ellipsis,
                                   ),
+                                  if (tienda.esPrueba)
+                                    const Text(
+                                      'Prueba',
+                                      style: TextStyle(fontSize: 11, color: AppColors.warning),
+                                    ),
                                   const SizedBox(height: 4),
                                   Text(
                                     tienda.direccion ?? 'Sin dirección',
@@ -461,6 +468,14 @@ class _TiendasScreenState extends State<TiendasScreen> {
                     _buildStatusChip(tienda.activa ?? true ? 'activa' : 'inactiva'),
                     const SizedBox(width: 8),
                     _buildLicenseChip(tienda.planSuscripcion ?? 'gratuita'),
+                    if (tienda.esPrueba) ...[
+                      const SizedBox(width: 8),
+                      const Chip(
+                        label: Text('Prueba', style: TextStyle(fontSize: 11)),
+                        visualDensity: VisualDensity.compact,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ],
                   ],
                 ),
               ],
@@ -479,6 +494,13 @@ class _TiendasScreenState extends State<TiendasScreen> {
                   child: ListTile(
                     leading: Icon(Icons.edit),
                     title: Text('Editar'),
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'prueba',
+                  child: ListTile(
+                    leading: Icon(tienda.esPrueba ? Icons.science : Icons.science_outlined),
+                    title: Text(tienda.esPrueba ? 'Quitar marca de prueba' : 'Marcar como prueba'),
                   ),
                 ),
                 const PopupMenuItem(
@@ -591,6 +613,14 @@ class _TiendasScreenState extends State<TiendasScreen> {
           tooltip: 'Editar',
         ),
         IconButton(
+          icon: Icon(
+            tienda.esPrueba ? Icons.science : Icons.science_outlined,
+            color: tienda.esPrueba ? AppColors.warning : null,
+          ),
+          onPressed: () => _handleAction('prueba', tienda),
+          tooltip: tienda.esPrueba ? 'Quitar marca de prueba' : 'Marcar como prueba',
+        ),
+        IconButton(
           icon: const Icon(Icons.delete, color: AppColors.error),
           onPressed: () => _handleAction('delete', tienda),
           tooltip: 'Eliminar',
@@ -618,10 +648,30 @@ class _TiendasScreenState extends State<TiendasScreen> {
       case 'edit':
         _showEditTiendaDialog(tienda);
         break;
+      case 'prueba':
+        _togglePrueba(tienda);
+        break;
       case 'delete':
         _showDeleteConfirmation(tienda);
         break;
     }
+  }
+
+  Future<void> _togglePrueba(Store tienda) async {
+    final ok = await StoreService.updateStore(tienda.id, {
+      'es_prueba': !tienda.esPrueba,
+    });
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo actualizar. Ejecuta sql_updates/tienda_es_prueba.sql'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+    _loadTiendas();
   }
 
   void _showCreateTiendaDialog() {

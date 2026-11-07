@@ -47,6 +47,7 @@ import '../services/inventory_service.dart';
 import '../utils/stock_mixto_formatter.dart';
 import '../widgets/lote_expiry_widgets.dart';
 import '../widgets/asignar_lote_dialog.dart';
+import '../widgets/product_costos_adicionales_section.dart';
 
 import 'package:flutter/foundation.dart';
 
@@ -3260,6 +3261,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             ),
           ),
         ],
+
+        if (int.tryParse(_product.id) != null)
+          ProductCostosAdicionalesSection(
+            idProducto: int.parse(_product.id),
+            canEdit: _isGerente,
+          ),
 
         // ── Sección de costo por ingredientes (elaborados/servicios) ────────────
         if (_product.esElaborado || _product.esServicio) ...[

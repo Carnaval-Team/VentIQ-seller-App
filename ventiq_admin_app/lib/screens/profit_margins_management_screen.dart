@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/financial_service.dart';
+import '../widgets/profit_gate.dart';
 
 class ProfitMarginsManagementScreen extends StatefulWidget {
   const ProfitMarginsManagementScreen({Key? key}) : super(key: key);
@@ -79,7 +80,9 @@ class _ProfitMarginsManagementScreenState extends State<ProfitMarginsManagementS
         backgroundColor: Colors.red[800],
         foregroundColor: Colors.white,
       ),
-      body: _isLoading
+      body: ProfitGate(
+        title: 'Márgenes comerciales restringidos',
+        child: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : ListView.builder(
               padding: const EdgeInsets.all(16),
@@ -222,6 +225,7 @@ class _ProfitMarginsManagementScreenState extends State<ProfitMarginsManagementS
                 );
               },
             ),
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showAddDialog(),
         backgroundColor: Colors.red[800],

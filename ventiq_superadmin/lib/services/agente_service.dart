@@ -7,6 +7,7 @@ class AgenteService {
   /// Listar todos los agentes
   static Future<List<Map<String, dynamic>>> getAgentes({
     bool soloActivos = true,
+    bool soloDespliegue = false,
   }) async {
     try {
       var query = _supabase
@@ -16,11 +17,30 @@ class AgenteService {
       if (soloActivos) {
         query = query.eq('estado', 1);
       }
+      if (soloDespliegue) {
+        query = query.eq('despliega', true);
+      }
 
       final response = await query.order('nombre', ascending: true);
       return List<Map<String, dynamic>>.from(response);
     } catch (e) {
       debugPrint('❌ Error obteniendo agentes: $e');
+      rethrow;
+    }
+  }
+
+  /// Agentes de Carnaval todavía no usados como ficha de cobro, más el actual.
+  static Future<List<Map<String, dynamic>>> getAgentesCarnaval() async {
+    try {
+      final rows = await _supabase
+          .schema('carnavalapp')
+          .from('inventtia_agentes')
+          .select('id, nombre, apellidos, activo')
+          .eq('activo', true)
+          .order('apellidos', ascending: true);
+      return List<Map<String, dynamic>>.from(rows);
+    } catch (e) {
+      debugPrint('❌ Error obteniendo agentes Carnaval: $e');
       rethrow;
     }
   }
@@ -32,6 +52,10 @@ class AgenteService {
     String? telefono,
     String? email,
     String? observaciones,
+    String? tarjeta,
+    bool esSocio = false,
+    bool despliega = true,
+    int? idAgenteCarnaval,
   }) async {
     try {
       final response = await _supabase
@@ -42,6 +66,10 @@ class AgenteService {
             'telefono': telefono,
             'email': email,
             'observaciones': observaciones,
+            'tarjeta': tarjeta,
+            'es_socio': esSocio,
+            'despliega': despliega,
+            'id_agente_carnaval': idAgenteCarnaval,
           })
           .select()
           .single();
@@ -62,6 +90,10 @@ class AgenteService {
     String? telefono,
     String? email,
     String? observaciones,
+    String? tarjeta,
+    bool esSocio = false,
+    bool despliega = true,
+    int? idAgenteCarnaval,
   }) async {
     try {
       final response = await _supabase
@@ -72,6 +104,10 @@ class AgenteService {
             'telefono': telefono,
             'email': email,
             'observaciones': observaciones,
+            'tarjeta': tarjeta,
+            'es_socio': esSocio,
+            'despliega': despliega,
+            'id_agente_carnaval': idAgenteCarnaval,
             'updated_at': DateTime.now().toIso8601String(),
           })
           .eq('id', id)

@@ -131,6 +131,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   int? _storeId;
   bool _canEditSettings = false;
   bool _isSupervisor = false;
+  bool _canViewGanancias = false;
   bool _tabsReady = false;
 
   @override
@@ -143,17 +144,21 @@ class _SettingsScreenState extends State<SettingsScreen>
     final results = await Future.wait([
       NavigationGuard.canPerformAction('settings.edit'),
       _permissionsService.getUserRole(),
+      _permissionsService.canViewGanancias(),
     ]);
     if (!mounted) return;
     final canEdit = results[0] as bool;
     final role = results[1] as UserRole;
+    final canViewGanancias = results[2] as bool;
     final isSupervisor = role == UserRole.supervisor;
-    // Supervisor: Tienda + Global + Carnaval App. Gerente: todas.
-    final tabCount = isSupervisor ? 3 : 9;
+    // Supervisor: Tienda + Global + Carnaval App.
+    // Márgenes (ganancia) solo para el Dueño.
+    final tabCount = isSupervisor ? 3 : (canViewGanancias ? 9 : 8);
     _tabController?.dispose();
     setState(() {
       _canEditSettings = canEdit;
       _isSupervisor = isSupervisor;
+      _canViewGanancias = canViewGanancias;
       _tabController = TabController(
         length: tabCount,
         vsync: this,
@@ -192,16 +197,17 @@ class _SettingsScreenState extends State<SettingsScreen>
             Tab(text: 'Global', icon: Icon(Icons.settings_applications)),
             Tab(text: 'Carnaval App', icon: Icon(Icons.storefront)),
           ]
-        : const [
-            Tab(text: 'Tienda', icon: Icon(Icons.store)),
-            Tab(text: 'Global', icon: Icon(Icons.settings_applications)),
-            Tab(text: 'Categorías', icon: Icon(Icons.category)),
-            Tab(text: 'Variantes', icon: Icon(Icons.format_shapes)),
-            Tab(text: 'Presentaciones', icon: Icon(Icons.format_paint)),
-            Tab(text: 'Unidades', icon: Icon(Icons.straighten)),
-            Tab(text: 'Tasas pers.', icon: Icon(Icons.currency_exchange)),
-            Tab(text: 'Carnaval App', icon: Icon(Icons.storefront)),
-            Tab(text: 'Márgenes', icon: Icon(Icons.trending_up)),
+        : [
+            const Tab(text: 'Tienda', icon: Icon(Icons.store)),
+            const Tab(text: 'Global', icon: Icon(Icons.settings_applications)),
+            const Tab(text: 'Categorías', icon: Icon(Icons.category)),
+            const Tab(text: 'Variantes', icon: Icon(Icons.format_shapes)),
+            const Tab(text: 'Presentaciones', icon: Icon(Icons.format_paint)),
+            const Tab(text: 'Unidades', icon: Icon(Icons.straighten)),
+            const Tab(text: 'Tasas pers.', icon: Icon(Icons.currency_exchange)),
+            const Tab(text: 'Carnaval App', icon: Icon(Icons.storefront)),
+            if (_canViewGanancias)
+              const Tab(text: 'Márgenes', icon: Icon(Icons.trending_up)),
           ];
 
     final tabViews = _isSupervisor
@@ -219,7 +225,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             UnitsTabView(key: _unitsTabKey),
             PersonalRatesTabView(canEdit: _canEditSettings),
             CarnavalTabView(key: _carnavalTabKey),
-            const MarginsTabView(),
+            if (_canViewGanancias) const MarginsTabView(),
           ];
 
     return Scaffold(

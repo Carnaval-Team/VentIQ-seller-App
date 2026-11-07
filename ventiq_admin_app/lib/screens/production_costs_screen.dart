@@ -9,6 +9,8 @@ import '../widgets/store_selector_widget.dart';
 import '../widgets/financial_menu_widget.dart';
 import '../services/currency_display_service.dart';
 import '../widgets/currency_converter_widget.dart';
+import '../widgets/profit_gate.dart';
+import '../services/permissions_service.dart';
 
 class ProductionCostsScreen extends StatefulWidget {
   const ProductionCostsScreen({super.key});
@@ -25,7 +27,8 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
   // Estado general
   bool _isLoading = true;
   String _filtroTexto = '';
-  bool _showingTestData = false; // Nueva variable para indicar datos de prueba
+  bool _showingTestData = false;
+  bool _canViewGanancias = false;
   // ← NUEVAS VARIABLES PARA MONEDAS
   String _selectedCurrency = 'CUP';
   bool _showCurrencyConverter = false;
@@ -52,7 +55,14 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _loadProfitPermission();
     _loadData();
+  }
+
+  Future<void> _loadProfitPermission() async {
+    final allowed = await PermissionsService().canViewGanancias();
+    if (!mounted) return;
+    setState(() => _canViewGanancias = allowed);
   }
 
   @override
@@ -423,6 +433,7 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
                   ),
                 ),
                 const SizedBox(width: 12),
+                if (_canViewGanancias)
                 Expanded(
                   child: _buildStatCard(
                     'Margen Promedio',
@@ -882,18 +893,20 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
                           ),
                           valueColor: Colors.blue,
                         ),
-                        _buildInfoRow(
-                          'Margen bruto',
-                          _currencyFormatter.format(margenReal),
-                          valueColor:
-                              margenReal >= 0 ? Colors.green : Colors.red,
-                        ),
-                        _buildInfoRow(
-                          'Margen %',
-                          _percentFormatter.format(porcentajeMargenReal),
-                          valueColor: _getMargenColor(porcentajeMargenReal),
-                          isTotal: true,
-                        ),
+                        if (_canViewGanancias) ...[
+                          _buildInfoRow(
+                            'Margen bruto',
+                            _currencyFormatter.format(margenReal),
+                            valueColor:
+                                margenReal >= 0 ? Colors.green : Colors.red,
+                          ),
+                          _buildInfoRow(
+                            'Margen %',
+                            _percentFormatter.format(porcentajeMargenReal),
+                            valueColor: _getMargenColor(porcentajeMargenReal),
+                            isTotal: true,
+                          ),
+                        ],
                       ]),
 
                       const SizedBox(height: 16),
@@ -1374,7 +1387,9 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
       return const Center(child: CircularProgressIndicator());
     }
 
-    return SingleChildScrollView(
+    return ProfitGate(
+      title: 'Análisis de rentabilidad restringido',
+      child: SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1384,6 +1399,7 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
           _buildProductosProblematicos(),
         ],
       ),
+    ),
     );
   }
 
@@ -1697,43 +1713,43 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
                         ],
                       ),
 
-                      const SizedBox(height: 8),
-
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'Margen Comercial (${margenPorcentaje.toStringAsFixed(1)}%):',
-                          ),
-                          Text(
-                            _highPrecisionCurrencyFormatter.format(
-                              precioSugerido - costoTotal,
+                      if (_canViewGanancias) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Margen Comercial (${margenPorcentaje.toStringAsFixed(1)}%):',
                             ),
-                          ),
-                        ],
-                      ),
-
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'PRECIO SUGERIDO:',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.green,
+                            Text(
+                              _highPrecisionCurrencyFormatter.format(
+                                precioSugerido - costoTotal,
+                              ),
                             ),
-                          ),
-                          Text(
-                            _highPrecisionCurrencyFormatter.format(
-                              precioSugerido,
+                          ],
+                        ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'PRECIO SUGERIDO:',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green,
+                              ),
                             ),
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.green,
+                            Text(
+                              _highPrecisionCurrencyFormatter.format(
+                                precioSugerido,
+                              ),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green,
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),

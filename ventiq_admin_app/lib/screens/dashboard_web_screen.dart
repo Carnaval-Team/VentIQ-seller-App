@@ -285,6 +285,8 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
   /// Obtener color según el rol
   Color _getRoleColor(UserRole role) {
     switch (role) {
+      case UserRole.dueno:
+        return Colors.amber.shade800;
       case UserRole.gerente:
         return Colors.green;
       case UserRole.supervisor:

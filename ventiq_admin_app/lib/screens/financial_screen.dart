@@ -5,6 +5,7 @@ import '../widgets/store_selector_widget.dart';
 import '../services/financial_service.dart';
 import '../utils/screen_protection_mixin.dart';
 import '../utils/navigation_guard.dart';
+import '../services/permissions_service.dart';
 import 'financial_configuration_screen.dart';
 import 'financial_expenses_screen.dart';
 import 'financial_activity_history_screen.dart';
@@ -28,6 +29,7 @@ class _FinancialScreenState extends State<FinancialScreen>
   int _pendingOperationsCount = 0;
   List<Map<String, dynamic>> _recentActivities = [];
   bool _canEditFinancial = false;
+  bool _canViewGanancias = false;
 
   @override
   void initState() {
@@ -38,10 +40,14 @@ class _FinancialScreenState extends State<FinancialScreen>
   }
 
   Future<void> _loadPermissions() async {
-    final canEdit = await NavigationGuard.canPerformAction('financial.edit');
+    final results = await Future.wait([
+      NavigationGuard.canPerformAction('financial.edit'),
+      PermissionsService().canViewGanancias(),
+    ]);
     if (!mounted) return;
     setState(() {
-      _canEditFinancial = canEdit;
+      _canEditFinancial = results[0];
+      _canViewGanancias = results[1];
     });
   }
 
@@ -713,6 +719,7 @@ class _FinancialScreenState extends State<FinancialScreen>
               mainAxisSpacing: 12,
               childAspectRatio: childAspectRatio,
               children: [
+                if (_canViewGanancias)
                 _buildModuleCard(
                   'Dashboard',
                   'KPIs y métricas\nen tiempo real',
@@ -720,6 +727,7 @@ class _FinancialScreenState extends State<FinancialScreen>
                   AppColors.primary,
                   () => Navigator.pushNamed(context, '/financial-dashboard'),
                 ),
+                if (_canViewGanancias)
                 _buildModuleCard(
                   'Reportes',
                   'Análisis y\nproyecciones',
@@ -734,6 +742,7 @@ class _FinancialScreenState extends State<FinancialScreen>
                   Colors.orange,
                   () => Navigator.pushNamed(context, '/financial-expenses'),
                 ),
+                if (_canViewGanancias)
                 _buildModuleCard(
                   'Costos',
                   'Análisis de costos\nde producción', // Texto más corto

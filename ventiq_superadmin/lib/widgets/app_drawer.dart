@@ -80,6 +80,11 @@ class AppDrawer extends StatelessWidget {
                       title: 'Eliminacion de tiendas',
                       route: '/eliminacion-tiendas',
                     ),
+                    _DrawerItem(
+                      icon: Icons.savings_outlined,
+                      title: 'Fondo de Inversión',
+                      route: '/fondo-inversion',
+                    ),
                   ],
                 ),
                 _buildMenuSection(
@@ -298,6 +303,17 @@ class AppDrawer extends StatelessWidget {
                 ),
                 _buildMenuSection(
                   context,
+                  title: 'Finanzas',
+                  items: [
+                    _DrawerItem(
+                      icon: Icons.account_balance_wallet_outlined,
+                      title: 'Nomencladores de costo',
+                      route: '/costos-nomenclador',
+                    ),
+                  ],
+                ),
+                _buildMenuSection(
+                  context,
                   title: 'Sistema',
                   items: [
                     _DrawerItem(
@@ -487,10 +503,12 @@ class AppDrawer extends StatelessWidget {
                 item.route == '/flow-planes' ||
                 item.route == '/flow-config' ||
                 item.route == '/flow-categorias' ||
-                item.route == '/versiones') {
+                item.route == '/versiones' ||
+                item.route == '/costos-nomenclador' ||
+                item.route == '/fondo-inversion') {
               Navigator.of(context).pushReplacementNamed(item.route);
             } else {
-              // Para rutas que aún no están implementadas
+              // Para rutas que aún no estan implementadas
               _showComingSoonDialog(context, item.title);
             }
           }

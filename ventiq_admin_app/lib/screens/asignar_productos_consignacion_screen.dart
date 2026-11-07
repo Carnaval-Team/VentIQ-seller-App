@@ -7,6 +7,7 @@ import '../services/consignacion_envio_service.dart';
 import '../services/currency_service.dart';
 import '../services/presentacion_cadena_service.dart';
 import '../widgets/presentacion_equivalencia_widget.dart';
+import '../services/permissions_service.dart';
 
 class AsignarProductosConsignacionScreen extends StatefulWidget {
   final int idContrato;
@@ -1657,6 +1658,7 @@ class _ConsignacionProductosConfigScreenState
   late Map<int, Map<String, dynamic>> _productosConfig;
   late Map<int, TextEditingController> _precioVentaControllers;
   bool _guardando = false;
+  bool _canViewGanancias = false;
   double _tasaCambio = 440.0;
 
   @override
@@ -1679,6 +1681,13 @@ class _ConsignacionProductosConfigScreenState
     }
     // Cargar tasa de cambio desde la base de datos
     _cargarTasaCambio();
+    _cargarPermisoGanancias();
+  }
+
+  Future<void> _cargarPermisoGanancias() async {
+    final allowed = await PermissionsService().canViewGanancias();
+    if (!mounted) return;
+    setState(() => _canViewGanancias = allowed);
   }
 
   Future<void> _cargarTasaCambio() async {
@@ -1901,65 +1910,67 @@ class _ConsignacionProductosConfigScreenState
                                       ],
                                     ),
                                   ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    flex: 1,
-                                    child: DropdownButton<double>(
-                                      isExpanded: true,
-                                      value: margenPorcentaje,
-                                      items:
-                                          [
-                                                1,
-                                                2,
-                                                3,
-                                                4,
-                                                5,
-                                                6,
-                                                7,
-                                                8,
-                                                9,
-                                                10,
-                                                11,
-                                                12,
-                                                13,
-                                                14,
-                                                15,
-                                              ]
-                                              .map(
-                                                (val) =>
-                                                    DropdownMenuItem<double>(
-                                                      value: val.toDouble(),
-                                                      child: Text(
-                                                        '${val}%',
-                                                        textAlign:
-                                                            TextAlign.center,
-                                                        style: const TextStyle(
-                                                          fontSize: 12,
+                                  if (_canViewGanancias) ...[
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      flex: 1,
+                                      child: DropdownButton<double>(
+                                        isExpanded: true,
+                                        value: margenPorcentaje,
+                                        items:
+                                            [
+                                                  1,
+                                                  2,
+                                                  3,
+                                                  4,
+                                                  5,
+                                                  6,
+                                                  7,
+                                                  8,
+                                                  9,
+                                                  10,
+                                                  11,
+                                                  12,
+                                                  13,
+                                                  14,
+                                                  15,
+                                                ]
+                                                .map(
+                                                  (val) =>
+                                                      DropdownMenuItem<double>(
+                                                        value: val.toDouble(),
+                                                        child: Text(
+                                                          '${val}%',
+                                                          textAlign:
+                                                              TextAlign.center,
+                                                          style: const TextStyle(
+                                                            fontSize: 12,
+                                                          ),
                                                         ),
                                                       ),
-                                                    ),
-                                              )
-                                              .toList(),
-                                      onChanged: (newVal) {
-                                        if (newVal != null) {
-                                          setState(() {
-                                            config['margen_porcentaje'] =
-                                                newVal;
-                                            // Calcular precio de venta: precio_costo_cup * (1 + porcentaje/100)
-                                            final precioVentaCalculado =
-                                                precioCostoCUP *
-                                                (1 + (newVal / 100));
-                                            config['precio_venta'] =
-                                                precioVentaCalculado;
-                                            // Actualizar el controller del TextField
-                                            _precioVentaControllers[p['id']]
-                                                ?.text = precioVentaCalculado
-                                                .toStringAsFixed(2);
-                                          });
-                                        }
-                                      },
+                                                )
+                                                .toList(),
+                                        onChanged: (newVal) {
+                                          if (newVal != null) {
+                                            setState(() {
+                                              config['margen_porcentaje'] =
+                                                  newVal;
+                                              // Calcular precio de venta: precio_costo_cup * (1 + porcentaje/100)
+                                              final precioVentaCalculado =
+                                                  precioCostoCUP *
+                                                  (1 + (newVal / 100));
+                                              config['precio_venta'] =
+                                                  precioVentaCalculado;
+                                              // Actualizar el controller del TextField
+                                              _precioVentaControllers[p['id']]
+                                                  ?.text = precioVentaCalculado
+                                                  .toStringAsFixed(2);
+                                            });
+                                          }
+                                        },
+                                      ),
                                     ),
-                                  ),
+                                  ],
                                 ],
                               ),
                             ],
@@ -2005,6 +2016,7 @@ class _ConsignacionProductosConfigScreenState
                                   ),
                                 ),
                                 const SizedBox(width: 12),
+                                if (_canViewGanancias)
                                 Container(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 8,

@@ -1412,6 +1412,12 @@ class _RenovarDialogContentState extends State<_RenovarDialogContent> {
   bool _isLoading = true;
   bool _isProcessing = false;
   late DateTime _fechaFin;
+  double _tasaUsd = 1;
+  bool _cupEditado = false;
+  bool _usdEditado = false;
+  final _cupController = TextEditingController();
+  final _usdController = TextEditingController();
+  final _transaccionController = TextEditingController();
 
   @override
   void initState() {
@@ -1425,6 +1431,9 @@ class _RenovarDialogContentState extends State<_RenovarDialogContent> {
 
   @override
   void dispose() {
+    _cupController.dispose();
+    _usdController.dispose();
+    _transaccionController.dispose();
     super.dispose();
   }
 
@@ -1437,16 +1446,25 @@ class _RenovarDialogContentState extends State<_RenovarDialogContent> {
           .eq('es_activo', true)
           .order('id', ascending: true);
 
+      final tasa = await widget.supabase
+          .from('tasas_conversion')
+          .select('tasa')
+          .eq('moneda_origen', 'USD')
+          .order('fecha_actualizacion', ascending: false)
+          .limit(1)
+          .maybeSingle();
+
       if (mounted) {
         setState(() {
+          _tasaUsd = (tasa?['tasa'] as num?)?.toDouble() ?? 1;
           _planesDisponibles = List<Map<String, dynamic>>.from(planesResponse);
-          // Seleccionar el plan actual por defecto
           if (_planesDisponibles.isNotEmpty) {
             _planSeleccionado = _planesDisponibles.firstWhere(
               (p) => p['id'] == widget.suscripcion['id_plan'],
               orElse: () => _planesDisponibles.first,
             );
           }
+          _aplicarMontosDelPlan();
           _isLoading = false;
         });
       }
@@ -1464,11 +1482,35 @@ class _RenovarDialogContentState extends State<_RenovarDialogContent> {
     }
   }
 
+  double get _planUsd =>
+      (_planSeleccionado?['precio_mensual'] as num?)?.toDouble() ?? 0;
+
+  void _aplicarMontosDelPlan() {
+    if (!_usdEditado) {
+      _usdController.text = _planUsd.toStringAsFixed(2);
+    }
+    if (!_cupEditado) {
+      _cupController.text = (_planUsd * _tasaUsd).toStringAsFixed(2);
+    }
+  }
+
   Future<void> _confirmarRenovacion() async {
     if (_planSeleccionado == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Selecciona un plan'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
+    final recibidoUsd = double.tryParse(_usdController.text.replaceAll(',', '.'));
+    final recibidoCup = double.tryParse(_cupController.text.replaceAll(',', '.'));
+    if (recibidoUsd == null || recibidoUsd < 0 || recibidoCup == null || recibidoCup < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Indica el USD y el CUP que transfirió el cliente'),
           backgroundColor: AppColors.error,
         ),
       );
@@ -1536,6 +1578,18 @@ class _RenovarDialogContentState extends State<_RenovarDialogContent> {
         planId: planId,
         amount: planAmount,
       );
+
+      final periodo =
+          '${ahora.year.toString().padLeft(4, '0')}-${ahora.month.toString().padLeft(2, '0')}-01';
+      final transaccion = _transaccionController.text.trim();
+      await widget.supabase.from('app_dat_cobro_licencia').upsert({
+        'id_suscripcion': idSuscripcionActual,
+        'periodo': periodo,
+        'recibido_usd': recibidoUsd,
+        'recibido_cup': recibidoCup,
+        'transaccion': transaccion.isEmpty ? null : transaccion,
+        'updated_at': ahora.toIso8601String(),
+      }, onConflict: 'id_suscripcion,periodo');
 
       // Si es plan pro, buscar todas las tiendas del gerente y aplicar el mismo plan
       if (esPlanPro) {
@@ -1656,11 +1710,18 @@ class _RenovarDialogContentState extends State<_RenovarDialogContent> {
             .eq('id_plan', planId)
             .maybeSingle();
 
+    await widget.supabase
+        .from('app_suscripciones_renovaciones_resumen')
+        .delete()
+        .eq('id_mes', month)
+        .eq('id_anno', year)
+        .eq('id_tienda', storeId)
+        .neq('id_plan', planId);
+
     if (existing != null && existing['id'] != null) {
-      final currentTotal = (existing['total_pagado'] as num?)?.toDouble() ?? 0;
       await widget.supabase
           .from('app_suscripciones_renovaciones_resumen')
-          .update({'total_pagado': currentTotal + amount})
+          .update({'total_pagado': amount})
           .eq('id', existing['id']);
     } else {
       await widget.supabase
@@ -1798,8 +1859,42 @@ class _RenovarDialogContentState extends State<_RenovarDialogContent> {
                     );
                   }).toList(),
               onChanged: (plan) {
-                setState(() => _planSeleccionado = plan);
+                setState(() {
+                  _planSeleccionado = plan;
+                  _aplicarMontosDelPlan();
+                });
               },
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _usdController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'USD recibido',
+                border: OutlineInputBorder(),
+                helperText: 'Si la transferencia no coincide con el plan, corrígelo',
+              ),
+              onChanged: (_) => _usdEditado = true,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _cupController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                labelText: 'CUP recibido',
+                border: const OutlineInputBorder(),
+                helperText:
+                    'Se sugiere el plan × tasa (${_tasaUsd.toStringAsFixed(2)}). El reparto usa este monto.',
+              ),
+              onChanged: (_) => _cupEditado = true,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _transaccionController,
+              decoration: const InputDecoration(
+                labelText: 'Transacción',
+                border: OutlineInputBorder(),
+              ),
             ),
             const SizedBox(height: 16),
             const Text('Fecha de Vencimiento:'),
@@ -1938,7 +2033,10 @@ class _AsignarAgenteDialogContentState
 
   Future<void> _loadAgentes() async {
     try {
-      final agentes = await AgenteService.getAgentes(soloActivos: true);
+      final agentes = await AgenteService.getAgentes(
+        soloActivos: true,
+        soloDespliegue: true,
+      );
       if (mounted) {
         setState(() {
           _agentes = agentes;
@@ -2158,7 +2256,10 @@ class _EditLicenciaDialogContentState
           .eq('es_activo', true)
           .order('id', ascending: true);
 
-      final agentes = await AgenteService.getAgentes(soloActivos: true);
+      final agentes = await AgenteService.getAgentes(
+        soloActivos: true,
+        soloDespliegue: true,
+      );
 
       if (mounted) {
         setState(() {

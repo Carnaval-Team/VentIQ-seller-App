@@ -28,6 +28,12 @@ class ServerTimeService {
   Duration _offset = Duration.zero;
   DateTime? _lastSyncedAt;
   bool _loadedFromDisk = false;
+  DateTime? _serverTimeAtSync;
+  final Stopwatch _elapsedSinceSync = Stopwatch();
+  final StreamController<void> _clockChanges = StreamController<void>.broadcast(
+    sync: true,
+  );
+  Stream<void> get clockChanges => _clockChanges.stream;
 
   /// Desfasaje actual conocido (servidor - dispositivo). Positivo si el
   /// servidor va adelantado respecto al dispositivo.
@@ -39,7 +45,9 @@ class ServerTimeService {
   /// Hora "corregida" equivalente a la del servidor, calculada a partir del
   /// reloj local del dispositivo + el último offset conocido. Si nunca se ha
   /// podido sincronizar, equivale a `DateTime.now()`.
-  DateTime now() => DateTime.now().add(_offset);
+  DateTime now() =>
+      _serverTimeAtSync?.add(_elapsedSinceSync.elapsed) ??
+      DateTime.now().add(_offset);
 
   /// Carga el offset persistido (llamar una vez al iniciar la app).
   Future<void> loadPersistedOffset() async {
@@ -54,6 +62,10 @@ class ServerTimeService {
       if (syncedAtStr != null) {
         _lastSyncedAt = DateTime.tryParse(syncedAtStr);
       }
+      _serverTimeAtSync = DateTime.now().add(_offset);
+      _elapsedSinceSync
+        ..reset()
+        ..start();
       _loadedFromDisk = true;
       print(
         '🕒 ServerTimeService: offset persistido cargado '
@@ -101,6 +113,11 @@ class ServerTimeService {
   Future<void> _applyOffset(Duration newOffset) async {
     _offset = newOffset;
     _lastSyncedAt = DateTime.now();
+    _serverTimeAtSync = _lastSyncedAt!.add(_offset);
+    _elapsedSinceSync
+      ..reset()
+      ..start();
+    _clockChanges.add(null);
     print(
       '🕒 ServerTimeService: offset actualizado = ${_offset.inSeconds}s '
       '(servidor ${_offset.isNegative ? "atrás" : "adelante"} del dispositivo)',

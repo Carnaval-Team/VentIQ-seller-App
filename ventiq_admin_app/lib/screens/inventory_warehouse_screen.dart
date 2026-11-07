@@ -8,6 +8,7 @@ import '../services/user_preferences_service.dart';
 import '../services/export_service.dart';
 import '../services/warehouse_valuation_service.dart';
 import '../widgets/export_dialog.dart';
+import '../services/permissions_service.dart';
 
 class InventoryWarehouseScreen extends StatefulWidget {
   const InventoryWarehouseScreen({super.key});
@@ -28,6 +29,7 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
   // State variables
   bool _isLoading = false;
   String? _error;
+  bool _canViewGanancias = false;
 
   // Data
   List<Warehouse> _warehouses = [];
@@ -60,9 +62,12 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
   }
 
   Future<void> _loadInitialData() async {
+    final canViewGanancias = await PermissionsService().canViewGanancias();
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
       _error = null;
+      _canViewGanancias = canViewGanancias;
     });
 
     try {
@@ -472,17 +477,18 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
               cup: totales.valorVentaCup,
               icon: Icons.sell_outlined,
             ),
-            const SizedBox(height: 10),
-            const Divider(height: 1, color: Colors.white24),
-            const SizedBox(height: 10),
-            // Ganancia total
-            _buildValuationMetricRow(
-              label: 'Ganancia potencial',
-              usd: totales.gananciaUsd,
-              cup: totales.gananciaCup,
-              icon: Icons.trending_up,
-              highlight: true,
-            ),
+            if (_canViewGanancias) ...[
+              const SizedBox(height: 10),
+              const Divider(height: 1, color: Colors.white24),
+              const SizedBox(height: 10),
+              _buildValuationMetricRow(
+                label: 'Ganancia potencial',
+                usd: totales.gananciaUsd,
+                cup: totales.gananciaCup,
+                icon: Icons.trending_up,
+                highlight: true,
+              ),
+            ],
           ],
         ),
       ),
@@ -587,13 +593,14 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
             color: const Color(0xFF10B981),
             icon: Icons.sell_outlined,
           ),
-          _buildValChip(
-            label: 'Ganancia',
-            usd: wv.gananciaUsd,
-            cup: wv.gananciaCup,
-            color: const Color(0xFFFF8C42),
-            icon: Icons.trending_up,
-          ),
+          if (_canViewGanancias)
+            _buildValChip(
+              label: 'Ganancia',
+              usd: wv.gananciaUsd,
+              cup: wv.gananciaCup,
+              color: const Color(0xFFFF8C42),
+              icon: Icons.trending_up,
+            ),
         ],
       ),
     );
@@ -678,13 +685,14 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
             color: const Color(0xFF10B981),
             icon: Icons.sell_outlined,
           ),
-          _buildValChip(
-            label: 'Ganancia',
-            usd: zv.gananciaUsd,
-            cup: zv.gananciaCup,
-            color: const Color(0xFFFF8C42),
-            icon: Icons.trending_up,
-          ),
+          if (_canViewGanancias)
+            _buildValChip(
+              label: 'Ganancia',
+              usd: zv.gananciaUsd,
+              cup: zv.gananciaCup,
+              color: const Color(0xFFFF8C42),
+              icon: Icons.trending_up,
+            ),
         ],
       ),
     );
@@ -716,12 +724,13 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
           cup: pv.valorVentaCup,
           color: const Color(0xFF10B981),
         ),
-        _buildMiniValChip(
-          label: 'Ganancia',
-          usd: pv.gananciaUsd,
-          cup: pv.gananciaCup,
-          color: const Color(0xFFFF8C42),
-        ),
+        if (_canViewGanancias)
+          _buildMiniValChip(
+            label: 'Ganancia',
+            usd: pv.gananciaUsd,
+            cup: pv.gananciaCup,
+            color: const Color(0xFFFF8C42),
+          ),
       ],
     );
   }

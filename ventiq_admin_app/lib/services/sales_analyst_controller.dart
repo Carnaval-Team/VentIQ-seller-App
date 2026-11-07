@@ -4,6 +4,7 @@ import '../models/sales.dart';
 import '../models/sales_analyst_models.dart';
 import 'sales_analyst_service.dart';
 import 'sales_service.dart';
+import 'permissions_service.dart';
 
 class SalesAnalystContextSnapshot {
   final DateTime startDate;
@@ -96,6 +97,19 @@ class SalesAnalystController extends ChangeNotifier {
     _setLoading(true);
 
     try {
+      final includeProfit = await PermissionsService().canViewGanancias();
+      if (!includeProfit) {
+        final lower = trimmed.toLowerCase();
+        const blocked = ['ganancia', 'margen', 'utilidad', 'rentab', 'costo'];
+        if (blocked.any(lower.contains)) {
+          _addAssistantMessage(
+            'No tienes acceso a información de ganancias, márgenes o costos.',
+            isError: true,
+          );
+          return;
+        }
+      }
+
       final contextPayload = _service.buildContext(
         startDate: context.startDate,
         endDate: context.endDate,
@@ -108,6 +122,7 @@ class SalesAnalystController extends ChangeNotifier {
         selectedWarehouseId: context.selectedWarehouseId,
         selectedWarehouseName: context.selectedWarehouseName,
         productAnalysis: context.productAnalysis,
+        includeProfit: includeProfit,
       );
 
       final response = await _service.analyze(

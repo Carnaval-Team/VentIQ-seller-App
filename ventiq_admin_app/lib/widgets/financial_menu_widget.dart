@@ -2,11 +2,28 @@ import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../screens/production_costs_screen.dart';
 import '../utils/navigation_guard.dart';
+import '../services/permissions_service.dart';
 import '../screens/cost_assignments_screen.dart';
 import '../screens/financial_configuration_screen.dart';
 
-class FinancialMenuWidget extends StatelessWidget {
+class FinancialMenuWidget extends StatefulWidget {
   const FinancialMenuWidget({super.key});
+
+  @override
+  State<FinancialMenuWidget> createState() => _FinancialMenuWidgetState();
+}
+
+class _FinancialMenuWidgetState extends State<FinancialMenuWidget> {
+  bool _canViewGanancias = false;
+
+  @override
+  void initState() {
+    super.initState();
+    PermissionsService().canViewGanancias().then((allowed) {
+      if (!mounted) return;
+      setState(() => _canViewGanancias = allowed);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -18,38 +35,40 @@ class FinancialMenuWidget extends StatelessWidget {
       tooltip: 'Módulo Financiero',
       onSelected: (value) => _navigateToModule(context, value),
       itemBuilder: (context) => [
-        const PopupMenuItem(
-          value: 'dashboard',
-          child: Row(
-            children: [
-              Icon(Icons.dashboard, color: AppColors.primary),
-              SizedBox(width: 12),
-              Text('Dashboard Financiero'),
-            ],
+        if (_canViewGanancias) ...[
+          const PopupMenuItem(
+            value: 'dashboard',
+            child: Row(
+              children: [
+                Icon(Icons.dashboard, color: AppColors.primary),
+                SizedBox(width: 12),
+                Text('Dashboard Financiero'),
+              ],
+            ),
           ),
-        ),
-        const PopupMenuDivider(),
-        const PopupMenuItem(
-          value: 'setup',
-          child: Row(
-            children: [
-              Icon(Icons.settings, color: AppColors.primary),
-              SizedBox(width: 12),
-              Text('Configuración'),
-            ],
+          const PopupMenuDivider(),
+          const PopupMenuItem(
+            value: 'setup',
+            child: Row(
+              children: [
+                Icon(Icons.settings, color: AppColors.primary),
+                SizedBox(width: 12),
+                Text('Configuración'),
+              ],
+            ),
           ),
-        ),
-        const PopupMenuItem(
-          value: 'reports',
-          child: Row(
-            children: [
-              Icon(Icons.analytics, color: AppColors.primary),
-              SizedBox(width: 12),
-              Text('Reportes Avanzados'),
-            ],
+          const PopupMenuItem(
+            value: 'reports',
+            child: Row(
+              children: [
+                Icon(Icons.analytics, color: AppColors.primary),
+                SizedBox(width: 12),
+                Text('Reportes Avanzados'),
+              ],
+            ),
           ),
-        ),
-        const PopupMenuDivider(),
+          const PopupMenuDivider(),
+        ],
         const PopupMenuItem(
           value: 'expenses',
           child: Row(
@@ -60,6 +79,7 @@ class FinancialMenuWidget extends StatelessWidget {
             ],
           ),
         ),
+        if (_canViewGanancias)
         const PopupMenuItem(
           value: 'budgets',
           child: Row(
@@ -70,6 +90,7 @@ class FinancialMenuWidget extends StatelessWidget {
             ],
           ),
         ),
+        if (_canViewGanancias)
         const PopupMenuItem(
           value: 'projections',
           child: Row(

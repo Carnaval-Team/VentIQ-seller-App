@@ -26,6 +26,8 @@ import '../services/sales_analyst_controller.dart';
 import '../services/subscription_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/permissions_service.dart';
+import '../widgets/fdi_liquidacion_dialog.dart';
+import '../widgets/sales_totals_summary.dart';
 
 // Importación condicional para descargas en web
 import '../services/web_download_stub.dart'
@@ -43,6 +45,7 @@ class _SalesScreenState extends State<SalesScreen>
     with TickerProviderStateMixin {
   TabController? _tabController;
   bool _canViewRealTime = true;
+  bool _canViewGanancias = false;
   bool _tabsReady = false;
   List<Sale> _sales = [];
   List<SalesVendorReport> _vendorReports = [];
@@ -78,7 +81,6 @@ class _SalesScreenState extends State<SalesScreen>
   final ScrollController _analystScrollController = ScrollController();
   final FocusNode _analystFocusNode = FocusNode();
   final List<String> _analystSuggestions = [
-    '¿Cuáles productos dejan más ganancia?',
     'Muéstrame las ventas por proveedor.',
     'Top 5 productos más vendidos del período.',
     '¿Cómo evolucionaron las ventas en el rango?',
@@ -235,10 +237,7 @@ class _SalesScreenState extends State<SalesScreen>
                     color: Colors.white,
                   ),
                 )
-              : const Icon(
-                  Icons.download_outlined,
-                  color: Colors.white,
-                ),
+              : const Icon(Icons.download_outlined, color: Colors.white),
         ),
       ),
     );
@@ -404,17 +403,19 @@ class _SalesScreenState extends State<SalesScreen>
               ),
             ),
             pw.SizedBox(height: 12),
-            pw.Text(
-              'Costos y Ganancias (por producto)',
-              style: pw.TextStyle(
-                fontSize: 14,
-                fontWeight: pw.FontWeight.bold,
-                color: PdfColor.fromHex('#0F172A'),
+            if (_canViewGanancias) ...[
+              pw.Text(
+                'Costos y Ganancias (por producto)',
+                style: pw.TextStyle(
+                  fontSize: 14,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColor.fromHex('#0F172A'),
+                ),
               ),
-            ),
-            pw.SizedBox(height: 6),
-            _buildProductCostsTable(productReports),
-            pw.SizedBox(height: 16),
+              pw.SizedBox(height: 6),
+              _buildProductCostsTable(productReports),
+              pw.SizedBox(height: 16),
+            ],
             _buildPdfSummaryTotals(
               ventaTotal: ventaTotal,
               descuentoTotal: descuentoTotal,
@@ -609,16 +610,13 @@ class _SalesScreenState extends State<SalesScreen>
   String _formatDesglosePorMoneda(Map<String, double> porMoneda) {
     final entradas = porMoneda.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
-    return entradas
-        .map((e) => _formatMontoNativo(e.value, e.key))
-        .join(' · ');
+    return entradas.map((e) => _formatMontoNativo(e.value, e.key)).join(' · ');
   }
 
   /// Con una sola divisa el desglose no aporta nada: la salida de la pantalla
   /// debe ser idéntica a la de antes de existir el multimoneda. El umbral es el
   /// número de divisas, **no** su código: no hay ninguna rama atada a `'CUP'`.
-  bool _hayVariasMonedas(Map<String, double> porMoneda) =>
-      porMoneda.length > 1;
+  bool _hayVariasMonedas(Map<String, double> porMoneda) => porMoneda.length > 1;
 
   /// El mismo umbral —más de una divisa— sobre las filas que devuelve
   /// `fn_reporte_ventas_por_moneda` (`VentasPorMoneda`). Lo usa la tarjeta de
@@ -821,7 +819,11 @@ class _SalesScreenState extends State<SalesScreen>
           // Los tres métodos de pago suman importes **nativos** de divisas
           // distintas: se quedan sin consolidar, como en la pantalla.
           if (totalEfectivoOferta > 0)
-            _pdfSummaryRow('Efectivo (Oferta)', totalEfectivoOferta, nativo: true),
+            _pdfSummaryRow(
+              'Efectivo (Oferta)',
+              totalEfectivoOferta,
+              nativo: true,
+            ),
           if (totalEfectivoRegular > 0)
             _pdfSummaryRow(
               'Efectivo (Regular)',
@@ -829,11 +831,7 @@ class _SalesScreenState extends State<SalesScreen>
               nativo: true,
             ),
           if (totalTransferencias > 0)
-            _pdfSummaryRow(
-              'Transferencias',
-              totalTransferencias,
-              nativo: true,
-            ),
+            _pdfSummaryRow('Transferencias', totalTransferencias, nativo: true),
           // Desglose por divisa del resumen de caja y transferencias. Las tres
           // líneas de arriba suman importes nativos de divisas distintas y solo
           // cuadran con una única divisa; el desglose las desambigua. Va con
@@ -1362,10 +1360,10 @@ class _SalesScreenState extends State<SalesScreen>
             _pdfHeaderCell('Producto'),
             _pdfHeaderCell('Cant.'),
             _pdfHeaderCell('Precio'),
-            _pdfHeaderCell('Costo'),
-            _pdfHeaderCell('Costo total'),
+            _pdfHeaderCell(_canViewGanancias ? 'Costo' : ''),
+            _pdfHeaderCell(_canViewGanancias ? 'Costo total' : ''),
             _pdfHeaderCell('Subtotal'),
-            _pdfHeaderCell('Ganancia'),
+            _pdfHeaderCell(_canViewGanancias ? 'Ganancia' : ''),
           ],
         ),
         ...items
@@ -1413,12 +1411,14 @@ class _SalesScreenState extends State<SalesScreen>
                     _pdfBodyCell(cantidad),
                     _pdfBodyCell(precio),
                     _pdfBodyCell(
-                      MonedaConsolidacionService.formatear(costoUnitario),
+                      _canViewGanancias
+                          ? MonedaConsolidacionService.formatear(costoUnitario)
+                          : '',
                     ),
-                    _pdfBodyCell(costoTotal),
+                    _pdfBodyCell(_canViewGanancias ? costoTotal : ''),
                     _pdfBodyCell(subtotal),
                     _pdfBodyCell(
-                      ganancia,
+                      _canViewGanancias ? ganancia : '',
                       isBold: true,
                       color: gananciaColor,
                     ),
@@ -1544,16 +1544,17 @@ class _SalesScreenState extends State<SalesScreen>
         children: [
           _pdfSummaryRow('Subtotal', original),
           if (descuento > 0) _pdfSummaryRow('Descuento', -descuento),
-          _pdfSummaryRow('Costo', -costo),
+          if (_canViewGanancias) _pdfSummaryRow('Costo', -costo),
           pw.Divider(height: 8, color: PdfColors.grey500, thickness: 0.5),
           _pdfSummaryRow('Total', total, isBold: true, fontSize: 12),
-          _pdfSummaryRow(
-            'Ganancia orden',
-            ganancia,
-            isBold: true,
-            positiveColor: PdfColor.fromHex('#15803D'),
-            negativeColor: PdfColor.fromHex('#DC2626'),
-          ),
+          if (_canViewGanancias)
+            _pdfSummaryRow(
+              'Ganancia orden',
+              ganancia,
+              isBold: true,
+              positiveColor: PdfColor.fromHex('#15803D'),
+              negativeColor: PdfColor.fromHex('#DC2626'),
+            ),
         ],
       ),
     );
@@ -1600,8 +1601,8 @@ class _SalesScreenState extends State<SalesScreen>
             _pdfHeaderCell('Producto'),
             _pdfHeaderCell('Cant.'),
             _pdfHeaderCell('Precio'),
-            _pdfHeaderCell('Costo'),
-            _pdfHeaderCell('Ganancia total'),
+            _pdfHeaderCell(_canViewGanancias ? 'Costo' : ''),
+            _pdfHeaderCell(_canViewGanancias ? 'Ganancia total' : ''),
           ],
         ),
         ...sorted.map((p) {
@@ -1627,10 +1628,14 @@ class _SalesScreenState extends State<SalesScreen>
                 MonedaConsolidacionService.formatear(p.precioVentaCup),
               ),
               _pdfBodyCell(
-                MonedaConsolidacionService.formatear(p.precioCostoCup),
+                _canViewGanancias
+                    ? MonedaConsolidacionService.formatear(p.precioCostoCup)
+                    : '',
               ),
               _pdfBodyCell(
-                MonedaConsolidacionService.formatear(gananciaLinea),
+                _canViewGanancias
+                    ? MonedaConsolidacionService.formatear(gananciaLinea)
+                    : '',
                 isBold: true,
                 color: gananciaColor,
               ),
@@ -1653,7 +1658,9 @@ class _SalesScreenState extends State<SalesScreen>
             _pdfBodyCell(''),
             _pdfBodyCell(''),
             _pdfBodyCell(
-              MonedaConsolidacionService.formatear(totalGanancia),
+              _canViewGanancias
+                  ? MonedaConsolidacionService.formatear(totalGanancia)
+                  : '',
               isBold: true,
               color: totalGananciaColor,
             ),
@@ -1692,20 +1699,22 @@ class _SalesScreenState extends State<SalesScreen>
           pw.SizedBox(height: 8),
           _pdfSummaryRow('Venta total', ventaTotal),
           _pdfSummaryRow('Descuento total', -descuentoTotal),
-          _pdfSummaryRow('Costo total', -costoTotal),
-          _pdfSummaryRow(
-            'Ganancia total',
-            gananciaTotal,
-            positiveColor: PdfColor.fromHex('#15803D'),
-            negativeColor: PdfColor.fromHex('#DC2626'),
-          ),
-          _pdfSummaryRow(
-            'Ganancias reales',
-            gananciasReales,
-            isBold: true,
-            positiveColor: PdfColor.fromHex('#15803D'),
-            negativeColor: PdfColor.fromHex('#DC2626'),
-          ),
+          if (_canViewGanancias) ...[
+            _pdfSummaryRow('Costo total', -costoTotal),
+            _pdfSummaryRow(
+              'Ganancia total',
+              gananciaTotal,
+              positiveColor: PdfColor.fromHex('#15803D'),
+              negativeColor: PdfColor.fromHex('#DC2626'),
+            ),
+            _pdfSummaryRow(
+              'Ganancias reales',
+              gananciasReales,
+              isBold: true,
+              positiveColor: PdfColor.fromHex('#15803D'),
+              negativeColor: PdfColor.fromHex('#DC2626'),
+            ),
+          ],
           _pdfSummaryRow('Pago total (pagos)', pagoTotal),
         ],
       ),
@@ -1770,9 +1779,7 @@ class _SalesScreenState extends State<SalesScreen>
     String texto(double importe) => nativo
         ? '\$${importe.toStringAsFixed(2)}'
         : MonedaConsolidacionService.formatear(importe);
-    final display = isNegative
-        ? '- ${texto(value.abs())}'
-        : texto(value);
+    final display = isNegative ? '- ${texto(value.abs())}' : texto(value);
     final defaultPositive = PdfColor.fromHex('#0F172A');
     final defaultNegative = PdfColor.fromHex('#DC2626');
     final valueColor = isNegative
@@ -1810,10 +1817,7 @@ class _SalesScreenState extends State<SalesScreen>
       children: [
         pw.Text(
           label,
-          style: pw.TextStyle(
-            fontSize: 11,
-            color: PdfColor.fromHex('#475569'),
-          ),
+          style: pw.TextStyle(fontSize: 11, color: PdfColor.fromHex('#475569')),
         ),
         pw.Text(
           value,
@@ -1830,6 +1834,7 @@ class _SalesScreenState extends State<SalesScreen>
   String _formatDateForPdf(DateTime date) {
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
   }
+
   List<SupplierSalesReport> _supplierReports = [];
   bool _isLoadingSuppliers = false;
   bool _isExportingPDF = false;
@@ -1912,9 +1917,12 @@ class _SalesScreenState extends State<SalesScreen>
   }
 
   Future<void> _initTabsAndData() async {
-    final canViewRealTime = await PermissionsService().canPerformAction(
-      'sales.view_realtime',
-    );
+    final results = await Future.wait([
+      PermissionsService().canPerformAction('sales.view_realtime'),
+      PermissionsService().canViewGanancias(),
+    ]);
+    final canViewRealTime = results[0];
+    final canViewGanancias = results[1];
     if (!mounted) return;
     _tabController?.dispose();
     final controller = TabController(
@@ -1924,6 +1932,7 @@ class _SalesScreenState extends State<SalesScreen>
     controller.addListener(_onTabChanged);
     setState(() {
       _canViewRealTime = canViewRealTime;
+      _canViewGanancias = canViewGanancias;
       _tabController = controller;
       _tabsReady = true;
     });
@@ -2540,6 +2549,7 @@ class _SalesScreenState extends State<SalesScreen>
   }
 
   Widget _buildMissingExchangeRateWarning() {
+    if (!_canViewGanancias) return const SizedBox.shrink();
     return Card(
       color: Colors.amber.shade50,
       child: Padding(
@@ -2876,10 +2886,7 @@ class _SalesScreenState extends State<SalesScreen>
     DataColumn header(String label, {bool numeric = false}) {
       return DataColumn(
         numeric: numeric,
-        label: Text(
-          label,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
+        label: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
       );
     }
 
@@ -2913,10 +2920,7 @@ class _SalesScreenState extends State<SalesScreen>
             ),
             child: Text(
               fila.moneda,
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 12,
-              ),
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
             ),
           ),
         ),
@@ -3024,8 +3028,10 @@ class _SalesScreenState extends State<SalesScreen>
   /// Único total legítimo del reporte: suma la columna consolidada, que la RPC
   /// ya dejó en una sola divisa. No se totalizan operaciones —una venta con pago
   /// mixto cuenta en dos divisas— ni importes nativos, que no son homogéneos.
-  double _totalConsolidadoEn(List<VentasPorMoneda> filas) =>
-      filas.fold<double>(0.0, (suma, fila) => suma + _importeConsolidadoDe(fila));
+  double _totalConsolidadoEn(List<VentasPorMoneda> filas) => filas.fold<double>(
+    0.0,
+    (suma, fila) => suma + _importeConsolidadoDe(fila),
+  );
 
   // ---------------------------------------------------------------------------
   // Exportación de «Por moneda» (PDF / Excel).
@@ -3087,8 +3093,7 @@ class _SalesScreenState extends State<SalesScreen>
   /// la divisa de consolidación participa como una más (no se separa). No se
   /// totalizan operaciones —una venta con pago mixto cuenta en dos divisas— ni
   /// importes nativos, que no son homogéneos.
-  double get _totalConsolidado =>
-      _totalConsolidadoEn(_ventasPorMoneda);
+  double get _totalConsolidado => _totalConsolidadoEn(_ventasPorMoneda);
 
   /// Fila de total: solo la columna del consolidado lleva importe. Las demás
   /// quedan con guion porque no son sumables (ver [_totalConsolidado]).
@@ -3220,10 +3225,7 @@ class _SalesScreenState extends State<SalesScreen>
       );
     }
     sheet.appendRow(
-      _porMonedaExcelRow(
-        _porMonedaTotalRow(filas),
-        _totalConsolidadoEn(filas),
-      ),
+      _porMonedaExcelRow(_porMonedaTotalRow(filas), _totalConsolidadoEn(filas)),
     );
   }
 
@@ -3617,35 +3619,55 @@ class _SalesScreenState extends State<SalesScreen>
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: AppColors.border),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                Expanded(
-                  child: _buildSummaryColumn(
-                    'Ventas Totales · $_monedaConsolidacion',
-                    totalVentas,
-                    AppColors.success,
-                  ),
-                ),
-                Expanded(
-                  child: _buildSummaryColumn(
-                    'Costo Total',
-                    totalCosto,
-                    AppColors.warning,
-                  ),
-                ),
-                Expanded(
-                  child: _buildSummaryColumn(
-                    'Ganancia Total',
-                    totalGanancia,
-                    AppColors.primary,
-                  ),
-                ),
-              ],
+            child: SalesTotalsSummary(
+              ventas: MonedaConsolidacionService.convertir(totalVentas),
+              costo: MonedaConsolidacionService.convertir(totalCosto),
+              ganancia: MonedaConsolidacionService.convertir(totalGanancia),
+              showProfit: _canViewGanancias,
+              currency: _monedaConsolidacion,
             ),
           ),
 
           const SizedBox(height: 16),
+
+          // Botón "Crear liquidación" del Fondo de Inversión (solo Dueño)
+          FutureBuilder<bool>(
+            future: PermissionsService().canViewGanancias(),
+            builder: (context, snapshot) {
+              if (snapshot.data != true) {
+                return const SizedBox.shrink();
+              }
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      final liquidada = await showDialog<bool>(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (_) => FdiLiquidacionDialog(
+                          desde: _startDate,
+                          hasta: _endDate,
+                        ),
+                      );
+                      if (liquidada == true && mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Liquidación creada correctamente'),
+                            backgroundColor: AppColors.success,
+                          ),
+                        );
+                        await _loadSupplierReports();
+                      }
+                    },
+                    icon: const Icon(Icons.savings_outlined),
+                    label: const Text('Crear liquidación'),
+                  ),
+                ),
+              );
+            },
+          ),
 
           _isLoadingSuppliers
               ? const Padding(
@@ -3668,32 +3690,34 @@ class _SalesScreenState extends State<SalesScreen>
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: DataTable(
-                      columns: const [
-                        DataColumn(
+                      columns: [
+                        const DataColumn(
                           label: Text(
                             'Proveedor',
                             style: TextStyle(fontWeight: FontWeight.bold),
                           ),
                         ),
-                        DataColumn(
+                        const DataColumn(
                           label: Text(
                             'Ventas',
                             style: TextStyle(fontWeight: FontWeight.bold),
                           ),
                         ),
-                        DataColumn(
-                          label: Text(
-                            'Costo',
-                            style: TextStyle(fontWeight: FontWeight.bold),
+                        if (_canViewGanancias) ...const [
+                          DataColumn(
+                            label: Text(
+                              'Costo',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
                           ),
-                        ),
-                        DataColumn(
-                          label: Text(
-                            'Ganancia',
-                            style: TextStyle(fontWeight: FontWeight.bold),
+                          DataColumn(
+                            label: Text(
+                              'Ganancia',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
                           ),
-                        ),
-                        DataColumn(
+                        ],
+                        const DataColumn(
                           label: Text(
                             'Acciones',
                             style: TextStyle(fontWeight: FontWeight.bold),
@@ -3715,27 +3739,29 @@ class _SalesScreenState extends State<SalesScreen>
                                   ),
                                 ),
                               ),
-                              DataCell(
-                                Text(
-                                  MonedaConsolidacionService.formatear(
-                                    report.totalCosto,
-                                  ),
-                                  style: const TextStyle(
-                                    color: AppColors.warning,
-                                  ),
-                                ),
-                              ),
-                              DataCell(
-                                Text(
-                                  MonedaConsolidacionService.formatear(
-                                    report.totalGanancia,
-                                  ),
-                                  style: const TextStyle(
-                                    color: AppColors.primary,
-                                    fontWeight: FontWeight.bold,
+                              if (_canViewGanancias) ...[
+                                DataCell(
+                                  Text(
+                                    MonedaConsolidacionService.formatear(
+                                      report.totalCosto,
+                                    ),
+                                    style: const TextStyle(
+                                      color: AppColors.warning,
+                                    ),
                                   ),
                                 ),
-                              ),
+                                DataCell(
+                                  Text(
+                                    MonedaConsolidacionService.formatear(
+                                      report.totalGanancia,
+                                    ),
+                                    style: const TextStyle(
+                                      color: AppColors.primary,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
                               DataCell(
                                 ElevatedButton.icon(
                                   onPressed: () =>
@@ -3788,28 +3814,32 @@ class _SalesScreenState extends State<SalesScreen>
                                 ),
                               ),
                             ),
-                            DataCell(
-                              Text(
-                                MonedaConsolidacionService.formatear(totalCosto),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
-                                  color: AppColors.warning,
+                            if (_canViewGanancias) ...[
+                              DataCell(
+                                Text(
+                                  MonedaConsolidacionService.formatear(
+                                    totalCosto,
+                                  ),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                    color: AppColors.warning,
+                                  ),
                                 ),
                               ),
-                            ),
-                            DataCell(
-                              Text(
-                                MonedaConsolidacionService.formatear(
-                                  totalGanancia,
-                                ),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
-                                  color: AppColors.primary,
+                              DataCell(
+                                Text(
+                                  MonedaConsolidacionService.formatear(
+                                    totalGanancia,
+                                  ),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                    color: AppColors.primary,
+                                  ),
                                 ),
                               ),
-                            ),
+                            ],
                             const DataCell(Text('')),
                           ],
                         ),
@@ -4080,9 +4110,7 @@ class _SalesScreenState extends State<SalesScreen>
                 trailing: Text(
                   // `total_operacion` es el importe de la operación: CUP por
                   // construcción.
-                  MonedaConsolidacionService.formatear(
-                    _toDoubleSafe(total),
-                  ),
+                  MonedaConsolidacionService.formatear(_toDoubleSafe(total)),
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 14,
@@ -4163,9 +4191,7 @@ class _SalesScreenState extends State<SalesScreen>
                 trailing: Text(
                   // `total_operacion` es el importe de la operación: CUP por
                   // construcción.
-                  MonedaConsolidacionService.formatear(
-                    _toDoubleSafe(total),
-                  ),
+                  MonedaConsolidacionService.formatear(_toDoubleSafe(total)),
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     color: AppColors.success,
@@ -4201,10 +4227,8 @@ class _SalesScreenState extends State<SalesScreen>
     // ¿La orden mezcla divisas? Solo entonces se escribe el código junto al
     // importe de cada pago: con una sola divisa el desglose debe verse igual que
     // siempre. Se decide por número de divisas, nunca por cuál sea el código.
-    final mostrarDivisaEnPagos = pagos
-            .map((p) => _monedaDePago((p as Map)['moneda']))
-            .toSet()
-            .length >
+    final mostrarDivisaEnPagos =
+        pagos.map((p) => _monedaDePago((p as Map)['moneda'])).toSet().length >
         1;
 
     return Container(
@@ -5626,32 +5650,6 @@ class _SalesScreenState extends State<SalesScreen>
     }
   }
 
-  /// Columna del resumen de «Proveedores».
-  ///
-  /// Todas las cifras de esta tarjeta son CUP por construcción: las de ventas
-  /// porque `totalVentas` es `ingresos_totales` de la RPC —importe de la línea
-  /// de la operación—, y las de coste/ganancia porque son importes de catálogo.
-  /// Por eso se formatean con la moneda de consolidación.
-  Widget _buildSummaryColumn(String label, double value, Color color) {
-    return Column(
-      children: [
-        Text(
-          MonedaConsolidacionService.formatear(value),
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: color,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-        ),
-      ],
-    );
-  }
-
   String _formatDateRangeLabel() {
     final startFormatted =
         '${_startDate.day.toString().padLeft(2, '0')}/${_startDate.month.toString().padLeft(2, '0')}/${_startDate.year}';
@@ -5791,6 +5789,22 @@ class _SalesScreenState extends State<SalesScreen>
                   await _exportProductSalesReportExcel();
                 },
               ),
+              ListTile(
+                leading: const Icon(Icons.receipt_long),
+                title: const Text('Reporte de ventas por orden en PDF'),
+                onTap: () async {
+                  Navigator.of(sheetContext).pop();
+                  await _exportOrdersReportPdf();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.receipt_long),
+                title: const Text('Reporte de ventas por orden en Excel'),
+                onTap: () async {
+                  Navigator.of(sheetContext).pop();
+                  await _exportOrdersReportExcel();
+                },
+              ),
             ],
           ),
         );
@@ -5873,17 +5887,22 @@ class _SalesScreenState extends State<SalesScreen>
             ),
             pw.SizedBox(height: 12),
             pw.TableHelper.fromTextArray(
-              headers: const [
+              headers: [
                 'Producto',
                 'Precio (u)',
                 'Cant. vendidos',
                 'Equiv. u. base',
                 'Total venta',
-                'Costo (u)',
-                'Total costo',
-                'Ganancia',
+                if (_canViewGanancias) ...[
+                  'Costo (u)',
+                  'Total costo',
+                  'Ganancia',
+                ],
               ],
-              data: rows,
+              data: rows.map((row) {
+                if (_canViewGanancias) return row;
+                return row.sublist(0, 5);
+              }).toList(),
               headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
               headerDecoration: const pw.BoxDecoration(
                 color: PdfColors.grey300,
@@ -5962,9 +5981,11 @@ class _SalesScreenState extends State<SalesScreen>
         excel.TextCellValue('Cant. vendidos'),
         excel.TextCellValue('Equiv. u. base'),
         excel.TextCellValue('Total venta'),
-        excel.TextCellValue('Costo unitario'),
-        excel.TextCellValue('Total costo'),
-        excel.TextCellValue('Ganancia'),
+        if (_canViewGanancias) ...[
+          excel.TextCellValue('Costo unitario'),
+          excel.TextCellValue('Total costo'),
+          excel.TextCellValue('Ganancia'),
+        ],
       ]);
       double totalQuantity = 0;
       double totalRevenue = 0;
@@ -5981,7 +6002,9 @@ class _SalesScreenState extends State<SalesScreen>
           excel.TextCellValue(report.nombreProducto),
           // Dinero CUP por construcción: se convierte —no se formatea— para que
           // la celda siga siendo un número sumable en Excel.
-          excel.DoubleCellValue(MonedaConsolidacionService.convertir(salePrice)),
+          excel.DoubleCellValue(
+            MonedaConsolidacionService.convertir(salePrice),
+          ),
           excel.TextCellValue(
             report.cantidadFormateada.isNotEmpty
                 ? report.cantidadFormateada
@@ -5989,11 +6012,15 @@ class _SalesScreenState extends State<SalesScreen>
           ),
           excel.DoubleCellValue(report.equivUnidadesBase),
           excel.DoubleCellValue(MonedaConsolidacionService.convertir(revenue)),
-          excel.DoubleCellValue(MonedaConsolidacionService.convertir(unitCost)),
-          excel.DoubleCellValue(MonedaConsolidacionService.convertir(cost)),
-          excel.DoubleCellValue(
-            MonedaConsolidacionService.convertir(report.gananciaReportada),
-          ),
+          if (_canViewGanancias) ...[
+            excel.DoubleCellValue(
+              MonedaConsolidacionService.convertir(unitCost),
+            ),
+            excel.DoubleCellValue(MonedaConsolidacionService.convertir(cost)),
+            excel.DoubleCellValue(
+              MonedaConsolidacionService.convertir(report.gananciaReportada),
+            ),
+          ],
         ]);
       }
       sheet.appendRow([]);
@@ -6004,12 +6031,18 @@ class _SalesScreenState extends State<SalesScreen>
         // cuadra en la de equivalentes.
         excel.TextCellValue(''),
         excel.DoubleCellValue(totalQuantity),
-        excel.DoubleCellValue(MonedaConsolidacionService.convertir(totalRevenue)),
-        excel.TextCellValue(''),
-        excel.DoubleCellValue(MonedaConsolidacionService.convertir(totalCost)),
         excel.DoubleCellValue(
-          MonedaConsolidacionService.convertir(totalRevenue - totalCost),
+          MonedaConsolidacionService.convertir(totalRevenue),
         ),
+        if (_canViewGanancias) ...[
+          excel.TextCellValue(''),
+          excel.DoubleCellValue(
+            MonedaConsolidacionService.convertir(totalCost),
+          ),
+          excel.DoubleCellValue(
+            MonedaConsolidacionService.convertir(totalRevenue - totalCost),
+          ),
+        ],
       ]);
 
       // Desglose de lo cobrado por divisa, con las mismas columnas y el mismo
@@ -6033,6 +6066,261 @@ class _SalesScreenState extends State<SalesScreen>
         await Share.shareXFiles([
           XFile(file.path, mimeType: mime),
         ], text: 'Reporte de ventas por producto');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error exportando reporte: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isExportingProductHistory = false);
+    }
+  }
+
+  /// Obtiene los datos de la tienda para el encabezado de los reportes.
+  Future<
+    ({
+      String name,
+      String address,
+      String location,
+      String phone,
+      Uint8List? logoBytes,
+    })
+  >
+  _loadStoreHeaderData() async {
+    final storeId = await UserPreferencesService().getIdTienda();
+    Map<String, dynamic>? storeData;
+    if (storeId != null) {
+      storeData = await Supabase.instance.client
+          .from('app_dat_tienda')
+          .select('denominacion, direccion, ubicacion, phone, imagen_url')
+          .eq('id', storeId)
+          .maybeSingle();
+    }
+    final logoBytes = await _downloadImageBytes(
+      storeData?['imagen_url'] as String?,
+    );
+    return (
+      name: storeData?['denominacion'] as String? ?? 'Inventtia',
+      address: storeData?['direccion'] as String? ?? '',
+      location: storeData?['ubicacion'] as String? ?? '',
+      phone: storeData?['phone'] as String? ?? '',
+      logoBytes: logoBytes,
+    );
+  }
+
+  /// Reporte de ventas por orden en PDF: cada orden con sus productos,
+  /// cantidades e importe. Encabezado con datos de la tienda y período.
+  Future<void> _exportOrdersReportPdf() async {
+    setState(() => _isExportingProductHistory = true);
+    try {
+      final store = await _loadStoreHeaderData();
+      final orders = await _fetchOrdersForPdf(start: _startDate, end: _endDate);
+      if (orders.isEmpty) {
+        throw Exception('No hay órdenes de venta en el período seleccionado');
+      }
+      orders.sort((a, b) => a.fechaOperacion.compareTo(b.fechaOperacion));
+
+      final dateLabel =
+          '${_formatDateForPdf(_startDate)} - ${_formatDateForPdf(_endDate)}';
+      final totalGeneral = orders.fold<double>(0.0, (sum, o) {
+        final summary = _calculateDiscountSummary(o);
+        return sum + (summary['cobrado'] ?? o.totalOperacion);
+      });
+
+      final pdf = pw.Document();
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          build: (context) => [
+            _buildPdfHeader(
+              logoBytes: store.logoBytes,
+              storeName: store.name,
+              storeAddress: store.address,
+              storeLocation: store.location,
+              storePhone: store.phone,
+              dateLabel: 'Período consultado: $dateLabel',
+              reportTitle: 'Reporte de Ventas por Orden',
+              extraLines: [
+                'Fecha de consulta: ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}',
+              ],
+            ),
+            pw.SizedBox(height: 16),
+            pw.Text(
+              '${orders.length} órdenes · Total: \$${totalGeneral.toStringAsFixed(2)}',
+              style: pw.TextStyle(
+                fontSize: 12,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColor.fromHex('#0F172A'),
+              ),
+            ),
+            pw.SizedBox(height: 12),
+            ...orders.map(
+              (order) => pw.Container(
+                margin: const pw.EdgeInsets.only(bottom: 12),
+                padding: const pw.EdgeInsets.all(12),
+                decoration: pw.BoxDecoration(
+                  color: PdfColor.fromHex('#F8FAFC'),
+                  borderRadius: pw.BorderRadius.circular(10),
+                  border: pw.Border.all(color: PdfColors.grey300, width: 0.8),
+                ),
+                child: _buildVendorOrderPdfDetailSection(order),
+              ),
+            ),
+          ],
+        ),
+      );
+
+      final pdfBytes = await pdf.save();
+      final fileName =
+          'reporte_ventas_por_orden_${DateFormat('yyyyMMdd').format(_startDate)}_'
+          '${DateFormat('yyyyMMdd').format(_endDate)}.pdf';
+      if (kIsWeb) {
+        await Printing.sharePdf(bytes: pdfBytes, filename: fileName);
+      } else {
+        final output = await getTemporaryDirectory();
+        final file = File('${output.path}/$fileName');
+        await file.writeAsBytes(pdfBytes);
+        await Share.shareXFiles([
+          XFile(file.path, mimeType: 'application/pdf'),
+        ], text: 'Reporte de ventas por orden · $dateLabel');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error exportando reporte: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isExportingProductHistory = false);
+    }
+  }
+
+  /// Reporte de ventas por orden en Excel: una sección por orden con sus
+  /// productos, cantidades e importe, más total por orden y total general.
+  Future<void> _exportOrdersReportExcel() async {
+    setState(() => _isExportingProductHistory = true);
+    try {
+      final store = await _loadStoreHeaderData();
+      final orders = await _fetchOrdersForPdf(start: _startDate, end: _endDate);
+      if (orders.isEmpty) {
+        throw Exception('No hay órdenes de venta en el período seleccionado');
+      }
+      orders.sort((a, b) => a.fechaOperacion.compareTo(b.fechaOperacion));
+
+      final workbook = excel.Excel.createExcel();
+      workbook.delete('Sheet1');
+      final sheet = workbook['Ventas por orden'];
+
+      // Encabezado con datos de la tienda y período consultado
+      sheet.appendRow([excel.TextCellValue('Reporte de Ventas por Orden')]);
+      sheet.appendRow([
+        excel.TextCellValue('Tienda'),
+        excel.TextCellValue(store.name),
+      ]);
+      final storeAddressLine = [
+        if (store.address.isNotEmpty) store.address,
+        if (store.location.isNotEmpty) store.location,
+      ].join(' · ');
+      if (storeAddressLine.isNotEmpty) {
+        sheet.appendRow([
+          excel.TextCellValue('Dirección'),
+          excel.TextCellValue(storeAddressLine),
+        ]);
+      }
+      if (store.phone.isNotEmpty) {
+        sheet.appendRow([
+          excel.TextCellValue('Teléfono'),
+          excel.TextCellValue(store.phone),
+        ]);
+      }
+      sheet.appendRow([
+        excel.TextCellValue('Período consultado'),
+        excel.TextCellValue(
+          '${DateFormat('dd/MM/yyyy').format(_startDate)} - ${DateFormat('dd/MM/yyyy').format(_endDate)}',
+        ),
+      ]);
+      sheet.appendRow([
+        excel.TextCellValue('Fecha de consulta'),
+        excel.TextCellValue(
+          DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now()),
+        ),
+      ]);
+      sheet.appendRow([]);
+
+      double totalGeneral = 0;
+      for (final order in orders) {
+        final summary = _calculateDiscountSummary(order);
+        final cobrado = summary['cobrado'] ?? order.totalOperacion;
+        final cliente = order.detalles['cliente'] as Map<String, dynamic>?;
+        final clienteNombre = cliente?['nombre_completo']?.toString() ?? '';
+        final items = _filterUniqueOrderItems(
+          (order.detalles['items'] as List?) ?? [],
+        );
+
+        sheet.appendRow([
+          excel.TextCellValue(
+            'Orden #${order.idOperacion} · '
+            '${DateFormat('dd/MM/yyyy HH:mm').format(order.fechaOperacion)} · '
+            '${order.estadoNombre}'
+            '${clienteNombre.isNotEmpty ? ' · Cliente: $clienteNombre' : ''}',
+          ),
+        ]);
+        sheet.appendRow([
+          excel.TextCellValue('Producto'),
+          excel.TextCellValue('Cantidad'),
+          excel.TextCellValue('Importe'),
+        ]);
+        for (final item in items) {
+          final nombre =
+              item['producto_nombre']?.toString() ??
+              item['nombre']?.toString() ??
+              'Producto';
+          sheet.appendRow([
+            excel.TextCellValue(nombre),
+            excel.TextCellValue(_formatCantidadDecimal(item['cantidad'])),
+            excel.DoubleCellValue(_toDoubleSafe(item['importe'])),
+          ]);
+        }
+        sheet.appendRow([
+          excel.TextCellValue('Total orden'),
+          excel.TextCellValue(''),
+          excel.DoubleCellValue(cobrado),
+        ]);
+        sheet.appendRow([]);
+        totalGeneral += cobrado;
+      }
+
+      sheet.appendRow([
+        excel.TextCellValue('TOTAL GENERAL (${orders.length} órdenes)'),
+        excel.TextCellValue(''),
+        excel.DoubleCellValue(totalGeneral),
+      ]);
+
+      final bytes = workbook.encode();
+      if (bytes == null) throw Exception('No se pudo generar el archivo Excel');
+      final fileName =
+          'reporte_ventas_por_orden_${DateFormat('yyyyMMdd').format(_startDate)}_'
+          '${DateFormat('yyyyMMdd').format(_endDate)}.xlsx';
+      const mime =
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      if (kIsWeb) {
+        web_download.downloadFileWeb(Uint8List.fromList(bytes), fileName, mime);
+      } else {
+        final output = await getApplicationDocumentsDirectory();
+        final file = File('${output.path}/$fileName');
+        await file.writeAsBytes(bytes);
+        await Share.shareXFiles([
+          XFile(file.path, mimeType: mime),
+        ], text: 'Reporte de ventas por orden');
       }
     } catch (e) {
       if (mounted) {
@@ -6108,48 +6396,62 @@ class _SalesScreenState extends State<SalesScreen>
         'Método de pago',
         'Cant.',
         'Venta u.',
-        'Costo u.',
+        if (_canViewGanancias) 'Costo u.',
         'Ingreso',
-        'Costo',
-        'Ganancia',
+        if (_canViewGanancias) ...['Costo', 'Ganancia', 'Detalle'],
         'Cambio',
-        'Detalle',
       ];
-      final rows = events.map((event) {
-        final date = DateTime.tryParse(event['evento_fecha']?.toString() ?? '');
-        String number(String key, [int decimals = 2]) {
-          return (event[key] as num?)?.toDouble().toStringAsFixed(decimals) ??
-              '-';
-        }
+      final rows = events
+          .where(
+            (event) =>
+                _canViewGanancias ||
+                event['tipo_evento'] == 'venta' ||
+                event['tipo_evento'] == 'cambio_precio_venta',
+          )
+          .map((event) {
+            final date = DateTime.tryParse(
+              event['evento_fecha']?.toString() ?? '',
+            );
+            String number(String key, [int decimals = 2]) {
+              return (event[key] as num?)?.toDouble().toStringAsFixed(
+                    decimals,
+                  ) ??
+                  '-';
+            }
 
-        // Los cinco importes del historial son CUP por construcción —precio de
-        // catálogo en `*_cup` y totales de la operación—, así que el informe
-        // sale en la divisa de consolidación, igual que la pantalla. La columna
-        // «Cambio» queda fuera a propósito: declara la unidad del campo de
-        // catálogo que cambió (precio de venta en CUP, costo en USD), que no es
-        // un importe consolidable.
-        String money(String key) {
-          final value = (event[key] as num?)?.toDouble();
-          return value == null
-              ? '-'
-              : MonedaConsolidacionService.formatear(value);
-        }
+            // Los cinco importes del historial son CUP por construcción —precio de
+            // catálogo en `*_cup` y totales de la operación—, así que el informe
+            // sale en la divisa de consolidación, igual que la pantalla. La columna
+            // «Cambio» queda fuera a propósito: declara la unidad del campo de
+            // catálogo que cambió (precio de venta en CUP, costo en USD), que no es
+            // un importe consolidable.
+            String money(String key) {
+              final value = (event[key] as num?)?.toDouble();
+              return value == null
+                  ? '-'
+                  : MonedaConsolidacionService.formatear(value);
+            }
 
-        return [
-          date == null ? '-' : dateFormat.format(date.toLocal()),
-          _productHistoryEventName(event),
-          event['id_operacion']?.toString() ?? '-',
-          _productHistoryPaymentMethod(event),
-          number('cantidad'),
-          money('precio_venta_cup'),
-          money('precio_costo_cup'),
-          money('ingreso_total'),
-          money('costo_total'),
-          money('ganancia_total'),
-          _productHistoryChange(event),
-          event['descripcion']?.toString() ?? '-',
-        ];
-      }).toList();
+            return [
+              date == null ? '-' : dateFormat.format(date.toLocal()),
+              _productHistoryEventName(event),
+              event['id_operacion']?.toString() ?? '-',
+              _productHistoryPaymentMethod(event),
+              number('cantidad'),
+              money('precio_venta_cup'),
+              if (_canViewGanancias) money('precio_costo_cup'),
+              money('ingreso_total'),
+              if (_canViewGanancias) ...[
+                money('costo_total'),
+                money('ganancia_total'),
+                event['descripcion']?.toString() ?? '-',
+              ],
+              event['tipo_evento'] == 'cambio_precio_venta' || _canViewGanancias
+                  ? _productHistoryChange(event)
+                  : '-',
+            ];
+          })
+          .toList();
 
       pdf.addPage(
         pw.MultiPage(
@@ -6234,14 +6536,22 @@ class _SalesScreenState extends State<SalesScreen>
         // CUP por construcción y se convierten a la divisa de consolidación,
         // pero tienen que seguir siendo números sumables en Excel.
         excel.TextCellValue('Venta unitario $_monedaConsolidacion'),
-        excel.TextCellValue('Costo unitario $_monedaConsolidacion'),
+        if (_canViewGanancias)
+          excel.TextCellValue('Costo unitario $_monedaConsolidacion'),
         excel.TextCellValue('Ingreso'),
-        excel.TextCellValue('Costo'),
-        excel.TextCellValue('Ganancia'),
+        if (_canViewGanancias) ...[
+          excel.TextCellValue('Costo'),
+          excel.TextCellValue('Ganancia'),
+          excel.TextCellValue('Detalle del cálculo'),
+        ],
         excel.TextCellValue('Cambio'),
-        excel.TextCellValue('Detalle del cálculo'),
       ]);
-      for (final event in events) {
+      for (final event in events.where(
+        (event) =>
+            _canViewGanancias ||
+            event['tipo_evento'] == 'venta' ||
+            event['tipo_evento'] == 'cambio_precio_venta',
+      )) {
         final date = DateTime.tryParse(event['evento_fecha']?.toString() ?? '');
         excel.CellValue number(String key) {
           final value = (event[key] as num?)?.toDouble();
@@ -6274,12 +6584,18 @@ class _SalesScreenState extends State<SalesScreen>
           excel.TextCellValue(_productHistoryPaymentMethod(event)),
           number('cantidad'),
           money('precio_venta_cup'),
-          money('precio_costo_cup'),
+          if (_canViewGanancias) money('precio_costo_cup'),
           money('ingreso_total'),
-          money('costo_total'),
-          money('ganancia_total'),
-          excel.TextCellValue(_productHistoryChange(event)),
-          excel.TextCellValue(event['descripcion']?.toString() ?? ''),
+          if (_canViewGanancias) ...[
+            money('costo_total'),
+            money('ganancia_total'),
+            excel.TextCellValue(event['descripcion']?.toString() ?? ''),
+          ],
+          excel.TextCellValue(
+            event['tipo_evento'] == 'cambio_precio_venta' || _canViewGanancias
+                ? _productHistoryChange(event)
+                : '',
+          ),
         ]);
       }
 
@@ -6449,158 +6765,192 @@ class _SalesScreenState extends State<SalesScreen>
                                     // La divisa de las dos columnas de precio de
                                     // catálogo la manda la consolidación.
                                     DataColumn(
-                                      label: Text('Venta $_monedaConsolidacion (u)'),
-                                    ),
-                                    DataColumn(
                                       label: Text(
-                                        'Costo $_monedaConsolidacion (u)',
+                                        'Venta $_monedaConsolidacion (u)',
                                       ),
                                     ),
+                                    if (_canViewGanancias)
+                                      DataColumn(
+                                        label: Text(
+                                          'Costo $_monedaConsolidacion (u)',
+                                        ),
+                                      ),
                                     DataColumn(label: Text('Ingreso')),
-                                    DataColumn(label: Text('Costo')),
-                                    DataColumn(label: Text('Ganancia')),
+                                    if (_canViewGanancias) ...[
+                                      DataColumn(label: Text('Costo')),
+                                      DataColumn(label: Text('Ganancia')),
+                                    ],
                                     DataColumn(label: Text('Cambio')),
                                     DataColumn(
                                       label: Text('Detalle del cálculo'),
                                     ),
                                   ],
-                                  rows: events.map((event) {
-                                    final type = event['tipo_evento']
-                                        ?.toString();
-                                    final isSale = type == 'venta';
-                                    final isSalePrice =
-                                        type == 'cambio_precio_venta';
-                                    final color = isSale
-                                        ? Colors.white
-                                        : isSalePrice
-                                        ? Colors.blue.shade50
-                                        : Colors.orange.shade50;
-                                    final date = DateTime.tryParse(
-                                      event['evento_fecha']?.toString() ?? '',
-                                    );
-                                    final previous =
-                                        (event['valor_anterior'] as num?)
-                                            ?.toDouble();
-                                    final next = (event['valor_nuevo'] as num?)
-                                        ?.toDouble();
-                                    final change = isSale
-                                        ? '-'
-                                        : '${previous?.toStringAsFixed(isSalePrice ? 2 : 4) ?? 'Sin anterior'} → '
-                                              '${next?.toStringAsFixed(isSalePrice ? 2 : 4) ?? '-'} '
-                                              '${isSalePrice ? 'CUP' : 'USD'}';
+                                  rows: events
+                                      .where(
+                                        (event) =>
+                                            _canViewGanancias ||
+                                            event['tipo_evento'] == 'venta' ||
+                                            event['tipo_evento'] ==
+                                                'cambio_precio_venta',
+                                      )
+                                      .map((event) {
+                                        final type = event['tipo_evento']
+                                            ?.toString();
+                                        final isSale = type == 'venta';
+                                        final isSalePrice =
+                                            type == 'cambio_precio_venta';
+                                        final color = isSale
+                                            ? Colors.white
+                                            : isSalePrice
+                                            ? Colors.blue.shade50
+                                            : Colors.orange.shade50;
+                                        final date = DateTime.tryParse(
+                                          event['evento_fecha']?.toString() ??
+                                              '',
+                                        );
+                                        final previous =
+                                            (event['valor_anterior'] as num?)
+                                                ?.toDouble();
+                                        final next =
+                                            (event['valor_nuevo'] as num?)
+                                                ?.toDouble();
+                                        final change = isSale
+                                            ? '-'
+                                            : '${previous?.toStringAsFixed(isSalePrice ? 2 : 4) ?? 'Sin anterior'} → '
+                                                  '${next?.toStringAsFixed(isSalePrice ? 2 : 4) ?? '-'} '
+                                                  '${isSalePrice ? 'CUP' : 'USD'}';
 
-                                    // Los cinco importes del historial son CUP
-                                    // por construcción (precio de catálogo en
-                                    // `*_cup` y totales de la operación): salen
-                                    // en la divisa de consolidación. La columna
-                                    // «Cambio» queda fuera porque declara la
-                                    // unidad del campo de catálogo que cambió.
-                                    String money(String key) {
-                                      final value = (event[key] as num?)
-                                          ?.toDouble();
-                                      return value == null
-                                          ? '-'
-                                          : MonedaConsolidacionService.formatear(
-                                              value,
-                                            );
-                                    }
+                                        // Los cinco importes del historial son CUP
+                                        // por construcción (precio de catálogo en
+                                        // `*_cup` y totales de la operación): salen
+                                        // en la divisa de consolidación. La columna
+                                        // «Cambio» queda fuera porque declara la
+                                        // unidad del campo de catálogo que cambió.
+                                        String money(String key) {
+                                          final value = (event[key] as num?)
+                                              ?.toDouble();
+                                          return value == null
+                                              ? '-'
+                                              : MonedaConsolidacionService.formatear(
+                                                  value,
+                                                );
+                                        }
 
-                                    return DataRow(
-                                      color: WidgetStatePropertyAll(color),
-                                      cells: [
-                                        DataCell(
-                                          Text(
-                                            date == null
-                                                ? '-'
-                                                : DateFormat(
-                                                    'dd/MM/yyyy HH:mm',
-                                                  ).format(date.toLocal()),
-                                          ),
-                                        ),
-                                        DataCell(
-                                          Row(
-                                            children: [
-                                              Icon(
-                                                isSale
-                                                    ? Icons.shopping_cart
-                                                    : isSalePrice
-                                                    ? Icons.sell
-                                                    : Icons.inventory,
-                                                size: 16,
-                                                color: isSale
-                                                    ? AppColors.success
-                                                    : isSalePrice
-                                                    ? AppColors.info
-                                                    : AppColors.warning,
-                                              ),
-                                              const SizedBox(width: 6),
+                                        return DataRow(
+                                          color: WidgetStatePropertyAll(color),
+                                          cells: [
+                                            DataCell(
                                               Text(
-                                                isSale
-                                                    ? 'Venta'
-                                                    : isSalePrice
-                                                    ? 'Cambio venta'
-                                                    : 'Cambio costo',
+                                                date == null
+                                                    ? '-'
+                                                    : DateFormat(
+                                                        'dd/MM/yyyy HH:mm',
+                                                      ).format(date.toLocal()),
+                                              ),
+                                            ),
+                                            DataCell(
+                                              Row(
+                                                children: [
+                                                  Icon(
+                                                    isSale
+                                                        ? Icons.shopping_cart
+                                                        : isSalePrice
+                                                        ? Icons.sell
+                                                        : Icons.inventory,
+                                                    size: 16,
+                                                    color: isSale
+                                                        ? AppColors.success
+                                                        : isSalePrice
+                                                        ? AppColors.info
+                                                        : AppColors.warning,
+                                                  ),
+                                                  const SizedBox(width: 6),
+                                                  Text(
+                                                    isSale
+                                                        ? 'Venta'
+                                                        : isSalePrice
+                                                        ? 'Cambio venta'
+                                                        : 'Cambio costo',
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            DataCell(
+                                              Text(
+                                                event['id_operacion']
+                                                        ?.toString() ??
+                                                    '-',
+                                              ),
+                                            ),
+                                            DataCell(
+                                              Text(
+                                                _productHistoryPaymentMethod(
+                                                  event,
+                                                ),
+                                              ),
+                                            ),
+                                            DataCell(
+                                              Text(
+                                                (event['cantidad'] as num?)
+                                                        ?.toStringAsFixed(2) ??
+                                                    '-',
+                                              ),
+                                            ),
+                                            DataCell(
+                                              Text(money('precio_venta_cup')),
+                                            ),
+                                            if (_canViewGanancias)
+                                              DataCell(
+                                                Text(money('precio_costo_cup')),
+                                              ),
+                                            DataCell(
+                                              Text(money('ingreso_total')),
+                                            ),
+                                            if (_canViewGanancias) ...[
+                                              DataCell(
+                                                Text(money('costo_total')),
+                                              ),
+                                              DataCell(
+                                                Text(
+                                                  money('ganancia_total'),
+                                                  style: TextStyle(
+                                                    color:
+                                                        ((event['ganancia_total']
+                                                                        as num?)
+                                                                    ?.toDouble() ??
+                                                                0) >=
+                                                            0
+                                                        ? AppColors.success
+                                                        : AppColors.error,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
                                               ),
                                             ],
-                                          ),
-                                        ),
-                                        DataCell(
-                                          Text(
-                                            event['id_operacion']?.toString() ??
-                                                '-',
-                                          ),
-                                        ),
-                                        DataCell(
-                                          Text(
-                                            _productHistoryPaymentMethod(event),
-                                          ),
-                                        ),
-                                        DataCell(
-                                          Text(
-                                            (event['cantidad'] as num?)
-                                                    ?.toStringAsFixed(2) ??
-                                                '-',
-                                          ),
-                                        ),
-                                        DataCell(
-                                          Text(money('precio_venta_cup')),
-                                        ),
-                                        DataCell(
-                                          Text(money('precio_costo_cup')),
-                                        ),
-                                        DataCell(Text(money('ingreso_total'))),
-                                        DataCell(Text(money('costo_total'))),
-                                        DataCell(
-                                          Text(
-                                            money('ganancia_total'),
-                                            style: TextStyle(
-                                              color:
-                                                  ((event['ganancia_total']
-                                                                  as num?)
-                                                              ?.toDouble() ??
-                                                          0) >=
-                                                      0
-                                                  ? AppColors.success
-                                                  : AppColors.error,
-                                              fontWeight: FontWeight.bold,
+                                            DataCell(
+                                              Text(
+                                                _canViewGanancias || isSalePrice
+                                                    ? change
+                                                    : '-',
+                                              ),
                                             ),
-                                          ),
-                                        ),
-                                        DataCell(Text(change)),
-                                        DataCell(
-                                          SizedBox(
-                                            width: 520,
-                                            child: Text(
-                                              event['descripcion']
-                                                      ?.toString() ??
-                                                  '-',
-                                              softWrap: true,
+                                            DataCell(
+                                              SizedBox(
+                                                width: 520,
+                                                child: Text(
+                                                  _canViewGanancias
+                                                      ? (event['descripcion']
+                                                                ?.toString() ??
+                                                            '-')
+                                                      : '-',
+                                                  softWrap: true,
+                                                ),
+                                              ),
                                             ),
-                                          ),
-                                        ),
-                                      ],
-                                    );
-                                  }).toList(),
+                                          ],
+                                        );
+                                      })
+                                      .toList(),
                                 ),
                               ),
                             ),
@@ -6684,49 +7034,51 @@ class _SalesScreenState extends State<SalesScreen>
               scrollDirection: Axis.horizontal,
               child: DataTable(
                 columnSpacing: 12,
-                columns: const [
-                  DataColumn(
+                columns: [
+                  const DataColumn(
                     label: Text(
                       'Producto',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
-                  DataColumn(
+                  const DataColumn(
                     label: Text(
                       'Precio (u)',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
-                  DataColumn(
+                  const DataColumn(
                     label: Text(
                       'Cant Vendidos',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
-                  DataColumn(
+                  const DataColumn(
                     label: Text(
                       'Total Venta',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
-                  DataColumn(
-                    label: Text(
-                      'Costo (u)',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                  if (_canViewGanancias) ...const [
+                    DataColumn(
+                      label: Text(
+                        'Costo (u)',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
                     ),
-                  ),
-                  DataColumn(
-                    label: Text(
-                      'Total Costo',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                    DataColumn(
+                      label: Text(
+                        'Total Costo',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
                     ),
-                  ),
-                  DataColumn(
-                    label: Text(
-                      'Ganancias',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                    DataColumn(
+                      label: Text(
+                        'Ganancias',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
                     ),
-                  ),
+                  ],
                 ],
                 rows: [
                   // Product rows
@@ -6738,8 +7090,7 @@ class _SalesScreenState extends State<SalesScreen>
                       .map((report) {
                         final precioVentaInt = report.precioVentaCup.round();
                         final costoUnitarioCup = _resolveReportCostCup(report);
-                        final sinTasa =
-                            _reportHasUsdCostWithoutCupRate(report);
+                        final sinTasa = _reportHasUsdCostWithoutCupRate(report);
                         // Dinero = totales SQL (ya ponderan costo/precio por
                         // presentación × cantidad). Unitarios son por u. base
                         // (totales/equiv) tras el parche 48.
@@ -6813,75 +7164,79 @@ class _SalesScreenState extends State<SalesScreen>
                             ),
                             DataCell(
                               Text(
-                                MonedaConsolidacionService.formatear(ingresosCup),
+                                MonedaConsolidacionService.formatear(
+                                  ingresosCup,
+                                ),
                                 style: const TextStyle(
                                   color: AppColors.success,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
                             ),
-                            DataCell(
-                              sinTasa
-                                  ? Tooltip(
-                                      message:
-                                          'Costo receta/USD \$${report.precioCosto.toStringAsFixed(4)} — falta tasa USD→CUP',
-                                      child: Text(
-                                        'sin tasa',
-                                        style: TextStyle(
-                                          color: Colors.orange.shade800,
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 12,
+                            if (_canViewGanancias) ...[
+                              DataCell(
+                                sinTasa
+                                    ? Tooltip(
+                                        message:
+                                            'Costo receta/USD \$${report.precioCosto.toStringAsFixed(4)} — falta tasa USD→CUP',
+                                        child: Text(
+                                          'sin tasa',
+                                          style: TextStyle(
+                                            color: Colors.orange.shade800,
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      )
+                                    : Text(
+                                        // Costo unitario en CUP por construcción
+                                        // (`_resolveReportCostCup`).
+                                        MonedaConsolidacionService.formatear(
+                                          costoUnitarioCup,
+                                        ),
+                                        style: const TextStyle(
+                                          color: AppColors.warning,
                                         ),
                                       ),
-                                    )
-                                  : Text(
-                                      // Costo unitario en CUP por construcción
-                                      // (`_resolveReportCostCup`).
-                                      MonedaConsolidacionService.formatear(
-                                        costoUnitarioCup,
-                                      ),
-                                      style: const TextStyle(
-                                        color: AppColors.warning,
-                                      ),
-                                    ),
-                            ),
-                            DataCell(
-                              sinTasa
-                                  ? Text(
-                                      'USD ${report.precioCosto.toStringAsFixed(2)}',
-                                      style: TextStyle(
-                                        color: Colors.orange.shade800,
-                                        fontWeight: FontWeight.w500,
-                                        fontSize: 12,
-                                      ),
-                                    )
-                                  : Text(
-                                      MonedaConsolidacionService.formatear(
-                                        totalCostoCup,
-                                      ),
-                                      style: const TextStyle(
-                                        color: AppColors.warning,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                            ),
-                            DataCell(
-                              Text(
+                              ),
+                              DataCell(
                                 sinTasa
-                                    ? '—'
-                                    : MonedaConsolidacionService.formatear(
-                                        ganancias,
+                                    ? Text(
+                                        'USD ${report.precioCosto.toStringAsFixed(2)}',
+                                        style: TextStyle(
+                                          color: Colors.orange.shade800,
+                                          fontWeight: FontWeight.w500,
+                                          fontSize: 12,
+                                        ),
+                                      )
+                                    : Text(
+                                        MonedaConsolidacionService.formatear(
+                                          totalCostoCup,
+                                        ),
+                                        style: const TextStyle(
+                                          color: AppColors.warning,
+                                          fontWeight: FontWeight.w500,
+                                        ),
                                       ),
-                                style: TextStyle(
-                                  color: sinTasa
-                                      ? Colors.grey
-                                      : (ganancias >= 0
-                                            ? AppColors.success
-                                            : AppColors.error),
-                                  fontWeight: FontWeight.bold,
+                              ),
+                              DataCell(
+                                Text(
+                                  sinTasa
+                                      ? '—'
+                                      : MonedaConsolidacionService.formatear(
+                                          ganancias,
+                                        ),
+                                  style: TextStyle(
+                                    color: sinTasa
+                                        ? Colors.grey
+                                        : (ganancias >= 0
+                                              ? AppColors.success
+                                              : AppColors.error),
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
-                            ),
+                            ],
                           ],
                         );
                       })
@@ -6950,40 +7305,44 @@ class _SalesScreenState extends State<SalesScreen>
                             ),
                           ),
                         ),
-                        const DataCell(Text('-')), // No average cost
-                        DataCell(
-                          Text(
-                            MonedaConsolidacionService.formatear(
-                              _productSalesReports.fold(
-                                0.0,
-                                (sum, r) => sum + r.costoReportado,
+                        if (_canViewGanancias) ...[
+                          const DataCell(Text('-')), // No average cost
+                          DataCell(
+                            Text(
+                              MonedaConsolidacionService.formatear(
+                                _productSalesReports.fold(
+                                  0.0,
+                                  (sum, r) => sum + r.costoReportado,
+                                ),
+                              ),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.warning,
                               ),
                             ),
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.warning,
+                          ),
+                          DataCell(
+                            Builder(
+                              builder: (context) {
+                                final totalGan = _productSalesReports.fold(
+                                  0.0,
+                                  (sum, r) => sum + r.gananciaReportada,
+                                );
+                                return Text(
+                                  MonedaConsolidacionService.formatear(
+                                    totalGan,
+                                  ),
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: totalGan >= 0
+                                        ? AppColors.success
+                                        : AppColors.error,
+                                  ),
+                                );
+                              },
                             ),
                           ),
-                        ),
-                        DataCell(
-                          Builder(
-                            builder: (context) {
-                              final totalGan = _productSalesReports.fold(
-                                0.0,
-                                (sum, r) => sum + r.gananciaReportada,
-                              );
-                              return Text(
-                                MonedaConsolidacionService.formatear(totalGan),
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: totalGan >= 0
-                                      ? AppColors.success
-                                      : AppColors.error,
-                                ),
-                              );
-                            },
-                          ),
-                        ),
+                        ],
                       ],
                     ),
                 ],
@@ -7033,62 +7392,65 @@ class _SalesScreenState extends State<SalesScreen>
               scrollDirection: Axis.horizontal,
               child: DataTable(
                 columnSpacing: 16,
-                columns: const [
-                  DataColumn(
+                columns: [
+                  const DataColumn(
                     label: Text(
                       'Producto',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
-                  DataColumn(
+                  const DataColumn(
                     label: Text(
                       'Tasa de Cambio USD',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
-                  DataColumn(
-                    label: Text(
-                      'Precio Costo USD',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                  if (_canViewGanancias)
+                    const DataColumn(
+                      label: Text(
+                        'Precio Costo USD',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
                     ),
-                  ),
-                  DataColumn(
+                  const DataColumn(
                     label: Text(
                       'Precio Venta USD',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
-                  DataColumn(
-                    label: Text(
-                      'Precio Costo CUP',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                  if (_canViewGanancias)
+                    const DataColumn(
+                      label: Text(
+                        'Precio Costo CUP',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
                     ),
-                  ),
-                  DataColumn(
+                  const DataColumn(
                     label: Text(
                       'Precio Venta CUP',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
-                  DataColumn(
-                    label: Text(
-                      'Ganancia USD',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                  if (_canViewGanancias) ...const [
+                    DataColumn(
+                      label: Text(
+                        'Ganancia USD',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
                     ),
-                  ),
-                  DataColumn(
-                    label: Text(
-                      'Ganancia CUP',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                    DataColumn(
+                      label: Text(
+                        'Ganancia CUP',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
                     ),
-                  ),
-
-                  DataColumn(
-                    label: Text(
-                      '% Ganancia',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                    DataColumn(
+                      label: Text(
+                        '% Ganancia',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
                     ),
-                  ),
+                  ],
                 ],
                 rows: _productAnalysis.map((analysis) {
                   return DataRow(
@@ -7116,63 +7478,67 @@ class _SalesScreenState extends State<SalesScreen>
                           ),
                         ),
                       ),
-                      DataCell(
-                        Text(
-                          '\$${analysis.precioCostoUsd.toStringAsFixed(4)}',
-                          style: const TextStyle(color: AppColors.warning),
+                      if (_canViewGanancias)
+                        DataCell(
+                          Text(
+                            '\$${analysis.precioCostoUsd.toStringAsFixed(4)}',
+                            style: const TextStyle(color: AppColors.warning),
+                          ),
                         ),
-                      ),
                       DataCell(
                         Text(
                           '\$${analysis.precioVentaUsd.toStringAsFixed(4)}',
                           style: const TextStyle(color: AppColors.info),
                         ),
                       ),
-                      DataCell(
-                        Text(
-                          '\$${analysis.precioCostoCup.toStringAsFixed(2)}',
-                          style: const TextStyle(color: AppColors.warning),
+                      if (_canViewGanancias)
+                        DataCell(
+                          Text(
+                            '\$${analysis.precioCostoCup.toStringAsFixed(2)}',
+                            style: const TextStyle(color: AppColors.warning),
+                          ),
                         ),
-                      ),
                       DataCell(
                         Text(
                           '\$${analysis.precioVentaCup.toStringAsFixed(2)}',
                           style: const TextStyle(color: AppColors.success),
                         ),
                       ),
-                      DataCell(
-                        Text(
-                          '\$${analysis.gananciaUsd.toStringAsFixed(4)}',
-                          style: TextStyle(
-                            color: analysis.gananciaUsd >= 0
-                                ? AppColors.success
-                                : AppColors.error,
-                            fontWeight: FontWeight.bold,
+                      if (_canViewGanancias) ...[
+                        DataCell(
+                          Text(
+                            '\$${analysis.gananciaUsd.toStringAsFixed(4)}',
+                            style: TextStyle(
+                              color: analysis.gananciaUsd >= 0
+                                  ? AppColors.success
+                                  : AppColors.error,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
-                      ),
-                      DataCell(
-                        Text(
-                          '\$${analysis.gananciaCup.toStringAsFixed(2)}',
-                          style: TextStyle(
-                            color: analysis.gananciaCup >= 0
-                                ? AppColors.success
-                                : AppColors.error,
-                            fontWeight: FontWeight.bold,
+                        DataCell(
+                          Text(
+                            '\$${analysis.gananciaCup.toStringAsFixed(2)}',
+                            style: TextStyle(
+                              color: analysis.gananciaCup >= 0
+                                  ? AppColors.success
+                                  : AppColors.error,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
-                      ),
-                      DataCell(
-                        Text(
-                          '${analysis.porcGananciaCup.toStringAsFixed(1)}%',
-                          style: TextStyle(
-                            color: analysis.porcGananciaCup >= 0
-                                ? AppColors.success
-                                : AppColors.error,
-                            fontWeight: FontWeight.bold,
+                        DataCell(
+                          Text(
+                            '${analysis.porcGananciaCup.toStringAsFixed(1)}%',
+                            style: TextStyle(
+                              color: analysis.porcGananciaCup >= 0
+                                  ? AppColors.success
+                                  : AppColors.error,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
-                      ),
+                      ],
                     ],
                   );
                 }).toList(),
@@ -7188,12 +7554,12 @@ class _SalesScreenState extends State<SalesScreen>
     final statusIcon = _getVendorStatusIcon(vendor.status);
     final turnoLabel = vendor.esPorTurno
         ? '${vendor.turnoAbierto ? 'Turno abierto' : 'Turno cerrado'}'
-            '${vendor.tpvNombre != null ? ' · ${vendor.tpvNombre}' : ''}'
+              '${vendor.tpvNombre != null ? ' · ${vendor.tpvNombre}' : ''}'
         : null;
     final turnoRango = vendor.esPorTurno
         ? '${_formatDateTime(vendor.periodoInicio)}'
-            ' → '
-            '${vendor.fechaCierre != null ? _formatDateTime(vendor.fechaCierre!) : 'en curso'}'
+              ' → '
+              '${vendor.fechaCierre != null ? _formatDateTime(vendor.fechaCierre!) : 'en curso'}'
         : null;
 
     // Consolidado del turno. `totalDineroGeneral` es una suma de importes
@@ -7284,7 +7650,9 @@ class _SalesScreenState extends State<SalesScreen>
                   _buildVendorDetailRow(
                     'Turno #${vendor.idTurno}',
                     vendor.turnoAbierto ? 'Abierto' : 'Cerrado',
-                    vendor.turnoAbierto ? AppColors.success : AppColors.textSecondary,
+                    vendor.turnoAbierto
+                        ? AppColors.success
+                        : AppColors.textSecondary,
                   ),
                   _buildVendorDetailRow(
                     'Apertura',
@@ -8149,8 +8517,7 @@ class _SalesScreenState extends State<SalesScreen>
                               Padding(
                                 padding: const EdgeInsets.only(top: 8),
                                 child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
                                       'Por divisa',
@@ -9427,9 +9794,10 @@ class _SalesScreenState extends State<SalesScreen>
                                         color: AppColors.info.withOpacity(0.3),
                                       ),
                                     ),
-                                    child: _hayVariasMonedas(
-                                      transferenciasPorMoneda,
-                                    )
+                                    child:
+                                        _hayVariasMonedas(
+                                          transferenciasPorMoneda,
+                                        )
                                         ? Column(
                                             crossAxisAlignment:
                                                 CrossAxisAlignment.start,
@@ -10339,8 +10707,7 @@ class _SalesScreenState extends State<SalesScreen>
                                   ),
                                 ),
                                 child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
                                       'Total: \$${totalTransferencias.toStringAsFixed(2)}',
@@ -11767,9 +12134,7 @@ class _SalesScreenState extends State<SalesScreen>
                       ),
                     ),
                     pw.Text(
-                      MonedaConsolidacionService.formatear(
-                        supplier.totalCosto,
-                      ),
+                      MonedaConsolidacionService.formatear(supplier.totalCosto),
                       style: pw.TextStyle(
                         fontWeight: pw.FontWeight.bold,
                         fontSize: 12,
@@ -11962,9 +12327,7 @@ class _SalesScreenState extends State<SalesScreen>
       ]);
       // Divisa de las columnas de dinero del informe: va declarada una vez en
       // cabecera porque las celdas son números (tienen que poder sumarse).
-      sheet.appendRow([
-        excel.TextCellValue('Moneda: $_monedaConsolidacion'),
-      ]);
+      sheet.appendRow([excel.TextCellValue('Moneda: $_monedaConsolidacion')]);
       sheet.appendRow([]);
 
       sheet.appendRow([
@@ -12208,8 +12571,10 @@ class _SalesScreenState extends State<SalesScreen>
                   children: [
                     _pdfHeaderCell('Proveedor'),
                     _pdfHeaderCell('Ventas'),
-                    _pdfHeaderCell('Costo'),
-                    _pdfHeaderCell('Ganancia'),
+                    if (_canViewGanancias) ...[
+                      _pdfHeaderCell('Costo'),
+                      _pdfHeaderCell('Ganancia'),
+                    ],
                   ],
                 ),
                 // Filas de datos
@@ -12224,16 +12589,18 @@ class _SalesScreenState extends State<SalesScreen>
                           report.totalVentas,
                         ),
                       ),
-                      _pdfBodyCell(
-                        MonedaConsolidacionService.formatear(
-                          report.totalCosto,
+                      if (_canViewGanancias) ...[
+                        _pdfBodyCell(
+                          MonedaConsolidacionService.formatear(
+                            report.totalCosto,
+                          ),
                         ),
-                      ),
-                      _pdfBodyCell(
-                        MonedaConsolidacionService.formatear(
-                          report.totalGanancia,
+                        _pdfBodyCell(
+                          MonedaConsolidacionService.formatear(
+                            report.totalGanancia,
+                          ),
                         ),
-                      ),
+                      ],
                     ],
                   );
                 }).toList(),
@@ -12428,8 +12795,10 @@ class _SalesScreenState extends State<SalesScreen>
       sheet.appendRow([
         excel.TextCellValue('Proveedor'),
         excel.TextCellValue('Ventas'),
-        excel.TextCellValue('Costo'),
-        excel.TextCellValue('Ganancia'),
+        if (_canViewGanancias) ...[
+          excel.TextCellValue('Costo'),
+          excel.TextCellValue('Ganancia'),
+        ],
       ]);
 
       // Agregar datos de proveedores. Ventas, costo y ganancia son CUP por
@@ -12441,12 +12810,14 @@ class _SalesScreenState extends State<SalesScreen>
           excel.DoubleCellValue(
             MonedaConsolidacionService.convertir(report.totalVentas),
           ),
-          excel.DoubleCellValue(
-            MonedaConsolidacionService.convertir(report.totalCosto),
-          ),
-          excel.DoubleCellValue(
-            MonedaConsolidacionService.convertir(report.totalGanancia),
-          ),
+          if (_canViewGanancias) ...[
+            excel.DoubleCellValue(
+              MonedaConsolidacionService.convertir(report.totalCosto),
+            ),
+            excel.DoubleCellValue(
+              MonedaConsolidacionService.convertir(report.totalGanancia),
+            ),
+          ],
         ]);
       }
 
@@ -12456,10 +12827,14 @@ class _SalesScreenState extends State<SalesScreen>
         excel.DoubleCellValue(
           MonedaConsolidacionService.convertir(totalVentas),
         ),
-        excel.DoubleCellValue(MonedaConsolidacionService.convertir(totalCosto)),
-        excel.DoubleCellValue(
-          MonedaConsolidacionService.convertir(totalGanancia),
-        ),
+        if (_canViewGanancias) ...[
+          excel.DoubleCellValue(
+            MonedaConsolidacionService.convertir(totalCosto),
+          ),
+          excel.DoubleCellValue(
+            MonedaConsolidacionService.convertir(totalGanancia),
+          ),
+        ],
       ]);
 
       // Desglose de lo cobrado por divisa, con las mismas columnas y el mismo

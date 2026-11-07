@@ -103,6 +103,20 @@ class StoreConfigService {
     }
   }
 
+  /// Configuración de la tienda de la sesión actual.
+  ///
+  /// Apertura y cierre deben usar esto y no solo el cache: en web el login
+  /// no siempre deja `store_config` poblado, y sin `maneja_inventario` el
+  /// turno se crea o se cierra como si la tienda no controlara inventario.
+  static Future<Map<String, dynamic>?> getStoreConfigForSession() async {
+    final idTienda = await _userPreferencesService.getIdTienda();
+    if (idTienda != null) {
+      final config = await getStoreConfig(idTienda);
+      if (config != null) return config;
+    }
+    return getStoreConfigFromCache();
+  }
+
   /// Obtiene la configuración de tienda (online primero, luego offline)
   static Future<Map<String, dynamic>?> getStoreConfig(int storeId) async {
     try {

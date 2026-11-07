@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../services/financial_reports_service.dart';
 import '../services/user_preferences_service.dart';
+import '../widgets/profit_gate.dart';
 
 class FinancialReportsScreen extends StatefulWidget {
   const FinancialReportsScreen({Key? key}) : super(key: key);
@@ -107,7 +108,9 @@ class _FinancialReportsScreenState extends State<FinancialReportsScreen> with Si
           ],
         ),
       ),
-      body: _isLoading
+      body: ProfitGate(
+        title: 'Reportes de rentabilidad restringidos',
+        child: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : TabBarView(
               controller: _tabController,
@@ -118,6 +121,7 @@ class _FinancialReportsScreenState extends State<FinancialReportsScreen> with Si
                 _buildApprovalsTab(),
               ],
             ),
+      ),
     );
   }
 

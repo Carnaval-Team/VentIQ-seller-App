@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../services/financial_dashboard_service.dart';
 import '../services/user_preferences_service.dart';
+import '../widgets/profit_gate.dart';
 
 class FinancialDashboardScreen extends StatefulWidget {
   const FinancialDashboardScreen({Key? key}) : super(key: key);
@@ -143,7 +144,9 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
           ),
         ],
       ),
-      body: _isLoading
+      body: ProfitGate(
+        title: 'Dashboard financiero restringido',
+        child: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _loadDashboardData,
@@ -178,6 +181,7 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
                 ),
               ),
             ),
+      ),
     );
   }
 

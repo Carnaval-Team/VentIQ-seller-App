@@ -9,7 +9,6 @@ import '../services/moneda_venta_service.dart';
 import '../services/order_service.dart';
 import '../services/payment_method_service.dart';
 import '../services/servicentro_service.dart';
-import '../services/store_config_service.dart';
 import '../services/turno_service.dart';
 import '../services/user_preferences_service.dart';
 import 'checkout_screen.dart';
@@ -52,6 +51,10 @@ class _ServicentroCantidadScreenState extends State<ServicentroCantidadScreen> {
   Color get _accent {
     return Color(ServicentroFuelItem.parseColor(_fuel.color).argb);
   }
+
+  /// Texto legible sobre [_accent]: blanco solo si el fondo es oscuro.
+  Color get _onAccent =>
+      _accent.computeLuminance() < 0.45 ? Colors.white : Colors.black87;
 
   @override
   void initState() {
@@ -352,7 +355,9 @@ class _ServicentroCantidadScreenState extends State<ServicentroCantidadScreen> {
       appBar: AppBar(
         title: Text(_fuel.denominacion),
         backgroundColor: _accent,
-        foregroundColor: Colors.white,
+        foregroundColor: _onAccent,
+        iconTheme: IconThemeData(color: _onAccent),
+        elevation: 0,
       ),
       body: SafeArea(
         child: ListView(
@@ -454,7 +459,7 @@ class _ServicentroCantidadScreenState extends State<ServicentroCantidadScreen> {
               style: FilledButton.styleFrom(
                 minimumSize: const Size.fromHeight(52),
                 backgroundColor: _accent,
-                foregroundColor: Colors.white,
+                foregroundColor: _onAccent,
               ),
             ),
           ],

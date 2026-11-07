@@ -15,6 +15,7 @@ class SupplierPaymentSummary {
   final double totalTransfer; // Total amount sold via transfer (gross)
   final double netCash; // Net amount to pay for cash sales
   final double netTransfer; // Net amount to pay for transfer sales
+  final double excluidoCup;
   final int totalOrders;
   List<OrderPaymentDetail>? orders; // Loaded on demand
 
@@ -35,6 +36,7 @@ class SupplierPaymentSummary {
     required this.totalTransfer,
     required this.netCash,
     required this.netTransfer,
+    this.excluidoCup = 0,
     required this.totalOrders,
     this.orders,
   });
@@ -60,6 +62,7 @@ class SupplierPaymentSummary {
       totalTransfer: (json['total_transfer'] as num?)?.toDouble() ?? 0.0,
       netCash: (json['net_cash'] as num?)?.toDouble() ?? 0.0,
       netTransfer: (json['net_transfer'] as num?)?.toDouble() ?? 0.0,
+      excluidoCup: (json['excluido_cup'] as num?)?.toDouble() ?? 0.0,
       totalOrders: json['total_orders'] as int? ?? 0,
     );
   }
@@ -110,9 +113,12 @@ class OrderPaymentDetail {
 
   double discountAmount() => total * (_appliedPct / 100);
 
+  double get excludedSubtotal =>
+      products.fold<double>(0, (sum, p) => sum + (p.isExcluded ? p.subtotal : 0));
+
   /// Con precios Inventtia el total a pagar es el total de la orden
-  /// (sin descontar markup Carnaval).
-  double totalToPay() => total - discountAmount();
+  /// (sin descontar markup Carnaval ni productos excluidos).
+  double totalToPay() => total - discountAmount() - excludedSubtotal;
 }
 
 class ProductPaymentDetail {
@@ -122,6 +128,7 @@ class ProductPaymentDetail {
   final int quantity;
   final double price;
   final double subtotal;
+  final bool isExcluded;
 
   ProductPaymentDetail({
     required this.productId,
@@ -130,7 +137,10 @@ class ProductPaymentDetail {
     required this.quantity,
     required this.price,
     required this.subtotal,
+    this.isExcluded = false,
   });
+
+  double get consideredSubtotal => isExcluded ? 0 : subtotal;
 
   factory ProductPaymentDetail.fromJson(Map<String, dynamic> json) {
     return ProductPaymentDetail(

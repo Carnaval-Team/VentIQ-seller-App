@@ -2962,17 +2962,16 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
       final totalRecepciones = movimientosExport
           .where((m) {
             final tipo = m['tipo_movimiento'] as String? ?? '';
-            final cant = (m['cantidad'] as num?)?.toDouble() ?? 0;
-            return tipo == 'Recepción' ||
-                ((tipo == 'Reajuste' || tipo == 'Ajuste') && cant > 0);
+            return ['Recepción', 'Extracción', 'Reajuste', 'Ajuste'].contains(tipo) &&
+                ProductMovementsService.isMovementEntry(m);
           })
           .fold<double>(0, (s, m) => s + equivDe(m));
       final totalExtracciones = movimientosExport
           .where((m) {
             final tipo = m['tipo_movimiento'] as String? ?? '';
-            final cant = (m['cantidad'] as num?)?.toDouble() ?? 0;
-            return tipo == 'Extracción' ||
-                ((tipo == 'Reajuste' || tipo == 'Ajuste') && cant < 0);
+            return ['Recepción', 'Extracción', 'Reajuste', 'Ajuste'].contains(tipo) &&
+                !ProductMovementsService.isMovementEntry(m) &&
+                ((_asDouble(m['cantidad']) ?? 0).abs() > 0);
           })
           .fold<double>(0, (s, m) => s + equivDe(m));
 
@@ -3065,7 +3064,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
         'N° Op.',
         'Tipo Mov.',
         'Tipo Operación',
-        'Estado',
+        'Estado actual',
         'Entrada',
         'Salida',
         'Saldo',
@@ -3091,10 +3090,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
       for (var i = 0; i < movimientosExport.length; i++) {
         final m = movimientosExport[i];
         final tipoMov = m['tipo_movimiento'] as String? ?? '';
-        final cantidadNum = (m['cantidad'] as num?)?.toDouble() ?? 0;
-        final isReajuste = tipoMov == 'Reajuste' || tipoMov == 'Ajuste';
-        final isEntrada =
-            tipoMov == 'Recepción' || (isReajuste && cantidadNum > 0);
+        final isEntrada = ProductMovementsService.isMovementEntry(m);
         final fechaStr = m['fecha'] as String? ?? '';
         var fechaFmt = '-';
         try {
@@ -3113,7 +3109,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
           m['almacen'] as String? ?? '-',
           nOp == '-' ? '-' : '#$nOp',
           tipoMov,
-          m['tipo_operacion'] as String? ?? '-',
+          ProductMovementsService.operationLabel(m),
           m['estado_operacion_nombre'] as String? ?? 'Completada',
           isEntrada ? qtyTexto : '',
           !isEntrada ? qtyTexto : '',
@@ -3214,17 +3210,16 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
       final totalRecepciones = movimientosExport
           .where((m) {
             final tipo = m['tipo_movimiento'] as String? ?? '';
-            final cant = (m['cantidad'] as num?)?.toDouble() ?? 0;
-            return tipo == 'Recepción' ||
-                ((tipo == 'Reajuste' || tipo == 'Ajuste') && cant > 0);
+            return ['Recepción', 'Extracción', 'Reajuste', 'Ajuste'].contains(tipo) &&
+                ProductMovementsService.isMovementEntry(m);
           })
           .fold<double>(0, (s, m) => s + equivDe(m));
       final totalExtracciones = movimientosExport
           .where((m) {
             final tipo = m['tipo_movimiento'] as String? ?? '';
-            final cant = (m['cantidad'] as num?)?.toDouble() ?? 0;
-            return tipo == 'Extracción' ||
-                ((tipo == 'Reajuste' || tipo == 'Ajuste') && cant < 0);
+            return ['Recepción', 'Extracción', 'Reajuste', 'Ajuste'].contains(tipo) &&
+                !ProductMovementsService.isMovementEntry(m) &&
+                ((_asDouble(m['cantidad']) ?? 0).abs() > 0);
           })
           .fold<double>(0, (s, m) => s + equivDe(m));
 
@@ -3428,7 +3423,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                     headerCell('N° Op.'),
                     headerCell('Tipo Mov.'),
                     headerCell('Tipo Operación'),
-                    headerCell('Estado'),
+                    headerCell('Estado actual'),
                     headerCell('Entrada'),
                     headerCell('Salida'),
                     headerCell('Saldo'),
@@ -3445,7 +3440,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                   final tipoMov = m['tipo_movimiento'] as String? ?? '';
                   final almacenVal = m['almacen'] as String? ?? '-';
                   final nOp = m['id_operacion']?.toString() ?? '-';
-                  final tipoOpVal = m['tipo_operacion'] as String? ?? '-';
+                  final tipoOpVal = ProductMovementsService.operationLabel(m);
                   final estadoVal = m['estado_operacion_nombre'] as String? ?? 'Completada';
                   // FASE 3: el saldo del PDF tambien lleva su presentacion.
                   // Sin ella, dos filas seguidas con "4" y "100" parecen un
@@ -3464,17 +3459,16 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                     fechaFmt = DateFormat('dd/MM/yy\nHH:mm').format(DateTime.parse(fechaStr));
                   } catch (_) {}
 
-                  final cantidadNum = (m['cantidad'] as num?)?.toDouble() ?? 0;
                   final isReajuste = tipoMov == 'Reajuste' || tipoMov == 'Ajuste';
-                  final isEntrada = tipoMov == 'Recepción' || (isReajuste && cantidadNum > 0);
+                  final isEntrada = ProductMovementsService.isMovementEntry(m);
                   final isControl = tipoMov == 'Control';
 
                   PdfColor tipoColor = PdfColors.black;
                   if (tipoMov == 'Recepción') tipoColor = PdfColors.green800;
                   if (tipoMov == 'Extracción') tipoColor = PdfColors.orange800;
                   if (isControl) tipoColor = PdfColors.blue800;
-                  if (tipoMov == 'Reajuste') tipoColor = cantidadNum > 0 ? PdfColors.green700 : PdfColors.red700;
-                  if (tipoMov == 'Ajuste') tipoColor = cantidadNum > 0 ? PdfColors.teal : PdfColors.deepOrange800;
+                  if (tipoMov == 'Reajuste') tipoColor = isEntrada ? PdfColors.green700 : PdfColors.red700;
+                  if (tipoMov == 'Ajuste') tipoColor = isEntrada ? PdfColors.teal : PdfColors.deepOrange800;
 
                   PdfColor estadoColor = PdfColors.grey700;
                   PdfColor estadoBgPdf = PdfColors.grey100;
@@ -3939,7 +3933,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
           Expanded(flex: 20, child: _headerCell('Almacén')),
           Expanded(flex: 12, child: _headerCell('N° Op.')),
           Expanded(flex: 20, child: _headerCell('Tipo Op.')),
-          Expanded(flex: 15, child: _headerCell('Estado')),
+          Expanded(flex: 15, child: _headerCell('Estado actual')),
           Expanded(flex: 14, child: _headerCell('Entrada', right: true)),
           Expanded(flex: 14, child: _headerCell('Salida', right: true)),
           Expanded(flex: 14, child: _headerCell('Saldo', right: true)),
@@ -3996,13 +3990,12 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
     final saldoPresNombre =
         (movement['presentacion_nombre'] as String?)?.trim();
 
-    final cantidadNum = (movement['cantidad'] as num?)?.toDouble() ?? 0;
     final isReajuste = tipoMovimiento == 'Reajuste' || tipoMovimiento == 'Ajuste';
-    final isEntrada = tipoMovimiento == 'Recepción' || (isReajuste && cantidadNum > 0);
+    final isEntrada = ProductMovementsService.isMovementEntry(movement);
     final isControl = tipoMovimiento == 'Control';
 
     final almacen = movement['almacen'] as String? ?? '-';
-    final tipoOperacion = movement['tipo_operacion'] as String? ?? '-';
+    final tipoOperacion = ProductMovementsService.operationLabel(movement);
     final estadoNombre = movement['estado_operacion_nombre'] as String? ?? 'Completada';
 
     Color estadoColor;
@@ -4270,7 +4263,7 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                           fontWeight: FontWeight.bold,
                           color: color)),
                   Text(
-                    movement['tipo_operacion'] as String? ?? 'Desconocido',
+                    ProductMovementsService.operationLabel(movement),
                     style: TextStyle(
                         fontSize: 12, color: Colors.grey.shade600),
                   ),
@@ -4327,11 +4320,20 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
             children: [
               if (movement['id_operacion'] != null)
                 _buildDetailRow('Operación #', '${movement['id_operacion']}'),
+              _buildDetailRow('Movimiento #', '${movement['id']}'),
+              if (_hasText(movement['motivo_modificacion']))
+                _buildDetailRow('Modificación', movement['motivo_modificacion'] as String),
+              if (movement['cantidad_orden'] != null)
+                _buildDetailRow('Cantidad actual en la orden', '${movement['cantidad_orden']}'),
+              if (movement['estado_operacion_nombre'] != null)
+                _buildDetailRow('Estado actual', '${movement['estado_operacion_nombre']}'),
               if (movement['cantidad'] != null)
                 _buildDetailRow(
                   tipoMovimiento == 'Control'
                       ? 'Cantidad Contada'
-                      : 'Cantidad Movida',
+                      : ProductMovementsService.isMovementEntry(movement)
+                          ? 'Entrada del movimiento'
+                          : 'Salida del movimiento',
                   // FASE 3: "21 Bultos", no "21.0". El texto viene del SQL.
                   _qtyConPresentacion(movement),
                 ),
@@ -4361,7 +4363,10 @@ class _ProductMovementsScreenState extends State<ProductMovementsScreen> {
                 _buildDetailRow('Costo Real',
                     '\$${(movement['costo_real'] as num).toStringAsFixed(2)}'),
               if (movement['importe_real'] != null)
-                _buildDetailRow('Importe Real',
+                _buildDetailRow(
+                    movement['cantidad_orden'] != null
+                        ? 'Importe actual en la orden'
+                        : 'Importe Real',
                     '\$${(movement['importe_real'] as num).toStringAsFixed(2)}'),
               if (_hasText(movement['entregado_por']))
                 _buildDetailRow(

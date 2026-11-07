@@ -1,5 +1,9 @@
 import 'dart:async';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../utils/session_expiry.dart';
+import 'session_refresh_service.dart';
+import 'server_time_service.dart';
 import 'user_preferences_service.dart';
 import 'auth_service.dart';
 import 'seller_service.dart';
@@ -20,10 +24,48 @@ class ReauthenticationService {
   final AuthService _authService = AuthService();
   final SellerService _sellerService = SellerService();
   final PromotionService _promotionService = PromotionService();
+  static const Duration _reauthenticationInterval = Duration(hours: 2);
+  Future<bool>? _reauthenticationInFlight;
 
   /// Reautenticar automáticamente usando credenciales guardadas
   /// Retorna true si la reautenticación fue exitosa
-  Future<bool> reauthenticateUser() async {
+  Future<bool> reauthenticateUser() {
+    return _reauthenticationInFlight ??= _reauthenticateWithInterval()
+        .whenComplete(() => _reauthenticationInFlight = null);
+  }
+
+  Future<bool> _reauthenticateWithInterval() async {
+    try {
+      final credentials = await _userPreferencesService.getSavedCredentials();
+      final email = credentials['email'];
+      final password = credentials['password'];
+      if (email == null ||
+          email.isEmpty ||
+          password == null ||
+          password.isEmpty) {
+        return false;
+      }
+      final prefs = await SharedPreferences.getInstance();
+      final key =
+          'automatic_reauth_last_attempt:${Supabase.instance.client.rest.url}:${email.trim().toLowerCase()}';
+      final now = ServerTimeService().now().millisecondsSinceEpoch;
+      final lastAttempt = prefs.getInt(key);
+      if (lastAttempt != null &&
+          now - lastAttempt < _reauthenticationInterval.inMilliseconds) {
+        print(
+          'Reautenticación automática aplazada: intervalo de 2 horas activo',
+        );
+        return false;
+      }
+      await prefs.setInt(key, now);
+      return await _performReauthentication();
+    } catch (e) {
+      print('Error preparando reautenticación automática: ${e.runtimeType}');
+      return false;
+    }
+  }
+
+  Future<bool> _performReauthentication() async {
     try {
       print('🔐 Iniciando reautenticación automática...');
 
@@ -180,9 +222,11 @@ class ReauthenticationService {
       } catch (e) {
         print('❌ Error verificando perfil del vendedor: $e');
 
-        // Limpiar datos en caso de error
-        await _userPreferencesService.clearUserData();
-        await _authService.signOut();
+        if (isDefinitiveAccessDenial(e)) {
+          // Limpiar datos en caso de error
+          await _userPreferencesService.clearUserData();
+          await _authService.signOut();
+        }
 
         return false;
       }
@@ -214,17 +258,21 @@ class ReauthenticationService {
       }
 
       // Verificar si el token está próximo a expirar (menos de 5 minutos)
-      final expiresAt = DateTime.fromMillisecondsSinceEpoch(
-        session.expiresAt! * 1000,
-      );
-      final now = DateTime.now();
-      final timeUntilExpiry = expiresAt.difference(now);
+      final expiresAt = sessionTokenExpiresAt(session);
+      final now = ServerTimeService().now();
+      final timeUntilExpiry = expiresAt?.difference(now);
 
-      if (timeUntilExpiry.inMinutes < 5) {
-        print(
-          '🔍 Token próximo a expirar (${timeUntilExpiry.inMinutes} min) - Reautenticación necesaria',
+      if (timeUntilExpiry == null || timeUntilExpiry.inMinutes < 5) {
+        // Rotación de token primero: un refresh barato evita el relogin
+        // completo con password. Solo si falla hace falta reautenticar.
+        final refreshed = await SessionRefreshService().ensureFreshSession(
+          allowReauthentication: false,
         );
-        return true;
+        if (refreshed) {
+          print('🔄 Token rotado - no se requiere reautenticación');
+          return false;
+        }
+        return Supabase.instance.client.auth.currentSession == null;
       }
 
       // Verificar que los datos locales estén completos
@@ -261,8 +309,12 @@ class ReauthenticationService {
       final needsReauth = await needsReauthentication();
 
       if (!needsReauth) {
-        print('✅ Usuario ya autenticado correctamente');
-        return true;
+        final session = Supabase.instance.client.auth.currentSession;
+        final expiresAt =
+            session == null ? null : sessionTokenExpiresAt(session);
+        final valid = expiresAt?.isAfter(ServerTimeService().now()) ?? false;
+        if (valid) print('✅ Usuario ya autenticado correctamente');
+        return valid;
       }
 
       print('🔄 Iniciando reautenticación automática...');
@@ -288,11 +340,7 @@ class ReauthenticationService {
             credentials['email'] != null && credentials['password'] != null,
         isOfflineMode: userData['accessToken'] == 'offline_mode',
         sessionExpiresAt:
-            session?.expiresAt != null
-                ? DateTime.fromMillisecondsSinceEpoch(
-                  session!.expiresAt! * 1000,
-                )
-                : null,
+            session == null ? null : sessionTokenExpiresAt(session),
         currentUserId: currentUser?.id,
         currentEmail: currentUser?.email ?? userData['email'],
       );

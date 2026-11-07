@@ -51,9 +51,11 @@ class PermissionsService {
     if (storedUserId == user.id) {
       final storedRoles = await _userPrefs.getUserRolesByStore();
       if (storedRoles.isNotEmpty) {
-        _cachedRolesByStore = storedRoles.map(
-          (storeId, roleName) =>
-              MapEntry(storeId, _convertStringToUserRole(roleName)),
+        _cachedRolesByStore = await _withDuenoOverride(
+          storedRoles.map(
+            (storeId, roleName) =>
+                MapEntry(storeId, _convertStringToUserRole(roleName)),
+          ),
         );
         final currentStoreId = await _userPrefs.getIdTienda();
         if (currentStoreId != null) {
@@ -140,6 +142,7 @@ class PermissionsService {
   /// Retorna el rol de mayor jerarquía a partir de un mapa de roles por tienda
   UserRole _getHighestRole(Map<int, UserRole> rolesByStore) {
     final priority = {
+      UserRole.dueno: 7,
       UserRole.gerente: 6,
       UserRole.supervisor: 5,
       UserRole.auditor: 4,
@@ -154,9 +157,37 @@ class PermissionsService {
     );
   }
 
+  /// El Dueño también está en app_dat_gerente. Si la sesión guardó Gerente,
+  /// se vuelve a leer app_dat_dueno para no ocultarle las ganancias.
+  Future<Map<int, UserRole>> _withDuenoOverride(Map<int, UserRole> roles) async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return roles;
+
+    try {
+      final duenoData = await _supabase
+          .from('app_dat_dueno')
+          .select('id_tienda')
+          .eq('uuid', user.id);
+      if (duenoData.isEmpty) return roles;
+
+      final upgraded = Map<int, UserRole>.from(roles);
+      for (final record in duenoData) {
+        final idTienda = (record['id_tienda'] as num).toInt();
+        upgraded[idTienda] = UserRole.dueno;
+      }
+      return upgraded;
+    } catch (e) {
+      print('❌ No se pudo confirmar el rol Dueño: $e');
+      return roles;
+    }
+  }
+
   /// Convertir string de rol a UserRole enum
   UserRole _convertStringToUserRole(String roleName) {
     switch (roleName.toLowerCase()) {
+      case 'dueño':
+      case 'dueno':
+        return UserRole.dueno;
       case 'gerente':
         return UserRole.gerente;
       case 'supervisor':
@@ -194,9 +225,11 @@ class PermissionsService {
       if (storedUserId == user.id) {
         final storedRoles = await _userPrefs.getUserRolesByStore();
         if (storedRoles.isNotEmpty) {
-          _cachedRolesByStore = storedRoles.map(
-            (storeId, roleName) =>
-                MapEntry(storeId, _convertStringToUserRole(roleName)),
+          _cachedRolesByStore = await _withDuenoOverride(
+            storedRoles.map(
+              (storeId, roleName) =>
+                  MapEntry(storeId, _convertStringToUserRole(roleName)),
+            ),
           );
           return _cachedRolesByStore!;
         }
@@ -204,6 +237,21 @@ class PermissionsService {
 
       final rolesByStore = <int, UserRole>{};
       print('🔍 Verificando roles por tienda para UUID: ${user.id}');
+
+      // 0. Dueño: por encima del resto. También puede figurar como gerente
+      // para que las RPC históricas lo autoricen, pero la app lo trata como Dueño.
+      final duenoData = await _supabase
+          .from('app_dat_dueno')
+          .select('id_tienda')
+          .eq('uuid', user.id);
+
+      if (duenoData.isNotEmpty) {
+        for (final record in duenoData) {
+          final idTienda = (record['id_tienda'] as num).toInt();
+          rolesByStore[idTienda] = UserRole.dueno;
+          print('  ✅ Dueño en tienda: $idTienda');
+        }
+      }
 
       // 1. Gerentes - puede serlo en múltiples tiendas
       final gerenteData = await _supabase
@@ -213,7 +261,10 @@ class PermissionsService {
 
       if (gerenteData.isNotEmpty) {
         for (final record in gerenteData) {
-          final idTienda = record['id_tienda'] as int;
+          final idTienda = (record['id_tienda'] as num).toInt();
+          // Dueño también se guarda como gerente para las RPC históricas.
+          // Ese registro no debe bajar el rol de la tienda.
+          if (rolesByStore.containsKey(idTienda)) continue;
           rolesByStore[idTienda] = UserRole.gerente;
           print('  ✅ Gerente en tienda: $idTienda');
         }
@@ -372,6 +423,24 @@ class PermissionsService {
     print('🧹 TODO el caché de permisos limpiado');
   }
 
+  /// Superadmin global (`app_dat_superadmin.activo`), independiente del rol de tienda.
+  Future<bool> isSuperAdmin() async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return false;
+    try {
+      final row = await _supabase
+          .from('app_dat_superadmin')
+          .select('id')
+          .eq('uuid', user.id)
+          .eq('activo', true)
+          .maybeSingle();
+      return row != null;
+    } catch (e) {
+      print('❌ Error verificando superadmin: $e');
+      return false;
+    }
+  }
+
   /// Verificar si el usuario puede acceder a una pantalla
   /// Usa el rol de la tienda actualmente seleccionada
   Future<bool> canAccessScreen(String screenRoute) async {
@@ -387,6 +456,8 @@ class PermissionsService {
     }
 
     final permissions = _screenPermissions[screenRoute];
+
+    if (role == UserRole.dueno) return true;
 
     if (permissions == null) {
       // Si no está en la matriz, permitir acceso por defecto
@@ -419,6 +490,11 @@ class PermissionsService {
       '  • Permisos para esta acción: ${permissions?.map((r) => getRoleName(r)).join(", ") ?? "NO DEFINIDOS"}',
     );
 
+    if (role == UserRole.dueno) {
+      print('  ✅ Dueño: acceso completo');
+      return true;
+    }
+
     if (permissions == null) {
       // Si no está en la matriz, denegar por defecto
       print('  ❌ Acción no definida en matriz - DENEGADO');
@@ -449,7 +525,7 @@ class PermissionsService {
     final allowedScreens = <String>[];
 
     _screenPermissions.forEach((route, roles) {
-      if (roles.contains(role)) {
+      if (role == UserRole.dueno || roles.contains(role)) {
         allowedScreens.add(route);
       }
     });
@@ -460,6 +536,8 @@ class PermissionsService {
   /// Obtener nombre del rol en español
   String getRoleName(UserRole role) {
     switch (role) {
+      case UserRole.dueno:
+        return 'Dueño';
       case UserRole.gerente:
         return 'Gerente';
       case UserRole.supervisor:
@@ -651,6 +729,7 @@ class PermissionsService {
 
     // Cuentas por Cobrar (solo gerente/supervisor)
     '/cuentas-por-cobrar': [UserRole.gerente, UserRole.supervisor],
+    '/fondo-inversion': [UserRole.dueno, UserRole.gerente],
 
     // Dispositivos
     '/wifi-printers': [UserRole.gerente, UserRole.auditor],
@@ -837,10 +916,26 @@ class PermissionsService {
       UserRole.recursosHumanos,
     ],
   };
+
+  /// Ganancias, márgenes y costos de venta: solo el Dueño.
+  Future<bool> canViewGanancias() async {
+    final currentStoreId = await _userPrefs.getIdTienda();
+    final role = currentStoreId != null
+        ? await getUserRoleForStore(currentStoreId)
+        : await getUserRole();
+    return role == UserRole.dueno;
+  }
+
+  /// Puede asignar o quitar el rol Dueño.
+  Future<bool> canAssignDueno() async {
+    if (await isSuperAdmin()) return true;
+    return canViewGanancias();
+  }
 }
 
 /// Enum de roles de usuario
 enum UserRole {
+  dueno,
   gerente,
   supervisor,
   auditor,

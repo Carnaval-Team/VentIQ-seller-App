@@ -213,6 +213,7 @@ class TransferSmsConfirmationBannerState
     extends State<TransferSmsConfirmationBanner> {
   final BankSmsService _bankSmsService = BankSmsService();
   StreamSubscription<BankSmsPayment>? _smsSub;
+  Timer? _pollTimer;
   BankSmsPayment? _confirmedPayment;
   bool _loadedExisting = false;
 
@@ -244,11 +245,27 @@ class TransferSmsConfirmationBannerState
     await _bankSmsService.reconcileFromInbox();
     await _tryMatchPending();
     _smsSub ??= _bankSmsService.onPayment.listen((_) => _tryMatchPending());
+    _startPollTimer();
+  }
+
+  /// Poll de respaldo: cubre los SMS que el handler de background guarda
+  /// mientras la app está pausada con esta vista abierta (no hay evento de
+  /// stream desde el isolate de background, solo SharedPreferences).
+  void _startPollTimer() {
+    _pollTimer ??= Timer.periodic(const Duration(seconds: 15), (_) async {
+      if (_confirmedPayment != null) {
+        _pollTimer?.cancel();
+        _pollTimer = null;
+        return;
+      }
+      await _tryMatchPending();
+    });
   }
 
   @override
   void dispose() {
     _smsSub?.cancel();
+    _pollTimer?.cancel();
     super.dispose();
   }
 
@@ -271,6 +288,7 @@ class TransferSmsConfirmationBannerState
     await _bankSmsService.reconcileFromInbox();
     await _tryMatchPending();
     _smsSub ??= _bankSmsService.onPayment.listen((_) => _tryMatchPending());
+    _startPollTimer();
   }
 
   Future<void> _tryMatchPending() async {

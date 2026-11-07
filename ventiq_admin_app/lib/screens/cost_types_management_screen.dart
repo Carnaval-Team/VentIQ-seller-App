@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/financial_service.dart';
+import '../services/permissions_service.dart';
 
 class CostTypesManagementScreen extends StatefulWidget {
   const CostTypesManagementScreen({Key? key}) : super(key: key);
@@ -10,13 +11,30 @@ class CostTypesManagementScreen extends StatefulWidget {
 
 class _CostTypesManagementScreenState extends State<CostTypesManagementScreen> {
   final FinancialService _financialService = FinancialService();
+  final PermissionsService _permissions = PermissionsService();
   List<Map<String, dynamic>> _costTypes = [];
   bool _isLoading = true;
+  bool _isSuperAdmin = false;
+  bool _accessChecked = false;
 
   @override
   void initState() {
     super.initState();
-    _loadData();
+    _bootstrap();
+  }
+
+  Future<void> _bootstrap() async {
+    final isSa = await _permissions.isSuperAdmin();
+    if (!mounted) return;
+    setState(() {
+      _isSuperAdmin = isSa;
+      _accessChecked = true;
+    });
+    if (isSa) {
+      await _loadData();
+    } else {
+      setState(() => _isLoading = false);
+    }
   }
 
   Future<void> _loadData() async {
@@ -43,8 +61,19 @@ class _CostTypesManagementScreenState extends State<CostTypesManagementScreen> {
         backgroundColor: Colors.orange[800],
         foregroundColor: Colors.white,
       ),
-      body: _isLoading
+      body: !_accessChecked || _isLoading
           ? const Center(child: CircularProgressIndicator())
+          : !_isSuperAdmin
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      'Solo un superadmin puede gestionar el nomenclador global de tipos de costo.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.grey[700], fontSize: 15),
+                    ),
+                  ),
+                )
           : ListView.builder(
               padding: const EdgeInsets.all(16),
               itemCount: _costTypes.length,
@@ -71,11 +100,13 @@ class _CostTypesManagementScreenState extends State<CostTypesManagementScreen> {
                 );
               },
             ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showAddDialog(),
-        backgroundColor: Colors.orange[800],
-        child: const Icon(Icons.add, color: Colors.white),
-      ),
+      floatingActionButton: _isSuperAdmin
+          ? FloatingActionButton(
+              onPressed: () => _showAddDialog(),
+              backgroundColor: Colors.orange[800],
+              child: const Icon(Icons.add, color: Colors.white),
+            )
+          : null,
     );
   }
 

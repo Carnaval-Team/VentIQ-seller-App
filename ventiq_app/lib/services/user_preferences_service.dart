@@ -123,6 +123,14 @@ class UserPreferencesService {
   static const String _deviceFullOfflineAdminPasswordKey =
       'device_full_offline_admin_password';
 
+  /// Kill-switch temporal: el full offline (prep de dispositivo, switch local,
+  /// quedarse offline con Wi‑Fi) se superponía al offline normal.
+  /// Mantener en `false` hasta estabilizar; el modo offline (`offline_mode`)
+  /// sigue funcionando con independencia de este flag.
+  static const bool enableDeviceFullOffline = false;
+
+  static bool _clearedStaleFullOffline = false;
+
   // Persistent preorder keys
   static const String _persistentPreorderKey =
       'persistent_preorder'; // Preorden persistente
@@ -237,6 +245,20 @@ class UserPreferencesService {
   Future<String?> getAccessToken() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_accessTokenKey);
+  }
+
+  /// Actualiza el access token tras una rotación (refresh) de sesión.
+  /// No toca userId/email ni el flag de login; solo renueva el token y su
+  /// expiración persistida (expiresAt viene en epoch segundos, UTC).
+  Future<void> updateAccessToken(String accessToken, {int? expiresAt}) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_accessTokenKey, accessToken);
+    await prefs.setInt(
+      _tokenExpiryKey,
+      expiresAt != null
+          ? expiresAt * 1000
+          : DateTime.now().add(Duration(hours: 24)).millisecondsSinceEpoch,
+    );
   }
 
   // Guardar datos del vendedor
@@ -459,6 +481,10 @@ class UserPreferencesService {
   // ---------- Dispositivo full offline (admin prepara + switch local) ----------
 
   Future<bool> isDeviceFullOfflineReady() async {
+    if (!enableDeviceFullOffline) {
+      await _clearStaleDeviceFullOfflineIfNeeded();
+      return false;
+    }
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_deviceFullOfflineReadyKey) ?? false;
   }
@@ -467,17 +493,21 @@ class UserPreferencesService {
   /// haya red. Solo el admin (desactivar offline en Settings / sync prep)
   /// debe volver a contactar al servidor.
   Future<bool> shouldStayFullyOffline() async {
+    if (!enableDeviceFullOffline) return false;
     return await isDeviceFullOfflineReady() && await isOfflineModeEnabled();
   }
 
   /// Lecturas de catálogo/UI deben ir a SQLite/cache local.
-  /// Incluye dispositivo full-offline ready aunque `offline_mode` parpadee
-  /// en false durante un sync explícito (prep / FAB de pendientes).
+  /// Con full offline habilitado también incluye dispositivo ready aunque
+  /// `offline_mode` parpadee en false durante un sync explícito (prep / FAB).
   Future<bool> shouldUseLocalData() async {
-    return await isOfflineModeEnabled() || await isDeviceFullOfflineReady();
+    if (await isOfflineModeEnabled()) return true;
+    if (!enableDeviceFullOffline) return false;
+    return await isDeviceFullOfflineReady();
   }
 
   Future<int?> getDeviceFullOfflineStoreId() async {
+    if (!enableDeviceFullOffline) return null;
     final prefs = await SharedPreferences.getInstance();
     return prefs.getInt(_deviceFullOfflineStoreKey);
   }
@@ -487,11 +517,30 @@ class UserPreferencesService {
     required String adminEmail,
     required String adminPassword,
   }) async {
+    if (!enableDeviceFullOffline) {
+      print(
+        '📦 Full offline deshabilitado: setDeviceFullOfflineReady ignorado',
+      );
+      return;
+    }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_deviceFullOfflineReadyKey, true);
     await prefs.setInt(_deviceFullOfflineStoreKey, storeId);
     await prefs.setString(_deviceFullOfflineAdminEmailKey, adminEmail);
     await prefs.setString(_deviceFullOfflineAdminPasswordKey, adminPassword);
+  }
+
+  /// Limpia un flag residual de dispositivos ya preparados cuando el
+  /// kill-switch está en off (una sola vez por proceso de proceso).
+  Future<void> _clearStaleDeviceFullOfflineIfNeeded() async {
+    if (_clearedStaleFullOffline) return;
+    _clearedStaleFullOffline = true;
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool(_deviceFullOfflineReadyKey) != true) return;
+    await clearDeviceFullOffline();
+    print(
+      '📦 Full offline deshabilitado: se limpió device_full_offline_ready residual',
+    );
   }
 
   Future<Map<String, String?>> getDeviceFullOfflineAdminCredentials() async {
@@ -1027,6 +1076,9 @@ class UserPreferencesService {
   // Currency denominations keys
   static const String _monedasDenominacionKey = 'monedas_denominacion';
   static const String _cambioCupUsdKey = 'cambio_cup_usd';
+  /// Historial de tasas USD→CUP (tienda + global) para conversión offline
+  /// por fecha de creación de la orden.
+  static const String _usdCupRateTimelinesKey = 'usd_cup_rate_timelines';
   static const String _hiddenDenominationsKey = 'hidden_denominations';
 
   Future<void> saveTurnoData(Map<String, dynamic> turnoData) async {
@@ -4910,6 +4962,77 @@ class UserPreferencesService {
       print('🗑️ Cache de tipo de cambio CUP-USD eliminado');
     } catch (e) {
       print('❌ Error limpiando cache de tipo de cambio: $e');
+    }
+  }
+
+  /// Guarda el historial de tasas USD→CUP para resolución offline as-of.
+  Future<void> saveUsdToCupRateTimelines({
+    required List<Map<String, dynamic>> storeRates,
+    required List<Map<String, dynamic>> globalRates,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _usdCupRateTimelinesKey,
+        jsonEncode({
+          'storeRates': storeRates,
+          'globalRates': globalRates,
+          'savedAt': DateTime.now().toIso8601String(),
+        }),
+      );
+      print(
+        '💱 Timelines USD→CUP guardados: '
+        '${storeRates.length} tienda, ${globalRates.length} globales',
+      );
+    } catch (e) {
+      print('❌ Error guardando timelines USD→CUP: $e');
+    }
+  }
+
+  /// Lee el historial de tasas USD→CUP cacheado (null si no hay).
+  Future<
+      ({
+        List<Map<String, dynamic>> storeRates,
+        List<Map<String, dynamic>> globalRates,
+      })?>
+  getUsdToCupRateTimelines() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_usdCupRateTimelinesKey);
+      if (raw == null || raw.isEmpty) return null;
+
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+
+      List<Map<String, dynamic>> parseList(dynamic value) {
+        if (value is! List) return <Map<String, dynamic>>[];
+        return value
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+
+      final storeRates = parseList(decoded['storeRates']);
+      final globalRates = parseList(decoded['globalRates']);
+      if (storeRates.isEmpty && globalRates.isEmpty) return null;
+
+      print(
+        '💱 Timelines USD→CUP desde cache: '
+        '${storeRates.length} tienda, ${globalRates.length} globales',
+      );
+      return (storeRates: storeRates, globalRates: globalRates);
+    } catch (e) {
+      print('❌ Error leyendo timelines USD→CUP: $e');
+      return null;
+    }
+  }
+
+  Future<void> clearUsdToCupRateTimelines() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_usdCupRateTimelinesKey);
+    } catch (e) {
+      print('❌ Error limpiando timelines USD→CUP: $e');
     }
   }
 

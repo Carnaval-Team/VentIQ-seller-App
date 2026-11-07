@@ -466,6 +466,8 @@ class _AppBarStoreSelectorWidgetState extends State<AppBarStoreSelectorWidget> {
 
   Color _getRoleColor(UserRole role) {
     switch (role) {
+      case UserRole.dueno:
+        return Colors.amber.shade800;
       case UserRole.gerente:
         return Colors.green;
       case UserRole.supervisor:
