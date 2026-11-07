@@ -15,6 +15,8 @@ import '../widgets/product_selector_widget.dart';
 import '../services/product_search_service.dart';
 import '../widgets/ai_reception_sheet.dart';
 import '../models/ai_reception_models.dart';
+import '../models/fondo_inversion.dart';
+import '../services/fondo_inversion_service.dart';
 
 class InventoryReceptionScreen extends StatefulWidget {
   const InventoryReceptionScreen({super.key});
@@ -51,11 +53,17 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   Map<String, dynamic>? _selectedProveedor;
   bool _isLoadingProveedores = false;
 
+  // Inversión del fondo a amortizar con esta recepción (opcional)
+  List<FdiInversion> _inversionesAbiertas = [];
+  FdiInversion? _selectedInversion;
+  final _tasaInversionController = TextEditingController();
+
   @override
   void initState() {
     super.initState();
     _loadMotivoOptions();
     _loadProveedores();
+    _loadInversionesAbiertas();
     _searchController.addListener(_onSearchChanged);
 
     // Load persisted values from previous entries
@@ -81,7 +89,26 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
     _observacionesController.dispose();
     _montoTotalController.dispose();
     _searchController.dispose();
+    _tasaInversionController.dispose();
     super.dispose();
+  }
+
+  /// Inversiones abiertas (pendiente/parcial) de la tienda para amortizar
+  /// con esta recepción. Si falla la carga, la recepción sigue sin vínculo.
+  Future<void> _loadInversionesAbiertas() async {
+    try {
+      final idTienda = await UserPreferencesService().getIdTienda();
+      if (idTienda == null) return;
+      final todas = await FondoInversionService().listInversiones(idTienda);
+      if (!mounted) return;
+      setState(() {
+        _inversionesAbiertas = todas
+            .where((i) => i.estado == 'pendiente' || i.estado == 'parcial')
+            .toList();
+      });
+    } catch (e) {
+      print('ℹ️ Sin inversiones del fondo disponibles: $e');
+    }
   }
 
   void _onSearchChanged() {
@@ -435,12 +462,21 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
       }
       print("==========================================");
 
-      final result = await InventoryService.insertInventoryReception(
+      final montoRecepcion = _montoTotalController.text.isNotEmpty
+          ? double.parse(_montoTotalController.text)
+          : _totalAmount;
+      final inv = _selectedInversion;
+      double? tasaInversion;
+      if (inv != null && inv.monedaReferencia != _selectedCurrency) {
+        tasaInversion = double.tryParse(
+          _tasaInversionController.text.replaceAll(',', '.'),
+        );
+      }
+
+      var result = await InventoryService.insertInventoryReception(
         entregadoPor: _entregadoPorController.text,
         idTienda: idTienda,
-        montoTotal: _montoTotalController.text.isNotEmpty
-            ? double.parse(_montoTotalController.text)
-            : _totalAmount,
+        montoTotal: montoRecepcion,
         motivo: _selectedMotivo?['id'] ?? '',
         observaciones: _observacionesController.text,
         productos: productosParaEnviar,
@@ -448,7 +484,47 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
         idProveedor: _selectedSupplier?.id,
         uuid: userUuid,
         monedaFactura: _selectedCurrency,
+        idInversion: inv?.id,
+        tasaInversion: tasaInversion,
       );
+
+      // La recepción ya quedó registrada; si el vínculo con la inversión
+      // excede el total esperado, confirmar el exceso y reintentar solo el
+      // vínculo (fn_fdi_vincular_recepcion es separado e idempotente).
+      if (mounted &&
+          result['status'] == 'requires_confirmation' &&
+          result['code'] == 'exceso_recepcion' &&
+          inv != null) {
+        final confirmar = await _confirmExcesoInversion(result);
+        if (confirmar == true) {
+          final idOp = (result['id_operacion'] as num?)?.toInt();
+          if (idOp != null) {
+            final vinculo = await FondoInversionService().vincularRecepcion(
+              idOperacion: idOp,
+              idInversion: inv.id,
+              monto: montoRecepcion,
+              moneda: _selectedCurrency,
+              tasaARef: inv.monedaReferencia == _selectedCurrency
+                  ? 1
+                  : (tasaInversion ?? 1),
+              confirmarExceso: true,
+            );
+            if (vinculo['status'] == 'ok') {
+              result['status'] = 'success';
+            } else {
+              result['message'] =
+                  'Recepción registrada pero vínculo a inversión falló: '
+                  '${vinculo['message'] ?? vinculo}';
+            }
+          }
+        } else {
+          // La recepción se registró igual; solo el vínculo quedó pendiente.
+          result['status'] = 'success';
+          result['message'] =
+              'Recepción registrada sin vínculo a la inversión '
+              '(exceso no confirmado)';
+        }
+      }
 
       if (mounted) {
         if (result['status'] == 'success') {
@@ -608,8 +684,85 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
               ),
               keyboardType: TextInputType.number,
             ),
+            // Vínculo opcional con una inversión abierta del fondo
+            if (_inversionesAbiertas.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              DropdownButtonFormField<FdiInversion>(
+                initialValue: _selectedInversion,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Amortizar inversión (opcional)',
+                  border: OutlineInputBorder(),
+                ),
+                items: [
+                  for (final inv in _inversionesAbiertas)
+                    DropdownMenuItem(
+                      value: inv,
+                      child: Text(
+                        '${inv.identificador} · '
+                        'faltan ${(inv.montoTotalRef - inv.montoRecibidoRef).toStringAsFixed(2)} '
+                        '${inv.monedaReferencia}',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: (inv) => setState(() => _selectedInversion = inv),
+              ),
+              if (_selectedInversion != null &&
+                  _selectedInversion!.monedaReferencia != _selectedCurrency) ...[
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _tasaInversionController,
+                  decoration: InputDecoration(
+                    labelText:
+                        'Tasa $_selectedCurrency→${_selectedInversion!.monedaReferencia}',
+                    border: const OutlineInputBorder(),
+                  ),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  validator: (v) {
+                    if (_selectedInversion == null) return null;
+                    final t = double.tryParse((v ?? '').replaceAll(',', '.'));
+                    if (t == null || t <= 0) {
+                      return 'Tasa requerida (monedas distintas)';
+                    }
+                    return null;
+                  },
+                ),
+              ],
+            ],
           ],
         ),
+      ),
+    );
+  }
+
+  Future<bool?> _confirmExcesoInversion(Map<String, dynamic> resp) {
+    num f(dynamic v) => v is num ? v : num.tryParse('$v') ?? 0;
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Exceso sobre la inversión'),
+        content: Text(
+          'Esta recepción sumaría ${f(resp['monto_nuevo_ref']).toStringAsFixed(2)} '
+          'a lo ya recibido (${f(resp['monto_recibido_ref']).toStringAsFixed(2)}) '
+          'y superaría el total esperado '
+          '(${f(resp['monto_total_ref']).toStringAsFixed(2)}).\n\n'
+          'La recepción ya quedó registrada. ¿Vincularla a la inversión '
+          'confirmando el exceso?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('No vincular'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Confirmar exceso'),
+          ),
+        ],
       ),
     );
   }

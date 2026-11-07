@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/app_colors.dart';
 import '../models/product.dart';
 import '../models/warehouse.dart';
+import '../services/costos_adicionales_service.dart';
 import '../services/currency_service.dart';
 import '../services/presentacion_cadena_service.dart';
 import '../utils/presentation_converter.dart';
@@ -77,6 +78,10 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
   bool _esPorLotes = false;
   bool _cargandoFlagLotes = true;
 
+  /// Costos adicionales activos del producto (checkbox + monto editable).
+  List<_CostoAdicionalSeleccion> _costosAdicionales = [];
+  bool _cargandoCostos = false;
+
   @override
   void initState() {
     super.initState();
@@ -95,6 +100,132 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
     _loadLastPurchasePrice();
     _cargarCadenaMixta();
     _resolverEsPorLotes();
+    _cargarCostosAdicionales();
+  }
+
+  Future<void> _cargarCostosAdicionales() async {
+    final id = int.tryParse(widget.product.id);
+    if (id == null) return;
+    setState(() => _cargandoCostos = true);
+    try {
+      final rows =
+          await CostosAdicionalesService().listarActivosPorProducto(id);
+      if (!mounted) return;
+      setState(() {
+        _costosAdicionales = rows.map((r) {
+          final tipo = r['app_cont_tipo_costo'];
+          final nombre = tipo is Map
+              ? (tipo['denominacion']?.toString() ?? 'Concepto')
+              : 'Concepto';
+          final avg = (r['monto_promedio_usd'] as num?)?.toDouble();
+          final cfg = (r['monto_usd'] as num?)?.toDouble() ?? 0;
+          final suggested = (avg != null && avg > 0) ? avg : cfg;
+          return _CostoAdicionalSeleccion(
+            idTipoCosto: r['id_tipo_costo'] as int,
+            denominacion: nombre,
+            aplica: true,
+            montoUsd: suggested,
+            controller: TextEditingController(
+              text: suggested.toStringAsFixed(4),
+            ),
+          );
+        }).toList();
+        _cargandoCostos = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _costosAdicionales = [];
+        _cargandoCostos = false;
+      });
+    }
+  }
+
+  List<Map<String, dynamic>> _costosPayload() {
+    return _costosAdicionales
+        .where((c) => c.aplica)
+        .map((c) {
+          final parsed = double.tryParse(
+                c.controller.text.trim().replaceAll(',', '.'),
+              ) ??
+              c.montoUsd;
+          return {
+            'id_tipo_costo': c.idTipoCosto,
+            'monto_usd': parsed,
+          };
+        })
+        .toList();
+  }
+
+  Widget _buildCostosAdicionalesSection({required bool compact}) {
+    if (_cargandoCostos) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 8),
+        child: LinearProgressIndicator(minHeight: 2),
+      );
+    }
+    if (_costosAdicionales.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(height: compact ? 12 : 16),
+        Text(
+          'Costos adicionales',
+          style: TextStyle(
+            fontSize: compact ? 13 : 14,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Por unidad base (USD). Marca los que aplican a esta recepción.',
+          style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+        ),
+        const SizedBox(height: 8),
+        ..._costosAdicionales.map((c) {
+          return Container(
+            margin: const EdgeInsets.only(bottom: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.teal.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.teal.withOpacity(0.2)),
+            ),
+            child: Row(
+              children: [
+                Checkbox(
+                  value: c.aplica,
+                  onChanged: (v) => setState(() => c.aplica = v ?? false),
+                ),
+                Expanded(
+                  child: Text(
+                    c.denominacion,
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+                SizedBox(
+                  width: 100,
+                  child: TextField(
+                    controller: c.controller,
+                    enabled: c.aplica,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      labelText: 'USD',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
+    );
   }
 
   /// Confirma `es_por_lotes` desde BD si el Product llegó sin el flag.
@@ -189,6 +320,9 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
     _descuentoMontoController.dispose();
     _bonificacionCantidadController.dispose();
     _codigoLoteController.dispose();
+    for (final c in _costosAdicionales) {
+      c.controller.dispose();
+    }
     super.dispose();
   }
 
@@ -429,6 +563,7 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
       final monedaGuardar = _finalCurrency;
 
       try {
+        final costos = _costosPayload();
         final baseProductData = {
           'id_producto': widget.product.id,
           'precio_referencia': precioReferencia,
@@ -438,6 +573,7 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
           'denominacion': widget.product.name,
           'sku_producto': widget.product.sku,
           'moneda_precio': monedaGuardar,
+          if (costos.isNotEmpty) 'costos': costos,
           ..._lotePayload(),
         };
 
@@ -509,6 +645,7 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
         // delega esto en PriceCurrencyConverterWidget).
         final precioUSD = _aUSD(linea.precioUnitario!);
 
+        final costos = linea == _lineasMixtas.first ? _costosPayload() : <Map<String, dynamic>>[];
         final baseProductData = <String, dynamic>{
           'id_producto': widget.product.id,
           'precio_referencia': precioReferencia,
@@ -525,6 +662,7 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
           'denominacion': widget.product.name,
           'sku_producto': widget.product.sku,
           'moneda_precio': 'USD',
+          if (costos.isNotEmpty) 'costos': costos,
           ...loteFields,
         };
 
@@ -684,6 +822,7 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
                           ),
                         SizedBox(height: compact ? 14 : 20),
                         _buildInputSection(compact: compact),
+                        _buildCostosAdicionalesSection(compact: compact),
                         SizedBox(height: compact ? 12 : 16),
                         if (_cargandoFlagLotes)
                           const Padding(
@@ -1488,4 +1627,20 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
       ],
     );
   }
+}
+
+class _CostoAdicionalSeleccion {
+  _CostoAdicionalSeleccion({
+    required this.idTipoCosto,
+    required this.denominacion,
+    required this.aplica,
+    required this.montoUsd,
+    required this.controller,
+  });
+
+  final int idTipoCosto;
+  final String denominacion;
+  bool aplica;
+  double montoUsd;
+  final TextEditingController controller;
 }

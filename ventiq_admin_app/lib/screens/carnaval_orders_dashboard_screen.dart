@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../services/carnaval_service.dart';
+import '../services/permissions_service.dart';
 
 class CarnavalOrdersDashboardScreen extends StatefulWidget {
   const CarnavalOrdersDashboardScreen({Key? key}) : super(key: key);
@@ -35,6 +36,7 @@ class _CarnavalOrdersDashboardScreenState
   // Dynamic percentages
   double _pctEfectivo = 5.0;
   double _pctTransferencia = 15.0;
+  bool _canViewGanancias = false;
 
   @override
   void initState() {
@@ -42,7 +44,14 @@ class _CarnavalOrdersDashboardScreenState
     final now = DateTime.now();
     _fromDate = DateTime(now.year, now.month, 1);
     _toDate = now;
+    _loadProfitPermission();
     _loadData();
+  }
+
+  Future<void> _loadProfitPermission() async {
+    final allowed = await PermissionsService().canViewGanancias();
+    if (!mounted) return;
+    setState(() => _canViewGanancias = allowed);
   }
 
   Future<void> _loadData() async {
@@ -293,10 +302,12 @@ class _CarnavalOrdersDashboardScreenState
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
                           color: Colors.green[900])),
-                  const SizedBox(height: 4),
-                  Text('Ganancia (${_pctEfectivo.toStringAsFixed(0)}%): ${_fmtMoney(gananciaEfectivo)}',
-                      style: TextStyle(
-                          fontSize: 12, color: Colors.green[700])),
+                  if (_canViewGanancias) ...[
+                    const SizedBox(height: 4),
+                    Text('Ganancia (${_pctEfectivo.toStringAsFixed(0)}%): ${_fmtMoney(gananciaEfectivo)}',
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.green[700])),
+                  ],
                 ],
               ),
             ),
@@ -328,10 +339,12 @@ class _CarnavalOrdersDashboardScreenState
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
                           color: Colors.blue[900])),
-                  const SizedBox(height: 4),
-                  Text('Ganancia (${_pctTransferencia.toStringAsFixed(0)}%): ${_fmtMoney(gananciaTransferencia)}',
-                      style:
-                          TextStyle(fontSize: 12, color: Colors.blue[700])),
+                  if (_canViewGanancias) ...[
+                    const SizedBox(height: 4),
+                    Text('Ganancia (${_pctTransferencia.toStringAsFixed(0)}%): ${_fmtMoney(gananciaTransferencia)}',
+                        style:
+                            TextStyle(fontSize: 12, color: Colors.blue[700])),
+                  ],
                 ],
               ),
             ),
@@ -498,6 +511,7 @@ class _CarnavalOrdersDashboardScreenState
                         ],
                       ),
                     ),
+                    if (_canViewGanancias)
                     Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 10, vertical: 6),

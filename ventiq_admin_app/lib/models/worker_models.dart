@@ -53,6 +53,7 @@ class WorkerData {
 
   // 🆕 Nuevos campos para roles múltiples
   final bool tieneUsuario;
+  final bool esDueno;
   final bool esGerente;
   final bool esSupervisor;
   final bool esVendedor;
@@ -76,6 +77,7 @@ class WorkerData {
     this.pagoPorResultado = 0.0, // Valor por defecto 0
     this.manejaAperturaControl, // 📋 Puede ser null
     this.tieneUsuario = false,
+    this.esDueno = false,
     this.esGerente = false,
     this.esSupervisor = false,
     this.esVendedor = false,
@@ -113,6 +115,7 @@ class WorkerData {
               as bool?, // 📋 Parsear control inventario
       // 🆕 Parsear nuevos campos de roles múltiples
       tieneUsuario: json['tiene_usuario'] as bool? ?? false,
+      esDueno: json['es_dueno'] as bool? ?? false,
       esGerente: json['es_gerente'] as bool? ?? false,
       esSupervisor: json['es_supervisor'] as bool? ?? false,
       esVendedor: json['es_vendedor'] as bool? ?? false,
@@ -136,6 +139,7 @@ class WorkerData {
     List<String> roles = [];
     // Usar ?? false para manejar valores null de forma segura
     if (tieneUsuario == true) roles.add('usuario');
+    if (esDueno == true) roles.add('dueno');
     if (esGerente == true) roles.add('gerente');
     if (esSupervisor == true) roles.add('supervisor');
     if (esVendedor == true) roles.add('vendedor');
@@ -179,6 +183,7 @@ class WorkerData {
           manejaAperturaControl, // 📋 Incluir control inventario en JSON
       // 🆕 Incluir nuevos campos en JSON
       'tiene_usuario': tieneUsuario,
+      'es_dueno': esDueno,
       'es_gerente': esGerente,
       'es_supervisor': esSupervisor,
       'es_vendedor': esVendedor,

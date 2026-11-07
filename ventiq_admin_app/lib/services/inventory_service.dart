@@ -17,6 +17,7 @@ import 'consignacion_service.dart'; // Import para validación de operaciones de
 import 'margin_service.dart';
 import 'currency_service.dart';
 import 'store_config_service.dart';
+import 'costos_adicionales_service.dart';
 
 class InventoryService {
   static final InventoryService _instance = InventoryService._internal();
@@ -1343,6 +1344,8 @@ class InventoryService {
     required String uuid,
     int? idProveedor, // ← AGREGAR ESTE PARÁMETRO
     required String monedaFactura,
+    int? idInversion,
+    double? tasaInversion,
   }) async {
     try {
       print('🔍 Insertando recepción de inventario...');
@@ -1366,6 +1369,8 @@ class InventoryService {
           'p_recibido_por': recibidoPor,
           'p_uuid': uuid,
           'p_moneda_factura': monedaFactura,
+          'p_id_inversion': idInversion,
+          'p_tasa_inversion': tasaInversion,
         },
       );
 
@@ -1381,6 +1386,20 @@ class InventoryService {
 
       if (response == null) {
         throw Exception('Respuesta nula de la función RPC');
+      }
+
+      final idOperacion = response['id_operacion'];
+      if (idOperacion != null) {
+        try {
+          await CostosAdicionalesService().persistirCostosRecepcion(
+            idOperacion: idOperacion is int
+                ? idOperacion
+                : int.parse(idOperacion.toString()),
+            productos: productosConvertidos,
+          );
+        } catch (e) {
+          print('⚠️ No se pudieron persistir costos adicionales: $e');
+        }
       }
 
       return response as Map<String, dynamic>;
@@ -3395,7 +3414,9 @@ class InventoryService {
         // Obtener todos los productos recibidos en esta operación
         final productosRecibidos = await _supabase
             .from('app_dat_recepcion_productos')
-            .select('id_producto, id_presentacion, precio_unitario, cantidad')
+            .select(
+              'id, id_producto, id_presentacion, precio_unitario, cantidad',
+            )
             .eq('id_operacion', idOperacion);
 
         print(
@@ -4109,13 +4130,29 @@ class InventoryService {
         };
       }
 
+      // Adjuntar costos adicionales ya persistidos en la recepción (si hay).
+      final idsRp = productos
+          .map((p) => p['id'])
+          .whereType<int>()
+          .toList();
+      final costosPorRp = await CostosAdicionalesService()
+          .costosPorRecepcionProductos(idsRp);
+
       // Convertir productos a formato JSON para enviar a la función
       final productosJson = productos.map((p) {
-        return {
+        final idRp = p['id'] as int?;
+        final costos = idRp != null ? costosPorRp[idRp] : null;
+        final map = <String, dynamic>{
           'id_presentacion': p['id_presentacion'],
           'precio_unitario': p['precio_unitario'],
           'cantidad': p['cantidad'],
         };
+        if (costos != null && costos.isNotEmpty) {
+          map['costos'] = costos;
+        } else if (p['costos'] is List && (p['costos'] as List).isNotEmpty) {
+          map['costos'] = p['costos'];
+        }
+        return map;
       }).toList();
 
       print('📦 Productos JSON: $productosJson');

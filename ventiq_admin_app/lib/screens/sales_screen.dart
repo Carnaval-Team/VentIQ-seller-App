@@ -25,6 +25,8 @@ import '../services/sales_analyst_controller.dart';
 import '../services/subscription_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/permissions_service.dart';
+import '../widgets/fdi_liquidacion_dialog.dart';
+import '../widgets/sales_totals_summary.dart';
 
 // Importación condicional para descargas en web
 import '../services/web_download_stub.dart'
@@ -42,6 +44,7 @@ class _SalesScreenState extends State<SalesScreen>
     with TickerProviderStateMixin {
   TabController? _tabController;
   bool _canViewRealTime = true;
+  bool _canViewGanancias = false;
   bool _tabsReady = false;
   List<Sale> _sales = [];
   List<SalesVendorReport> _vendorReports = [];
@@ -77,7 +80,6 @@ class _SalesScreenState extends State<SalesScreen>
   final ScrollController _analystScrollController = ScrollController();
   final FocusNode _analystFocusNode = FocusNode();
   final List<String> _analystSuggestions = [
-    '¿Cuáles productos dejan más ganancia?',
     'Muéstrame las ventas por proveedor.',
     'Top 5 productos más vendidos del período.',
     '¿Cómo evolucionaron las ventas en el rango?',
@@ -403,17 +405,19 @@ class _SalesScreenState extends State<SalesScreen>
               ),
             ),
             pw.SizedBox(height: 12),
-            pw.Text(
-              'Costos y Ganancias (por producto)',
-              style: pw.TextStyle(
-                fontSize: 14,
-                fontWeight: pw.FontWeight.bold,
-                color: PdfColor.fromHex('#0F172A'),
+            if (_canViewGanancias) ...[
+              pw.Text(
+                'Costos y Ganancias (por producto)',
+                style: pw.TextStyle(
+                  fontSize: 14,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColor.fromHex('#0F172A'),
+                ),
               ),
-            ),
-            pw.SizedBox(height: 6),
-            _buildProductCostsTable(productReports),
-            pw.SizedBox(height: 16),
+              pw.SizedBox(height: 6),
+              _buildProductCostsTable(productReports),
+              pw.SizedBox(height: 16),
+            ],
             _buildPdfSummaryTotals(
               ventaTotal: ventaTotal,
               descuentoTotal: descuentoTotal,
@@ -1212,10 +1216,10 @@ class _SalesScreenState extends State<SalesScreen>
             _pdfHeaderCell('Producto'),
             _pdfHeaderCell('Cant.'),
             _pdfHeaderCell('Precio'),
-            _pdfHeaderCell('Costo'),
-            _pdfHeaderCell('Costo total'),
+            _pdfHeaderCell(_canViewGanancias ? 'Costo' : ''),
+            _pdfHeaderCell(_canViewGanancias ? 'Costo total' : ''),
             _pdfHeaderCell('Subtotal'),
-            _pdfHeaderCell('Ganancia'),
+            _pdfHeaderCell(_canViewGanancias ? 'Ganancia' : ''),
           ],
         ),
         ...items
@@ -1256,11 +1260,15 @@ class _SalesScreenState extends State<SalesScreen>
                     _pdfBodyCell(nombre),
                     _pdfBodyCell(cantidad),
                     _pdfBodyCell('\$$precio'),
-                    _pdfBodyCell('\$${costoUnitario.toStringAsFixed(2)}'),
-                    _pdfBodyCell('\$$costoTotal'),
+                    _pdfBodyCell(
+                      _canViewGanancias
+                          ? '\$${costoUnitario.toStringAsFixed(2)}'
+                          : '',
+                    ),
+                    _pdfBodyCell(_canViewGanancias ? '\$$costoTotal' : ''),
                     _pdfBodyCell('\$$subtotal'),
                     _pdfBodyCell(
-                      '\$$ganancia',
+                      _canViewGanancias ? '\$$ganancia' : '',
                       isBold: true,
                       color: gananciaColor,
                     ),
@@ -1386,16 +1394,17 @@ class _SalesScreenState extends State<SalesScreen>
         children: [
           _pdfSummaryRow('Subtotal', original),
           if (descuento > 0) _pdfSummaryRow('Descuento', -descuento),
-          _pdfSummaryRow('Costo', -costo),
+          if (_canViewGanancias) _pdfSummaryRow('Costo', -costo),
           pw.Divider(height: 8, color: PdfColors.grey500, thickness: 0.5),
           _pdfSummaryRow('Total', total, isBold: true, fontSize: 12),
-          _pdfSummaryRow(
-            'Ganancia orden',
-            ganancia,
-            isBold: true,
-            positiveColor: PdfColor.fromHex('#15803D'),
-            negativeColor: PdfColor.fromHex('#DC2626'),
-          ),
+          if (_canViewGanancias)
+            _pdfSummaryRow(
+              'Ganancia orden',
+              ganancia,
+              isBold: true,
+              positiveColor: PdfColor.fromHex('#15803D'),
+              negativeColor: PdfColor.fromHex('#DC2626'),
+            ),
         ],
       ),
     );
@@ -1442,8 +1451,8 @@ class _SalesScreenState extends State<SalesScreen>
             _pdfHeaderCell('Producto'),
             _pdfHeaderCell('Cant.'),
             _pdfHeaderCell('Precio'),
-            _pdfHeaderCell('Costo'),
-            _pdfHeaderCell('Ganancia total'),
+            _pdfHeaderCell(_canViewGanancias ? 'Costo' : ''),
+            _pdfHeaderCell(_canViewGanancias ? 'Ganancia total' : ''),
           ],
         ),
         ...sorted.map((p) {
@@ -1464,9 +1473,15 @@ class _SalesScreenState extends State<SalesScreen>
                     : p.totalVendido.toStringAsFixed(0),
               ),
               _pdfBodyCell('\$${p.precioVentaCup.toStringAsFixed(2)}'),
-              _pdfBodyCell('\$${p.precioCostoCup.toStringAsFixed(2)}'),
               _pdfBodyCell(
-                '\$${gananciaLinea.toStringAsFixed(2)}',
+                _canViewGanancias
+                    ? '\$${p.precioCostoCup.toStringAsFixed(2)}'
+                    : '',
+              ),
+              _pdfBodyCell(
+                _canViewGanancias
+                    ? '\$${gananciaLinea.toStringAsFixed(2)}'
+                    : '',
                 isBold: true,
                 color: gananciaColor,
               ),
@@ -1489,7 +1504,7 @@ class _SalesScreenState extends State<SalesScreen>
             _pdfBodyCell(''),
             _pdfBodyCell(''),
             _pdfBodyCell(
-              '\$${totalGanancia.toStringAsFixed(2)}',
+              _canViewGanancias ? '\$${totalGanancia.toStringAsFixed(2)}' : '',
               isBold: true,
               color: totalGananciaColor,
             ),
@@ -1528,20 +1543,22 @@ class _SalesScreenState extends State<SalesScreen>
           pw.SizedBox(height: 8),
           _pdfSummaryRow('Venta total', ventaTotal),
           _pdfSummaryRow('Descuento total', -descuentoTotal),
-          _pdfSummaryRow('Costo total', -costoTotal),
-          _pdfSummaryRow(
-            'Ganancia total',
-            gananciaTotal,
-            positiveColor: PdfColor.fromHex('#15803D'),
-            negativeColor: PdfColor.fromHex('#DC2626'),
-          ),
-          _pdfSummaryRow(
-            'Ganancias reales',
-            gananciasReales,
-            isBold: true,
-            positiveColor: PdfColor.fromHex('#15803D'),
-            negativeColor: PdfColor.fromHex('#DC2626'),
-          ),
+          if (_canViewGanancias) ...[
+            _pdfSummaryRow('Costo total', -costoTotal),
+            _pdfSummaryRow(
+              'Ganancia total',
+              gananciaTotal,
+              positiveColor: PdfColor.fromHex('#15803D'),
+              negativeColor: PdfColor.fromHex('#DC2626'),
+            ),
+            _pdfSummaryRow(
+              'Ganancias reales',
+              gananciasReales,
+              isBold: true,
+              positiveColor: PdfColor.fromHex('#15803D'),
+              negativeColor: PdfColor.fromHex('#DC2626'),
+            ),
+          ],
           _pdfSummaryRow('Pago total (pagos)', pagoTotal),
         ],
       ),
@@ -1653,9 +1670,12 @@ class _SalesScreenState extends State<SalesScreen>
   }
 
   Future<void> _initTabsAndData() async {
-    final canViewRealTime = await PermissionsService().canPerformAction(
-      'sales.view_realtime',
-    );
+    final results = await Future.wait([
+      PermissionsService().canPerformAction('sales.view_realtime'),
+      PermissionsService().canViewGanancias(),
+    ]);
+    final canViewRealTime = results[0];
+    final canViewGanancias = results[1];
     if (!mounted) return;
     _tabController?.dispose();
     final controller = TabController(
@@ -1665,6 +1685,7 @@ class _SalesScreenState extends State<SalesScreen>
     controller.addListener(_onTabChanged);
     setState(() {
       _canViewRealTime = canViewRealTime;
+      _canViewGanancias = canViewGanancias;
       _tabController = controller;
       _tabsReady = true;
     });
@@ -2114,6 +2135,7 @@ class _SalesScreenState extends State<SalesScreen>
   }
 
   Widget _buildMissingExchangeRateWarning() {
+    if (!_canViewGanancias) return const SizedBox.shrink();
     return Card(
       color: Colors.amber.shade50,
       child: Padding(
@@ -2384,35 +2406,56 @@ class _SalesScreenState extends State<SalesScreen>
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: AppColors.border),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                Expanded(
-                  child: _buildSummaryColumn(
-                    'Ventas Totales',
-                    totalVentas,
-                    AppColors.success,
-                  ),
-                ),
-                Expanded(
-                  child: _buildSummaryColumn(
-                    'Costo Total',
-                    totalCosto,
-                    AppColors.warning,
-                  ),
-                ),
-                Expanded(
-                  child: _buildSummaryColumn(
-                    'Ganancia Total',
-                    totalGanancia,
-                    AppColors.primary,
-                  ),
-                ),
-              ],
+            child: SalesTotalsSummary(
+              ventas: totalVentas,
+              costo: totalCosto,
+              ganancia: totalGanancia,
+              showProfit: _canViewGanancias,
             ),
           ),
 
           const SizedBox(height: 16),
+
+          // Botón "Crear liquidación" del Fondo de Inversión (solo Dueño)
+          FutureBuilder<bool>(
+            future: PermissionsService().canViewGanancias(),
+            builder: (context, snapshot) {
+              if (snapshot.data != true) {
+                return const SizedBox.shrink();
+              }
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      final liquidada = await showDialog<bool>(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (_) => FdiLiquidacionDialog(
+                          desde: _startDate,
+                          hasta: _endDate,
+                        ),
+                      );
+                      if (liquidada == true && mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Liquidación creada correctamente',
+                            ),
+                            backgroundColor: AppColors.success,
+                          ),
+                        );
+                        await _loadSupplierReports();
+                      }
+                    },
+                    icon: const Icon(Icons.savings_outlined),
+                    label: const Text('Crear liquidación'),
+                  ),
+                ),
+              );
+            },
+          ),
 
           _isLoadingSuppliers
               ? const Padding(
@@ -2435,32 +2478,34 @@ class _SalesScreenState extends State<SalesScreen>
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: DataTable(
-                      columns: const [
-                        DataColumn(
+                      columns: [
+                        const DataColumn(
                           label: Text(
                             'Proveedor',
                             style: TextStyle(fontWeight: FontWeight.bold),
                           ),
                         ),
-                        DataColumn(
+                        const DataColumn(
                           label: Text(
                             'Ventas',
                             style: TextStyle(fontWeight: FontWeight.bold),
                           ),
                         ),
-                        DataColumn(
-                          label: Text(
-                            'Costo',
-                            style: TextStyle(fontWeight: FontWeight.bold),
+                        if (_canViewGanancias) ...const [
+                          DataColumn(
+                            label: Text(
+                              'Costo',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
                           ),
-                        ),
-                        DataColumn(
-                          label: Text(
-                            'Ganancia',
-                            style: TextStyle(fontWeight: FontWeight.bold),
+                          DataColumn(
+                            label: Text(
+                              'Ganancia',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
                           ),
-                        ),
-                        DataColumn(
+                        ],
+                        const DataColumn(
                           label: Text(
                             'Acciones',
                             style: TextStyle(fontWeight: FontWeight.bold),
@@ -2480,23 +2525,25 @@ class _SalesScreenState extends State<SalesScreen>
                                   ),
                                 ),
                               ),
-                              DataCell(
-                                Text(
-                                  '\$${report.totalCosto.toStringAsFixed(2)}',
-                                  style: const TextStyle(
-                                    color: AppColors.warning,
+                              if (_canViewGanancias) ...[
+                                DataCell(
+                                  Text(
+                                    '\$${report.totalCosto.toStringAsFixed(2)}',
+                                    style: const TextStyle(
+                                      color: AppColors.warning,
+                                    ),
                                   ),
                                 ),
-                              ),
-                              DataCell(
-                                Text(
-                                  '\$${report.totalGanancia.toStringAsFixed(2)}',
-                                  style: const TextStyle(
-                                    color: AppColors.primary,
-                                    fontWeight: FontWeight.bold,
+                                DataCell(
+                                  Text(
+                                    '\$${report.totalGanancia.toStringAsFixed(2)}',
+                                    style: const TextStyle(
+                                      color: AppColors.primary,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ),
-                              ),
+                              ],
                               DataCell(
                                 ElevatedButton.icon(
                                   onPressed: () =>
@@ -2544,26 +2591,28 @@ class _SalesScreenState extends State<SalesScreen>
                                 ),
                               ),
                             ),
-                            DataCell(
-                              Text(
-                                '\$${totalCosto.toStringAsFixed(2)}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
-                                  color: AppColors.warning,
+                            if (_canViewGanancias) ...[
+                              DataCell(
+                                Text(
+                                  '\$${totalCosto.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                    color: AppColors.warning,
+                                  ),
                                 ),
                               ),
-                            ),
-                            DataCell(
-                              Text(
-                                '\$${totalGanancia.toStringAsFixed(2)}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
-                                  color: AppColors.primary,
+                              DataCell(
+                                Text(
+                                  '\$${totalGanancia.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                    color: AppColors.primary,
+                                  ),
                                 ),
                               ),
-                            ),
+                            ],
                             const DataCell(Text('')),
                           ],
                         ),
@@ -4352,26 +4401,6 @@ class _SalesScreenState extends State<SalesScreen>
     }
   }
 
-  Widget _buildSummaryColumn(String label, double value, Color color) {
-    return Column(
-      children: [
-        Text(
-          '\$${value.toStringAsFixed(2)}',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: color,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-        ),
-      ],
-    );
-  }
-
   String _formatDateRangeLabel() {
     final startFormatted =
         '${_startDate.day.toString().padLeft(2, '0')}/${_startDate.month.toString().padLeft(2, '0')}/${_startDate.year}';
@@ -4491,6 +4520,22 @@ class _SalesScreenState extends State<SalesScreen>
                   await _exportProductSalesReportExcel();
                 },
               ),
+              ListTile(
+                leading: const Icon(Icons.receipt_long),
+                title: const Text('Reporte de ventas por orden en PDF'),
+                onTap: () async {
+                  Navigator.of(sheetContext).pop();
+                  await _exportOrdersReportPdf();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.receipt_long),
+                title: const Text('Reporte de ventas por orden en Excel'),
+                onTap: () async {
+                  Navigator.of(sheetContext).pop();
+                  await _exportOrdersReportExcel();
+                },
+              ),
             ],
           ),
         );
@@ -4566,17 +4611,22 @@ class _SalesScreenState extends State<SalesScreen>
             ),
             pw.SizedBox(height: 12),
             pw.TableHelper.fromTextArray(
-              headers: const [
+              headers: [
                 'Producto',
                 'Precio (u)',
                 'Cant. vendidos',
                 'Equiv. u. base',
                 'Total venta',
-                'Costo (u)',
-                'Total costo',
-                'Ganancia',
+                if (_canViewGanancias) ...[
+                  'Costo (u)',
+                  'Total costo',
+                  'Ganancia',
+                ],
               ],
-              data: rows,
+              data: rows.map((row) {
+                if (_canViewGanancias) return row;
+                return row.sublist(0, 5);
+              }).toList(),
               headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
               headerDecoration: const pw.BoxDecoration(
                 color: PdfColors.grey300,
@@ -4645,9 +4695,11 @@ class _SalesScreenState extends State<SalesScreen>
         excel.TextCellValue('Cant. vendidos'),
         excel.TextCellValue('Equiv. u. base'),
         excel.TextCellValue('Total venta'),
-        excel.TextCellValue('Costo unitario'),
-        excel.TextCellValue('Total costo'),
-        excel.TextCellValue('Ganancia'),
+        if (_canViewGanancias) ...[
+          excel.TextCellValue('Costo unitario'),
+          excel.TextCellValue('Total costo'),
+          excel.TextCellValue('Ganancia'),
+        ],
       ]);
       double totalQuantity = 0;
       double totalRevenue = 0;
@@ -4670,9 +4722,11 @@ class _SalesScreenState extends State<SalesScreen>
           ),
           excel.DoubleCellValue(report.equivUnidadesBase),
           excel.DoubleCellValue(revenue),
-          excel.DoubleCellValue(unitCost),
-          excel.DoubleCellValue(cost),
-          excel.DoubleCellValue(report.gananciaReportada),
+          if (_canViewGanancias) ...[
+            excel.DoubleCellValue(unitCost),
+            excel.DoubleCellValue(cost),
+            excel.DoubleCellValue(report.gananciaReportada),
+          ],
         ]);
       }
       sheet.appendRow([]);
@@ -4684,9 +4738,11 @@ class _SalesScreenState extends State<SalesScreen>
         excel.TextCellValue(''),
         excel.DoubleCellValue(totalQuantity),
         excel.DoubleCellValue(totalRevenue),
-        excel.TextCellValue(''),
-        excel.DoubleCellValue(totalCost),
-        excel.DoubleCellValue(totalRevenue - totalCost),
+        if (_canViewGanancias) ...[
+          excel.TextCellValue(''),
+          excel.DoubleCellValue(totalCost),
+          excel.DoubleCellValue(totalRevenue - totalCost),
+        ],
       ]);
 
       final bytes = workbook.encode();
@@ -4705,6 +4761,259 @@ class _SalesScreenState extends State<SalesScreen>
         await Share.shareXFiles([
           XFile(file.path, mimeType: mime),
         ], text: 'Reporte de ventas por producto');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error exportando reporte: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isExportingProductHistory = false);
+    }
+  }
+
+  /// Obtiene los datos de la tienda para el encabezado de los reportes.
+  Future<({String name, String address, String location, String phone, Uint8List? logoBytes})>
+  _loadStoreHeaderData() async {
+    final storeId = await UserPreferencesService().getIdTienda();
+    Map<String, dynamic>? storeData;
+    if (storeId != null) {
+      storeData = await Supabase.instance.client
+          .from('app_dat_tienda')
+          .select('denominacion, direccion, ubicacion, phone, imagen_url')
+          .eq('id', storeId)
+          .maybeSingle();
+    }
+    final logoBytes = await _downloadImageBytes(
+      storeData?['imagen_url'] as String?,
+    );
+    return (
+      name: storeData?['denominacion'] as String? ?? 'Inventtia',
+      address: storeData?['direccion'] as String? ?? '',
+      location: storeData?['ubicacion'] as String? ?? '',
+      phone: storeData?['phone'] as String? ?? '',
+      logoBytes: logoBytes,
+    );
+  }
+
+  /// Reporte de ventas por orden en PDF: cada orden con sus productos,
+  /// cantidades e importe. Encabezado con datos de la tienda y período.
+  Future<void> _exportOrdersReportPdf() async {
+    setState(() => _isExportingProductHistory = true);
+    try {
+      final store = await _loadStoreHeaderData();
+      final orders = await _fetchOrdersForPdf(
+        start: _startDate,
+        end: _endDate,
+      );
+      if (orders.isEmpty) {
+        throw Exception('No hay órdenes de venta en el período seleccionado');
+      }
+      orders.sort((a, b) => a.fechaOperacion.compareTo(b.fechaOperacion));
+
+      final dateLabel =
+          '${_formatDateForPdf(_startDate)} - ${_formatDateForPdf(_endDate)}';
+      final totalGeneral = orders.fold<double>(0.0, (sum, o) {
+        final summary = _calculateDiscountSummary(o);
+        return sum + (summary['cobrado'] ?? o.totalOperacion);
+      });
+
+      final pdf = pw.Document();
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          build: (context) => [
+            _buildPdfHeader(
+              logoBytes: store.logoBytes,
+              storeName: store.name,
+              storeAddress: store.address,
+              storeLocation: store.location,
+              storePhone: store.phone,
+              dateLabel: 'Período consultado: $dateLabel',
+              reportTitle: 'Reporte de Ventas por Orden',
+              extraLines: [
+                'Fecha de consulta: ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}',
+              ],
+            ),
+            pw.SizedBox(height: 16),
+            pw.Text(
+              '${orders.length} órdenes · Total: \$${totalGeneral.toStringAsFixed(2)}',
+              style: pw.TextStyle(
+                fontSize: 12,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColor.fromHex('#0F172A'),
+              ),
+            ),
+            pw.SizedBox(height: 12),
+            ...orders.map(
+              (order) => pw.Container(
+                margin: const pw.EdgeInsets.only(bottom: 12),
+                padding: const pw.EdgeInsets.all(12),
+                decoration: pw.BoxDecoration(
+                  color: PdfColor.fromHex('#F8FAFC'),
+                  borderRadius: pw.BorderRadius.circular(10),
+                  border: pw.Border.all(color: PdfColors.grey300, width: 0.8),
+                ),
+                child: _buildVendorOrderPdfDetailSection(order),
+              ),
+            ),
+          ],
+        ),
+      );
+
+      final pdfBytes = await pdf.save();
+      final fileName =
+          'reporte_ventas_por_orden_${DateFormat('yyyyMMdd').format(_startDate)}_'
+          '${DateFormat('yyyyMMdd').format(_endDate)}.pdf';
+      if (kIsWeb) {
+        await Printing.sharePdf(bytes: pdfBytes, filename: fileName);
+      } else {
+        final output = await getTemporaryDirectory();
+        final file = File('${output.path}/$fileName');
+        await file.writeAsBytes(pdfBytes);
+        await Share.shareXFiles([
+          XFile(file.path, mimeType: 'application/pdf'),
+        ], text: 'Reporte de ventas por orden · $dateLabel');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error exportando reporte: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isExportingProductHistory = false);
+    }
+  }
+
+  /// Reporte de ventas por orden en Excel: una sección por orden con sus
+  /// productos, cantidades e importe, más total por orden y total general.
+  Future<void> _exportOrdersReportExcel() async {
+    setState(() => _isExportingProductHistory = true);
+    try {
+      final store = await _loadStoreHeaderData();
+      final orders = await _fetchOrdersForPdf(
+        start: _startDate,
+        end: _endDate,
+      );
+      if (orders.isEmpty) {
+        throw Exception('No hay órdenes de venta en el período seleccionado');
+      }
+      orders.sort((a, b) => a.fechaOperacion.compareTo(b.fechaOperacion));
+
+      final workbook = excel.Excel.createExcel();
+      workbook.delete('Sheet1');
+      final sheet = workbook['Ventas por orden'];
+
+      // Encabezado con datos de la tienda y período consultado
+      sheet.appendRow([excel.TextCellValue('Reporte de Ventas por Orden')]);
+      sheet.appendRow([
+        excel.TextCellValue('Tienda'),
+        excel.TextCellValue(store.name),
+      ]);
+      final storeAddressLine = [
+        if (store.address.isNotEmpty) store.address,
+        if (store.location.isNotEmpty) store.location,
+      ].join(' · ');
+      if (storeAddressLine.isNotEmpty) {
+        sheet.appendRow([
+          excel.TextCellValue('Dirección'),
+          excel.TextCellValue(storeAddressLine),
+        ]);
+      }
+      if (store.phone.isNotEmpty) {
+        sheet.appendRow([
+          excel.TextCellValue('Teléfono'),
+          excel.TextCellValue(store.phone),
+        ]);
+      }
+      sheet.appendRow([
+        excel.TextCellValue('Período consultado'),
+        excel.TextCellValue(
+          '${DateFormat('dd/MM/yyyy').format(_startDate)} - ${DateFormat('dd/MM/yyyy').format(_endDate)}',
+        ),
+      ]);
+      sheet.appendRow([
+        excel.TextCellValue('Fecha de consulta'),
+        excel.TextCellValue(
+          DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now()),
+        ),
+      ]);
+      sheet.appendRow([]);
+
+      double totalGeneral = 0;
+      for (final order in orders) {
+        final summary = _calculateDiscountSummary(order);
+        final cobrado = summary['cobrado'] ?? order.totalOperacion;
+        final cliente = order.detalles['cliente'] as Map<String, dynamic>?;
+        final clienteNombre = cliente?['nombre_completo']?.toString() ?? '';
+        final items = _filterUniqueOrderItems(
+          (order.detalles['items'] as List?) ?? [],
+        );
+
+        sheet.appendRow([
+          excel.TextCellValue(
+            'Orden #${order.idOperacion} · '
+            '${DateFormat('dd/MM/yyyy HH:mm').format(order.fechaOperacion)} · '
+            '${order.estadoNombre}'
+            '${clienteNombre.isNotEmpty ? ' · Cliente: $clienteNombre' : ''}',
+          ),
+        ]);
+        sheet.appendRow([
+          excel.TextCellValue('Producto'),
+          excel.TextCellValue('Cantidad'),
+          excel.TextCellValue('Importe'),
+        ]);
+        for (final item in items) {
+          final nombre =
+              item['producto_nombre']?.toString() ??
+              item['nombre']?.toString() ??
+              'Producto';
+          sheet.appendRow([
+            excel.TextCellValue(nombre),
+            excel.TextCellValue(_formatCantidadDecimal(item['cantidad'])),
+            excel.DoubleCellValue(_toDoubleSafe(item['importe'])),
+          ]);
+        }
+        sheet.appendRow([
+          excel.TextCellValue('Total orden'),
+          excel.TextCellValue(''),
+          excel.DoubleCellValue(cobrado),
+        ]);
+        sheet.appendRow([]);
+        totalGeneral += cobrado;
+      }
+
+      sheet.appendRow([
+        excel.TextCellValue('TOTAL GENERAL (${orders.length} órdenes)'),
+        excel.TextCellValue(''),
+        excel.DoubleCellValue(totalGeneral),
+      ]);
+
+      final bytes = workbook.encode();
+      if (bytes == null) throw Exception('No se pudo generar el archivo Excel');
+      final fileName =
+          'reporte_ventas_por_orden_${DateFormat('yyyyMMdd').format(_startDate)}_'
+          '${DateFormat('yyyyMMdd').format(_endDate)}.xlsx';
+      const mime =
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      if (kIsWeb) {
+        web_download.downloadFileWeb(Uint8List.fromList(bytes), fileName, mime);
+      } else {
+        final output = await getApplicationDocumentsDirectory();
+        final file = File('${output.path}/$fileName');
+        await file.writeAsBytes(bytes);
+        await Share.shareXFiles([
+          XFile(file.path, mimeType: mime),
+        ], text: 'Reporte de ventas por orden');
       }
     } catch (e) {
       if (mounted) {
@@ -4780,14 +5089,19 @@ class _SalesScreenState extends State<SalesScreen>
         'Método de pago',
         'Cant.',
         'Venta u.',
-        'Costo u.',
+        if (_canViewGanancias) 'Costo u.',
         'Ingreso',
-        'Costo',
-        'Ganancia',
+        if (_canViewGanancias) ...['Costo', 'Ganancia', 'Detalle'],
         'Cambio',
-        'Detalle',
       ];
-      final rows = events.map((event) {
+      final rows = events
+          .where(
+            (event) =>
+                _canViewGanancias ||
+                event['tipo_evento'] == 'venta' ||
+                event['tipo_evento'] == 'cambio_precio_venta',
+          )
+          .map((event) {
         final date = DateTime.tryParse(event['evento_fecha']?.toString() ?? '');
         String number(String key, [int decimals = 2]) {
           return (event[key] as num?)?.toDouble().toStringAsFixed(decimals) ??
@@ -4801,12 +5115,16 @@ class _SalesScreenState extends State<SalesScreen>
           _productHistoryPaymentMethod(event),
           number('cantidad'),
           number('precio_venta_cup'),
-          number('precio_costo_cup'),
+          if (_canViewGanancias) number('precio_costo_cup'),
           number('ingreso_total'),
-          number('costo_total'),
-          number('ganancia_total'),
-          _productHistoryChange(event),
-          event['descripcion']?.toString() ?? '-',
+          if (_canViewGanancias) ...[
+            number('costo_total'),
+            number('ganancia_total'),
+            event['descripcion']?.toString() ?? '-',
+          ],
+          event['tipo_evento'] == 'cambio_precio_venta' || _canViewGanancias
+              ? _productHistoryChange(event)
+              : '-',
         ];
       }).toList();
 
@@ -4890,14 +5208,21 @@ class _SalesScreenState extends State<SalesScreen>
         excel.TextCellValue('Método de pago'),
         excel.TextCellValue('Cantidad'),
         excel.TextCellValue('Venta unitario CUP'),
-        excel.TextCellValue('Costo unitario CUP'),
+        if (_canViewGanancias) excel.TextCellValue('Costo unitario CUP'),
         excel.TextCellValue('Ingreso'),
-        excel.TextCellValue('Costo'),
-        excel.TextCellValue('Ganancia'),
+        if (_canViewGanancias) ...[
+          excel.TextCellValue('Costo'),
+          excel.TextCellValue('Ganancia'),
+          excel.TextCellValue('Detalle del cálculo'),
+        ],
         excel.TextCellValue('Cambio'),
-        excel.TextCellValue('Detalle del cálculo'),
       ]);
-      for (final event in events) {
+      for (final event in events.where(
+        (event) =>
+            _canViewGanancias ||
+            event['tipo_evento'] == 'venta' ||
+            event['tipo_evento'] == 'cambio_precio_venta',
+      )) {
         final date = DateTime.tryParse(event['evento_fecha']?.toString() ?? '');
         excel.CellValue number(String key) {
           final value = (event[key] as num?)?.toDouble();
@@ -4919,12 +5244,18 @@ class _SalesScreenState extends State<SalesScreen>
           excel.TextCellValue(_productHistoryPaymentMethod(event)),
           number('cantidad'),
           number('precio_venta_cup'),
-          number('precio_costo_cup'),
+          if (_canViewGanancias) number('precio_costo_cup'),
           number('ingreso_total'),
-          number('costo_total'),
-          number('ganancia_total'),
-          excel.TextCellValue(_productHistoryChange(event)),
-          excel.TextCellValue(event['descripcion']?.toString() ?? ''),
+          if (_canViewGanancias) ...[
+            number('costo_total'),
+            number('ganancia_total'),
+            excel.TextCellValue(event['descripcion']?.toString() ?? ''),
+          ],
+          excel.TextCellValue(
+            event['tipo_evento'] == 'cambio_precio_venta' || _canViewGanancias
+                ? _productHistoryChange(event)
+                : '',
+          ),
         ]);
       }
 
@@ -5085,23 +5416,34 @@ class _SalesScreenState extends State<SalesScreen>
                                   columnSpacing: 18,
                                   dataRowMinHeight: 48,
                                   dataRowMaxHeight: 110,
-                                  columns: const [
+                                  columns: [
                                     DataColumn(label: Text('Fecha')),
                                     DataColumn(label: Text('Evento')),
                                     DataColumn(label: Text('Operación')),
                                     DataColumn(label: Text('Método de pago')),
                                     DataColumn(label: Text('Cantidad')),
                                     DataColumn(label: Text('Venta (u)')),
-                                    DataColumn(label: Text('Costo CUP (u)')),
-                                    DataColumn(label: Text('Ingreso')),
-                                    DataColumn(label: Text('Costo')),
-                                    DataColumn(label: Text('Ganancia')),
+                                    if (_canViewGanancias) ...const [
+                                      DataColumn(label: Text('Costo CUP (u)')),
+                                      DataColumn(label: Text('Ingreso')),
+                                      DataColumn(label: Text('Costo')),
+                                      DataColumn(label: Text('Ganancia')),
+                                    ] else
+                                      const DataColumn(label: Text('Ingreso')),
                                     DataColumn(label: Text('Cambio')),
                                     DataColumn(
                                       label: Text('Detalle del cálculo'),
                                     ),
                                   ],
-                                  rows: events.map((event) {
+                                  rows: events
+                                      .where(
+                                        (event) =>
+                                            _canViewGanancias ||
+                                            event['tipo_evento'] == 'venta' ||
+                                            event['tipo_evento'] ==
+                                                'cambio_precio_venta',
+                                      )
+                                      .map((event) {
                                     final type = event['tipo_evento']
                                         ?.toString();
                                     final isSale = type == 'venta';
@@ -5194,35 +5536,46 @@ class _SalesScreenState extends State<SalesScreen>
                                         DataCell(
                                           Text(money('precio_venta_cup')),
                                         ),
-                                        DataCell(
-                                          Text(money('precio_costo_cup')),
-                                        ),
+                                        if (_canViewGanancias)
+                                          DataCell(
+                                            Text(money('precio_costo_cup')),
+                                          ),
                                         DataCell(Text(money('ingreso_total'))),
-                                        DataCell(Text(money('costo_total'))),
-                                        DataCell(
-                                          Text(
-                                            money('ganancia_total'),
-                                            style: TextStyle(
-                                              color:
-                                                  ((event['ganancia_total']
-                                                                  as num?)
-                                                              ?.toDouble() ??
-                                                          0) >=
-                                                      0
-                                                  ? AppColors.success
-                                                  : AppColors.error,
-                                              fontWeight: FontWeight.bold,
+                                        if (_canViewGanancias) ...[
+                                          DataCell(Text(money('costo_total'))),
+                                          DataCell(
+                                            Text(
+                                              money('ganancia_total'),
+                                              style: TextStyle(
+                                                color:
+                                                    ((event['ganancia_total']
+                                                                    as num?)
+                                                                ?.toDouble() ??
+                                                            0) >=
+                                                        0
+                                                    ? AppColors.success
+                                                    : AppColors.error,
+                                                fontWeight: FontWeight.bold,
+                                              ),
                                             ),
                                           ),
+                                        ],
+                                        DataCell(
+                                          Text(
+                                            _canViewGanancias || isSalePrice
+                                                ? change
+                                                : '-',
+                                          ),
                                         ),
-                                        DataCell(Text(change)),
                                         DataCell(
                                           SizedBox(
                                             width: 520,
                                             child: Text(
-                                              event['descripcion']
-                                                      ?.toString() ??
-                                                  '-',
+                                              _canViewGanancias
+                                                  ? (event['descripcion']
+                                                          ?.toString() ??
+                                                      '-')
+                                                  : '-',
                                               softWrap: true,
                                             ),
                                           ),
@@ -5313,49 +5666,51 @@ class _SalesScreenState extends State<SalesScreen>
               scrollDirection: Axis.horizontal,
               child: DataTable(
                 columnSpacing: 12,
-                columns: const [
-                  DataColumn(
+                columns: [
+                  const DataColumn(
                     label: Text(
                       'Producto',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
-                  DataColumn(
+                  const DataColumn(
                     label: Text(
                       'Precio (u)',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
-                  DataColumn(
+                  const DataColumn(
                     label: Text(
                       'Cant Vendidos',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
-                  DataColumn(
+                  const DataColumn(
                     label: Text(
                       'Total Venta',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
-                  DataColumn(
-                    label: Text(
-                      'Costo (u)',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                  if (_canViewGanancias) ...const [
+                    DataColumn(
+                      label: Text(
+                        'Costo (u)',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
                     ),
-                  ),
-                  DataColumn(
-                    label: Text(
-                      'Total Costo',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                    DataColumn(
+                      label: Text(
+                        'Total Costo',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
                     ),
-                  ),
-                  DataColumn(
-                    label: Text(
-                      'Ganancias',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                    DataColumn(
+                      label: Text(
+                        'Ganancias',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
                     ),
-                  ),
+                  ],
                 ],
                 rows: [
                   // Product rows
@@ -5444,60 +5799,62 @@ class _SalesScreenState extends State<SalesScreen>
                                 ),
                               ),
                             ),
-                            DataCell(
-                              sinTasa
-                                  ? Tooltip(
-                                      message:
-                                          'Costo receta/USD \$${report.precioCosto.toStringAsFixed(4)} — falta tasa USD→CUP',
-                                      child: Text(
-                                        'sin tasa',
-                                        style: TextStyle(
-                                          color: Colors.orange.shade800,
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 12,
+                            if (_canViewGanancias) ...[
+                              DataCell(
+                                sinTasa
+                                    ? Tooltip(
+                                        message:
+                                            'Costo receta/USD \$${report.precioCosto.toStringAsFixed(4)} — falta tasa USD→CUP',
+                                        child: Text(
+                                          'sin tasa',
+                                          style: TextStyle(
+                                            color: Colors.orange.shade800,
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      )
+                                    : Text(
+                                        '\$${costoUnitarioCup.round().toStringAsFixed(0)}',
+                                        style: const TextStyle(
+                                          color: AppColors.warning,
                                         ),
                                       ),
-                                    )
-                                  : Text(
-                                      '\$${costoUnitarioCup.round().toStringAsFixed(0)}',
-                                      style: const TextStyle(
-                                        color: AppColors.warning,
-                                      ),
-                                    ),
-                            ),
-                            DataCell(
-                              sinTasa
-                                  ? Text(
-                                      'USD ${report.precioCosto.toStringAsFixed(2)}',
-                                      style: TextStyle(
-                                        color: Colors.orange.shade800,
-                                        fontWeight: FontWeight.w500,
-                                        fontSize: 12,
-                                      ),
-                                    )
-                                  : Text(
-                                      '\$${totalCostoCup.toStringAsFixed(2)}',
-                                      style: const TextStyle(
-                                        color: AppColors.warning,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                            ),
-                            DataCell(
-                              Text(
+                              ),
+                              DataCell(
                                 sinTasa
-                                    ? '—'
-                                    : '\$${ganancias.toStringAsFixed(2)}',
-                                style: TextStyle(
-                                  color: sinTasa
-                                      ? Colors.grey
-                                      : (ganancias >= 0
-                                            ? AppColors.success
-                                            : AppColors.error),
-                                  fontWeight: FontWeight.bold,
+                                    ? Text(
+                                        'USD ${report.precioCosto.toStringAsFixed(2)}',
+                                        style: TextStyle(
+                                          color: Colors.orange.shade800,
+                                          fontWeight: FontWeight.w500,
+                                          fontSize: 12,
+                                        ),
+                                      )
+                                    : Text(
+                                        '\$${totalCostoCup.toStringAsFixed(2)}',
+                                        style: const TextStyle(
+                                          color: AppColors.warning,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                              ),
+                              DataCell(
+                                Text(
+                                  sinTasa
+                                      ? '—'
+                                      : '\$${ganancias.toStringAsFixed(2)}',
+                                  style: TextStyle(
+                                    color: sinTasa
+                                        ? Colors.grey
+                                        : (ganancias >= 0
+                                              ? AppColors.success
+                                              : AppColors.error),
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
-                            ),
+                            ],
                           ],
                         );
                       })
@@ -5561,35 +5918,37 @@ class _SalesScreenState extends State<SalesScreen>
                             ),
                           ),
                         ),
-                        const DataCell(Text('-')), // No average cost
-                        DataCell(
-                          Text(
-                            '\$${_productSalesReports.fold(0.0, (sum, r) => sum + r.costoReportado).toStringAsFixed(0)}',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.warning,
+                        if (_canViewGanancias) ...[
+                          const DataCell(Text('-')), // No average cost
+                          DataCell(
+                            Text(
+                              '\$${_productSalesReports.fold(0.0, (sum, r) => sum + r.costoReportado).toStringAsFixed(0)}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.warning,
+                              ),
                             ),
                           ),
-                        ),
-                        DataCell(
-                          Builder(
-                            builder: (context) {
-                              final totalGan = _productSalesReports.fold(
-                                0.0,
-                                (sum, r) => sum + r.gananciaReportada,
-                              );
-                              return Text(
-                                '\$${totalGan.toStringAsFixed(0)}',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: totalGan >= 0
-                                      ? AppColors.success
-                                      : AppColors.error,
-                                ),
-                              );
-                            },
+                          DataCell(
+                            Builder(
+                              builder: (context) {
+                                final totalGan = _productSalesReports.fold(
+                                  0.0,
+                                  (sum, r) => sum + r.gananciaReportada,
+                                );
+                                return Text(
+                                  '\$${totalGan.toStringAsFixed(0)}',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: totalGan >= 0
+                                        ? AppColors.success
+                                        : AppColors.error,
+                                  ),
+                                );
+                              },
+                            ),
                           ),
-                        ),
+                        ],
                       ],
                     ),
                 ],
@@ -5639,62 +5998,65 @@ class _SalesScreenState extends State<SalesScreen>
               scrollDirection: Axis.horizontal,
               child: DataTable(
                 columnSpacing: 16,
-                columns: const [
-                  DataColumn(
+                columns: [
+                  const DataColumn(
                     label: Text(
                       'Producto',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
-                  DataColumn(
+                  const DataColumn(
                     label: Text(
                       'Tasa de Cambio USD',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
-                  DataColumn(
-                    label: Text(
-                      'Precio Costo USD',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                  if (_canViewGanancias)
+                    const DataColumn(
+                      label: Text(
+                        'Precio Costo USD',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
                     ),
-                  ),
-                  DataColumn(
+                  const DataColumn(
                     label: Text(
                       'Precio Venta USD',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
-                  DataColumn(
-                    label: Text(
-                      'Precio Costo CUP',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                  if (_canViewGanancias)
+                    const DataColumn(
+                      label: Text(
+                        'Precio Costo CUP',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
                     ),
-                  ),
-                  DataColumn(
+                  const DataColumn(
                     label: Text(
                       'Precio Venta CUP',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
-                  DataColumn(
-                    label: Text(
-                      'Ganancia USD',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                  if (_canViewGanancias) ...const [
+                    DataColumn(
+                      label: Text(
+                        'Ganancia USD',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
                     ),
-                  ),
-                  DataColumn(
-                    label: Text(
-                      'Ganancia CUP',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                    DataColumn(
+                      label: Text(
+                        'Ganancia CUP',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
                     ),
-                  ),
-
-                  DataColumn(
-                    label: Text(
-                      '% Ganancia',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                    DataColumn(
+                      label: Text(
+                        '% Ganancia',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
                     ),
-                  ),
+                  ],
                 ],
                 rows: _productAnalysis.map((analysis) {
                   return DataRow(
@@ -5722,63 +6084,67 @@ class _SalesScreenState extends State<SalesScreen>
                           ),
                         ),
                       ),
-                      DataCell(
-                        Text(
-                          '\$${analysis.precioCostoUsd.toStringAsFixed(4)}',
-                          style: const TextStyle(color: AppColors.warning),
+                      if (_canViewGanancias)
+                        DataCell(
+                          Text(
+                            '\$${analysis.precioCostoUsd.toStringAsFixed(4)}',
+                            style: const TextStyle(color: AppColors.warning),
+                          ),
                         ),
-                      ),
                       DataCell(
                         Text(
                           '\$${analysis.precioVentaUsd.toStringAsFixed(4)}',
                           style: const TextStyle(color: AppColors.info),
                         ),
                       ),
-                      DataCell(
-                        Text(
-                          '\$${analysis.precioCostoCup.toStringAsFixed(2)}',
-                          style: const TextStyle(color: AppColors.warning),
+                      if (_canViewGanancias)
+                        DataCell(
+                          Text(
+                            '\$${analysis.precioCostoCup.toStringAsFixed(2)}',
+                            style: const TextStyle(color: AppColors.warning),
+                          ),
                         ),
-                      ),
                       DataCell(
                         Text(
                           '\$${analysis.precioVentaCup.toStringAsFixed(2)}',
                           style: const TextStyle(color: AppColors.success),
                         ),
                       ),
-                      DataCell(
-                        Text(
-                          '\$${analysis.gananciaUsd.toStringAsFixed(4)}',
-                          style: TextStyle(
-                            color: analysis.gananciaUsd >= 0
-                                ? AppColors.success
-                                : AppColors.error,
-                            fontWeight: FontWeight.bold,
+                      if (_canViewGanancias) ...[
+                        DataCell(
+                          Text(
+                            '\$${analysis.gananciaUsd.toStringAsFixed(4)}',
+                            style: TextStyle(
+                              color: analysis.gananciaUsd >= 0
+                                  ? AppColors.success
+                                  : AppColors.error,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
-                      ),
-                      DataCell(
-                        Text(
-                          '\$${analysis.gananciaCup.toStringAsFixed(2)}',
-                          style: TextStyle(
-                            color: analysis.gananciaCup >= 0
-                                ? AppColors.success
-                                : AppColors.error,
-                            fontWeight: FontWeight.bold,
+                        DataCell(
+                          Text(
+                            '\$${analysis.gananciaCup.toStringAsFixed(2)}',
+                            style: TextStyle(
+                              color: analysis.gananciaCup >= 0
+                                  ? AppColors.success
+                                  : AppColors.error,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
-                      ),
-                      DataCell(
-                        Text(
-                          '${analysis.porcGananciaCup.toStringAsFixed(1)}%',
-                          style: TextStyle(
-                            color: analysis.porcGananciaCup >= 0
-                                ? AppColors.success
-                                : AppColors.error,
-                            fontWeight: FontWeight.bold,
+                        DataCell(
+                          Text(
+                            '${analysis.porcGananciaCup.toStringAsFixed(1)}%',
+                            style: TextStyle(
+                              color: analysis.porcGananciaCup >= 0
+                                  ? AppColors.success
+                                  : AppColors.error,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
-                      ),
+                      ],
                     ],
                   );
                 }).toList(),
@@ -10560,8 +10926,10 @@ class _SalesScreenState extends State<SalesScreen>
                   children: [
                     _pdfHeaderCell('Proveedor'),
                     _pdfHeaderCell('Ventas'),
-                    _pdfHeaderCell('Costo'),
-                    _pdfHeaderCell('Ganancia'),
+                    if (_canViewGanancias) ...[
+                      _pdfHeaderCell('Costo'),
+                      _pdfHeaderCell('Ganancia'),
+                    ],
                   ],
                 ),
                 // Filas de datos
@@ -10572,10 +10940,14 @@ class _SalesScreenState extends State<SalesScreen>
                       _pdfBodyCell(
                         '\$${report.totalVentas.toStringAsFixed(2)}',
                       ),
-                      _pdfBodyCell('\$${report.totalCosto.toStringAsFixed(2)}'),
-                      _pdfBodyCell(
-                        '\$${report.totalGanancia.toStringAsFixed(2)}',
-                      ),
+                      if (_canViewGanancias) ...[
+                        _pdfBodyCell(
+                          '\$${report.totalCosto.toStringAsFixed(2)}',
+                        ),
+                        _pdfBodyCell(
+                          '\$${report.totalGanancia.toStringAsFixed(2)}',
+                        ),
+                      ],
                     ],
                   );
                 }).toList(),
@@ -10761,8 +11133,10 @@ class _SalesScreenState extends State<SalesScreen>
       sheet.appendRow([
         excel.TextCellValue('Proveedor'),
         excel.TextCellValue('Ventas'),
-        excel.TextCellValue('Costo'),
-        excel.TextCellValue('Ganancia'),
+        if (_canViewGanancias) ...[
+          excel.TextCellValue('Costo'),
+          excel.TextCellValue('Ganancia'),
+        ],
       ]);
 
       // Agregar datos de proveedores
@@ -10770,8 +11144,10 @@ class _SalesScreenState extends State<SalesScreen>
         sheet.appendRow([
           excel.TextCellValue(report.nombreProveedor),
           excel.DoubleCellValue(report.totalVentas),
-          excel.DoubleCellValue(report.totalCosto),
-          excel.DoubleCellValue(report.totalGanancia),
+          if (_canViewGanancias) ...[
+            excel.DoubleCellValue(report.totalCosto),
+            excel.DoubleCellValue(report.totalGanancia),
+          ],
         ]);
       }
 
@@ -10779,8 +11155,10 @@ class _SalesScreenState extends State<SalesScreen>
       sheet.appendRow([
         excel.TextCellValue('TOTAL'),
         excel.DoubleCellValue(totalVentas),
-        excel.DoubleCellValue(totalCosto),
-        excel.DoubleCellValue(totalGanancia),
+        if (_canViewGanancias) ...[
+          excel.DoubleCellValue(totalCosto),
+          excel.DoubleCellValue(totalGanancia),
+        ],
       ]);
 
       // Guardar archivo

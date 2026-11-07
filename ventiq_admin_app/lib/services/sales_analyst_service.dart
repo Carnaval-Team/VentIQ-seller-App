@@ -72,15 +72,17 @@ class SalesAnalystService {
     int? selectedWarehouseId,
     String? selectedWarehouseName,
     List<ProductAnalysis> productAnalysis = const [],
+    bool includeProfit = true,
   }) {
     final productReportsSorted = [...productSalesReports]
       ..sort((a, b) => b.ingresosTotales.compareTo(a.ingresosTotales));
 
-    final topProducts =
-        productReportsSorted.take(8).map(_mapProductReport).toList();
+    final topProducts = productReportsSorted
+        .take(8)
+        .map((report) => _mapProductReport(report, includeProfit: includeProfit))
+        .toList();
 
     final vendorTotals = _aggregateVendorTotals(vendorReports);
-    final supplierTotals = _aggregateSupplierTotals(supplierReports);
 
     return {
       'meta': {
@@ -100,17 +102,33 @@ class SalesAnalystService {
         'total_ventas': totalSales,
         'total_productos_vendidos': totalProductsSold,
         'top_productos': topProducts,
-        'productos': productSalesReports.map(_mapProductReport).toList(),
+        'productos': productSalesReports
+            .map((report) => _mapProductReport(report, includeProfit: includeProfit))
+            .toList(),
       },
       'tpvs': {
         'resumen': vendorTotals,
         'vendedores': vendorReports.map(_mapVendorReport).toList(),
       },
       'proveedores': {
-        'resumen': supplierTotals,
-        'proveedores': supplierReports.map(_mapSupplierReport).toList(),
+        'resumen': _aggregateSupplierTotals(
+          supplierReports,
+          includeProfit: includeProfit,
+        ),
+        'proveedores': supplierReports
+            .map(
+              (report) =>
+                  _mapSupplierReport(report, includeProfit: includeProfit),
+            )
+            .toList(),
       },
-      'analisis_productos': productAnalysis.map(_mapProductAnalysis).toList(),
+      'analisis_productos': productAnalysis
+          .map(
+            (analysis) =>
+                _mapProductAnalysis(analysis, includeProfit: includeProfit),
+          )
+          .toList(),
+      'ocultar_ganancias': !includeProfit,
     };
   }
 
@@ -166,7 +184,7 @@ Responde SOLO con JSON válido, sin markdown ni texto adicional.
 
 Tu misión:
 - Responder únicamente preguntas sobre ventas.
-- Usar el contexto adjunto y hacer proyecciones aproximadas cuando se solicite.
+- Si el contexto tiene "ocultar_ganancias": true, no menciones costos, márgenes, utilidad ni ganancias. Responde solo con ventas, cantidades e ingresos.
 - Si la pregunta no está relacionada con ventas, responde con:
   {"summary":"Solo puedo responder preguntas sobre ventas.","insights":[],"projections":[],"recommendations":[],"tables":[],"charts":[],"cards":[]}
 
@@ -224,14 +242,17 @@ $question''';
     return text.substring(start, end + 1);
   }
 
-  Map<String, dynamic> _mapProductReport(ProductSalesReport report) {
+  Map<String, dynamic> _mapProductReport(
+    ProductSalesReport report, {
+    bool includeProfit = true,
+  }) {
     return {
       'id_producto': report.idProducto,
       'producto': report.nombreProducto,
       'total_vendido': report.totalVendido,
       'ingresos_totales': report.ingresosTotales,
-      'costo_total': report.costoTotalVendido,
-      'ganancia_total': report.gananciaTotal,
+      if (includeProfit) 'costo_total': report.costoTotalVendido,
+      if (includeProfit) 'ganancia_total': report.gananciaTotal,
     };
   }
 
@@ -252,26 +273,32 @@ $question''';
     };
   }
 
-  Map<String, dynamic> _mapSupplierReport(SupplierSalesReport report) {
+  Map<String, dynamic> _mapSupplierReport(
+    SupplierSalesReport report, {
+    bool includeProfit = true,
+  }) {
     return {
       'id_proveedor': report.idProveedor,
       'proveedor': report.nombreProveedor,
       'total_ventas': report.totalVentas,
-      'total_costo': report.totalCosto,
-      'total_ganancia': report.totalGanancia,
+      if (includeProfit) 'total_costo': report.totalCosto,
+      if (includeProfit) 'total_ganancia': report.totalGanancia,
       'cantidad_productos': report.cantidadProductos,
-      'margen_porcentaje': report.margenPorcentaje,
+      if (includeProfit) 'margen_porcentaje': report.margenPorcentaje,
     };
   }
 
-  Map<String, dynamic> _mapProductAnalysis(ProductAnalysis analysis) {
+  Map<String, dynamic> _mapProductAnalysis(
+    ProductAnalysis analysis, {
+    bool includeProfit = true,
+  }) {
     return {
       'id_producto': analysis.idProducto,
       'producto': analysis.nombreProducto,
       'precio_venta_cup': analysis.precioVentaCup,
-      'precio_costo_cup': analysis.precioCostoCup,
-      'ganancia_cup': analysis.gananciaCup,
-      'porcentaje_ganancia_cup': analysis.porcGananciaCup,
+      if (includeProfit) 'precio_costo_cup': analysis.precioCostoCup,
+      if (includeProfit) 'ganancia_cup': analysis.gananciaCup,
+      if (includeProfit) 'porcentaje_ganancia_cup': analysis.porcGananciaCup,
     };
   }
 
@@ -295,8 +322,9 @@ $question''';
   }
 
   Map<String, dynamic> _aggregateSupplierTotals(
-    List<SupplierSalesReport> reports,
-  ) {
+    List<SupplierSalesReport> reports, {
+    bool includeProfit = true,
+  }) {
     double totalVentas = 0;
     double totalCosto = 0;
     double totalGanancia = 0;
@@ -310,8 +338,8 @@ $question''';
     return {
       'total_proveedores': reports.length,
       'total_ventas': totalVentas,
-      'total_costo': totalCosto,
-      'total_ganancia': totalGanancia,
+      if (includeProfit) 'total_costo': totalCosto,
+      if (includeProfit) 'total_ganancia': totalGanancia,
     };
   }
 }

@@ -808,52 +808,24 @@ class FinancialService {
 
   // ==================== TIPOS DE COSTO ====================
 
-  /// Crear tipos de costo estándar
+  /// Asegura naturalezas base. Los tipos de costo ya no se siembran aquí:
+  /// el nomenclador se gestiona en superadmin (evita duplicados históricos).
   Future<void> createStandardCostTypes() async {
     try {
-      final standardCostTypes = [
-        {
-          'denominacion': 'Costo Directo',
-          'descripcion':
-              'Costos directamente relacionados con la producción o venta',
-          'naturaleza': 1, // Gasto
-          'afecta_margen': true,
-        },
-        {
-          'denominacion': 'Costo Indirecto',
-          'descripcion': 'Costos indirectos de operación y administración',
-          'naturaleza': 1, // Gasto
-          'afecta_margen': true,
-        },
-        {
-          'denominacion': 'Costo Fijo',
-          'descripcion': 'Costos que no varían con el volumen de ventas',
-          'naturaleza': 1, // Gasto
-          'afecta_margen': false,
-        },
-        {
-          'denominacion': 'Costo Variable',
-          'descripcion': 'Costos que varían proporcionalmente con las ventas',
-          'naturaleza': 1, // Gasto
-          'afecta_margen': true,
-        },
-      ];
-
-      for (final costType in standardCostTypes) {
-        try {
-          await _supabase.from('app_cont_tipo_costo').insert(costType);
-        } catch (e) {
-          // Ignorar errores de duplicados
-          if (!e.toString().contains('duplicate') &&
-              !e.toString().contains('unique')) {
-            rethrow;
-          }
-        }
-      }
-
-      print('✅ Tipos de costo estándar creados exitosamente');
+      // No-op intencional: antes insertaba Directo/Indirecto/Fijo/Variable
+      // en cada "inicializar sistema financiero" y, sin UNIQUE(denominacion),
+      // llenaba Main de duplicados. Tipos → superadmin / CRUD manual.
+      final existentes = await _supabase
+          .from('app_cont_tipo_costo')
+          .select('id')
+          .limit(1);
+      print(
+        existentes.isEmpty
+            ? 'ℹ️ Sin tipos de costo: créalos en Superadmin → Nomencladores de costo'
+            : 'ℹ️ Tipos de costo ya presentes; no se siembran automáticamente',
+      );
     } catch (e) {
-      print('❌ Error creando tipos de costo: $e');
+      print('❌ Error verificando tipos de costo: $e');
       rethrow;
     }
   }

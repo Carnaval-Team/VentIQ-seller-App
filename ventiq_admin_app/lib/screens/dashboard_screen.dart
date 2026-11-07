@@ -20,6 +20,7 @@ import '../services/store_selector_service.dart';
 import '../utils/subscription_protection_mixin.dart';
 import '../utils/navigation_guard.dart';
 import '../widgets/consignaciones_widget.dart';
+import '../services/fondo_inversion_service.dart';
 
 
 class DashboardScreen extends StatefulWidget {
@@ -49,6 +50,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   List<Store> _userStores = [];
   double _usdRate = 0.0;
   bool _isLoadingUsdRate = false;
+  Map<String, double> _fondoTotalesPorMoneda = {};
 
   final List<String> _timeFilterOptions = [
     '5 años',
@@ -188,6 +190,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
       // Llamar a ambas funciones en paralelo
       print('🔄 Loading dashboard data for period: $_selectedTimeFilter');
+      _loadFondo();
       final results = await Future.wait([
         DashboardService.getStoreAnalysis(periodo: _selectedTimeFilter),
       ]);
@@ -222,6 +225,19 @@ class _DashboardScreenState extends State<DashboardScreen>
       print('❌ Error loading dashboard data: $e');
       print('❌ Stack trace: ${StackTrace.current}');
       _loadMockData();
+    }
+  }
+
+  Future<void> _loadFondo() async {
+    try {
+      final idTienda =
+          _currentStoreId ?? await _userPreferencesService.getIdTienda();
+      if (idTienda == null) return;
+      final res = await FondoInversionService().saldos(idTienda);
+      if (!mounted) return;
+      setState(() => _fondoTotalesPorMoneda = res.totalesPorMoneda);
+    } catch (e) {
+      print('⚠️ Error cargando saldo del fondo: $e');
     }
   }
 
@@ -411,6 +427,8 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   Color _getRoleColor(UserRole role) {
     switch (role) {
+      case UserRole.dueno:
+        return Colors.amber.shade800;
       case UserRole.gerente:
         return Colors.green;
       case UserRole.supervisor:
@@ -759,17 +777,17 @@ class _DashboardScreenState extends State<DashboardScreen>
             const SizedBox(width: 12),
             Expanded(
               child: _buildKPICard(
-                title: 'Gastos',
+                title: 'Fondo',
                 value:
-                    '\$${_formatCurrency(_dashboardData['totalExpenses']?.toDouble() ?? 0.0)}',
-                subtitle: _getPeriodLabel(),
-                icon: Icons.money_off,
+                    '\$${_formatCurrency(_fondoTotalesPorMoneda['CUP'] ?? 0.0)}',
+                subtitle: _fondoSubtitle(),
+                icon: Icons.savings,
                 onTap:
                     () => NavigationGuard.navigateWithPermission(
                       context,
-                      '/sales',
+                      '/fondo-inversion',
                     ),
-                color: AppColors.error,
+                color: AppColors.primary,
               ),
             ),
           ],
@@ -1505,28 +1523,13 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
   }
 
-  /// Obtiene la etiqueta en español para mostrar en la UI según el período seleccionado
-  String _getPeriodLabel() {
-    switch (_selectedTimeFilter) {
-      case 'Día':
-        return 'Hoy';
-      case 'Semana':
-        return 'Esta semana';
-      case '1 mes':
-        return 'Este mes';
-      case '3 meses':
-        return 'Últimos 3 meses';
-      case '6 meses':
-        return 'Últimos 6 meses';
-      case '1 año':
-        return 'Este año';
-      case '3 años':
-        return 'Últimos 3 años';
-      case '5 años':
-        return 'Últimos 5 años';
-      default:
-        return 'Este período';
-    }
+  /// Subtítulo del card Fondo: otras monedas del fondo si las hay.
+  String _fondoSubtitle() {
+    final otras = _fondoTotalesPorMoneda.entries
+        .where((e) => e.key != 'CUP')
+        .map((e) => '${e.key}: \$${_formatCurrency(e.value)}')
+        .toList();
+    return otras.isEmpty ? 'Fondo de inversión' : otras.join(' · ');
   }
 
   /// Obtiene la etiqueta de comparación para el período anterior

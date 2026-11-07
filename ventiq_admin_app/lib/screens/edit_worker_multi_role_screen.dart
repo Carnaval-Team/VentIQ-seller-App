@@ -4,6 +4,7 @@ import '../models/worker_models.dart';
 import '../models/cocina.dart';
 import '../services/worker_service.dart';
 import '../services/cocina_service.dart';
+import '../services/permissions_service.dart';
 
 class EditWorkerMultiRoleScreen extends StatefulWidget {
   final WorkerData worker;
@@ -47,6 +48,7 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
 
   // Estado de roles
   late Set<String> _activeRoles;
+  bool _canAssignDueno = false;
 
   // Datos específicos por rol
   int? _vendedorTpvId;
@@ -85,6 +87,7 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
 
     // Inicializar roles activos
     _activeRoles = Set.from(widget.worker.rolesActivos);
+    _loadDuenoPermission();
 
     // 🐛 DEBUG: Ver qué datos llegan
     print('🔍 DEBUG - Worker Data:');
@@ -333,6 +336,12 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
     );
   }
 
+  Future<void> _loadDuenoPermission() async {
+    final canAssign = await PermissionsService().canAssignDueno();
+    if (!mounted) return;
+    setState(() => _canAssignDueno = canAssign);
+  }
+
   Widget _buildRolesTab() {
     final hasUuid = _uuidController.text.isNotEmpty;
 
@@ -380,11 +389,20 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
               ],
             ),
           const SizedBox(height: 16),
+          if (_canAssignDueno || _activeRoles.contains('dueno'))
+            _buildRoleCheckbox(
+              'dueno',
+              'Dueño',
+              Icons.workspace_premium,
+              Colors.amber.shade800,
+              enabled: _canAssignDueno,
+            ),
           _buildRoleCheckbox(
             'gerente',
             'Gerente',
             Icons.admin_panel_settings,
             Colors.purple,
+            enabled: !_activeRoles.contains('dueno'),
           ),
           _buildRoleCheckbox(
             'supervisor',
@@ -441,22 +459,27 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
     String roleKey,
     String roleLabel,
     IconData icon,
-    Color color,
-  ) {
+    Color color, {
+    bool enabled = true,
+  }) {
     final isActive = _activeRoles.contains(roleKey);
     final hasUuid = _uuidController.text.isNotEmpty;
+    final canToggle = hasUuid && enabled;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: CheckboxListTile(
         value: isActive,
         onChanged:
-            !hasUuid
+            !canToggle
                 ? null
                 : (value) {
                   setState(() {
                     if (value == true) {
                       _activeRoles.add(roleKey);
+                      if (roleKey == 'dueno') {
+                        _activeRoles.add('gerente');
+                      }
                       // Jefe y cocinero son grados del MISMO registro
                       // (app_dat_jefe_cocina.es_jefe): no pueden coexistir.
                       if (roleKey == 'jefe_cocina') {
@@ -466,6 +489,9 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
                         _activeRoles.remove('jefe_cocina');
                         _esJefeCocina = false;
                       }
+                    } else if (roleKey == 'gerente' &&
+                        _activeRoles.contains('dueno')) {
+                      return;
                     } else {
                       _activeRoles.remove(roleKey);
                       // Limpiar datos específicos al desactivar
@@ -490,7 +516,7 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
               style: TextStyle(
                 fontWeight: FontWeight.w600,
                 color:
-                    !hasUuid
+                    !canToggle
                         ? Colors.grey.shade400
                         : (isActive ? color : Colors.grey),
               ),
@@ -876,6 +902,7 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
       // Eliminar roles desactivados
       for (final role in rolesEliminados) {
         if (role == 'usuario') continue; // Skip usuario
+        if (role == 'dueno' && !_canAssignDueno) continue;
 
         await WorkerService.removeWorkerRole(
           trabajadorId: widget.worker.trabajadorId,

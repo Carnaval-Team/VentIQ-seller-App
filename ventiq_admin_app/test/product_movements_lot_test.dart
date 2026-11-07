@@ -2,6 +2,67 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ventiq_admin_app/services/product_movements_service.dart';
 
 void main() {
+  test(
+    'las etiquetas requieren evidencia del historial, no operaciones repetidas',
+    () {
+      expect(
+        ProductMovementsService.operationLabel({
+          'tipo_operacion': 'Venta',
+          'movimiento_etiqueta': 'Aumento de cantidad',
+        }),
+        'Venta · Aumento de cantidad',
+      );
+      expect(
+        ProductMovementsService.operationLabel({'tipo_operacion': 'Venta'}),
+        'Venta · Movimiento de venta',
+      );
+      expect(
+        ProductMovementsService.operationLabel({
+          'tipo_operacion': 'Transferencia',
+        }),
+        'Transferencia',
+      );
+    },
+  );
+
+  test(
+    'una disminución de venta se presenta como entrada en pantalla y exportación',
+    () {
+      expect(
+        ProductMovementsService.isMovementEntry({
+          'tipo_movimiento': 'Extracción',
+          'cantidad_inicial': 155,
+          'cantidad_final': 156,
+          'cantidad': 1,
+        }),
+        isTrue,
+      );
+      expect(
+        ProductMovementsService.isMovementEntry({
+          'tipo_movimiento': 'Extracción',
+          'cantidad_inicial': 164,
+          'cantidad_final': 156,
+          'cantidad': 8,
+        }),
+        isFalse,
+      );
+      expect(
+        ProductMovementsService.isMovementEntry({
+          'tipo_movimiento': 'Extracción',
+          'cantidad': 9,
+        }),
+        isFalse,
+      );
+      expect(
+        ProductMovementsService.isMovementEntry({
+          'tipo_movimiento': 'Recepción',
+          'cantidad': 4,
+        }),
+        isTrue,
+      );
+    },
+  );
+
   final movements = <Map<String, dynamic>>[
     {'id': 1, 'id_lote': 10, 'cantidad_final': 0},
     {'id': 2, 'id_lote': 20, 'cantidad_final': 8},
@@ -10,13 +71,19 @@ void main() {
     {'id': 5, 'id_lote': 0},
   ];
 
-  test('Todos los lotes conserva registros y orden sin modificar el origen', () {
-    final result = ProductMovementsService.filterMovementsByLot(movements, null);
-    expect(result, movements);
-    expect(identical(result, movements), isFalse);
-    result.clear();
-    expect(movements, hasLength(5));
-  });
+  test(
+    'Todos los lotes conserva registros y orden sin modificar el origen',
+    () {
+      final result = ProductMovementsService.filterMovementsByLot(
+        movements,
+        null,
+      );
+      expect(result, movements);
+      expect(identical(result, movements), isFalse);
+      result.clear();
+      expect(movements, hasLength(5));
+    },
+  );
 
   test('filtra por lote incluyendo saldos cero y IDs serializados', () {
     final result = ProductMovementsService.filterMovementsByLot(movements, 10);

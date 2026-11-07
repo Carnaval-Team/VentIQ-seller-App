@@ -11,6 +11,7 @@ import '../services/hr_service.dart';
 import '../services/subscription_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/navigation_guard.dart';
+import '../services/permissions_service.dart';
 import '../utils/screen_protection_mixin.dart';
 import 'edit_worker_multi_role_screen.dart';
 import 'package:intl/intl.dart';
@@ -51,6 +52,7 @@ class _WorkersScreenState extends State<WorkersScreen>
 
   bool _canEditWorkers = false;
   bool _canDeleteWorkers = false;
+  bool _canAssignDueno = false;
   bool _hasHRPlan = false;
 
   // Filtros
@@ -107,12 +109,14 @@ class _WorkersScreenState extends State<WorkersScreen>
     final permissions = await Future.wait([
       NavigationGuard.canPerformAction('worker.edit'),
       NavigationGuard.canPerformAction('worker.delete'),
+      PermissionsService().canAssignDueno(),
     ]);
 
     if (!mounted) return;
     setState(() {
       _canEditWorkers = permissions[0];
       _canDeleteWorkers = permissions[1];
+      _canAssignDueno = permissions[2];
     });
   }
 
@@ -429,6 +433,7 @@ class _WorkersScreenState extends State<WorkersScreen>
             items:
                 [
                   'Todos',
+                  if (_canAssignDueno) 'dueno',
                   'gerente',
                   'supervisor',
                   'auditor',
@@ -678,6 +683,7 @@ class _WorkersScreenState extends State<WorkersScreen>
   // Método para obtener el rol con mayor jerarquía
   String _getRolPrincipal(WorkerData worker) {
     // Jerarquía: gerente > supervisor > recursos_humanos > almacenero > vendedor
+    if (worker.esDueno) return 'dueno';
     if (worker.esGerente) return 'gerente';
     if (worker.esSupervisor) return 'supervisor';
     if (worker.esRecursosHumanos) return 'recursos_humanos';
@@ -701,6 +707,8 @@ class _WorkersScreenState extends State<WorkersScreen>
 
   Color _getRoleColor(String role) {
     switch (role) {
+      case 'dueno':
+        return Colors.amber.shade800;
       case 'gerente':
         return Colors.purple;
       case 'supervisor':
@@ -720,6 +728,9 @@ class _WorkersScreenState extends State<WorkersScreen>
 
   String _getRoleDisplayName(String role) {
     switch (role.toLowerCase()) {
+      case 'dueno':
+      case 'dueño':
+        return 'Dueño';
       case 'gerente':
         return 'Gerente';
       case 'supervisor':
@@ -794,6 +805,9 @@ class _WorkersScreenState extends State<WorkersScreen>
       
       // Convertir denominación a nombre de rol
       final denominacion = role.denominacion.toLowerCase();
+      if (denominacion.contains('dueño') || denominacion.contains('dueno')) {
+        return 'dueno';
+      }
       if (denominacion.contains('gerente')) return 'gerente';
       if (denominacion.contains('supervisor')) return 'supervisor';
       if (denominacion.contains('auditor')) return 'auditor';
@@ -894,6 +908,12 @@ class _WorkersScreenState extends State<WorkersScreen>
           'label': 'Gerente',
           'icon': Icons.admin_panel_settings,
           'color': Colors.purple,
+        };
+      case 'dueno':
+        return {
+          'label': 'Dueño',
+          'icon': Icons.workspace_premium,
+          'color': Colors.amber.shade800,
         };
       case 'recursos_humanos':
         return {
@@ -1503,6 +1523,7 @@ class _WorkersScreenState extends State<WorkersScreen>
                               ),
                               items:
                                   [
+                                        if (_canAssignDueno) 'dueno',
                                         'gerente',
                                         'supervisor',
                                         'auditor',
@@ -1607,6 +1628,7 @@ class _WorkersScreenState extends State<WorkersScreen>
                             ),
                             items:
                                 [
+                                  if (_canAssignDueno) 'dueno',
                                   'gerente',
                                   'supervisor',
                                   'auditor',

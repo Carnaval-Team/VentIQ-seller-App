@@ -290,7 +290,8 @@ class _AdminDrawerState extends State<AdminDrawer> {
                   future: PermissionsService().getUserRole(),
                   builder: (context, snapshot) {
                     final userRole = snapshot.data ?? UserRole.none;
-                    final canAccessInventory = userRole == UserRole.gerente ||
+                    final canAccessInventory = userRole == UserRole.dueno ||
+                        userRole == UserRole.gerente ||
                         userRole == UserRole.supervisor ||
                         userRole == UserRole.auditor ||
                         userRole == UserRole.almacenero;
@@ -410,7 +411,8 @@ class _AdminDrawerState extends State<AdminDrawer> {
                 FutureBuilder<UserRole>(
                   future: PermissionsService().getUserRole(),
                   builder: (context, snapshot) {
-                    if (snapshot.data != UserRole.gerente) {
+                    if (snapshot.data != UserRole.dueno &&
+                        snapshot.data != UserRole.gerente) {
                       return const SizedBox.shrink();
                     }
                     return Column(
@@ -596,6 +598,38 @@ class _AdminDrawerState extends State<AdminDrawer> {
                               NavigationGuard.navigateWithPermission(
                                 context,
                                 '/cuentas-por-cobrar',
+                              );
+                            },
+                          ),
+                          const Divider(height: 1),
+                        ],
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  },
+                ),
+
+                // Fondo de Inversión (solo gerente)
+                FutureBuilder<bool>(
+                  future: NavigationGuard.canNavigate(
+                    '/fondo-inversion',
+                    context,
+                    showDialog: false,
+                  ),
+                  builder: (context, snapshot) {
+                    if (snapshot.data == true) {
+                      return Column(
+                        children: [
+                          _buildDrawerItem(
+                            context,
+                            icon: Icons.savings_outlined,
+                            title: 'Fondo de Inversión',
+                            subtitle: 'Saldos, liquidaciones e inversiones',
+                            onTap: () {
+                              Navigator.pop(context);
+                              NavigationGuard.navigateWithPermission(
+                                context,
+                                '/fondo-inversion',
                               );
                             },
                           ),

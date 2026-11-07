@@ -3,6 +3,27 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class ProductMovementsService {
   static final SupabaseClient _supabase = Supabase.instance.client;
 
+  static String operationLabel(Map<String, dynamic> movement) {
+    final operation = movement['tipo_operacion'] as String? ?? '-';
+    final label = (movement['movimiento_etiqueta'] as String?)?.trim();
+    if (label != null && label.isNotEmpty) return '$operation · $label';
+    return operation.toLowerCase().contains('venta')
+        ? '$operation · Movimiento de venta'
+        : operation;
+  }
+
+  static bool isMovementEntry(Map<String, dynamic> movement) {
+    final type = movement['tipo_movimiento'];
+    final initial = movement['cantidad_inicial'] as num?;
+    final finalQty = movement['cantidad_final'] as num?;
+    if (type != 'Control' && initial != null && finalQty != null) {
+      return finalQty > initial;
+    }
+    return type == 'Recepción' ||
+        ((type == 'Reajuste' || type == 'Ajuste') &&
+            ((movement['cantidad'] as num?) ?? 0) > 0);
+  }
+
   /// Orden estable por fecha de creación ASC (desempate por id de movimiento).
   /// Necesario porque el RPC en servidor puede estar en DESC / id_op y el
   /// paginado solo es coherente si ordenamos el conjunto completo.
@@ -95,7 +116,7 @@ class ProductMovementsService {
         // no se movieron (verificado fila por fila contra producción), así que
         // el resto de la pantalla sigue leyendo lo mismo.
         // Ver presentaciones_inventario/17_kardex_con_presentacion.sql
-        'get_product_movements_v4',
+        'get_product_movements_v5',
         params: {
           'p_id_producto': productId,
           'p_fecha_desde': dateFrom == null

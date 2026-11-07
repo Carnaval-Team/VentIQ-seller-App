@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../services/restaurant_service.dart';
 import '../models/restaurant_models.dart';
+import '../widgets/profit_gate.dart';
 
 class RestaurantCostManagementScreen extends StatefulWidget {
   const RestaurantCostManagementScreen({Key? key}) : super(key: key);
@@ -111,7 +112,10 @@ class _RestaurantCostManagementScreenState extends State<RestaurantCostManagemen
         controller: _tabController,
         children: [
           _buildPlatosTab(),
-          _buildAnalisisTab(),
+          ProfitGate(
+            title: 'Análisis de márgenes restringido',
+            child: _buildAnalisisTab(),
+          ),
         ],
       ),
     );
@@ -177,13 +181,11 @@ class _RestaurantCostManagementScreenState extends State<RestaurantCostManagemen
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Precio venta: ${_currencyFormatter.format(plato.precioVenta)}'),
-            if (costoEstimado > 0) ...[
-              Text('Costo estimado: ${_currencyFormatter.format(costoEstimado)}'),
-              Text('Margen: ${margenEstimado.toStringAsFixed(1)}%',
-                style: TextStyle(color: rentabilidad.color, fontWeight: FontWeight.bold)),
-            ] else
-              const Text('Sin costo calculado', style: TextStyle(color: Colors.orange)),
+                Text('Precio venta: ${_currencyFormatter.format(plato.precioVenta)}'),
+                if (costoEstimado > 0) ...[
+                  Text('Costo estimado: ${_currencyFormatter.format(costoEstimado)}'),
+                ] else
+                  const Text('Sin costo calculado', style: TextStyle(color: Colors.orange)),
           ],
         ),
         children: [
