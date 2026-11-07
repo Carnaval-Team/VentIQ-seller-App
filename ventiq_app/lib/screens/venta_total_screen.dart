@@ -2288,7 +2288,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
   /// Línea compacta nombre····cantidad para ticket 58mm.
   String _formatPrintNameQtyLine(String nombre, num cantidad) {
-    final qtyStr = PriceUtils.formatQuantity(cantidad);
+    final qtyStr = PriceUtils.formatQuantity(cantidad.toDouble());
     final maxNameLen = (28 - qtyStr.length).clamp(8, 27);
     final displayName =
         nombre.length > maxNameLen

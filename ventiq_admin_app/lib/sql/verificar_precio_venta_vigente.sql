@@ -51,7 +51,8 @@ WHERE p.id_tienda = 4 AND p.deleted_at IS NULL
 ORDER BY p.id;
 
 SELECT p.proname,
-       position('app_v_precio_venta_' IN pg_get_functiondef(p.oid)) > 0 AS usa_fuente_vigente
+       position('app_v_precio_venta_' IN pg_get_functiondef(p.oid)) > 0 AS usa_fuente_vigente,
+       pg_get_functiondef(p.oid) !~* '\mFROM\s+(?:public\.)?app_dat_producto_(?:multimedias|etiquetas)\s+WHERE\s+id_producto\s*=\s*p\.id\s+AND\s+COALESCE\(id_variante,\s*0\)\s*=\s*0' AS metadatos_sin_filtro_invalido
 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
 WHERE n.nspname = 'public' AND p.proname IN (
     'get_detalle_producto', 'get_detalles_productos_batch',

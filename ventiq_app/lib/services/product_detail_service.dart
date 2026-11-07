@@ -85,7 +85,7 @@ class ProductDetailService {
     final userId = _supabase.auth.currentUser?.id ?? await _userPrefs.getUserId();
     final storeId = await _userPrefs.getIdTienda();
     final String claveCache =
-        '${_claveCache(productId, fallbackStock)}|$storeId|$userId|$isOffline';
+        '${_claveCache(productId, fallbackStock)}|$storeId|$userId|$isOffline|${_supabase.auth.currentUser != null}';
     final revision = _revisionDetalle;
     final Product? enCache = _cacheDetalle.get(claveCache);
     if (enCache != null) {

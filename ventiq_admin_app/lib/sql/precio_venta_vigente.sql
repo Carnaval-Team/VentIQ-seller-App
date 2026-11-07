@@ -58,8 +58,8 @@ BEGIN
         RAISE EXCEPTION 'Producto inexistente' USING ERRCODE = '22023';
     END IF;
     IF auth.uid() IS NULL OR NOT (
-        public.fn_user_is_gerente_or_superadmin(v_tienda)
-        OR public.fn_user_is_dueno(v_tienda)
+        COALESCE(public.fn_user_is_gerente_or_superadmin(v_tienda), false)
+        OR COALESCE(public.fn_user_is_dueno(v_tienda), false)
     ) THEN
         RAISE EXCEPTION 'Sin permiso para modificar precios' USING ERRCODE = '42501';
     END IF;
@@ -123,6 +123,21 @@ BEGIN
         FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
         WHERE n.nspname = 'public' AND p.proname = v_name;
         v_def := pg_get_functiondef(v_oid);
+        IF v_name IN ('get_detalle_producto', 'get_detalles_productos_batch') THEN
+            v_next := regexp_replace(v_def,
+                '(\mFROM\s+(?:public\.)?app_dat_producto_(?:multimedias|etiquetas)\s+WHERE\s+id_producto\s*=\s*p\.id)\s+AND\s+COALESCE\(id_variante,\s*0\)\s*=\s*0',
+                '\1', 'gi');
+            v_next := regexp_replace(v_next,
+                '\mFROM\s+(?:public\.)?(?:app_dat_precio_venta|app_v_precio_venta_vigente)\M',
+                'FROM public.app_v_precio_venta_base_vigente', 'gi');
+            IF position('FROM public.app_v_precio_venta_base_vigente' IN v_next) = 0 THEN
+                RAISE EXCEPTION 'Lectura de precio inesperada en %', v_name;
+            END IF;
+            IF v_next <> v_def THEN
+                EXECUTE v_next;
+            END IF;
+            CONTINUE;
+        END IF;
         IF position('app_v_precio_venta_vigente' IN v_def) > 0
            OR position('app_v_precio_venta_base_vigente' IN v_def) > 0 THEN
             CONTINUE;
@@ -139,11 +154,7 @@ BEGIN
             v_next := replace(v_next, 'FROM public.app_v_precio_venta_vigente',
                 'FROM public.app_v_precio_venta_base_vigente');
         END IF;
-        IF v_name IN ('get_detalle_producto', 'get_detalles_productos_batch') THEN
-            v_next := regexp_replace(v_next,
-                'WHERE\s+id_producto\s*=\s*p\.id',
-                'WHERE id_producto = p.id AND COALESCE(id_variante, 0) = 0', 'gi');
-        ELSIF v_name = 'rpc_get_products_last_price2' THEN
+        IF v_name = 'rpc_get_products_last_price2' THEN
             v_next := regexp_replace(v_next,
                 'where\s+apv\.id_producto\s*=\s*p\.id',
                 'WHERE apv.id_producto = p.id AND COALESCE(apv.id_variante, 0) = 0', 'gi');

@@ -2397,6 +2397,7 @@ class ProductService {
         }
       } catch (e) {
         print('⚠️ Error obteniendo precio de venta: $e');
+        rethrow;
       }
 
       print('✅ Producto obtenido: ${productData['denominacion']}');
