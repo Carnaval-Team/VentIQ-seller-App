@@ -3,6 +3,7 @@ import 'dart:html' as html;
 import '../models/order.dart';
 import '../services/user_preferences_service.dart';
 import '../utils/price_utils.dart';
+import '../utils/venta_ingredient_consumo.dart';
 
 /// Implementación web para impresión de resumen detallado
 class WebSummaryPrinterServiceImpl {
@@ -17,6 +18,8 @@ class WebSummaryPrinterServiceImpl {
     required double totalEgresado,
     required double totalEfectivoReal,
     required Map<String, double> totalesPorMedioPago,
+    Map<String, double>? productosAgrupados,
+    List<IngredientConsumoLine>? ingredientesConsumo,
   }) async {
     try {
       // Generar el HTML del resumen detallado
@@ -27,6 +30,8 @@ class WebSummaryPrinterServiceImpl {
         totalEgresado: totalEgresado,
         totalEfectivoReal: totalEfectivoReal,
         totalesPorMedioPago: totalesPorMedioPago,
+        productosAgrupados: productosAgrupados,
+        ingredientesConsumo: ingredientesConsumo,
       );
 
       // Crear un blob con el HTML
@@ -61,6 +66,8 @@ class WebSummaryPrinterServiceImpl {
     required double totalEgresado,
     required double totalEfectivoReal,
     required Map<String, double> totalesPorMedioPago,
+    Map<String, double>? productosAgrupados,
+    List<IngredientConsumoLine>? ingredientesConsumo,
   }) async {
     // Obtener información del vendedor
     final workerProfile = await _userPreferencesService.getWorkerProfile();
@@ -78,15 +85,16 @@ class WebSummaryPrinterServiceImpl {
     final timeStr =
         '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
 
-    // Agrupar productos por nombre (solo cantidad vendida)
-    final productosAgrupados = <String, double>{};
-
-    for (final item in productosVendidos) {
-      productosAgrupados.update(
-        item.nombre,
-        (qty) => qty + item.cantidad,
-        ifAbsent: () => item.cantidad,
-      );
+    // Preferir el desglose ya calculado (incluye gasto de ingredientes).
+    final Map<String, double> agrupados;
+    final List<IngredientConsumoLine> ingredientes;
+    if (productosAgrupados != null) {
+      agrupados = productosAgrupados;
+      ingredientes = ingredientesConsumo ?? const [];
+    } else {
+      final breakdown = await buildVentaPrintBreakdown(productosVendidos);
+      agrupados = breakdown.productosPorNombre;
+      ingredientes = breakdown.ingredientesConsumo;
     }
 
     final paymentEntries =
@@ -99,10 +107,10 @@ class WebSummaryPrinterServiceImpl {
         )
         .join('');
 
-    final nombres = productosAgrupados.keys.toList()..sort();
+    final nombres = agrupados.keys.toList()..sort();
     final productRows = nombres
         .map((nombre) {
-          final cantidad = productosAgrupados[nombre]!;
+          final cantidad = agrupados[nombre]!;
           return '''
         <div class="product-item">
           <div class="product-line">
@@ -113,6 +121,29 @@ class WebSummaryPrinterServiceImpl {
       ''';
         })
         .join('');
+
+    final ingredientRows = ingredientes
+        .map((ing) {
+          return '''
+        <div class="product-item">
+          <div class="product-line">
+            <span class="product-name">${ing.label}</span>
+            <span class="product-qty">${PriceUtils.formatQuantity(ing.cantidad)}</span>
+          </div>
+        </div>
+      ''';
+        })
+        .join('');
+
+    final ingredientSection = ingredientes.isEmpty
+        ? ''
+        : '''
+    <div class="summary-section">
+        <div class="summary-header">GASTO INGREDIENTES:</div>
+        <div class="separator">--------------------------------</div>
+        $ingredientRows
+    </div>
+''';
 
     return '''
 <!DOCTYPE html>
@@ -230,6 +261,8 @@ class WebSummaryPrinterServiceImpl {
         <div class="separator">--------------------------------</div>
         $productRows
     </div>
+
+    $ingredientSection
 
     <div class="final-total">TOTAL GENERAL: \$${totalVentas.toStringAsFixed(0)}</div>
 

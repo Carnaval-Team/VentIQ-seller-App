@@ -2373,13 +2373,10 @@ class ProductService {
       double? precioVentaUsd;
 
       try {
-        final today = DateTime.now().toIso8601String().split('T')[0];
-
         final precioVentaResponse = await _supabase
-            .from('app_dat_precio_venta')
+            .from('app_v_precio_venta_base_vigente')
             .select('id, precio_venta_cup, precio_venta_usd')
             .eq('id_producto', productId)
-            .or('fecha_hasta.is.null,fecha_hasta.gte.$today')
             .order('id', ascending: false)
             .limit(1);
 
@@ -3932,8 +3929,6 @@ class ProductService {
         '💰 Actualizando precio base de venta para producto: $productId',
       );
 
-      final today = DateTime.now().toIso8601String().substring(0, 10);
-
       double? effectiveUsd = newPriceUsd;
 
       if (effectiveUsd == null && newPrice > 0) {
@@ -3947,41 +3942,16 @@ class ProductService {
 
       // Verificar si ya existe un registro para este producto
 
-      final existing = await _supabase
-          .from('app_dat_precio_venta')
-          .select('id')
-          .eq('id_producto', productId)
-          .order('created_at', ascending: false)
-          .limit(1)
-          .maybeSingle();
-
-      final updateData = <String, dynamic>{
-        'precio_venta_cup': newPrice,
-
-        'fecha_desde': today,
-      };
-
-      if (effectiveUsd != null && effectiveUsd > 0) {
-        updateData['precio_venta_usd'] = effectiveUsd;
-      }
-
-      if (existing != null) {
-        await _supabase
-            .from('app_dat_precio_venta')
-            .update(updateData)
-            .eq('id', existing['id']);
-
-        debugPrint('✅ Precio base actualizado exitosamente');
-      } else {
-        await _supabase.from('app_dat_precio_venta').insert({
-          'id_producto': productId,
-
-          ...updateData,
-
-          'id_variante': null,
-        });
-
-        debugPrint('✅ Precio base creado exitosamente (no existía registro)');
+      final response = await _supabase.rpc(
+        'fn_guardar_precio_venta_base',
+        params: {
+          'p_id_producto': productId,
+          'p_precio_venta_cup': newPrice,
+          'p_precio_venta_usd': effectiveUsd,
+        },
+      );
+      if (response is! List || response.length != 1) {
+        throw StateError('No se recibió el precio guardado');
       }
 
       return true;

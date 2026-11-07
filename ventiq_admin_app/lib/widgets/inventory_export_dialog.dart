@@ -197,7 +197,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
     int storeId,
   ) async {
     final supabase = Supabase.instance.client;
-    final today = DateTime.now().toIso8601String().split('T')[0];
+
 
     final ids = inventoryData
         .map((r) => r['id_producto'])
@@ -235,11 +235,9 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
 
     // Precio de venta vigente por producto
     final preciosResp = await supabase
-        .from('app_dat_precio_venta')
+        .from('app_v_precio_venta_base_vigente')
         .select('id_producto, precio_venta_cup, precio_venta_usd')
         .inFilter('id_producto', ids)
-        .lte('fecha_desde', today)
-        .or('fecha_hasta.is.null,fecha_hasta.gte.$today')
         .order('created_at', ascending: false);
 
     final Map<int, Map<String, dynamic>> preciosPorProducto = {};

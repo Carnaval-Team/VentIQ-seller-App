@@ -1964,13 +1964,13 @@ class _InventoryExtractionBySaleScreenState
               : int.tryParse(idRaw?.toString() ?? '');
       if (id == null) continue;
       try {
-        final today = DateTime.now().toIso8601String().split('T')[0];
+
 
         final rows = await Supabase.instance.client
-            .from('app_dat_precio_venta')
+            .from('app_v_precio_venta_base_vigente')
             .select('id, precio_venta_usd')
             .eq('id_producto', id)
-            .or('fecha_hasta.is.null,fecha_hasta.gte.$today')
+            
             .order('id', ascending: false)
             .limit(1);
         if (rows.isNotEmpty) {
@@ -2909,13 +2909,13 @@ class _ProductQuantityWithPriceDialogState
               : int.tryParse(productId?.toString() ?? '');
       if (id != null) {
         try {
-          final today = DateTime.now().toIso8601String().split('T')[0];
+  
 
           final rows = await Supabase.instance.client
-              .from('app_dat_precio_venta')
+              .from('app_v_precio_venta_base_vigente')
               .select('id, precio_venta_usd')
               .eq('id_producto', id)
-              .or('fecha_hasta.is.null,fecha_hasta.gte.$today')
+              
               .order('id', ascending: false)
               .limit(1);
           if (rows.isNotEmpty) {

@@ -15,6 +15,8 @@ import '../services/moneda_venta_service.dart';
 import '../theme/ventiq_home_theme.dart';
 import '../utils/platform_utils.dart';
 import '../utils/price_utils.dart';
+import '../utils/venta_ingredient_consumo.dart';
+import '../services/product_recipe_cache_service.dart';
 import '../widgets/egresos_list_screen.dart';
 import '../widgets/filtered_orders_screen.dart';
 import '../screens/orders_screen.dart';
@@ -1924,6 +1926,11 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
       // Importar el servicio web
       final webSummaryService = WebSummaryPrinterService();
 
+      final breakdown = await buildVentaPrintBreakdown(
+        _productosVendidos,
+        loadRecipes: _loadRecipesForElaborados,
+      );
+
       // Imprimir usando el servicio web
       bool printed = await webSummaryService.printDetailedSummary(
         productosVendidos: _productosVendidos,
@@ -1932,6 +1939,8 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         totalEgresado: _totalEgresado,
         totalEfectivoReal: _totalEfectivoReal,
         totalesPorMedioPago: _totalesPorMedioPago,
+        productosAgrupados: breakdown.productosPorNombre,
+        ingredientesConsumo: breakdown.ingredientesConsumo,
       );
 
       if (printed) {
@@ -2195,6 +2204,11 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
       addCurrencyLines('Transferencia', _digitalPorDivisa);
       bytes += generator.emptyLines(1);
 
+      final breakdown = await buildVentaPrintBreakdown(
+        _productosVendidos,
+        loadRecipes: _loadRecipesForElaborados,
+      );
+
       // Detalle de productos (solo nombre + cantidad vendida)
       bytes += generator.text(
         'DETALLE POR PRODUCTO:',
@@ -2205,32 +2219,33 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         styles: PosStyles(align: PosAlign.center),
       );
 
-      // Agrupar productos por nombre
-      final productosAgrupados = <String, double>{};
-      for (final item in _productosVendidos) {
-        productosAgrupados.update(
-          item.nombre,
-          (qty) => qty + item.cantidad,
-          ifAbsent: () => item.cantidad,
+      // Una línea compacta por producto para no saturar la impresora
+      final nombres = breakdown.productosPorNombre.keys.toList()..sort();
+      for (final nombre in nombres) {
+        final cantidad = breakdown.productosPorNombre[nombre]!;
+        bytes += generator.text(
+          _formatPrintNameQtyLine(nombre, cantidad),
+          styles: PosStyles(align: PosAlign.left),
         );
       }
 
-      // Una línea compacta por producto para no saturar la impresora
-      final nombres = productosAgrupados.keys.toList()..sort();
-      for (final nombre in nombres) {
-        final cantidad = productosAgrupados[nombre]!;
-        final qtyStr = PriceUtils.formatQuantity(cantidad);
-        final maxNameLen = (28 - qtyStr.length).clamp(8, 27);
-        final displayName =
-            nombre.length > maxNameLen
-                ? '${nombre.substring(0, maxNameLen - 1)}.'
-                : nombre;
-        final spaces = 28 - displayName.length - qtyStr.length;
-        final pad = spaces > 0 ? ' ' * spaces : ' ';
+      // Gasto de ingredientes de elaborados vendidos en el turno
+      if (breakdown.ingredientesConsumo.isNotEmpty) {
+        bytes += generator.emptyLines(1);
         bytes += generator.text(
-          '$displayName$pad$qtyStr',
-          styles: PosStyles(align: PosAlign.left),
+          'GASTO INGREDIENTES:',
+          styles: PosStyles(align: PosAlign.left, bold: true),
         );
+        bytes += generator.text(
+          '--------------------------------',
+          styles: PosStyles(align: PosAlign.center),
+        );
+        for (final ing in breakdown.ingredientesConsumo) {
+          bytes += generator.text(
+            _formatPrintNameQtyLine(ing.label, ing.cantidad),
+            styles: PosStyles(align: PosAlign.left),
+          );
+        }
       }
 
       // Footer
@@ -2269,6 +2284,26 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         "${date.year} "
         "${date.hour.toString().padLeft(2, '0')}:"
         "${date.minute.toString().padLeft(2, '0')}";
+  }
+
+  /// Línea compacta nombre····cantidad para ticket 58mm.
+  String _formatPrintNameQtyLine(String nombre, num cantidad) {
+    final qtyStr = PriceUtils.formatQuantity(cantidad);
+    final maxNameLen = (28 - qtyStr.length).clamp(8, 27);
+    final displayName =
+        nombre.length > maxNameLen
+            ? '${nombre.substring(0, maxNameLen - 1)}.'
+            : nombre;
+    final spaces = 28 - displayName.length - qtyStr.length;
+    final pad = spaces > 0 ? ' ' * spaces : ' ';
+    return '$displayName$pad$qtyStr';
+  }
+
+  /// Recetas de elaborados para gasto de ingredientes (online + cache offline).
+  Future<Map<int, List<Map<String, dynamic>>>> _loadRecipesForElaborados(
+    Set<int> productIds,
+  ) {
+    return ProductRecipeCacheService().loadRecipes(productIds);
   }
 
   /// Chip de tasas: una entrada por divisa distinta de la moneda base.

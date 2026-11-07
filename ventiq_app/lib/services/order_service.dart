@@ -2680,8 +2680,8 @@ class OrderService extends ChangeNotifier {
                 esComprable: true,
                 esInventariable: true,
                 esPorLotes: false,
-                esElaborado: false,
-                esServicio: false,
+                esElaborado: itemData['es_elaborado'] == true,
+                esServicio: itemData['es_servicio'] == true,
                 categoria: 'General',
                 descripcion: null,
                 foto: null,
@@ -2698,6 +2698,12 @@ class OrderService extends ChangeNotifier {
                   'Sin almacén';
               final ubicacionAlmacen = '$almacen - $ubicacion';
 
+              List<dynamic>? ingredientes;
+              final rawIngs = itemData['ingredientes'];
+              if (rawIngs is List && rawIngs.isNotEmpty) {
+                ingredientes = List<dynamic>.from(rawIngs);
+              }
+
               // Crear OrderItem
               return OrderItem(
                 id: '${orderData['id']}_${itemData['id_producto']}',
@@ -2708,6 +2714,7 @@ class OrderService extends ChangeNotifier {
                 ubicacionAlmacen: ubicacionAlmacen,
                 inventoryData: inventoryMetadata,
                 paymentMethod: null, // Se reconstruirá si es necesario
+                ingredientes: ingredientes,
                 // FASE 4: reconstruir la presentación al releer la orden
                 // pendiente. Sin esto, `cantidadFormateada` y
                 // `equivalenteBase` mienten en el resumen de cierre de una

@@ -136,17 +136,15 @@ class ProductsAnalyticsService {
           .eq('app_dat_producto.id_tienda', idTienda);
 
       // Obtener precios vigentes
-      final today = DateTime.now().toIso8601String().split('T')[0];
+
       final preciosResponse = await _supabase
-          .from('app_dat_precio_venta')
+          .from('app_v_precio_venta_base_vigente')
           .select('''
             precio_venta_cup, 
             id_producto,
             app_dat_producto!inner(id_tienda)
           ''')
-          .eq('app_dat_producto.id_tienda', idTienda)
-          .or('fecha_hasta.is.null,fecha_hasta.gte.$today')
-          .lte('fecha_desde', today);
+          .eq('app_dat_producto.id_tienda', idTienda);
 
       // Calcular valor por categoría
       final Map<String, double> valorPorCategoria = {};
@@ -614,12 +612,9 @@ class ProductsAnalyticsService {
       // 1. Obtener precio de venta actual (vigente, max id)
       final precioResponse =
           await supabase
-              .from('app_dat_precio_venta')
+              .from('app_v_precio_venta_base_vigente')
               .select('id, precio_venta_cup')
               .eq('id_producto', productId)
-              .or(
-                'fecha_hasta.is.null,fecha_hasta.gte.${DateTime.now().toIso8601String().split('T')[0]}',
-              )
               .order('id', ascending: false)
               .limit(1)
               .maybeSingle();

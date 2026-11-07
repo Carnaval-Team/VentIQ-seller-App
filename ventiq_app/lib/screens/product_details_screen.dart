@@ -673,6 +673,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
         }
       } else {
         print('🌐 Modo online - Cargando detalles desde Supabase...');
+        _productDetailService.invalidarDetalle(widget.product.id);
         detailedProduct = await _productDetailService.getProductDetail(
           widget.product.id,
           fallbackStock: widget.product.cantidadReal.toDouble(),

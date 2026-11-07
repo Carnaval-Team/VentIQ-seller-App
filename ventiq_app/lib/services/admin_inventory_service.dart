@@ -1415,30 +1415,15 @@ class AdminInventoryService {
       final presentationId = (payload['id_presentacion'] as num?)?.toInt();
 
       if (venta != null) {
-        final today = DateTime.now().toIso8601String().substring(0, 10);
-        final existing =
-            await _supabase
-                .from('app_dat_precio_venta')
-                .select('id')
-                .eq('id_producto', productId)
-                .order('created_at', ascending: false)
-                .limit(1)
-                .maybeSingle();
-        if (existing != null) {
-          await _supabase
-              .from('app_dat_precio_venta')
-              .update({
-                'precio_venta_cup': venta,
-                'fecha_desde': today,
-                'fecha_hasta': null,
-              })
-              .eq('id', existing['id']);
-        } else {
-          await _supabase.from('app_dat_precio_venta').insert({
-            'id_producto': productId,
-            'precio_venta_cup': venta,
-            'fecha_desde': today,
-          });
+        final guardado = await _supabase.rpc(
+          'fn_guardar_precio_venta_base',
+          params: {
+            'p_id_producto': productId,
+            'p_precio_venta_cup': venta,
+          },
+        );
+        if (guardado is! List || guardado.length != 1) {
+          throw StateError('No se recibió el precio guardado');
         }
       }
 

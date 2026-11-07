@@ -11,6 +11,7 @@ import '../services/payment_method_service.dart';
 import '../services/product_detail_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/store_config_service.dart';
+import '../services/product_recipe_cache_service.dart';
 import '../services/bank_sms_service.dart';
 import '../services/server_time_service.dart';
 import '../theme/ventiq_home_theme.dart';
@@ -2504,24 +2505,32 @@ class _PreorderScreenState extends State<PreorderScreen> {
       'buyer_name': order.buyerName ?? 'Cliente',
       'buyer_phone': order.buyerPhone ?? '',
       'extra_contacts': '',
-      'items':
-          order.items.map((item) {
-            return {
-              'id_producto': item.producto.id,
-              'denominacion': item.producto.denominacion,
-              'cantidad': item.cantidad,
-              'precio_unitario': item.precioUnitario,
-              'subtotal': item.subtotal,
-              'id_medio_pago': item.paymentMethod?.id,
-              'metodo_pago': item.paymentMethod?.denominacion,
-              'inventory_metadata': item.inventoryData,
-              // FASE 4: igual que en checkout_screen — la cantidad está en la
-              // presentación elegida, así que la preorden pendiente debe llevarla.
-              'id_presentacion': item.idPresentacion,
-              'presentacion_nombre': item.presentacionNombre,
-              'presentacion_factor': item.presentacionFactor,
-            };
-          }).toList(),
+      'items': await Future.wait(
+        order.items.map((item) async {
+          final ingredientes =
+              await ProductRecipeCacheService().snapshotIngredientsForItem(
+                item,
+              );
+          return {
+            'id_producto': item.producto.id,
+            'denominacion': item.producto.denominacion,
+            'cantidad': item.cantidad,
+            'precio_unitario': item.precioUnitario,
+            'subtotal': item.subtotal,
+            'id_medio_pago': item.paymentMethod?.id,
+            'metodo_pago': item.paymentMethod?.denominacion,
+            'inventory_metadata': item.inventoryData,
+            'es_elaborado': item.producto.esElaborado,
+            'es_servicio': item.producto.esServicio,
+            if (ingredientes != null) 'ingredientes': ingredientes,
+            // FASE 4: igual que en checkout_screen — la cantidad está en la
+            // presentación elegida, así que la preorden pendiente debe llevarla.
+            'id_presentacion': item.idPresentacion,
+            'presentacion_nombre': item.presentacionNombre,
+            'presentacion_factor': item.presentacionFactor,
+          };
+        }),
+      ),
       'desglose_pagos': paymentBreakdown.values.toList(),
     };
 

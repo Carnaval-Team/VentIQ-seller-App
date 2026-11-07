@@ -22,6 +22,7 @@ import 'offline_database_service.dart';
 import 'order_service.dart';
 import 'connectivity_service.dart';
 import 'currency_service.dart';
+import 'product_recipe_cache_service.dart';
 import '../models/order.dart';
 import '../utils/price_utils.dart';
 import '../utils/uuid_generator.dart';
@@ -612,6 +613,24 @@ class AutoSyncService {
       (sum, list) => sum + list.length,
     );
     print('🎉 AutoSync: Total de productos sincronizados: $totalProducts');
+
+    // Recetas de elaborados → cache local (gasto ingredientes offline).
+    try {
+      final catalogIds = <int>{};
+      for (final list in productsByCategory.values) {
+        for (final p in list) {
+          final id = (p['id'] as num?)?.toInt();
+          if (id != null) catalogIds.add(id);
+        }
+      }
+      await ProductRecipeCacheService().syncRecipesForProductIds(
+        catalogIds,
+        replaceAll: true,
+      );
+    } catch (e) {
+      print('⚠️ Sync recetas tras productos (no bloqueante): $e');
+    }
+
     return productsByCategory;
   }
 
@@ -5596,6 +5615,9 @@ class AutoSyncService {
 
       if (syncedData.isNotEmpty) {
         await _userPreferencesService.mergeOfflineData(syncedData);
+        if (syncedData.containsKey('products')) {
+          _productDetailService.limpiarCacheDetalle();
+        }
       }
 
       final duration = DateTime.now().difference(startTime);

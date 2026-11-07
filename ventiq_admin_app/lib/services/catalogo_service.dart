@@ -271,7 +271,17 @@ class CatalogoService {
       };
 
       // Insertar nuevo registro de precio con fecha_desde actual
-      await _supabase.from('app_dat_precio_venta').insert(precioData);
+      final guardado = await _supabase.rpc(
+        'fn_guardar_precio_venta_base',
+        params: {
+          'p_id_producto': idProducto,
+          'p_precio_venta_cup': precioData['precio_venta_cup'],
+          'p_precio_venta_usd': precioData['precio_venta_usd'],
+        },
+      );
+      if (guardado is! List || guardado.length != 1) {
+        throw StateError('No se recibió el precio guardado');
+      }
 
       print('✅ Precio actualizado (CUP: $nuevoPrecio, USD: $precioUsd)');
       return true;

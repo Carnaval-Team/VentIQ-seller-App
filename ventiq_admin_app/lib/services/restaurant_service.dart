@@ -417,7 +417,7 @@ class RestaurantService {
           .from('app_dat_producto')
           .select('''
             *,
-            precio_actual:app_dat_precio_venta(
+            precio_actual:app_v_precio_venta_base_vigente(
               precio_venta_cup,
               fecha_desde,
               fecha_hasta
@@ -425,8 +425,7 @@ class RestaurantService {
             cantidad_ingredientes:app_dat_producto_ingredientes!app_dat_producto_ingredientes_id_producto_elaborado_fkey(count)
           ''')
           .eq('es_elaborado', true)
-          .eq('id_tienda', idTienda) // Agregar filtro de tienda
-          .lte('app_dat_precio_venta.fecha_desde', DateTime.now().toIso8601String().split('T')[0]);
+          .eq('id_tienda', idTienda); // Agregar filtro de tienda
 
       if (soloActivos) {
         query = query.eq('es_vendible', true);

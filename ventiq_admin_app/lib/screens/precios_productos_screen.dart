@@ -409,7 +409,7 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
       // Recargar solo el producto modificado (último precio = mayor id)
       final productId = producto['id'] as int;
       final precioVentaList = await _supabase
-          .from('app_dat_precio_venta')
+          .from('app_v_precio_venta_base_vigente')
           .select('id, precio_venta_cup, precio_venta_usd')
           .eq('id_producto', productId)
           .order('id', ascending: false)

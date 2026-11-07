@@ -740,13 +740,10 @@ class CarnavalService {
           .single();
 
       // 2. Obtener precio actual (el más reciente activo por id)
-      final today = DateTime.now().toIso8601String().split('T')[0];
-
       final priceData = await _supabase
-          .from('app_dat_precio_venta')
+          .from('app_v_precio_venta_base_vigente')
           .select('id, precio_venta_cup')
           .eq('id_producto', localProductId)
-          .or('fecha_hasta.is.null,fecha_hasta.gte.$today')
           .order('id', ascending: false)
           .limit(1)
           .maybeSingle();

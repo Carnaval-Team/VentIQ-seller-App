@@ -116,7 +116,7 @@ class PriceManagementService {
 
       // Fetch only the latest price per product (one query, ordered desc)
       final preciosResp = await _supabase
-          .from('app_dat_precio_venta')
+          .from('app_v_precio_venta_base_vigente')
           .select('id_producto, precio_venta_cup, precio_venta_usd, created_at')
           .inFilter('id_producto', productoIds)
           .order('created_at', ascending: false);

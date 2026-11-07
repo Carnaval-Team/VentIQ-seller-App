@@ -17,6 +17,7 @@ class ProductDetailService {
 
   final SupabaseClient _supabase = Supabase.instance.client;
   final UserPreferencesService _userPrefs = UserPreferencesService();
+  int _revisionDetalle = 0;
 
   /// Caché de detalle con TTL 60 s (R13 del plan).
   ///
@@ -31,13 +32,17 @@ class ProductDetailService {
 
   /// Tira la caché de un producto (p. ej. tras vender, porque cambió el stock).
   void invalidarDetalle(int idProducto) {
+    _revisionDetalle++;
     _cacheDetalle.removeWhere(
       (String clave, Product _) => clave.startsWith('$idProducto|'),
     );
   }
 
   /// Tira toda la caché de detalle.
-  void limpiarCacheDetalle() => _cacheDetalle.clear();
+  void limpiarCacheDetalle() {
+    _revisionDetalle++;
+    _cacheDetalle.clear();
+  }
 
   /// Alcance con el que `getProductIngredients` midió el stock.
   ///
@@ -76,7 +81,12 @@ class ProductDetailService {
     int productId, {
     double? fallbackStock,
   }) async {
-    final String claveCache = _claveCache(productId, fallbackStock);
+    final isOffline = await _userPrefs.shouldUseLocalData();
+    final userId = _supabase.auth.currentUser?.id ?? await _userPrefs.getUserId();
+    final storeId = await _userPrefs.getIdTienda();
+    final String claveCache =
+        '${_claveCache(productId, fallbackStock)}|$storeId|$userId|$isOffline';
+    final revision = _revisionDetalle;
     final Product? enCache = _cacheDetalle.get(claveCache);
     if (enCache != null) {
       debugPrint('⚡ Detalle del producto $productId desde caché (TTL 60 s)');
@@ -84,12 +94,13 @@ class ProductDetailService {
     }
 
     try {
-      final isOffline = await _userPrefs.shouldUseLocalData();
       if (isOffline) {
         final offlineDetail = await _getProductDetailOffline(productId);
         if (offlineDetail != null) {
           debugPrint('🔌 Detalles del producto $productId desde cache offline');
-          _cacheDetalle.put(claveCache, offlineDetail);
+          if (revision == _revisionDetalle) {
+            _cacheDetalle.put(claveCache, offlineDetail);
+          }
           return offlineDetail;
         }
         // Sin detalles completos en cache: lanzar para que el llamador caiga a
@@ -127,7 +138,9 @@ class ProductDetailService {
         response,
         fallbackStock: fallbackStock,
       );
-      _cacheDetalle.put(claveCache, producto);
+      if (revision == _revisionDetalle) {
+        _cacheDetalle.put(claveCache, producto);
+      }
       return producto;
     } catch (e, stackTrace) {
       debugPrint('❌ Error obteniendo detalles del producto: $e');

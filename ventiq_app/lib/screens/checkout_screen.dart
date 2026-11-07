@@ -15,6 +15,7 @@ import '../services/order_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/store_config_service.dart';
 import '../services/currency_service.dart';
+import '../services/product_recipe_cache_service.dart';
 import '../services/moneda_venta_service.dart';
 import '../services/server_time_service.dart';
 import '../services/mesa_service.dart';
@@ -2298,53 +2299,62 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'promo_discount': _promoDiscount,
         'id_mesa': _mesaSeleccionada?.id,
         'mesa_numero': _mesaSeleccionada?.numero,
-        'items':
-            widget.order.items.map((item) {
-              final itemTotal =
-                  itemTotals[item.id] ?? _calculateItemPrice(item);
-              // ✅ CORREGIDO: Usar el precio unitario correcto calculado desde el subtotal
-              final precioUnitarioCorrect =
-                  item.cantidad > 0
-                      ? itemTotal / item.cantidad
-                      : item.precioUnitario;
+        'items': await Future.wait(
+          widget.order.items.map((item) async {
+            final itemTotal =
+                itemTotals[item.id] ?? _calculateItemPrice(item);
+            // ✅ CORREGIDO: Usar el precio unitario correcto calculado desde el subtotal
+            final precioUnitarioCorrect =
+                item.cantidad > 0
+                    ? itemTotal / item.cantidad
+                    : item.precioUnitario;
 
-              print(
-                '💾 GUARDANDO OFFLINE - Producto: ${item.producto.denominacion}',
-              );
-              print('  - Precio unitario base: \$${item.precioUnitario}');
-              print(
-                '  - Subtotal con método de pago: \$${itemTotal.toStringAsFixed(2)}',
-              );
-              print(
-                '  - Precio unitario correcto guardado: \$${precioUnitarioCorrect}',
-              );
-              print(
-                '  - Método de pago: ${item.paymentMethod?.denominacion ?? "Sin método"}',
-              );
+            print(
+              '💾 GUARDANDO OFFLINE - Producto: ${item.producto.denominacion}',
+            );
+            print('  - Precio unitario base: \$${item.precioUnitario}');
+            print(
+              '  - Subtotal con método de pago: \$${itemTotal.toStringAsFixed(2)}',
+            );
+            print(
+              '  - Precio unitario correcto guardado: \$${precioUnitarioCorrect}',
+            );
+            print(
+              '  - Método de pago: ${item.paymentMethod?.denominacion ?? "Sin método"}',
+            );
 
-              return {
-                'id_producto': item.producto.id,
-                'denominacion': item.producto.denominacion,
-                'cantidad': item.cantidad,
-                'precio_unitario':
-                    precioUnitarioCorrect, // ✅ Precio correcto según método de pago
-                'subtotal': itemTotal, // ✅ Subtotal con precio correcto
-                'id_medio_pago': item.paymentMethod?.id,
-                'metodo_pago': item.paymentMethod?.denominacion,
-                'inventory_metadata': item.inventoryData,
-                // FASE 4 presentaciones: `cantidad` está en la presentación
-                // elegida, así que la orden pendiente tiene que llevar cuál es.
-                // Sin esto, al sincronizar horas después el ítem se sube sin
-                // presentación y el servidor cae al fallback de la base: "2"
-                // se interpreta como 2 Bolsas cuando eran 2 Bultos.
-                //
-                // Nombre y factor van también porque el resumen de cierre se
-                // arma offline y no puede consultar la cadena.
-                'id_presentacion': item.idPresentacion,
-                'presentacion_nombre': item.presentacionNombre,
-                'presentacion_factor': item.presentacionFactor,
-              };
-            }).toList(),
+            final ingredientes =
+                await ProductRecipeCacheService().snapshotIngredientsForItem(
+                  item,
+                );
+
+            return {
+              'id_producto': item.producto.id,
+              'denominacion': item.producto.denominacion,
+              'cantidad': item.cantidad,
+              'precio_unitario':
+                  precioUnitarioCorrect, // ✅ Precio correcto según método de pago
+              'subtotal': itemTotal, // ✅ Subtotal con precio correcto
+              'id_medio_pago': item.paymentMethod?.id,
+              'metodo_pago': item.paymentMethod?.denominacion,
+              'inventory_metadata': item.inventoryData,
+              'es_elaborado': item.producto.esElaborado,
+              'es_servicio': item.producto.esServicio,
+              if (ingredientes != null) 'ingredientes': ingredientes,
+              // FASE 4 presentaciones: `cantidad` está en la presentación
+              // elegida, así que la orden pendiente tiene que llevar cuál es.
+              // Sin esto, al sincronizar horas después el ítem se sube sin
+              // presentación y el servidor cae al fallback de la base: "2"
+              // se interpreta como 2 Bolsas cuando eran 2 Bultos.
+              //
+              // Nombre y factor van también porque el resumen de cierre se
+              // arma offline y no puede consultar la cadena.
+              'id_presentacion': item.idPresentacion,
+              'presentacion_nombre': item.presentacionNombre,
+              'presentacion_factor': item.presentacionFactor,
+            };
+          }),
+        ),
         'desglose_pagos': paymentBreakdown.values.toList(),
       };
 

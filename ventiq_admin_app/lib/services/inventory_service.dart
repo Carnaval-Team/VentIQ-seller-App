@@ -3592,17 +3592,10 @@ class InventoryService {
 
           // 4. Obtener precio de venta actual en CUP
           final precioVentaData = await _supabase
-              .from('app_dat_precio_venta')
+              .from('app_v_precio_venta_base_vigente')
               .select('id, precio_venta_cup')
               .eq('id_producto', idProducto)
-              .lte(
-                'fecha_desde',
-                DateTime.now().toIso8601String().split('T')[0],
-              )
-              .or(
-                'fecha_hasta.is.null,fecha_hasta.gte.${DateTime.now().toIso8601String().split('T')[0]}',
-              )
-              .order('created_at', ascending: false)
+              .order('id', ascending: false)
               .limit(1)
               .maybeSingle();
 
@@ -3668,10 +3661,17 @@ class InventoryService {
                 .roundToDouble();
           }
 
-          await _supabase
-              .from('app_dat_precio_venta')
-              .update(updateData)
-              .eq('id', precioVentaData['id']);
+          final guardado = await _supabase.rpc(
+            'fn_guardar_precio_venta_base',
+            params: {
+              'p_id_producto': idProducto,
+              'p_precio_venta_cup': precioRedondeado,
+              'p_precio_venta_usd': updateData['precio_venta_usd'],
+            },
+          );
+          if (guardado is! List || guardado.length != 1) {
+            throw StateError('No se recibió el precio guardado');
+          }
 
           print(
             '      ✅ Precio de venta actualizado: $precioVentaActual → $precioRedondeado CUP | USD: ${updateData['precio_venta_usd']}',

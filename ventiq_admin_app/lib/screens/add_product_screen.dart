@@ -7312,7 +7312,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
           await _supabase
 
-              .from('app_dat_precio_venta')
+              .from('app_v_precio_venta_base_vigente')
 
               .select('id')
 
@@ -7340,21 +7340,11 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
         // Actualizar precio existente
 
-        await _supabase
-
-            .from('app_dat_precio_venta')
-
-            .update({
-
-              'precio_venta_cup': precioVenta,
-
-              ...usdMap,
-
-              'fecha_desde': DateTime.now().toIso8601String().substring(0, 10),
-
-            })
-
-            .eq('id', existingPrice['id']);
+        await _supabase.rpc('fn_guardar_precio_venta_base', params: {
+          'p_id_producto': productId,
+          'p_precio_venta_cup': precioVenta,
+          'p_precio_venta_usd': usdMap['precio_venta_usd'],
+        });
 
 
 
@@ -7364,18 +7354,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
         // Insertar nuevo precio
 
-        await _supabase.from('app_dat_precio_venta').insert({
-
-          'id_producto': productId,
-
-          'precio_venta_cup': precioVenta,
-
-          ...usdMap,
-
-          'fecha_desde': DateTime.now().toIso8601String().substring(0, 10),
-
-          'id_variante': null,
-
+        await _supabase.rpc('fn_guardar_precio_venta_base', params: {
+          'p_id_producto': productId,
+          'p_precio_venta_cup': precioVenta,
+          'p_precio_venta_usd': usdMap['precio_venta_usd'],
         });
 
 

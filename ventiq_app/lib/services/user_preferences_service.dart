@@ -1079,6 +1079,9 @@ class UserPreferencesService {
   /// Historial de tasas USD→CUP (tienda + global) para conversión offline
   /// por fecha de creación de la orden.
   static const String _usdCupRateTimelinesKey = 'usd_cup_rate_timelines';
+  /// Recetas de elaborados (ingredientes) para gasto offline en resumen/cierre.
+  static const String _productIngredientRecipesKey =
+      'product_ingredient_recipes';
   static const String _hiddenDenominationsKey = 'hidden_denominations';
 
   Future<void> saveTurnoData(Map<String, dynamic> turnoData) async {
@@ -5033,6 +5036,66 @@ class UserPreferencesService {
       await prefs.remove(_usdCupRateTimelinesKey);
     } catch (e) {
       print('❌ Error limpiando timelines USD→CUP: $e');
+    }
+  }
+
+  /// Guarda recetas de elaborados indexadas por id de producto elaborado.
+  Future<void> saveProductIngredientRecipes(
+    Map<int, List<Map<String, dynamic>>> recipesByElaboradoId,
+  ) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final encoded = <String, dynamic>{};
+      for (final entry in recipesByElaboradoId.entries) {
+        encoded[entry.key.toString()] = entry.value;
+      }
+      await prefs.setString(
+        _productIngredientRecipesKey,
+        jsonEncode({
+          'recipes': encoded,
+          'savedAt': DateTime.now().toIso8601String(),
+        }),
+      );
+      print(
+        '🍽️ Recetas de elaborados guardadas: '
+        '${recipesByElaboradoId.length} productos',
+      );
+    } catch (e) {
+      print('❌ Error guardando recetas de elaborados: $e');
+    }
+  }
+
+  /// Lee recetas cacheadas. Si [ids] no es null, filtra a esos elaborados.
+  Future<Map<int, List<Map<String, dynamic>>>> getProductIngredientRecipes({
+    Set<int>? ids,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_productIngredientRecipesKey);
+      if (raw == null || raw.isEmpty) return {};
+
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return {};
+      final recipesRaw = decoded['recipes'];
+      if (recipesRaw is! Map) return {};
+
+      final out = <int, List<Map<String, dynamic>>>{};
+      for (final entry in recipesRaw.entries) {
+        final id = int.tryParse(entry.key.toString());
+        if (id == null) continue;
+        if (ids != null && !ids.contains(id)) continue;
+        final list = entry.value;
+        if (list is! List) continue;
+        out[id] =
+            list
+                .whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList();
+      }
+      return out;
+    } catch (e) {
+      print('❌ Error leyendo recetas de elaborados: $e');
+      return {};
     }
   }
 

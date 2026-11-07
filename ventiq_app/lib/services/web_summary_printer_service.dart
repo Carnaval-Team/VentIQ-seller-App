@@ -1,4 +1,5 @@
 import '../models/order.dart';
+import '../utils/venta_ingredient_consumo.dart';
 
 // Importaciones condicionales
 import 'web_summary_printer_service_stub.dart'
@@ -17,6 +18,8 @@ class WebSummaryPrinterService {
     required double totalEgresado,
     required double totalEfectivoReal,
     required Map<String, double> totalesPorMedioPago,
+    Map<String, double>? productosAgrupados,
+    List<IngredientConsumoLine>? ingredientesConsumo,
   }) async {
     return await _impl.printDetailedSummary(
       productosVendidos: productosVendidos,
@@ -25,6 +28,8 @@ class WebSummaryPrinterService {
       totalEgresado: totalEgresado,
       totalEfectivoReal: totalEfectivoReal,
       totalesPorMedioPago: totalesPorMedioPago,
+      productosAgrupados: productosAgrupados,
+      ingredientesConsumo: ingredientesConsumo,
     );
   }
 }
