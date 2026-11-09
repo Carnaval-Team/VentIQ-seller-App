@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/user_preferences_service.dart';
 import '../services/turno_service.dart';
 import '../models/expense.dart';
@@ -25,6 +24,15 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
   late AnimationController _animationController;
   late Animation<double> _expandAnimation;
 
+  /// Entrada animada del desglose (medios de pago + monedas).
+  ///
+  /// Un único controlador para todas las filas: el escalonado sale de repartir
+  /// su `value` con un desfase por índice (`_progreso`), así no hace falta un
+  /// controller por fila ni estado extra. Se reinicia con `forward(from: 0)`
+  /// cuando llegan los datos, de modo que al reabrir el panel la animación
+  /// vuelve a correr entera en vez de quedarse a medias.
+  late AnimationController _desgloseCtrl;
+
   /// Cuánto tiempo el total sigue en la píldora después de cerrar el panel.
   ///
   /// Cerrar es el momento en que el vendedor quiere quedarse con el total del
@@ -44,6 +52,22 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
   /// cada cierre cancela el anterior antes de programar el siguiente.
   Timer? _timerOcultarTotal;
 
+  /// Si el bloque «POR MONEDA» está plegado.
+  ///
+  /// `null` = criterio automático (ver [_buildBloqueMonedas]). En cuanto el
+  /// vendedor toca el rótulo manda su elección y el automático deja de aplicar;
+  /// se deja en `null` hasta ese primer toque para que el bloque siga
+  /// adaptándose al número de divisas que traiga el turno.
+  bool? _monedasPlegadas;
+
+  /// El sistema pidió reducir movimiento: se pinta el estado final sin animar.
+  ///
+  /// Es la misma comprobación que hace [_progreso] para las filas, y la que usa
+  /// el pliegue del bloque de monedas. En un TPV de mostrador el panel se abre
+  /// decenas de veces por turno; marear aquí no aporta nada.
+  bool get _sinAnimaciones =>
+      MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+
   // Expenses data
   List<Expense> _expenses = [];
   double _egresosEfectivo = 0.0;
@@ -60,6 +84,10 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
       parent: _animationController,
       curve: Curves.easeInOut,
     );
+    _desgloseCtrl = AnimationController(
+      duration: const Duration(milliseconds: 620),
+      vsync: this,
+    );
   }
 
   @override
@@ -68,6 +96,7 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
     // viva dispararía un setState sobre un State ya desmontado.
     _cancelarTimerOcultarTotal();
     _animationController.dispose();
+    _desgloseCtrl.dispose();
     super.dispose();
   }
 
@@ -118,6 +147,9 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
 
     if (abriendo) {
       _animationController.forward();
+      // Si el resumen ya estaba cargado (reabrir el panel), el desglose se
+      // anima ya; si no, lo arranca `_loadSalesData` cuando llegan los datos.
+      if (_currentSales != null) _desgloseCtrl.forward(from: 0);
       _loadDataSequentially();
     } else {
       _animationController.reverse();
@@ -171,47 +203,27 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
         // devuelve numeric y agrega productos_vendidos_base (equivalente en
         // unidades base) y productos_vendidos_desglose ("2 Cajas + 5 Unidades").
         // La original sigue viva para las apps sin actualizar.
-        final resumenCierreResponse = await Supabase.instance.client.rpc(
-          'fn_resumen_diario_cierre_v2',
-          params: {'id_tpv_param': idTpv, 'id_usuario_param': userID},
-        );
-
-        print('📈 Sales Monitor Response: $resumenCierreResponse');
-        print('📈 Tipo de respuesta: ${resumenCierreResponse.runtimeType}');
-
-        if (resumenCierreResponse != null) {
-          Map<String, dynamic> data;
-
-          // Manejar tanto List como Map de respuesta
-          if (resumenCierreResponse is List &&
-              resumenCierreResponse.isNotEmpty) {
-            data = resumenCierreResponse[0] as Map<String, dynamic>;
-            print(
-              '📈 SalesMonitor datos extraídos de lista: ${data.keys.toList()}',
+        // `_v4` primero: es la que devuelve `desglose_monedas`, la fuente del
+        // bloque por moneda. Si el backend todavía no la tiene, el servicio cae
+        // solo a la `_v2`. Antes se llamaba a la `_v2` directa y por eso el
+        // panel no veía más de una divisa aunque hubiera cobros en USD.
+        final Map<String, dynamic>? resumen =
+            await TurnoService.getResumenDiarioCierre(
+              idTpv: idTpv,
+              usuario: userID,
             );
-          } else if (resumenCierreResponse is Map<String, dynamic>) {
-            data = resumenCierreResponse;
-            print(
-              '📈 SalesMonitor datos recibidos como mapa: ${data.keys.toList()}',
-            );
-          } else {
-            print('⚠️ Formato de respuesta no reconocido en SalesMonitor');
-            setState(() {
-              _currentSales = null;
-              _isLoading = false;
-            });
-            return;
-          }
 
-          setState(() {
-            _currentSales = data;
-            _isLoading = false;
-          });
-        } else {
-          setState(() {
-            _currentSales = null;
-            _isLoading = false;
-          });
+        print('📈 SalesMonitor resumen: ${resumen?.keys.toList()}');
+
+        setState(() {
+          _currentSales = resumen;
+          _isLoading = false;
+        });
+        // La animación del desglose se lanza cuando hay datos de verdad: si
+        // arrancara al abrir el panel (mientras carga) se gastaría sobre el
+        // esqueleto y el usuario no la vería.
+        if (resumen != null && _isExpanded) {
+          _desgloseCtrl.forward(from: 0);
         }
       } else {
         setState(() {
@@ -461,28 +473,29 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
                       letterSpacing: -0.2,
                     ),
                   ),
-                  if (!_isExpanded && _muestraTotalEnPildora && total != null)
-                    ...<Widget>[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.22),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          '\$${PriceUtils.formatAmount(total)}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w800,
-                          ),
+                  if (!_isExpanded &&
+                      _muestraTotalEnPildora &&
+                      total != null) ...<Widget>[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.22),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        '\$${PriceUtils.formatAmount(total)}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
-                    ],
+                    ),
+                  ],
                   if (!_isExpanded && _isOfflineMode) ...<Widget>[
                     const SizedBox(width: 6),
                     const Icon(
@@ -713,10 +726,38 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
     final int operaciones =
         (ventas['operaciones_totales'] as num?)?.toInt() ?? 0;
     final double ticketPromedio = operaciones > 0 ? total / operaciones : 0;
-    final double efectivoReal =
-        (ventas['efectivo_real'] as num?)?.toDouble() ?? 0;
+
+    // ── Criterio de agregación del bloque de medios de pago ────────────────
+    //
+    // `desglose_monedas` es el único dato que llega ya consolidado por divisa
+    // (`importe_base` = `Σ monto × tasa`), así que cuando está se reconstruye
+    // desde él el efectivo cobrado: cada `efectivo_nativo` se reparte con la
+    // tasa media implícita de su fila (`importe_base / importe_nativo`) y la
+    // suma queda en moneda base.
+    //
+    // Por qué se prefiere a `efectivo_real`: esa columna de
+    // `fn_resumen_diario_cierre_v2` es `SUM(pv.monto)` de los pagos en efectivo
+    // **sin convertir**, así que en un turno con CUP y USD suma unidades
+    // distintas (1 000 CUP + 10 USD se leen como «1 010 CUP»). Es el defecto
+    // contable que la fase 4 parchea en el servidor; mientras una instalación
+    // siga con la `_v2` sin parchear, el desglose es la fuente correcta.
+    // Sin desglose se cae al `efectivo_real` de siempre: la degradación con RPC
+    // antigua queda idéntica a la que había.
+    final List<_MonedaDesglose> monedas = _leerDesgloseMonedas();
+    final double efectivoReal;
+    if (monedas.isEmpty) {
+      efectivoReal = (ventas['efectivo_real'] as num?)?.toDouble() ?? 0;
+    } else {
+      efectivoReal = monedas.fold<double>(
+        0,
+        (double suma, _MonedaDesglose moneda) => suma + moneda.efectivoEnBase,
+      );
+    }
     final double efectivo = efectivoReal - _egresosEfectivo;
-    final double transferencia = total - efectivoReal + _egresosEfectivo;
+    // La transferencia es el RESTO y no un segundo cálculo: así las dos filas
+    // del desglose suman siempre `ventas_totales`, que es lo primero que el
+    // vendedor cuadra contra el total de la cabecera.
+    final double transferencia = total - efectivo;
     final double egresosTotales = _egresosEfectivo + _egresosTransferencias;
 
     return Padding(
@@ -746,7 +787,7 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
             ],
           ),
           const SizedBox(height: 10),
-          _buildPaymentBreakdown(efectivo, transferencia),
+          _buildDesglose(efectivo, transferencia),
           if (egresosTotales > 0) ...<Widget>[
             const SizedBox(height: 10),
             Container(
@@ -829,14 +870,494 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
     );
   }
 
-  /// Desglose por medio de pago con barra proporcional: de un vistazo se ve si
-  /// el turno está cargado a efectivo o a transferencia.
-  Widget _buildPaymentBreakdown(double efectivo, double transferencia) {
+  // ────────────────────────── Desglose del turno ──────────────────────────
+
+  /// Progreso (0..1) de la fila [indice] dentro de la entrada del desglose.
+  ///
+  /// Sale de un solo controlador con un desfase creciente por índice: el
+  /// escalonado no cuesta un controller por fila y, como se reinicia con
+  /// `forward(from: 0)`, al reabrir el panel la cascada vuelve a correr limpia.
+  /// Con las animaciones desactivadas en el sistema se devuelve 1 directamente:
+  /// en un TPV de mostrador no se debe marear a nadie.
+  double _progreso(int indice) {
+    if (MediaQuery.maybeOf(context)?.disableAnimations ?? false) return 1;
+    final double desde = (indice * 0.07).clamp(0.0, 0.50);
+    final double t = ((_desgloseCtrl.value - desde) / (1 - desde)).clamp(
+      0.0,
+      1.0,
+    );
+    return Curves.easeOutCubic.transform(t);
+  }
+
+  /// Fade + deslizamiento corto de la fila [indice]. El desplazamiento es de
+  /// 10 px: suficiente para leerse como «entra», no tanto como para marear.
+  Widget _aparece(int indice, Widget hijo) {
+    final double p = _progreso(indice);
+    return Opacity(
+      opacity: p,
+      child: Transform.translate(offset: Offset(0, (1 - p) * 10), child: hijo),
+    );
+  }
+
+  /// Los dos bloques del desglose: medios de pago y, cuando hay más de una
+  /// divisa, el detalle por moneda.
+  Widget _buildDesglose(double efectivo, double transferencia) {
+    final List<_MonedaDesglose> monedas = _leerDesgloseMonedas();
+    final double totalBase = _num(_currentSales?['total_base']);
+
+    return AnimatedBuilder(
+      animation: _desgloseCtrl,
+      builder: (BuildContext context, Widget? _) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            _aparece(0, _buildBloqueMedios(efectivo, transferencia)),
+            // Con una sola divisa este bloque repetiría el total que ya está
+            // arriba: no aporta y roba alto al panel. Es el mismo criterio que
+            // el resto de la app, que esconde las vistas por divisa cuando solo
+            // hay una.
+            if (monedas.length >= 2) ...<Widget>[
+              const SizedBox(height: 10),
+              _aparece(1, _buildBloqueMonedas(monedas, totalBase)),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  /// Desglose agregado por medio de pago (todas las divisas juntas).
+  Widget _buildBloqueMedios(double efectivo, double transferencia) {
     final double totalMedios = efectivo.abs() + transferencia.abs();
-    final double fraccionEfectivo =
-        totalMedios > 0 ? efectivo.abs() / totalMedios : 0;
-    final double fraccionTransferencia =
+    final double fEfectivo = totalMedios > 0 ? efectivo.abs() / totalMedios : 0;
+    final double fDigital =
         totalMedios > 0 ? transferencia.abs() / totalMedios : 0;
+
+    return _tarjetaDesglose(
+      titulo: 'POR MEDIO DE PAGO',
+      // El bloque está agregado en moneda base. Se rotula la unidad UNA vez en
+      // la cabecera en vez de repetirla en cada fila: en 288 px de ancho útil,
+      // dos «CUP» más los importes empujarían la etiqueta a los puntos
+      // suspensivos. Es además lo que quita la ambigüedad del `$` delante de
+      // cada importe.
+      detalle: PriceUtils.baseCurrency,
+      hijos: <Widget>[
+        _filaMedio('Efectivo', efectivo, fEfectivo, VentiqHomeTheme.success, 2),
+        const SizedBox(height: 10),
+        _filaMedio(
+          'Digital / Transferencia',
+          transferencia,
+          fDigital,
+          VentiqHomeTheme.primary,
+          3,
+        ),
+      ],
+    );
+  }
+
+  Widget _filaMedio(
+    String etiqueta,
+    double monto,
+    double fraccion,
+    Color color,
+    int indice,
+  ) {
+    final double p = _progreso(indice);
+    // `excludeSemantics` + una etiqueta con los valores FINALES: sin esto el
+    // lector de pantalla iría anunciando cada fotograma del conteo (una decena
+    // de importes por fila). El importe va en la moneda base en la que está
+    // expresado el bloque, y el porcentaje se redondea igual que en pantalla.
+    return Semantics(
+      container: true,
+      excludeSemantics: true,
+      label:
+          '$etiqueta: ${PriceUtils.formatAmount(monto)} '
+          '${PriceUtils.baseCurrency}, '
+          '${(fraccion * 100).round()} por ciento del total',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  etiqueta,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: VentiqHomeTheme.textPrimary,
+                  ),
+                ),
+              ),
+              Text(
+                '\$${PriceUtils.formatAmount(monto * p)}',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w800,
+                  color: color,
+                ),
+              ),
+              const SizedBox(width: 6),
+              SizedBox(
+                width: 34,
+                child: Text(
+                  '${(fraccion * p * 100).round()}%',
+                  textAlign: TextAlign.right,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: VentiqHomeTheme.textSecondary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          _barra(fraccion * p, color),
+        ],
+      ),
+    );
+  }
+
+  /// Detalle por divisa: lo cobrado en cada una, con el reparto efectivo/digital
+  /// y el equivalente cuando no es la moneda base.
+  Widget _buildBloqueMonedas(List<_MonedaDesglose> monedas, double totalBase) {
+    final List<Widget> filas = <Widget>[
+      _leyendaApilada(),
+      const SizedBox(height: 10),
+    ];
+    for (int i = 0; i < monedas.length; i++) {
+      if (i > 0) filas.add(const SizedBox(height: 12));
+      filas.add(_filaMoneda(monedas[i], 4 + i));
+    }
+    if (totalBase > 0) {
+      final double p = _progreso(4 + monedas.length);
+      filas.addAll(<Widget>[
+        const SizedBox(height: 10),
+        Container(height: 1, color: VentiqHomeTheme.border),
+        const SizedBox(height: 8),
+        Row(
+          children: <Widget>[
+            const Expanded(
+              child: Text(
+                'Consolidado',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: VentiqHomeTheme.textSecondary,
+                ),
+              ),
+            ),
+            Text(
+              '\$${PriceUtils.formatAmount(totalBase * p)}',
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w800,
+                color: VentiqHomeTheme.textPrimary,
+              ),
+            ),
+          ],
+        ),
+      ]);
+    }
+    // Con dos divisas —el caso normal CUP + USD— el bloque se abre solo, para que
+    // el desglose se vea sin tocar nada. Con tres o más nace plegado: es el
+    // único bloque cuya altura depende de los datos y, abierto, empujaría los
+    // accesos rápidos fuera de pantalla. El vendedor puede abrirlo tocando el
+    // rótulo; a partir de ahí manda su elección, no el automático.
+    final bool plegado = _monedasPlegadas ?? monedas.length > 2;
+    return _tarjetaDesglose(
+      titulo: 'POR MONEDA',
+      detalle: '${monedas.length} divisas',
+      plegado: plegado,
+      onToggle:
+          () => setState(() {
+            _monedasPlegadas = !plegado;
+          }),
+      hijos: filas,
+    );
+  }
+
+  Widget _filaMoneda(_MonedaDesglose m, int indice) {
+    final double p = _progreso(indice);
+    final bool esBase = m.moneda == PriceUtils.baseCurrency;
+    // El importe nativo SIEMPRE con su código, también para el lector de
+    // pantalla: en una app multimoneda un «$» suelto no distingue CUP de USD y
+    // estos importes no son sumables entre filas. La etiqueta usa los valores
+    // finales para no anunciar el conteo fotograma a fotograma.
+    return Semantics(
+      container: true,
+      excludeSemantics: true,
+      label:
+          '${m.moneda}: ${PriceUtils.formatAmount(m.nativo)} ${m.moneda}, '
+          '${m.operaciones} operaciones. '
+          'Efectivo ${PriceUtils.formatAmount(m.efectivo)} ${m.moneda}, '
+          'digital ${PriceUtils.formatAmount(m.digital)} ${m.moneda}'
+          '${esBase ? '' : '. Equivale a ${PriceUtils.formatAmount(m.base)} '
+                  '${PriceUtils.baseCurrency}'}',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              _chipMoneda(m.moneda),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '${m.operaciones} op${m.operaciones == 1 ? '' : 's'}',
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    color: VentiqHomeTheme.textSecondary,
+                  ),
+                ),
+              ),
+              // Importe NATIVO con su código: en una app multimoneda un `$` suelto
+              // no distingue CUP de USD, y estos importes no son sumables entre
+              // filas.
+              Text(
+                '${PriceUtils.formatAmount(m.nativo * p)} ${m.moneda}',
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w800,
+                  color: VentiqHomeTheme.textPrimary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          _barraApilada(
+            efectivo: m.efectivo,
+            digital: m.digital,
+            progreso: p,
+            alto: 7,
+          ),
+          if (!esBase) ...<Widget>[
+            const SizedBox(height: 4),
+            Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                '≈ ${PriceUtils.formatAmount(m.base * p)} ${PriceUtils.baseCurrency}',
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w600,
+                  color: VentiqHomeTheme.textSecondary,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Barra de un solo tramo que crece desde la izquierda.
+  Widget _barra(double fraccion, Color color) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(6),
+      child: SizedBox(
+        height: 6,
+        child: Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            ColoredBox(color: VentiqHomeTheme.border),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FractionallySizedBox(
+                widthFactor: fraccion.clamp(0.0, 1.0),
+                heightFactor: 1,
+                child: ColoredBox(color: color),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Barra apilada efectivo/digital de una divisa. Las proporciones van fijas
+  /// dentro del `FractionallySizedBox`: así la barra entera crece con la
+  /// animación en vez de saltar de tamaño al cambiar los `flex`.
+  Widget _barraApilada({
+    required double efectivo,
+    required double digital,
+    required double progreso,
+    required double alto,
+  }) {
+    final double total = efectivo + digital;
+    final int flexEfectivo =
+        total > 0 ? ((efectivo / total) * 1000).round() : 0;
+    final int flexDigital = total > 0 ? 1000 - flexEfectivo : 1000;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(alto),
+      child: SizedBox(
+        height: alto,
+        child: ColoredBox(
+          color: VentiqHomeTheme.border,
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: FractionallySizedBox(
+              widthFactor: progreso.clamp(0.0, 1.0),
+              heightFactor: 1,
+              child: Row(
+                // Sin `stretch` los tramos (ColoredBox sin hijo) se quedan con
+                // altura 0 y la barra se ve solo gris.
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  if (flexEfectivo > 0)
+                    Expanded(
+                      flex: flexEfectivo,
+                      child: const ColoredBox(color: VentiqHomeTheme.success),
+                    ),
+                  if (flexDigital > 0)
+                    Expanded(
+                      flex: flexDigital,
+                      child: const ColoredBox(color: VentiqHomeTheme.primary),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _leyendaApilada() {
+    return Row(
+      children: <Widget>[
+        _punto(VentiqHomeTheme.success),
+        const SizedBox(width: 4),
+        const Text(
+          'Efectivo',
+          style: TextStyle(
+            fontSize: 10.5,
+            fontWeight: FontWeight.w600,
+            color: VentiqHomeTheme.textSecondary,
+          ),
+        ),
+        const SizedBox(width: 10),
+        _punto(VentiqHomeTheme.primary),
+        const SizedBox(width: 4),
+        const Text(
+          'Digital',
+          style: TextStyle(
+            fontSize: 10.5,
+            fontWeight: FontWeight.w600,
+            color: VentiqHomeTheme.textSecondary,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _punto(Color color) => Container(
+    width: 7,
+    height: 7,
+    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+  );
+
+  Widget _chipMoneda(String moneda) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: VentiqHomeTheme.primary.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: VentiqHomeTheme.primary.withValues(alpha: 0.20),
+        ),
+      ),
+      child: Text(
+        moneda,
+        style: const TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.6,
+          color: VentiqHomeTheme.primary,
+        ),
+      ),
+    );
+  }
+
+  /// Tarjeta contenedora de un bloque del desglose.
+  ///
+  /// Con [onToggle] la cabecera pasa a ser pulsable y el contenido se pliega
+  /// con [AnimatedSize]. El bloque de monedas es el único cuya altura depende
+  /// de los datos —una fila por divisa— y el panel vive pegado a la esquina sin
+  /// scroll, así que con tres o más divisas lo abierto empujaría los accesos
+  /// rápidos fuera de pantalla. El bloque de medios de pago no pasa [onToggle]
+  /// y se pinta exactamente como antes.
+  Widget _tarjetaDesglose({
+    required String titulo,
+    required List<Widget> hijos,
+    String? detalle,
+    bool plegado = false,
+    VoidCallback? onToggle,
+  }) {
+    const TextStyle estiloTitulo = TextStyle(
+      fontSize: 10.5,
+      fontWeight: FontWeight.w800,
+      letterSpacing: 1.2,
+      color: VentiqHomeTheme.textSecondary,
+    );
+
+    final Widget cabecera = Row(
+      children: <Widget>[
+        Expanded(
+          child: Text(
+            titulo,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: estiloTitulo,
+          ),
+        ),
+        if (detalle != null) ...<Widget>[
+          const SizedBox(width: 6),
+          Text(
+            detalle,
+            style: const TextStyle(
+              fontSize: 9.5,
+              fontWeight: FontWeight.w700,
+              color: VentiqHomeTheme.textSecondary,
+            ),
+          ),
+        ],
+        if (onToggle != null) ...<Widget>[
+          const SizedBox(width: 2),
+          // Girado 180° cuando está abierto: el chevron apunta arriba, que es
+          // hacia donde se recoge.
+          AnimatedRotation(
+            turns: plegado ? 0 : 0.5,
+            duration:
+                _sinAnimaciones
+                    ? Duration.zero
+                    : const Duration(milliseconds: 220),
+            child: const Icon(
+              Icons.expand_more_rounded,
+              size: 16,
+              color: VentiqHomeTheme.textSecondary,
+            ),
+          ),
+        ],
+      ],
+    );
+
+    final Widget cuerpo = Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: hijos,
+      ),
+    );
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -848,83 +1369,81 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          const Text(
-            'DESGLOSE POR PAGO',
-            style: TextStyle(
-              fontSize: 10.5,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1.2,
-              color: VentiqHomeTheme.textSecondary,
+          if (onToggle == null)
+            cabecera
+          else
+            Semantics(
+              button: true,
+              excludeSemantics: true,
+              label:
+                  plegado
+                      ? 'Mostrar el desglose por moneda'
+                      : 'Ocultar el desglose por moneda',
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: onToggle,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: cabecera,
+                ),
+              ),
             ),
-          ),
-          const SizedBox(height: 10),
-          _buildMedioPagoRow(
-            'Efectivo',
-            efectivo,
-            fraccionEfectivo,
-            VentiqHomeTheme.success,
-          ),
-          const SizedBox(height: 9),
-          _buildMedioPagoRow(
-            'Transferencia',
-            transferencia,
-            fraccionTransferencia,
-            VentiqHomeTheme.primary,
-          ),
+          // El cuerpo se pinta SIEMPRE que no esté plegado. Antes esta rama
+          // estaba condicionada a `onToggle`, así que la tarjeta de medios de
+          // pago (que no se pliega) salía solo con la cabecera.
+          if (onToggle == null)
+            cuerpo
+          else
+            AnimatedSize(
+              duration:
+                  _sinAnimaciones
+                      ? Duration.zero
+                      : const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: plegado ? const SizedBox(width: double.infinity) : cuerpo,
+            ),
         ],
       ),
     );
   }
 
-  Widget _buildMedioPagoRow(
-    String etiqueta,
-    double monto,
-    double fraccion,
-    Color color,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Row(
-          children: <Widget>[
-            Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-            ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Text(
-                etiqueta,
-                style: const TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
-                  color: VentiqHomeTheme.textPrimary,
-                ),
-              ),
-            ),
-            Text(
-              '\$${PriceUtils.formatAmount(monto)}',
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w800,
-                color: color,
-              ),
-            ),
-          ],
+  /// `numeric` de Postgres llega como `int`, `double` o **texto** según cómo lo
+  /// serialice PostgREST: se acepta cualquiera en vez de asumir un subtipo y
+  /// romper el panel entero.
+  static double _num(dynamic valor) {
+    if (valor is num) return valor.toDouble();
+    return double.tryParse('${valor ?? ''}'.replaceAll(',', '.')) ?? 0;
+  }
+
+  /// Lee `desglose_monedas` del resumen del turno.
+  ///
+  /// Formato real (verificado en producción): lista de mapas con `moneda`,
+  /// `operaciones`, `importe_nativo`, `importe_base`, `efectivo_nativo` y
+  /// `digital_nativo`. Si la RPC desplegada es la antigua, la clave no viene y
+  /// esto devuelve vacío: el bloque por moneda simplemente no se pinta.
+  List<_MonedaDesglose> _leerDesgloseMonedas() {
+    final dynamic crudo = _currentSales?['desglose_monedas'];
+    if (crudo is! List) return const <_MonedaDesglose>[];
+
+    final List<_MonedaDesglose> salida = <_MonedaDesglose>[];
+    for (final dynamic fila in crudo) {
+      if (fila is! Map) continue;
+      final String moneda =
+          (fila['moneda'] ?? '').toString().trim().toUpperCase();
+      if (moneda.isEmpty) continue;
+      salida.add(
+        _MonedaDesglose(
+          moneda: moneda,
+          operaciones: _num(fila['operaciones']).toInt(),
+          nativo: _num(fila['importe_nativo']),
+          base: _num(fila['importe_base']),
+          efectivo: _num(fila['efectivo_nativo']),
+          digital: _num(fila['digital_nativo']),
         ),
-        const SizedBox(height: 5),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: LinearProgressIndicator(
-            value: fraccion.clamp(0.0, 1.0),
-            minHeight: 5,
-            backgroundColor: VentiqHomeTheme.border,
-            valueColor: AlwaysStoppedAnimation<Color>(color),
-          ),
-        ),
-      ],
-    );
+      );
+    }
+    return salida;
   }
 
   /// Atajos que convierten el panel en algo accionable: ver órdenes, ir al
@@ -1052,4 +1571,42 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
       ),
     );
   }
+}
+
+/// Una divisa del `desglose_monedas` del resumen del turno.
+///
+/// `nativo` es lo cobrado en ESA divisa (no sumable con las demás); `base` es su
+/// equivalente en la moneda base. `efectivo` y `digital` son también nativos y
+/// su suma da `nativo`: son los dos tramos de la barra apilada.
+class _MonedaDesglose {
+  const _MonedaDesglose({
+    required this.moneda,
+    required this.operaciones,
+    required this.nativo,
+    required this.base,
+    required this.efectivo,
+    required this.digital,
+  });
+
+  final String moneda;
+  final int operaciones;
+  final double nativo;
+  final double base;
+  final double efectivo;
+  final double digital;
+
+  /// Tasa media que aplicó el servidor al consolidar esta divisa
+  /// (`importe_base / importe_nativo`). 0 si no hay importe nativo.
+  ///
+  /// Es la tasa real de la fila, no la del día: repartir con ella da el mismo
+  /// número que haber convertido pago a pago.
+  double get tasaImplicita => nativo > 0 ? base / nativo : 0;
+
+  /// Efectivo de esta divisa expresado en **moneda base**.
+  ///
+  /// Permite sumar el efectivo de todas las divisas sin mezclar unidades, que
+  /// es justo lo que no se puede hacer con `efectivo` (nativo). Sin
+  /// `importe_nativo` no hay tasa posible y devuelve 0: mejor no sumar ese
+  /// tramo que inventar una conversión.
+  double get efectivoEnBase => efectivo * tasaImplicita;
 }
