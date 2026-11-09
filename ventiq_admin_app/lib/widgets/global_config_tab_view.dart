@@ -47,6 +47,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
   bool _cocinaActiva = false;
   int _diasMaxSinValidarLicencia = 7;
   String _metodoRedondeoPrecioVenta = 'NO_REDONDEAR';
+  String _reporteTpvsModoTurno = 'solapado';
   bool _hasMasterPassword = false;
   bool _showMasterPasswordField = false;
   bool _obscureMasterPassword = true;
@@ -151,6 +152,46 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error al actualizar configuracion: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _updateReporteTpvsModoTurnoSetting(String value) async {
+    if (_storeId == null || _reporteTpvsModoTurno == value) return;
+
+    final previousValue = _reporteTpvsModoTurno;
+
+    try {
+      await StoreConfigService.updateReporteTpvsModoTurno(_storeId!, value);
+
+      setState(() {
+        _reporteTpvsModoTurno = value;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              value == 'apertura_en_periodo'
+                  ? 'El tab TPVs mostrará solo turnos abiertos en el período'
+                  : 'El tab TPVs mostrará todos los turnos que toquen el período',
+            ),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _reporteTpvsModoTurno = previousValue;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al actualizar configuración: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -480,6 +521,8 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
             config['dias_max_sin_validar_licencia'] ?? 7;
         _metodoRedondeoPrecioVenta =
             config['metodo_redondeo_precio_venta'] ?? 'NO_REDONDEAR';
+        _reporteTpvsModoTurno =
+            config['reporte_tpvs_modo_turno'] ?? 'solapado';
         _hasMasterPassword = hasMasterPassword;
         _showMasterPasswordField = _needMasterPasswordToCancel;
         _showDescriptionInSelectors = showDescriptionInSelectors;
@@ -1784,6 +1827,10 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
 
           const SizedBox(height: 16),
 
+          _buildReporteTpvsModoTurnoCard(),
+
+          const SizedBox(height: 16),
+
           // Configuración de imprimir órdenes pendientes
           _buildConfigCard(
             icon: Icons.print_outlined,
@@ -2044,6 +2091,126 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                   ),
                 ],
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReporteTpvsModoTurnoCard() {
+    const options = [
+      (
+        value: 'solapado',
+        title: 'Turnos que tocan el período',
+        description:
+            'Incluye cualquier turno abierto antes o durante el rango que siga abierto o haya cerrado dentro de él. Las ventas se cuentan solo dentro del período.',
+      ),
+      (
+        value: 'apertura_en_periodo',
+        title: 'Solo turnos abiertos en el período',
+        description:
+            'Incluye únicamente turnos cuya apertura cae dentro del rango. Las ventas se cuentan hasta el cierre del turno, aunque cierre después del período.',
+      ),
+    ];
+    final selected = options.firstWhere(
+      (o) => o.value == _reporteTpvsModoTurno,
+      orElse: () => options.first,
+    );
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.indigo.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.point_of_sale,
+                  color: Colors.indigo,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 16),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Reporte de TPVs por turno',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Qué turnos entran en el tab TPVs de Ventas al filtrar por fechas.',
+                      style: TextStyle(fontSize: 14, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          DropdownButtonFormField<String>(
+            value: _reporteTpvsModoTurno,
+            items: options
+                .map(
+                  (o) => DropdownMenuItem<String>(
+                    value: o.value,
+                    child: Text(o.title),
+                  ),
+                )
+                .toList(),
+            onChanged: (value) {
+              if (value != null) {
+                _updateReporteTpvsModoTurnoSetting(value);
+              }
+            },
+            decoration: InputDecoration(
+              labelText: 'Criterio de turnos',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: AppColors.primary, width: 2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.indigo.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.indigo.withOpacity(0.2)),
+            ),
+            child: Text(
+              'Actual: ${selected.title}. ${selected.description}',
+              style: const TextStyle(fontSize: 13, color: Colors.black87),
             ),
           ),
         ],

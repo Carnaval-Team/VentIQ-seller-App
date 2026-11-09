@@ -473,6 +473,33 @@ class FondoInversionService {
     return _asMap(resp);
   }
 
+  /// Descuenta saldo del fondo hacia un destino que no es inversión.
+  Future<Map<String, dynamic>> gasto({
+    required int idTienda,
+    required int idCuenta,
+    required int idMedioPago,
+    required String moneda,
+    required double monto,
+    required String destino,
+    String? motivo,
+    String? idempotencyKey,
+  }) async {
+    final resp = await _supabase.rpc(
+      'fn_fdi_gasto',
+      params: {
+        'p_id_tienda': idTienda,
+        'p_id_cuenta': idCuenta,
+        'p_id_medio_pago': idMedioPago,
+        'p_moneda': moneda,
+        'p_monto': monto,
+        'p_destino': destino,
+        'p_motivo': motivo,
+        'p_idempotency_key': idempotencyKey,
+      },
+    );
+    return _asMap(resp);
+  }
+
   // ==========================================================================
   // Inversiones
   // ==========================================================================

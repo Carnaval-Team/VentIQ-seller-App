@@ -11,7 +11,7 @@ import '../widgets/fdi_liquidacion_detalle_dialog.dart';
 
 /// Vista principal del Fondo de Inversión (solo gerente).
 /// Tabs: Saldos · Movimientos · Liquidaciones · Transferencias ·
-/// Inversiones · Configuración.
+/// Inversiones · Inversores · Configuración.
 class FondoInversionScreen extends StatefulWidget {
   const FondoInversionScreen({super.key});
 
@@ -38,13 +38,16 @@ class _FondoInversionScreenState extends State<FondoInversionScreen>
   List<FdiCuenta> _cuentas = [];
   List<Map<String, dynamic>> _medios = [];
   List<String> _monedas = [];
-  int _diasAlerta = 15;
   bool _soloRevision = false;
+  final _diasCtrl = TextEditingController(text: '15');
+  final _diasFocus = FocusNode();
+  String? _diasError;
+  bool _guardandoDias = false;
 
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 6, vsync: this);
+    _tabs = TabController(length: 7, vsync: this);
     _tabs.addListener(() {
       // Reconstruye el FAB al cambiar de tab (Transferir / Inversión).
       if (mounted) setState(() {});
@@ -55,6 +58,8 @@ class _FondoInversionScreenState extends State<FondoInversionScreen>
   @override
   void dispose() {
     _tabs.dispose();
+    _diasCtrl.dispose();
+    _diasFocus.dispose();
     super.dispose();
   }
 
@@ -80,6 +85,8 @@ class _FondoInversionScreenState extends State<FondoInversionScreen>
         _service.getDiasAlertaRevision(id),
       ]);
       if (!mounted) return;
+      final dias = r[9] as int;
+      if (!_diasFocus.hasFocus) _diasCtrl.text = '$dias';
       setState(() {
         _saldos = r[0] as FdiSaldosResult;
         _movimientos = r[1] as List<FdiMovimiento>;
@@ -90,7 +97,6 @@ class _FondoInversionScreenState extends State<FondoInversionScreen>
         _cuentas = r[6] as List<FdiCuenta>;
         _medios = r[7] as List<Map<String, dynamic>>;
         _monedas = r[8] as List<String>;
-        _diasAlerta = r[9] as int;
         _loading = false;
       });
     } catch (e) {
@@ -144,6 +150,7 @@ class _FondoInversionScreenState extends State<FondoInversionScreen>
             Tab(text: 'Liquidaciones'),
             Tab(text: 'Transferencias'),
             Tab(text: 'Inversiones'),
+            Tab(text: 'Inversores'),
             Tab(text: 'Config'),
           ],
         ),
@@ -173,6 +180,7 @@ class _FondoInversionScreenState extends State<FondoInversionScreen>
                         _tabLiquidaciones(),
                         _tabTransferencias(),
                         _tabInversiones(),
+                        _tabInversores(),
                         _tabConfig(),
                       ],
                     ),
@@ -201,6 +209,96 @@ class _FondoInversionScreenState extends State<FondoInversionScreen>
   }
 
   // ==========================================================================
+  // Layout helpers — jerarquía compartida entre tabs operativos
+  // ==========================================================================
+
+  static const _padTab = EdgeInsets.fromLTRB(16, 16, 16, 32);
+  static const _gapSection = 24.0;
+  static const _gapGroup = 12.0;
+
+  Widget _fdiPanel({required List<Widget> children}) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: children,
+        ),
+      ),
+    );
+  }
+
+  Widget _fdiMonto(String label, String valor, {Color? color}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 13,
+            color: AppColors.textSecondary,
+            height: 1.2,
+          ),
+        ),
+        Text(
+          valor,
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            color: color ?? AppColors.textPrimary,
+            height: 1.25,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _fdiSeccion(String titulo) {
+    return Text(
+      titulo,
+      style: const TextStyle(
+        fontSize: 16,
+        fontWeight: FontWeight.w700,
+        color: AppColors.textPrimary,
+      ),
+    );
+  }
+
+  Widget _fdiMeta(String texto) {
+    return Text(
+      texto,
+      style: const TextStyle(
+        fontSize: 13,
+        height: 1.35,
+        color: AppColors.textSecondary,
+      ),
+    );
+  }
+
+  Widget _fdiVacio(String texto) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 32),
+      child: Center(
+        child: Text(
+          texto,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontSize: 14,
+            height: 1.4,
+            color: AppColors.textSecondary,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ==========================================================================
   // SALDOS
   // ==========================================================================
 
@@ -208,72 +306,155 @@ class _FondoInversionScreenState extends State<FondoInversionScreen>
     final totales = _saldos.totalesPorMoneda.entries.toList();
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.all(16),
+      padding: _padTab,
       children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              children: [
-                const Text(
-                  'Totales: ',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+        _fdiSeccion('Disponible'),
+        const SizedBox(height: 4),
+        _fdiMeta('Totales por moneda en el fondo.'),
+        const SizedBox(height: _gapGroup),
+        if (totales.isEmpty)
+          _fdiPanel(
+            children: [
+              Text(
+                '0.00',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
                 ),
-                ...totales.map(
-                  (e) => Padding(
-                    padding: const EdgeInsets.only(right: 16),
-                    child: Text(
-                      '${_fmt.format(e.value)} ${e.key}',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 4),
+              _fdiMeta('Sin saldos registrados todavía.'),
+            ],
+          )
+        else
+          _fdiPanel(
+            children: [
+              Wrap(
+                spacing: 24,
+                runSpacing: 12,
+                children: [
+                  for (final e in totales)
+                    _fdiMonto(e.key, _fmt.format(e.value)),
+                ],
+              ),
+            ],
           ),
+        const SizedBox(height: _gapSection),
+        _fdiSeccion('Movimientos del saldo'),
+        const SizedBox(height: 4),
+        _fdiMeta(
+          'Ingresos al fondo o gastos con destino distinto de una inversión.',
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: _gapGroup),
         Row(
           children: [
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: () => _dialogoMonto('ingreso_manual'),
+                onPressed: _dialogoIngreso,
                 icon: const Icon(Icons.add),
-                label: const Text('Ingreso manual'),
+                label: const Text('Ingreso'),
               ),
             ),
             const SizedBox(width: 8),
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: () => _dialogoMonto('ajuste'),
-                icon: const Icon(Icons.tune),
-                label: const Text('Ajuste positivo'),
+                onPressed: _dialogoGasto,
+                icon: const Icon(Icons.remove),
+                label: const Text('Gasto'),
               ),
             ),
           ],
         ),
-        const SizedBox(height: 8),
-        for (final s in _saldos.saldos)
-          ListTile(
-            dense: true,
-            leading: const Icon(Icons.account_balance_wallet_outlined),
-            title: Text('${s.concepto} · ${s.cuenta}'),
-            subtitle: Text('${s.medioPago} · ${s.moneda}'),
-            trailing: Text(
-              _fmt.format(s.saldo),
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-            ),
-          ),
+        const SizedBox(height: _gapSection),
+        _fdiSeccion('Por cuenta'),
+        const SizedBox(height: 4),
+        _fdiMeta('Desglose por concepto, medio y moneda.'),
+        const SizedBox(height: _gapGroup),
         if (_saldos.saldos.isEmpty)
-          const Padding(
-            padding: EdgeInsets.all(32),
-            child: Center(child: Text('Sin saldos todavía')),
-          ),
+          _fdiVacio('Sin filas de saldo. Usa un ingreso o una liquidación.')
+        else
+          for (var i = 0; i < _saldos.saldos.length; i++) ...[
+            if (i > 0) const Divider(height: 1, color: AppColors.border),
+            _filaSaldo(_saldos.saldos[i]),
+          ],
       ],
     );
   }
 
-  Future<void> _dialogoMonto(String tipo) async {
+  Widget _filaSaldo(FdiSaldo s) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${s.concepto} · ${s.cuenta}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                    height: 1.3,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                _fdiMeta('${s.medioPago} · ${s.moneda}'),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            _fmt.format(s.saldo),
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textPrimary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  InputDecoration _decoMontoConMoneda({
+    required String moneda,
+    required bool enabled,
+    required ValueChanged<String> onMoneda,
+  }) {
+    return InputDecoration(
+      labelText: 'Monto',
+      border: const OutlineInputBorder(),
+      prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
+      prefix: Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<String>(
+            value: moneda,
+            isDense: true,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textPrimary,
+            ),
+            items: [
+              for (final mo in _monedas.isNotEmpty ? _monedas : const ['CUP'])
+                DropdownMenuItem(value: mo, child: Text(mo)),
+            ],
+            onChanged: enabled
+                ? (v) {
+                    if (v != null) onMoneda(v);
+                  }
+                : null,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _dialogoIngreso() async {
     FdiCuenta? cuenta;
     int? medio = _medios.isNotEmpty
         ? (_medios.first['id'] as num).toInt()
@@ -281,137 +462,382 @@ class _FondoInversionScreenState extends State<FondoInversionScreen>
     String moneda = _monedas.isNotEmpty ? _monedas.first : 'CUP';
     final montoCtrl = TextEditingController();
     final motivoCtrl = TextEditingController();
+    final form = GlobalKey<FormState>();
     final idem = _service.newIdempotencyKey();
+    var guardando = false;
+    String? error;
 
     final ok = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setD) => AlertDialog(
-          title: Text(tipo == 'ajuste' ? 'Ajuste positivo' : 'Ingreso manual'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DropdownButtonFormField<FdiCuenta>(
-                initialValue: cuenta,
-                isExpanded: true,
-                decoration: const InputDecoration(labelText: 'Cuenta'),
-                items: [
-                  for (final c in _cuentas.where((c) => c.activo))
-                    DropdownMenuItem(
-                      value: c,
-                      child: Text(
-                        '${_conceptoDe(c.id)} · ${c.nombre}',
-                        overflow: TextOverflow.ellipsis,
+        builder: (ctx, setD) {
+          Future<void> guardar() async {
+            if (guardando) return;
+            error = null;
+            if (!(form.currentState?.validate() ?? false)) {
+              setD(() {});
+              return;
+            }
+            final monto = double.parse(montoCtrl.text.replaceAll(',', '.'));
+            setD(() => guardando = true);
+            try {
+              await _service.ingresoManual(
+                idTienda: _idTienda!,
+                idCuenta: cuenta!.id,
+                idMedioPago: medio!,
+                moneda: moneda,
+                monto: monto,
+                motivo: motivoCtrl.text.trim().isEmpty
+                    ? null
+                    : motivoCtrl.text.trim(),
+                idempotencyKey: idem,
+              );
+              if (ctx.mounted) Navigator.pop(ctx, true);
+            } catch (e) {
+              if (ctx.mounted) {
+                setD(() {
+                  guardando = false;
+                  error = '$e';
+                });
+              }
+            }
+          }
+
+          return AlertDialog(
+            title: const Text('Ingreso'),
+            content: SizedBox(
+              width: 420,
+              child: Form(
+                key: form,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'Suma dinero a una cuenta del fondo. Usa esto también para correcciones positivas.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          height: 1.4,
+                          color: AppColors.textSecondary,
+                        ),
                       ),
-                    ),
-                ],
-                onChanged: (v) => setD(() => cuenta = v),
-              ),
-              Row(
-                children: [
-                  Expanded(
-                    child: DropdownButtonFormField<int>(
-                      initialValue: medio,
-                      isExpanded: true,
-                      decoration: const InputDecoration(labelText: 'Medio'),
-                      items: [
-                        for (final m in _medios)
-                          DropdownMenuItem(
-                            value: (m['id'] as num).toInt(),
-                            child: Text(
-                              m['denominacion']?.toString() ?? '',
-                              overflow: TextOverflow.ellipsis,
+                      const SizedBox(height: 16),
+                      DropdownButtonFormField<FdiCuenta>(
+                        initialValue: cuenta,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Cuenta',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: [
+                          for (final c in _cuentas.where((c) => c.activo))
+                            DropdownMenuItem(
+                              value: c,
+                              child: Text(
+                                '${_conceptoDe(c.id)} · ${c.nombre}',
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
+                        ],
+                        onChanged: guardando
+                            ? null
+                            : (v) => setD(() => cuenta = v),
+                        validator: (v) =>
+                            v == null ? 'Selecciona una cuenta' : null,
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<int>(
+                        initialValue: medio,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Medio de pago',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: [
+                          for (final m in _medios)
+                            DropdownMenuItem(
+                              value: (m['id'] as num).toInt(),
+                              child: Text(
+                                m['denominacion']?.toString() ?? '',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                        ],
+                        onChanged: guardando
+                            ? null
+                            : (v) => setD(() => medio = v),
+                        validator: (v) =>
+                            v == null ? 'Selecciona un medio' : null,
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: montoCtrl,
+                        enabled: !guardando,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        textInputAction: TextInputAction.next,
+                        decoration: _decoMontoConMoneda(
+                          moneda: moneda,
+                          enabled: !guardando,
+                          onMoneda: (v) => setD(() => moneda = v),
+                        ),
+                        validator: (s) {
+                          final monto = double.tryParse(
+                            (s ?? '').replaceAll(',', '.'),
+                          );
+                          if (monto == null || !monto.isFinite || monto <= 0) {
+                            return 'Indica un monto mayor que cero';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: motivoCtrl,
+                        enabled: !guardando,
+                        textInputAction: TextInputAction.done,
+                        onFieldSubmitted: (_) => guardar(),
+                        decoration: const InputDecoration(
+                          labelText: 'Motivo',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      if (error != null) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          error!,
+                          style: const TextStyle(
+                            color: AppColors.error,
+                            height: 1.35,
                           ),
+                        ),
                       ],
-                      onChanged: (v) => setD(() => medio = v),
-                    ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: DropdownButtonFormField<String>(
-                      initialValue: moneda,
-                      decoration: const InputDecoration(labelText: 'Moneda'),
-                      items: [
-                        for (final mo in _monedas)
-                          DropdownMenuItem(value: mo, child: Text(mo)),
-                      ],
-                      onChanged: (v) => setD(() => moneda = v ?? moneda),
-                    ),
-                  ),
-                ],
-              ),
-              TextField(
-                controller: montoCtrl,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
                 ),
-                decoration: const InputDecoration(labelText: 'Monto'),
               ),
-              TextField(
-                controller: motivoCtrl,
-                decoration: InputDecoration(
-                  labelText: tipo == 'ajuste'
-                      ? 'Motivo (obligatorio)'
-                      : 'Motivo',
-                ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: guardando ? null : () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: guardando ? null : guardar,
+                child: Text(guardando ? 'Guardando…' : 'Guardar'),
               ),
             ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                final monto = double.tryParse(
-                  montoCtrl.text.replaceAll(',', '.'),
-                );
-                if (cuenta == null ||
-                    medio == null ||
-                    monto == null ||
-                    monto <= 0) {
-                  return;
-                }
-                try {
-                  if (tipo == 'ajuste') {
-                    await _service.ajuste(
-                      idTienda: _idTienda!,
-                      idCuenta: cuenta!.id,
-                      idMedioPago: medio!,
-                      moneda: moneda,
-                      monto: monto,
-                      motivo: motivoCtrl.text,
-                      idempotencyKey: idem,
-                    );
-                  } else {
-                    await _service.ingresoManual(
-                      idTienda: _idTienda!,
-                      idCuenta: cuenta!.id,
-                      idMedioPago: medio!,
-                      moneda: moneda,
-                      monto: monto,
-                      motivo: motivoCtrl.text,
-                      idempotencyKey: idem,
-                    );
-                  }
-                  if (ctx.mounted) Navigator.pop(ctx, true);
-                } catch (e) {
-                  if (ctx.mounted) {
-                    ScaffoldMessenger.of(
-                      ctx,
-                    ).showSnackBar(SnackBar(content: Text('Error: $e')));
-                  }
-                }
-              },
-              child: const Text('Guardar'),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
+    montoCtrl.dispose();
+    motivoCtrl.dispose();
+    if (ok == true) _load();
+  }
+
+  Future<void> _dialogoGasto() async {
+    FdiCuenta? cuenta;
+    int? medio = _medios.isNotEmpty
+        ? (_medios.first['id'] as num).toInt()
+        : null;
+    String moneda = _monedas.isNotEmpty ? _monedas.first : 'CUP';
+    final montoCtrl = TextEditingController();
+    final destinoCtrl = TextEditingController();
+    final motivoCtrl = TextEditingController();
+    final form = GlobalKey<FormState>();
+    final idem = _service.newIdempotencyKey();
+    var guardando = false;
+    String? error;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) {
+          Future<void> guardar() async {
+            if (guardando) return;
+            error = null;
+            if (!(form.currentState?.validate() ?? false)) {
+              setD(() {});
+              return;
+            }
+            final monto = double.parse(montoCtrl.text.replaceAll(',', '.'));
+            setD(() => guardando = true);
+            try {
+              await _service.gasto(
+                idTienda: _idTienda!,
+                idCuenta: cuenta!.id,
+                idMedioPago: medio!,
+                moneda: moneda,
+                monto: monto,
+                destino: destinoCtrl.text.trim(),
+                motivo: motivoCtrl.text.trim().isEmpty
+                    ? null
+                    : motivoCtrl.text.trim(),
+                idempotencyKey: idem,
+              );
+              if (ctx.mounted) Navigator.pop(ctx, true);
+            } catch (e) {
+              if (ctx.mounted) {
+                setD(() {
+                  guardando = false;
+                  error = '$e';
+                });
+              }
+            }
+          }
+
+          return AlertDialog(
+            title: const Text('Gasto'),
+            content: SizedBox(
+              width: 420,
+              child: Form(
+                key: form,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'Descuenta dinero del fondo hacia un destino que no sea una inversión. Requiere saldo disponible.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          height: 1.4,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      DropdownButtonFormField<FdiCuenta>(
+                        initialValue: cuenta,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Cuenta',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: [
+                          for (final c in _cuentas.where((c) => c.activo))
+                            DropdownMenuItem(
+                              value: c,
+                              child: Text(
+                                '${_conceptoDe(c.id)} · ${c.nombre}',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                        ],
+                        onChanged: guardando
+                            ? null
+                            : (v) => setD(() => cuenta = v),
+                        validator: (v) =>
+                            v == null ? 'Selecciona una cuenta' : null,
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<int>(
+                        initialValue: medio,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Medio de pago',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: [
+                          for (final m in _medios)
+                            DropdownMenuItem(
+                              value: (m['id'] as num).toInt(),
+                              child: Text(
+                                m['denominacion']?.toString() ?? '',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                        ],
+                        onChanged: guardando
+                            ? null
+                            : (v) => setD(() => medio = v),
+                        validator: (v) =>
+                            v == null ? 'Selecciona un medio' : null,
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: montoCtrl,
+                        enabled: !guardando,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        textInputAction: TextInputAction.next,
+                        decoration: _decoMontoConMoneda(
+                          moneda: moneda,
+                          enabled: !guardando,
+                          onMoneda: (v) => setD(() => moneda = v),
+                        ),
+                        validator: (s) {
+                          final monto = double.tryParse(
+                            (s ?? '').replaceAll(',', '.'),
+                          );
+                          if (monto == null || !monto.isFinite || monto <= 0) {
+                            return 'Indica un monto mayor que cero';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: destinoCtrl,
+                        enabled: !guardando,
+                        textInputAction: TextInputAction.next,
+                        decoration: const InputDecoration(
+                          labelText: 'Destino',
+                          hintText: 'Ej. alquiler, servicios, proveedor',
+                          border: OutlineInputBorder(),
+                        ),
+                        validator: (s) => s == null || s.trim().isEmpty
+                            ? 'Indica el destino del gasto'
+                            : null,
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: motivoCtrl,
+                        enabled: !guardando,
+                        textInputAction: TextInputAction.done,
+                        onFieldSubmitted: (_) => guardar(),
+                        decoration: const InputDecoration(
+                          labelText: 'Detalle (opcional)',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      if (error != null) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          error!,
+                          style: const TextStyle(
+                            color: AppColors.error,
+                            height: 1.35,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: guardando ? null : () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: guardando ? null : guardar,
+                child: Text(guardando ? 'Guardando…' : 'Registrar gasto'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    montoCtrl.dispose();
+    destinoCtrl.dispose();
+    motivoCtrl.dispose();
     if (ok == true) _load();
   }
 
@@ -420,29 +846,73 @@ class _FondoInversionScreenState extends State<FondoInversionScreen>
   // ==========================================================================
 
   Widget _tabMovimientos() {
+    if (_movimientos.isEmpty) {
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: _padTab,
+        children: [_fdiVacio('Sin movimientos todavía.')],
+      );
+    }
     return ListView.separated(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.all(8),
+      padding: _padTab,
       itemCount: _movimientos.length,
-      separatorBuilder: (_, __) => const Divider(height: 1),
+      separatorBuilder: (_, __) =>
+          const Divider(height: 1, color: AppColors.border),
       itemBuilder: (_, i) {
         final m = _movimientos[i];
         final neg = m.monto < 0;
-        return ListTile(
-          dense: true,
-          title: Text('${m.tipo} · ${m.concepto} · ${m.cuenta}'),
-          subtitle: Text(
-            '${m.medioPago} · ${m.moneda}'
-            '${m.observacion != null ? ' · ${m.observacion}' : ''}\n'
-            '${m.createdAt != null ? DateFormat('dd/MM/yyyy HH:mm').format(m.createdAt!) : ''}',
-          ),
-          isThreeLine: true,
-          trailing: Text(
-            '${neg ? '' : '+'}${_fmt.format(m.monto)}',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: neg ? AppColors.error : AppColors.success,
-            ),
+        final fecha = m.createdAt != null
+            ? DateFormat('dd/MM/yyyy HH:mm').format(m.createdAt!)
+            : null;
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      m.tipo,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                        height: 1.3,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${m.concepto} · ${m.cuenta}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.textPrimary,
+                        height: 1.3,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    _fdiMeta(
+                      [
+                        '${m.medioPago} · ${m.moneda}',
+                        if (m.observacion != null && m.observacion!.isNotEmpty)
+                          m.observacion!,
+                        if (fecha != null) fecha,
+                      ].join(' · '),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                '${neg ? '' : '+'}${_fmt.format(m.monto)}',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: neg ? AppColors.error : AppColors.success,
+                ),
+              ),
+            ],
           ),
         );
       },
@@ -485,7 +955,7 @@ class _FondoInversionScreenState extends State<FondoInversionScreen>
   Widget _tabLiquidaciones() {
     return ListView.builder(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.all(8),
+      padding: _padTab,
       itemCount: _liquidaciones.length,
       itemBuilder: (_, i) {
         final l = _liquidaciones[i];
@@ -605,29 +1075,82 @@ class _FondoInversionScreenState extends State<FondoInversionScreen>
   // ==========================================================================
 
   Widget _tabTransferencias() {
-    return ListView.builder(
+    if (_transferencias.isEmpty) {
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: _padTab,
+        children: [
+          _fdiVacio(
+            'Sin transferencias. Usa el botón Transferir para mover fondos entre cuentas.',
+          ),
+        ],
+      );
+    }
+    return ListView.separated(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.all(8),
+      padding: _padTab,
       itemCount: _transferencias.length,
+      separatorBuilder: (_, __) =>
+          const Divider(height: 1, color: AppColors.border),
       itemBuilder: (_, i) {
         final t = _transferencias[i];
-        return Card(
-          child: ListTile(
-            title: Text(
-              '${_cuentaNombre(t.idCuentaOrigen)} → ${_cuentaNombre(t.idCuentaDestino)}',
-            ),
-            subtitle: Text(
-              'Salieron ${_fmt.format(t.montoTotalOrigen)} ${t.monedaOrigen}'
-              ' (base ${_fmt.format(t.montoBaseOrigen)} + comisión ${_fmt.format(t.montoComision)})'
-              ' · Llegaron ${_fmt.format(t.montoDestino)} ${t.monedaDestino}'
-              '${t.observacion != null ? '\n${t.observacion}' : ''}',
-            ),
-            isThreeLine: true,
-            trailing: IconButton(
-              icon: const Icon(Icons.undo),
-              tooltip: 'Corregir (transferencia inversa al 0%)',
-              onPressed: () => _nuevaTransferencia(corregir: t),
-            ),
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${_cuentaNombre(t.idCuentaOrigen)} → ${_cuentaNombre(t.idCuentaDestino)}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                        color: AppColors.textPrimary,
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.undo),
+                    tooltip: 'Corregir (transferencia inversa al 0%)',
+                    onPressed: () => _nuevaTransferencia(corregir: t),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 24,
+                runSpacing: 12,
+                children: [
+                  _fdiMonto(
+                    'Salieron',
+                    '${_fmt.format(t.montoTotalOrigen)} ${t.monedaOrigen}',
+                  ),
+                  _fdiMonto(
+                    'Llegaron',
+                    '${_fmt.format(t.montoDestino)} ${t.monedaDestino}',
+                    color: AppColors.primary,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              _fdiMeta(
+                'Base ${_fmt.format(t.montoBaseOrigen)} + comisión ${_fmt.format(t.montoComision)}'
+                '${t.porcentajeCosto > 0 ? ' (${_fmt.format(t.porcentajeCosto)}%)' : ''}',
+              ),
+              if (t.observacion != null && t.observacion!.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                _fdiMeta(t.observacion!),
+              ],
+              if (t.createdAt != null) ...[
+                const SizedBox(height: 4),
+                _fdiMeta(DateFormat('dd/MM/yyyy HH:mm').format(t.createdAt!)),
+              ],
+            ],
           ),
         );
       },
@@ -971,59 +1494,161 @@ class _FondoInversionScreenState extends State<FondoInversionScreen>
 
   Widget _tabInversiones() {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SwitchListTile(
-          dense: true,
-          title: const Text('Solo en revisión'),
-          value: _soloRevision,
-          onChanged: (v) async {
-            setState(() => _soloRevision = v);
-            _load();
-          },
-        ),
-        Expanded(
-          child: ListView.builder(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.all(8),
-            itemCount: _inversiones.length,
-            itemBuilder: (_, i) {
-              final inv = _inversiones[i];
-              final avance = inv.montoTotalRef > 0
-                  ? inv.montoRecibidoRef / inv.montoTotalRef
-                  : 0.0;
-              return Card(
-                child: ListTile(
-                  leading: Icon(
-                    inv.enRevision
-                        ? Icons.warning_amber
-                        : Icons.savings_outlined,
-                    color: inv.enRevision ? AppColors.warning : null,
-                  ),
-                  title: Text(inv.identificador),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${inv.estado}${inv.estadoManual ? ' (manual)' : ''}'
-                        ' · ${_fmt.format(inv.montoRecibidoRef)} / ${_fmt.format(inv.montoTotalRef)} ${inv.monedaReferencia}',
-                      ),
-                      LinearProgressIndicator(value: avance.clamp(0.0, 1.0)),
-                      if (inv.enRevision)
-                        Text(
-                          'En revisión (${inv.motivoRevision ?? ''})'
-                          '${inv.montoFaltanteRef != null ? ' · faltante ${_fmt.format(inv.montoFaltanteRef!)}' : ''}',
-                          style: const TextStyle(color: AppColors.error),
-                        ),
-                    ],
-                  ),
-                  isThreeLine: true,
-                  onTap: () => _detalleInversion(inv),
-                ),
-              );
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text(
+              'Solo en revisión',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            subtitle: const Text(
+              'Oculta las inversiones al día.',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
+            value: _soloRevision,
+            onChanged: (v) async {
+              setState(() => _soloRevision = v);
+              _load();
             },
           ),
         ),
+        Expanded(
+          child: _inversiones.isEmpty
+              ? ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: _padTab,
+                  children: [
+                    _fdiVacio(
+                      _soloRevision
+                          ? 'Ninguna inversión en revisión.'
+                          : 'Sin inversiones. Usa el botón Inversión para registrar una.',
+                    ),
+                  ],
+                )
+              : ListView.separated(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: _padTab,
+                  itemCount: _inversiones.length,
+                  separatorBuilder: (_, __) =>
+                      const Divider(height: 1, color: AppColors.border),
+                  itemBuilder: (_, i) => _filaInversion(_inversiones[i]),
+                ),
+        ),
       ],
+    );
+  }
+
+  Widget _filaInversion(FdiInversion inv) {
+    final avance = inv.montoTotalRef > 0
+        ? inv.montoRecibidoRef / inv.montoTotalRef
+        : 0.0;
+    final estado = '${inv.estado}${inv.estadoManual ? ' (manual)' : ''}';
+    return InkWell(
+      onTap: () => _detalleInversion(inv),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text(
+                        estado,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                          color: inv.enRevision
+                              ? AppColors.warning
+                              : AppColors.textPrimary,
+                        ),
+                      ),
+                      if (inv.enRevision)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.promotionChargeBg,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Text(
+                            'En revisión',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.warning,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right, color: AppColors.textSecondary),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 24,
+              runSpacing: 12,
+              children: [
+                _fdiMonto(
+                  'Recibido',
+                  '${_fmt.format(inv.montoRecibidoRef)} ${inv.monedaReferencia}',
+                  color: AppColors.primary,
+                ),
+                _fdiMonto(
+                  'Total',
+                  '${_fmt.format(inv.montoTotalRef)} ${inv.monedaReferencia}',
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(2),
+              child: LinearProgressIndicator(
+                value: avance.clamp(0.0, 1.0),
+                minHeight: 4,
+                color: inv.enRevision ? AppColors.warning : AppColors.primary,
+                backgroundColor: AppColors.border,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _fdiMeta(inv.identificador),
+            if (inv.enRevision) ...[
+              const SizedBox(height: 4),
+              Text(
+                [
+                  if (inv.motivoRevision != null &&
+                      inv.motivoRevision!.isNotEmpty)
+                    inv.motivoRevision!,
+                  if (inv.montoFaltanteRef != null)
+                    'Faltante ${_fmt.format(inv.montoFaltanteRef!)} ${inv.monedaReferencia}',
+                ].join(' · '),
+                style: const TextStyle(
+                  fontSize: 13,
+                  height: 1.35,
+                  color: AppColors.error,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 
@@ -1433,45 +2058,94 @@ class _FondoInversionScreenState extends State<FondoInversionScreen>
   // CONFIG
   // ==========================================================================
 
+  Widget _tabInversores() {
+    final id = _idTienda;
+    if (id == null) {
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        children: const [
+          Text(
+            'Sin tienda asignada.',
+            style: TextStyle(color: Color(0xFF374151), height: 1.4),
+          ),
+        ],
+      );
+    }
+    return FdiInversoresSection(
+      idTienda: id,
+      vista: FdiInversoresVista.pagos,
+      nombreMedio: _medioNombre,
+    );
+  }
+
+  Future<void> _guardarDias() async {
+    final id = _idTienda;
+    final dias = int.tryParse(_diasCtrl.text.trim());
+    if (id == null || dias == null || dias <= 0) {
+      setState(() => _diasError = 'Indica un número entero mayor que cero');
+      return;
+    }
+    setState(() {
+      _diasError = null;
+      _guardandoDias = true;
+    });
+    try {
+      await _service.setDiasAlertaRevision(id, dias);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Días de alerta actualizados')),
+      );
+    } catch (e) {
+      _snackError(e);
+    } finally {
+      if (mounted) setState(() => _guardandoDias = false);
+    }
+  }
+
   Widget _tabConfig() {
-    final ctrl = TextEditingController(text: '$_diasAlerta');
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: [
+        const Text('Revisión de inversiones', style: _configTitulo),
+        const SizedBox(height: 4),
         const Text(
-          'Días sin completarse para marcar una inversión como vencida '
-          '(revisión automática al consultar)',
+          'Días sin completarse para marcar una inversión como vencida. '
+          'La revisión ocurre al consultar el fondo.',
+          style: _configAyuda,
         ),
         const SizedBox(height: 12),
-        Row(
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          crossAxisAlignment: WrapCrossAlignment.start,
           children: [
             SizedBox(
-              width: 160,
+              width: 180,
               child: TextField(
-                controller: ctrl,
+                controller: _diasCtrl,
+                focusNode: _diasFocus,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
+                onChanged: (_) {
+                  if (_diasError != null) setState(() => _diasError = null);
+                },
+                decoration: InputDecoration(
                   labelText: 'Días',
-                  border: OutlineInputBorder(),
+                  border: const OutlineInputBorder(),
+                  errorText: _diasError,
                 ),
               ),
             ),
-            const SizedBox(width: 12),
             FilledButton(
-              onPressed: () async {
-                final d = int.tryParse(ctrl.text);
-                if (d == null || d <= 0) return;
-                await _service.setDiasAlertaRevision(_idTienda!, d);
-                _load();
-              },
-              child: const Text('Guardar'),
+              onPressed: _guardandoDias ? null : _guardarDias,
+              child: Text(_guardandoDias ? 'Guardando…' : 'Guardar'),
             ),
           ],
         ),
-        const Divider(height: 32),
+        const SizedBox(height: 28),
         _estructuraSection(),
-        const Divider(height: 32),
+        const SizedBox(height: 28),
         if (_idTienda != null) FdiInversoresSection(idTienda: _idTienda!),
       ],
     );
@@ -1486,11 +2160,10 @@ class _FondoInversionScreenState extends State<FondoInversionScreen>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Conceptos y cuentas',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            const Expanded(
+              child: Text('Conceptos y cuentas', style: _configTitulo),
             ),
             TextButton.icon(
               onPressed: _dialogoConcepto,
@@ -1502,33 +2175,54 @@ class _FondoInversionScreenState extends State<FondoInversionScreen>
         const Text(
           'La estructura la gestiona el dueño aquí. No se puede eliminar '
           'nada que ya tenga saldos o movimientos.',
-          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+          style: _configAyuda,
         ),
         const SizedBox(height: 8),
+        if (_conceptos.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Text(
+              'Todavía no hay conceptos. Agrega uno para poder crear cuentas.',
+              style: _configAyuda,
+            ),
+          ),
         for (final concepto in _conceptos) ...[
           Card(
+            margin: const EdgeInsets.only(bottom: 8),
             child: ExpansionTile(
               initiallyExpanded: false,
-              title: Text(
-                concepto.denominacion + (concepto.activo ? '' : ' (inactivo)'),
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-              subtitle: concepto.descripcion != null
-                  ? Text(concepto.descripcion!)
-                  : null,
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
+              title: Row(
                 children: [
+                  Expanded(
+                    child: Text(
+                      concepto.denominacion +
+                          (concepto.activo ? '' : ' (inactivo)'),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
                   IconButton(
+                    tooltip: 'Editar concepto',
+                    visualDensity: VisualDensity.compact,
                     icon: const Icon(Icons.edit_outlined, size: 20),
                     onPressed: () => _dialogoConcepto(concepto: concepto),
                   ),
                   IconButton(
+                    tooltip: 'Eliminar concepto',
+                    visualDensity: VisualDensity.compact,
                     icon: const Icon(Icons.delete_outline, size: 20),
                     onPressed: () => _confirmarEliminarConcepto(concepto),
                   ),
                 ],
               ),
+              subtitle: concepto.descripcion != null
+                  ? Text(
+                      concepto.descripcion!,
+                      style: const TextStyle(color: Color(0xFF374151)),
+                    )
+                  : null,
               children: [
                 for (final c in _cuentas.where(
                   (x) => x.idConcepto == concepto.id,
@@ -1547,6 +2241,7 @@ class _FondoInversionScreenState extends State<FondoInversionScreen>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
+                          tooltip: 'Editar cuenta',
                           icon: const Icon(Icons.edit_outlined, size: 20),
                           onPressed: () => _dialogoCuenta(
                             cuenta: c,
@@ -1554,6 +2249,7 @@ class _FondoInversionScreenState extends State<FondoInversionScreen>
                           ),
                         ),
                         IconButton(
+                          tooltip: 'Eliminar cuenta',
                           icon: const Icon(Icons.delete_outline, size: 20),
                           onPressed: () => _confirmarEliminarCuenta(c),
                         ),
@@ -1798,3 +2494,15 @@ class _FondoInversionScreenState extends State<FondoInversionScreen>
     );
   }
 }
+
+const _configTitulo = TextStyle(
+  fontSize: 16,
+  fontWeight: FontWeight.w700,
+  color: AppColors.textPrimary,
+);
+
+const _configAyuda = TextStyle(
+  fontSize: 13,
+  height: 1.4,
+  color: Color(0xFF374151),
+);

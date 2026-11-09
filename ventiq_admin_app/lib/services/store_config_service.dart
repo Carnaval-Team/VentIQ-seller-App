@@ -88,6 +88,7 @@ class StoreConfigService {
     bool? mostrarSelectorMoneda,
     bool? forzarMonedaVenta,
     String? monedaVentaForzada,
+    String? reporteTpvsModoTurno,
   }) async {
     try {
       print('🔧 Actualizando configuración para tienda ID: $storeId');
@@ -270,6 +271,11 @@ class StoreConfigService {
       if (cocinaActiva != null) {
         updateData['cocina_activa'] = cocinaActiva;
         print('  - cocina_activa: $cocinaActiva');
+      }
+
+      if (reporteTpvsModoTurno != null) {
+        updateData['reporte_tpvs_modo_turno'] = reporteTpvsModoTurno;
+        print('  - reporte_tpvs_modo_turno: $reporteTpvsModoTurno');
       }
 
       if (updateData.isEmpty) {
@@ -797,5 +803,28 @@ class StoreConfigService {
       cocinaActiva: value,
       modoRestaurante: value ? true : null,
     );
+  }
+
+  // ==================== REPORTE TPVs ====================
+
+  /// Cómo el tab TPVs de ventas decide qué turnos entran en el período:
+  /// 'solapado' (cualquier turno que toque la ventana) o
+  /// 'apertura_en_periodo' (solo turnos abiertos dentro del rango, contando
+  /// sus ventas hasta el cierre).
+  static Future<String> getReporteTpvsModoTurno(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      return config['reporte_tpvs_modo_turno'] ?? 'solapado';
+    } catch (e) {
+      print('❌ Error al obtener reporte_tpvs_modo_turno: $e');
+      return 'solapado';
+    }
+  }
+
+  static Future<void> updateReporteTpvsModoTurno(
+    int storeId,
+    String value,
+  ) async {
+    await updateStoreConfig(storeId, reporteTpvsModoTurno: value);
   }
 }
