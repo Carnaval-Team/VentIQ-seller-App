@@ -19,7 +19,10 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     await Supabase.initialize(
       url: 'https://example.supabase.co',
-      publishableKey: 'test-key',
+      // `publishableKey` es de supabase_flutter >= 2.10; el lock resuelve 2.9.1,
+      // donde el parámetro se llama `anonKey`. Con el nombre nuevo el test no
+      // compilaba y tumbaba toda la carpeta.
+      anonKey: 'test-key',
       authOptions: const FlutterAuthClientOptions(autoRefreshToken: false),
       httpClient: MockClient((request) async {
         requests++;

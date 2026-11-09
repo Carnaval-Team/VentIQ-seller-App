@@ -44,6 +44,26 @@ class SessionRefreshService {
   DateTime? _retryAfter;
   int _explicitSignOutVersion = 0;
 
+  /// Expiración (ya alineada al reloj del dispositivo) del último token visto.
+  ///
+  /// gotrue 2.13 —la que resuelve el lock— **no expone** `signOutReason` ni
+  /// `SignOutReason`, así que la distinción entre «el usuario cerró sesión» y
+  /// «la sesión caducó» hay que deducirla: si al recibir el `signedOut` el
+  /// token todavía no había expirado, el cierre lo pidió alguien; si ya había
+  /// expirado, es la caducidad.
+  DateTime? _ultimaExpiracion;
+
+  /// `'explicit'` si el cierre lo provocó el usuario, `'session_expired'` si fue
+  /// la caducidad, `null` cuando el evento no es un cierre de sesión.
+  String? _motivoSignOut(AuthState event) {
+    if (event.event != AuthChangeEvent.signedOut) return null;
+    final DateTime? exp = _ultimaExpiracion;
+    // Sin dato previo no se puede distinguir. Se asume explícito, que es el
+    // caso conservador: corta la reautenticación automática.
+    if (exp == null) return 'explicit';
+    return exp.isAfter(DateTime.now()) ? 'explicit' : 'session_expired';
+  }
+
   /// Margen antes de la expiración en el que se dispara el refresh.
   static const Duration _refreshMargin = Duration(minutes: 2);
   static const Duration _checkInterval = Duration(seconds: 60);
@@ -88,26 +108,40 @@ class SessionRefreshService {
 
   void alignCurrentSession() {
     final session = _client.auth.currentSession;
-    if (session != null) {
-      alignSessionExpiryToDeviceClock(session, ServerTimeService().now());
+    if (session == null) return;
+    alignSessionExpiryToDeviceClock(session, ServerTimeService().now());
+    final int? expira = session.expiresAt;
+    if (expira != null) {
+      _ultimaExpiracion = DateTime.fromMillisecondsSinceEpoch(expira * 1000);
     }
   }
 
   Future<void> _onAuthState(AuthState event) async {
     final session = event.session;
-    if (event.event == AuthChangeEvent.signedOut &&
-        event.signOutReason != SignOutReason.sessionExpired) {
-      _explicitSignOutVersion++;
-    }
     if (session != null) {
       alignSessionExpiryToDeviceClock(session, ServerTimeService().now());
+      // Se recuerda la expiración ya alineada: es la referencia para saber,
+      // cuando llegue el `signedOut`, si el token había caducado o el cierre
+      // lo pidió el usuario (gotrue 2.13 no da el motivo).
+      // `expiresAt` es `int?` en gotrue 2.13: puede venir nulo si el JWT no
+      // trae `exp`, y en ese caso no hay referencia que guardar.
+      final int? expira = session.expiresAt;
+      if (expira != null) {
+        _ultimaExpiracion = DateTime.fromMillisecondsSinceEpoch(expira * 1000);
+      }
+    }
+    // Se calcula DESPUÉS de refrescar la expiración: en un `signedOut` no hay
+    // sesión, así que usa la última conocida.
+    final String? motivoSignOut = _motivoSignOut(event);
+    if (motivoSignOut == 'explicit') {
+      _explicitSignOutVersion++;
     }
     debugPrint(
       jsonEncode({
         'event': 'auth_session_changed',
         'change': event.event.name,
         'has_session': session != null,
-        'reason': event.signOutReason?.name,
+        'reason': motivoSignOut,
       }),
     );
     switch (event.event) {
