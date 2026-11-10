@@ -9,6 +9,7 @@ import 'screens/categories_screen.dart';
 import 'screens/categories_web_screen.dart';
 import 'screens/home_shell_screen.dart';
 import 'screens/preorder_screen.dart';
+import 'screens/preorder_screen_styled.dart';
 import 'screens/orders_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/apertura_screen.dart';
@@ -294,7 +295,15 @@ class MyApp extends StatelessWidget {
         '/categories': (context) => const PlatformAwareCategoriesScreen(),
         '/categories-mobile': (context) => const CategoriesScreen(),
         '/categories-web': (context) => const CategoriesWebScreen(),
-        '/preorder': (context) => const PreorderScreen(),
+        // Variante visual de la pre-orden. El interruptor `kPreorderStyled`
+        // (en preorder_screen_styled.dart) decide cuál se sirve; ponerlo en
+        // `false` devuelve la pantalla de siempre sin tocar nada más.
+        // Ver docs/design/preorder-styled.md.
+        '/preorder':
+            (context) =>
+                kPreorderStyled
+                    ? const PreorderScreenStyled()
+                    : const PreorderScreen(),
         '/orders': (context) {
           // Soporta opcional autoOpenOrderId vía Navigator.pushNamed(arguments: ...)
           final args = ModalRoute.of(context)?.settings.arguments;
