@@ -12,6 +12,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/supabase_config.dart';
 import '../utils/constants.dart';
+import '../utils/helpers.dart';
 import 'local_notification_service.dart';
 import 'offline_queue_service.dart';
 
@@ -180,7 +181,7 @@ Future<void> _onStart(ServiceInstance service) async {
 
   RealtimeChannel? requestsChannel;
   RealtimeChannel? requestsUpdateChannel;
-  RealtimeChannel? offersChannel;
+  RealtimeChannel? solicitudesClientChannel;
   RealtimeChannel? notificationsChannel;
   StreamSubscription<Position>? gpsSubscription;
   Timer? radiusExpansionTimer;
@@ -211,7 +212,9 @@ Future<void> _onStart(ServiceInstance service) async {
     if (requestsUpdateChannel != null) {
       supabase.removeChannel(requestsUpdateChannel!);
     }
-    if (offersChannel != null) supabase.removeChannel(offersChannel!);
+    if (solicitudesClientChannel != null) {
+      supabase.removeChannel(solicitudesClientChannel!);
+    }
     if (notificationsChannel != null) {
       supabase.removeChannel(notificationsChannel!);
     }
@@ -284,22 +287,51 @@ Future<void> _onStart(ServiceInstance service) async {
         )
         .subscribe();
 
+    // Aviso al chofer de un viaje nuevo con precio fijo (sin negociación):
+    // el precio y el neto salen de la propia fila de la solicitud.
+    void notifyRequest(Map<String, dynamic> rec) {
+      final solicitudId = rec['id'];
+      localNotif.showRideRequest(
+        title: 'Nuevo viaje disponible',
+        body: _textoPrecioViaje(rec),
+        solicitudId: solicitudId?.toString(),
+      );
+      service.invoke('notification', {
+        ...rec,
+        'type': 'viaje_disponible',
+        'solicitud_id': solicitudId,
+      });
+    }
+
+    // Aviso al cliente cuando su solicitud ya tiene conductor (`driver_id`).
+    // Sustituye al antiguo canal de ofertas: ya no hay nada que aceptar.
+    int? ultimaSolicitudAsignada;
+
+    void notifyAssigned(Map<String, dynamic> rec) {
+      final solicitudId = (rec['id'] as num?)?.toInt();
+      if (solicitudId != null && solicitudId == ultimaSolicitudAsignada) {
+        return;
+      }
+      if (solicitudId != null) ultimaSolicitudAsignada = solicitudId;
+
+      final precio = _num(rec['precio_plataforma']);
+      localNotif.showDriverAssigned(
+        title: 'Conductor asignado',
+        body: precio == null
+            ? 'Tu conductor va en camino.'
+            : 'Tu conductor va en camino. Precio: ${Helpers.formatCup(precio)}',
+        solicitudId: solicitudId?.toString(),
+      );
+      service.invoke('notification', {
+        'type': 'viaje_asignado',
+        'solicitud_id': solicitudId,
+        'precio_plataforma': rec['precio_plataforma'],
+      });
+    }
+
     // ── Driver-specific subscriptions ──
     if (role == 'driver') {
       final steps = AppConstants.radiusSteps;
-
-      void notifyRequest(Map<String, dynamic> rec) {
-        localNotif.showRideRequest(
-          title: 'Nueva solicitud de viaje',
-          body: rec['direccion_origen']?.toString() ??
-              'Un pasajero solicita un viaje',
-          solicitudId: rec['id']?.toString(),
-        );
-        service.invoke('notification', {
-          'type': 'ride_request',
-          ...rec,
-        });
-      }
 
       // Listen for new ride requests — add to pending list
       requestsChannel = supabase
@@ -310,6 +342,10 @@ Future<void> _onStart(ServiceInstance service) async {
             table: 'solicitudes_transporte',
             callback: (payload) {
               final rec = payload.newRecord;
+              // Sólo los viajes publicados (`pendiente`) son tomables.
+              if ((rec['estado']?.toString() ?? 'pendiente') != 'pendiente') {
+                return;
+              }
               final originLat =
                   double.tryParse(rec['lat_origen']?.toString() ?? '');
               final originLon =
@@ -350,24 +386,6 @@ Future<void> _onStart(ServiceInstance service) async {
               if (estado != null && estado != 'pendiente') {
                 pendingRequests.removeWhere(
                     (r) => r['solicitudId'] == rec['id']);
-              }
-            },
-          )
-          .subscribe();
-
-      // Listen for offers — remove solicitud that got an offer
-      offersChannel = supabase
-          .channel('bg_ofertas_driver')
-          .onPostgresChanges(
-            event: PostgresChangeEvent.insert,
-            schema: 'muevete',
-            table: 'ofertas_chofer',
-            callback: (payload) {
-              final rec = payload.newRecord;
-              final solId = rec['solicitud_id'];
-              if (solId != null) {
-                pendingRequests
-                    .removeWhere((r) => r['solicitudId'] == solId);
               }
             },
           )
@@ -441,24 +459,24 @@ Future<void> _onStart(ServiceInstance service) async {
 
     // ── Client-specific subscriptions ──
     if (role == 'client') {
-      // Listen for driver offers on any of the user's active requests.
-      offersChannel = supabase
-          .channel('bg_ofertas_client_$userUuid')
+      // El conductor se asigna actualizando la solicitud (`driver_id`), no con
+      // ofertas: se avisa al cliente en cuanto su viaje queda `aceptada`.
+      solicitudesClientChannel = supabase
+          .channel('bg_solicitudes_client_$userUuid')
           .onPostgresChanges(
-            event: PostgresChangeEvent.insert,
+            event: PostgresChangeEvent.update,
             schema: 'muevete',
-            table: 'ofertas_chofer',
+            table: 'solicitudes_transporte',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'user_id',
+              value: userUuid!,
+            ),
             callback: (payload) {
               final rec = payload.newRecord;
-              localNotif.showDriverOffer(
-                title: 'Nueva oferta de conductor',
-                body: 'Un conductor te ha hecho una oferta',
-                solicitudId: rec['solicitud_id']?.toString(),
-              );
-              service.invoke('notification', {
-                'type': 'driver_offer',
-                ...rec,
-              });
+              if (rec['estado']?.toString() != 'aceptada') return;
+              if (rec['driver_id'] == null) return;
+              notifyAssigned(rec);
             },
           )
           .subscribe();
@@ -486,13 +504,14 @@ Future<void> _onStart(ServiceInstance service) async {
       resubscribeIfNeeded(notificationsChannel, 'notifications');
       resubscribeIfNeeded(requestsChannel, 'requests');
       resubscribeIfNeeded(requestsUpdateChannel, 'requestsUpdate');
-      resubscribeIfNeeded(offersChannel, 'offers');
+      resubscribeIfNeeded(solicitudesClientChannel, 'solicitudesClient');
     });
 
     // ── Polling fallback: check for missed data every 60s ──
     DateTime lastPoll = DateTime.now();
     pollingTimer = Timer.periodic(const Duration(seconds: 60), (_) async {
-      final since = lastPoll.toIso8601String();
+      // `created_at`/`updated_at` son timestamptz: se comparan en UTC.
+      final since = lastPoll.toUtc().toIso8601String();
       lastPoll = DateTime.now();
 
       try {
@@ -501,7 +520,9 @@ Future<void> _onStart(ServiceInstance service) async {
           final result = await supabase
               .schema('muevete')
               .from('solicitudes_transporte')
-              .select('id, direccion_origen, lat_origen, lon_origen')
+              .select('id, estado, direccion_origen, direccion_destino, '
+                  'lat_origen, lon_origen, precio_plataforma, precio_chofer, '
+                  'comision_pct, comision_monto, metodo_pago')
               .eq('estado', 'pendiente')
               .gte('created_at', since)
               .limit(10);
@@ -511,28 +532,23 @@ Future<void> _onStart(ServiceInstance service) async {
             if (originLat == null || originLon == null) continue;
             final dist = _haversine(currentLat, currentLon, originLat, originLon);
             if (dist <= AppConstants.radiusSteps.last) {
-              localNotif.showRideRequest(
-                title: 'Nueva solicitud de viaje',
-                body: rec['direccion_origen']?.toString() ?? 'Un pasajero solicita un viaje',
-                solicitudId: rec['id']?.toString(),
-              );
+              notifyRequest(Map<String, dynamic>.from(rec as Map));
             }
           }
         } else if (role == 'client') {
-          // Check for new ofertas on user's active solicitudes
+          // Red de seguridad del aviso `viaje_asignado`: si se perdió el
+          // UPDATE en tiempo real, el polling lo recupera (avisando una vez).
           final result = await supabase
               .schema('muevete')
-              .from('ofertas_chofer')
-              .select('id, solicitud_id, solicitudes_transporte!inner(user_id)')
-              .eq('solicitudes_transporte.user_id', userUuid!)
-              .gte('created_at', since)
-              .limit(10);
-          if ((result as List).isNotEmpty) {
-            localNotif.showDriverOffer(
-              title: 'Nueva oferta de conductor',
-              body: 'Un conductor te ha hecho una oferta',
-              solicitudId: result.first['solicitud_id']?.toString(),
-            );
+              .from('solicitudes_transporte')
+              .select('id, estado, driver_id, precio_plataforma')
+              .eq('user_id', userUuid!)
+              .eq('estado', 'aceptada')
+              .gte('updated_at', since)
+              .limit(5);
+          for (final rec in (result as List)) {
+            if (rec['driver_id'] == null) continue;
+            notifyAssigned(Map<String, dynamic>.from(rec as Map));
           }
         }
       } catch (e) {
@@ -693,6 +709,38 @@ Future<void> _flushQueue({
   }
 
   debugPrint('[GPS] Queue flushed successfully ($sent entries)');
+}
+
+/// Texto de la notificación del chofer. NO usa "a ti te tocan X": el neto no es
+/// lo que cobra en mano. Según el método de pago:
+///   · efectivo → `El cliente paga 1 500 CUP en efectivo · se te descontarán 225 CUP de tu wallet`
+///   · wallet   → `El cliente paga 1 500 CUP con wallet · se te acreditarán 1 275 CUP`
+///
+/// `comision_monto`/`precio_chofer` son los números autoritativos del servidor;
+/// si la fila no los trae se estiman con `comision_pct` **sólo para este texto**
+/// (la lista de viajes siempre pinta lo que calcula el servidor).
+String _textoPrecioViaje(Map<String, dynamic> rec) {
+  final plataforma = _num(rec['precio_plataforma']);
+  if (plataforma == null) return 'El cliente solicita un viaje';
+
+  final pct = _num(rec['comision_pct']) ?? 0;
+  final metodo = (rec['metodo_pago']?.toString() ?? 'efectivo').toLowerCase();
+  final comision = _num(rec['comision_monto']) ?? plataforma * pct / 100;
+
+  if (metodo == 'wallet') {
+    final chofer = _num(rec['precio_chofer']) ?? (plataforma - comision);
+    return 'El cliente paga ${Helpers.formatCup(plataforma)} con wallet · '
+        'se te acreditarán ${Helpers.formatCup(chofer)}';
+  }
+
+  return 'El cliente paga ${Helpers.formatCup(plataforma)} en efectivo · '
+      'se te descontarán ${Helpers.formatCup(comision)} de tu wallet';
+}
+
+num? _num(Object? value) {
+  if (value is num) return value;
+  final text = value?.toString();
+  return text == null ? null : num.tryParse(text);
 }
 
 /// Haversine distance in km.

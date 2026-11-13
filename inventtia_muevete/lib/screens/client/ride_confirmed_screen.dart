@@ -26,8 +26,11 @@ import '../../utils/app_error.dart';
 import '../../services/completion_sync_service.dart';
 import '../../services/offline_queue_service.dart';
 import '../../widgets/map_widget.dart';
+import '../../widgets/ficha_contraparte_sheet.dart';
+import '../../widgets/panic_button.dart';
 import '../../widgets/qr_completion_dialog.dart';
 import '../../widgets/rating_dialog.dart';
+import '../../widgets/share_trip_sheet.dart';
 import '../../services/stop_service.dart';
 
 class RideConfirmedScreen extends StatefulWidget {
@@ -143,56 +146,35 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
     } catch (_) {}
   }
 
-  /// Check if the viaje was already started (estado=true) so we restore _tripStarted on reopen.
+  /// Check if the viaje was already started (estado=true) so we restore
+  /// _tripStarted on reopen.
+  ///
+  /// El viaje lo asigna `fn_tomar_viaje`; el provider lo resuelve desde la
+  /// solicitud (`activeViajeId`). Ya no se consultan ofertas.
   Future<void> _checkIfTripAlreadyStarted() async {
     try {
       final tp = context.read<TransportProvider>();
-      final solicitudId = tp.activeRequest?.id;
-      if (solicitudId == null) return;
-      // Find the viaje linked to this solicitud via ofertas_chofer
-      final offers = await Supabase.instance.client
-          .schema('muevete')
-          .from('ofertas_chofer')
-          .select('solicitud_id')
-          .eq('solicitud_id', solicitudId)
-          .eq('estado', 'aceptada')
-          .limit(1);
-      if (offers == null || (offers as List).isEmpty) return;
-      final driverId = tp.acceptedOffer?.driverId;
-      if (driverId == null) return;
-      final userId = context.read<AuthProvider>().user?.id;
-      if (userId == null) return;
+      final viajeId = tp.activeViajeId;
+      if (viajeId == null) return;
 
       final viaje = await Supabase.instance.client
           .schema('muevete')
           .from('viajes')
           .select('id, estado')
-          .eq('driver_id', driverId)
-          .eq('user', userId)
-          .eq('completado', false)
-          .order('created_at', ascending: false)
-          .limit(1)
+          .eq('id', viajeId)
           .maybeSingle();
 
-      if (viaje != null) {
-        debugPrint('[RideConfirmed] Viaje activo encontrado: ${viaje['id']}');
-      } else {
-        debugPrint('[RideConfirmed] No se encontró viaje activo para driver $driverId y usuario $userId');
+      if (viaje == null) {
+        debugPrint('[RideConfirmed] No se encontró el viaje $viajeId');
+        return;
       }
 
-      if (viaje != null && mounted) {
-        // Restore viaje ID to provider if missing
-        if (tp.activeViajeId == null) {
-          tp.activeViajeId = viaje['id'] as int?;
-        }
-
-        if (viaje['estado'] == true) {
-          setState(() {
-            _tripStarted = true;
-            _driverToClientRoute = [];
-            _driverEtaSeconds = 0;
-          });
-        }
+      if (mounted && viaje['estado'] == true) {
+        setState(() {
+          _tripStarted = true;
+          _driverToClientRoute = [];
+          _driverEtaSeconds = 0;
+        });
       }
     } catch (e) {
       debugPrint('[RideConfirmed] _checkIfTripAlreadyStarted error: $e');
@@ -202,7 +184,7 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
   // ─── Driver tracking (poll every 8s) ────────────────────────────────────
   Future<void> _startDriverTracking() async {
     final driverId =
-        context.read<TransportProvider>().acceptedOffer?.driverId;
+        context.read<TransportProvider>().conductorAsignado?.driverId;
     if (driverId == null) return;
     await _pollDriverPosition(driverId);
     _locationPollTimer =
@@ -402,9 +384,8 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
 
     // Capture IDs before any reset
     final viajeId = tp.activeViajeId;
-    final driverId = tp.acceptedOffer?.driverId;
+    final driverId = tp.conductorAsignado?.driverId;
     final userId = context.read<AuthProvider>().user?.id;
-    final metodoPago = tp.activeRequest?.metodoPago ?? 'efectivo';
 
     // 1. Check and end any active stop if client is completing the ride
     if (viajeId == null) {
@@ -536,31 +517,24 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
       if (confirmWait != true) return;
     }
 
-    final basePrecio = tp.acceptedOffer?.precio ?? tp.offerPrice;
-    final totalPrecio = basePrecio + cobroEspera;
-
     // Try online completion first; fall back to QR only on real network failures.
     setState(() => _isCompleting = true);
     try {
-      await tp.completeRideWithPayment(extraWaitingCharge: cobroEspera);
+      // Cierre por RPC: el servidor calcula total, comisión y neto. No se
+      // envía ningún precio y la llamada es idempotente.
+      final resultado = await tp.completarViaje(
+        viajeId: viajeId,
+        esperaMin:
+            cobroEspera > 0 ? (totalWaitSeconds / 60).ceil() : null,
+      );
+      if (resultado == null) {
+        throw Exception(tp.error ?? 'No se pudo completar el viaje');
+      }
 
-      await Supabase.instance.client
-          .schema('muevete')
-          .from('solicitudes_transporte')
-          .update({'estado': 'completada'})
-          .eq('id', requestId);
-
-      if (viajeId != null) {
-        await Supabase.instance.client
-            .schema('muevete')
-            .from('viajes')
-            .update({
-              'completado': true,
-              'estado': false,
-              'tiempo_espera_segundos': totalWaitSeconds,
-              'cobro_espera': cobroEspera,
-            })
-            .eq('id', viajeId);
+      // Recibo con el desglose congelado del servidor. Al cliente no se le
+      // muestra la comisión del chofer.
+      if (mounted) {
+        await _showReceipt(resultado: resultado, pendiente: false);
       }
 
       if (mounted && viajeId != null && driverId != null && userId != null) {
@@ -595,18 +569,12 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
 
       final canTryOffline = _isNetworkError(e) ||
           !await OfflineQueueService.hasInternetConnection();
-      if (canTryOffline &&
-          viajeId != null &&
-          driverId != null &&
-          userId != null) {
+      if (canTryOffline && viajeId != null) {
         await _completeRideOffline(
           requestId: requestId,
           viajeId: viajeId,
-          driverId: driverId,
-          userId: userId,
-          totalPrecio: totalPrecio,
-          basePrecio: basePrecio,
-          metodoPago: metodoPago,
+          esperaMin:
+              cobroEspera > 0 ? (totalWaitSeconds / 60).ceil() : null,
         );
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -630,14 +598,12 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
         msg.contains('clientexception');
   }
 
+  /// Cierre sin conexión: QR de identificación del viaje (sin precios) y
+  /// encolado del cierre en la cola v2.
   Future<void> _completeRideOffline({
     required int requestId,
     required int viajeId,
-    required int driverId,
-    required String userId,
-    required double totalPrecio,
-    required double basePrecio,
-    required String metodoPago,
+    int? esperaMin,
   }) async {
     final tp = context.read<TransportProvider>();
     final confirmed = await showDialog<bool>(
@@ -646,37 +612,272 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
       builder: (_) => QrCompletionDialog(
         solicitudId: requestId,
         viajeId: viajeId,
-        driverId: driverId,
-        userId: userId,
-        precio: totalPrecio,
-        precioBase: basePrecio,
-        metodoPago: metodoPago,
       ),
     );
-    if (confirmed == true && mounted) {
-      await CompletionSyncService.enqueueCompletion(
-        solicitudId: requestId,
-        viajeId: viajeId,
-        driverId: driverId,
-        userId: userId,
-        precio: totalPrecio,
-        precioBase: basePrecio,
-        metodoPago: metodoPago,
-        role: 'client',
-      );
-      tp.resetTrip();
-      Navigator.of(context).pushNamedAndRemoveUntil(
-        '/client/home',
-        (route) => false,
-      );
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Viaje pendiente de sincronización',
-              style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
-          backgroundColor: AppTheme.warning,
-          duration: const Duration(seconds: 4),
+    if (confirmed != true || !mounted) return;
+
+    // Cola v2: sólo el id del viaje (y la espera si se conoce). El servidor
+    // recalcula el monto en `fn_completar_viaje`, que es idempotente.
+    await CompletionSyncService.enqueueCompletion(
+      viajeId: viajeId,
+      esperaMin: esperaMin,
+      role: 'client',
+    );
+
+    if (!mounted) return;
+
+    // Recibo provisional: el total definitivo lo confirma el servidor.
+    await _showReceipt(pendiente: true);
+
+    if (!mounted) return;
+    tp.resetTrip();
+    Navigator.of(context).pushNamedAndRemoveUntil(
+      '/client/home',
+      (route) => false,
+    );
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Viaje pendiente de sincronización',
+            style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
+        backgroundColor: AppTheme.warning,
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
+  // ─── Recibo del cliente (desglose congelado) ────────────────────────────
+  //
+  // Reglas de H7:
+  //  - No se calcula ningún precio en Dart. Se pintan los valores que ya
+  //    devolvió el servidor: `tarifa_detalle` (snapshot de la solicitud) y el
+  //    jsonb del cierre (`fn_completar_viaje`).
+  //  - Al cliente NO se le muestra la comisión del chofer: sólo el total y el
+  //    modo de tarifa.
+  //  - Si falta el desglose se muestra únicamente el total.
+  //  - Si el cierre viene de la cola offline se avisa de que está pendiente.
+  Future<void> _showReceipt({
+    Map<String, dynamic>? resultado,
+    required bool pendiente,
+  }) async {
+    if (!mounted) return;
+
+    final tp = context.read<TransportProvider>();
+    final isDark = context.read<ThemeProvider>().isDark;
+    final solicitud = tp.activeRequest;
+    final detalleSolicitud = solicitud?.tarifaDetalle;
+
+    // Desglose interno del snapshot de cotización (`fn_cotizar_viaje`).
+    final desglose = detalleSolicitud?['detalle'] is Map
+        ? Map<String, dynamic>.from(detalleSolicitud!['detalle'] as Map)
+        : const <String, dynamic>{};
+
+    final total = (resultado?['precio_plataforma'] as num?)?.toDouble() ??
+        solicitud?.precioPlataforma;
+    final esperaMonto = (resultado?['espera_monto'] as num?)?.toDouble();
+    final esperaMin = (resultado?['espera_cobrada_min'] as num?)?.toDouble() ??
+        (resultado?['espera_min'] as num?)?.toDouble();
+    final metodo =
+        (resultado?['metodo_pago'] as String?) ?? solicitud?.metodoPago;
+    final modo = (detalleSolicitud?['tarifa_modo'] as String?) ??
+        (desglose['modo'] as String?) ??
+        solicitud?.tarifaModo;
+
+    final filas = <Widget>[];
+    if (modo != null && modo.isNotEmpty) {
+      filas.add(_filaRecibo(isDark, 'Modo de tarifa', _etiquetaModoTarifa(modo)));
+    }
+    final base = (desglose['base'] as num?)?.toDouble() ??
+        (desglose['monto_fijo'] as num?)?.toDouble();
+    if (base != null && base > 0) {
+      filas.add(_filaRecibo(isDark, 'Tarifa base', Helpers.formatCup(base)));
+    }
+    final nocturno = (desglose['recargo_nocturno'] as num?)?.toDouble();
+    if (nocturno != null && nocturno > 0) {
+      filas.add(_filaRecibo(
+          isDark, 'Recargo nocturno', Helpers.formatCupSigned(nocturno)));
+    }
+    final prima = (desglose['recargo_prima_distancia'] as num?)?.toDouble();
+    if (prima != null && prima > 0) {
+      filas.add(_filaRecibo(
+          isDark, 'Prima por distancia', Helpers.formatCupSigned(prima)));
+    }
+    if (esperaMonto != null && esperaMonto > 0) {
+      filas.add(_filaRecibo(
+        isDark,
+        'Espera (${(esperaMin ?? 0).toStringAsFixed(0)} min)',
+        Helpers.formatCupSigned(esperaMonto),
+      ));
+    }
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: !pendiente,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: AppTheme.surface(isDark),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: (pendiente ? AppTheme.warning : AppTheme.success)
+                        .withValues(alpha: 0.15),
+                  ),
+                  child: Icon(
+                    pendiente ? Icons.sync_problem : Icons.check_circle,
+                    color: pendiente ? AppTheme.warning : AppTheme.success,
+                    size: 32,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Center(
+                child: Text(
+                  pendiente ? 'Recibo pendiente' : 'Recibo del viaje',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 19,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textPrimary(isDark),
+                  ),
+                ),
+              ),
+              if (metodo != null) ...[
+                const SizedBox(height: 4),
+                Center(
+                  child: Text(
+                    metodo == 'wallet' ? 'Pago con wallet' : 'Pago en efectivo',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12,
+                      color: AppTheme.textTertiary(isDark),
+                    ),
+                  ),
+                ),
+              ],
+              if (pendiente) ...[
+                const SizedBox(height: 14),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppTheme.warning.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    'Pendiente de confirmar con el servidor. El monto final '
+                    'se ajusta al sincronizar, incluida la espera si aplica.',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12,
+                      height: 1.35,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.warning,
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+              ...filas,
+              if (filas.isNotEmpty) const Divider(height: 22),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Total',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.textPrimary(isDark),
+                      ),
+                    ),
+                  ),
+                  Text(
+                    total == null ? '—' : Helpers.formatCup(total),
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      color: AppTheme.primaryColor,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primaryColor,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: Text(
+                    'Listo',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
-      );
+      ),
+    );
+  }
+
+  Widget _filaRecibo(
+    bool isDark,
+    String etiqueta,
+    String valor, {
+    bool destacado = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              etiqueta,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 13,
+                color: AppTheme.textSecondary(isDark),
+              ),
+            ),
+          ),
+          Text(
+            valor,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 13,
+              fontWeight: destacado ? FontWeight.w800 : FontWeight.w600,
+              color: AppTheme.textPrimary(isDark),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Etiqueta legible del modo tarifario que guardó el servidor.
+  String _etiquetaModoTarifa(String modo) {
+    switch (modo) {
+      case 'fijo':
+        return 'Fija';
+      case 'fijo_mas_km':
+        return 'Fija + por km';
+      case 'por_km':
+        return 'Por kilómetro';
+      default:
+        return modo;
     }
   }
 
@@ -692,6 +893,179 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
       context.read<LocationProvider>().removeListener(_onClientPositionUpdate);
     } catch (_) {}
     super.dispose();
+  }
+
+  // ── Seguridad del viaje (H2) ─────────────────────────────────────────────
+
+  /// Verificación mutua antes de subir: `fn_ficha_contraparte` con foto,
+  /// nombre, tipo de vehículo, chapa y CI parcial del chofer.
+  Future<void> _abrirFichaChofer() async {
+    final solicitudId = context.read<TransportProvider>().activeRequest?.id;
+    if (solicitudId == null) return;
+    await FichaContraparteSheet.mostrar(
+      context,
+      solicitudId: solicitudId,
+      rolPropio: 'cliente',
+      viajeId: context.read<TransportProvider>().activeViajeId,
+    );
+  }
+
+  Future<void> _abrirCompartirViaje() async {
+    final tp = context.read<TransportProvider>();
+    final solicitudId = tp.activeRequest?.id;
+    if (solicitudId == null) return;
+    final conductor = tp.conductorAsignado;
+    await CompartirViajeSheet.mostrar(
+      context,
+      solicitudId: solicitudId,
+      conductor: conductor?.driverName,
+      chapa: conductor?.vehicleChapa,
+      posicion: context.read<LocationProvider>().locationOrDefault,
+    );
+  }
+
+  /// Hoja de seguridad: verificación, compartir y llamada al 106.
+  Future<void> _abrirSeguridad() async {
+    final isDark = context.read<ThemeProvider>().isDark;
+    final textPrimary = AppTheme.textPrimary(isDark);
+    final textSecondary = AppTheme.textSecondary(isDark);
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: BoxDecoration(
+          color: AppTheme.surface(isDark),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppTheme.border(isDark),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  'Seguridad del viaje',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _abrirFichaChofer();
+                  },
+                  icon: const Icon(Icons.badge_outlined, size: 20),
+                  label: const Text('Verificar chofer y chapa'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.primaryColor,
+                    side: const BorderSide(color: AppTheme.primaryColor),
+                    minimumSize: const Size.fromHeight(46),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _abrirCompartirViaje();
+                  },
+                  icon: const Icon(Icons.share_location_outlined, size: 20),
+                  label: const Text('Compartir viaje'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: textPrimary,
+                    side: BorderSide(color: AppTheme.border(isDark)),
+                    minimumSize: const Size.fromHeight(46),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    PanicButton(
+                      solicitudId:
+                          context.read<TransportProvider>().activeRequest?.id,
+                      posicion: context
+                          .read<LocationProvider>()
+                          .locationOrDefault,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: SizedBox(
+                        height: 42,
+                        child: OutlinedButton(
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            llamarAlPolicia(context);
+                          },
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppTheme.error,
+                            side: const BorderSide(color: AppTheme.error),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              'Llamar al 106',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                TextButton.icon(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    Navigator.pushNamed(context, '/seguridad');
+                  },
+                  icon: const Icon(Icons.health_and_safety_outlined, size: 18),
+                  label: const Text('Mi seguridad'),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Muevete no sustituye a la policía. Si estás en peligro, '
+                  'llama al 106.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 11.5,
+                    height: 1.3,
+                    color: textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _launchCall(String phone) async {
@@ -717,7 +1091,7 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
     final locationProvider = context.watch<LocationProvider>();
     final isDark = themeProvider.isDark;
 
-    final acceptedOffer = transportProvider.acceptedOffer;
+    final acceptedOffer = transportProvider.conductorAsignado;
     final pickup = transportProvider.pickupLocation;
     final dropoff = transportProvider.dropoffLocation;
     final userLocation = locationProvider.locationOrDefault;
@@ -1059,9 +1433,7 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
                   _buildTopButton(
                     icon: Icons.shield_outlined,
                     isDark: isDark,
-                    onTap: () {
-                      // Open safety features
-                    },
+                    onTap: _abrirSeguridad,
                   ),
                 ],
               ),
@@ -1382,6 +1754,53 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
                       ),
                       const SizedBox(height: 16),
                     ],
+                    // Seguridad del viaje (H2): emergencia siempre a un toque + compartir
+                    Row(
+                      children: [
+                        PanicButton(
+                          solicitudId:
+                              transportProvider.activeRequest?.id,
+                          posicion: userLocation,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: SizedBox(
+                            height: 42,
+                            child: OutlinedButton.icon(
+                              onPressed:
+                                  transportProvider.activeRequest == null
+                                      ? null
+                                      : _abrirCompartirViaje,
+                              icon: const Icon(
+                                Icons.share_location_outlined,
+                                size: 18,
+                              ),
+                              label: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  'Compartir viaje',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor:
+                                    AppTheme.textSecondary(isDark),
+                                side: BorderSide(
+                                  color: AppTheme.border(isDark),
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
                     // Action buttons
                     Row(
                       children: [

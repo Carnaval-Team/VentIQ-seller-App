@@ -140,6 +140,38 @@ class AppRoutes {
       label: 'Gestión de Cargas',
       group: 'Muévete',
     ),
+    // H6: configuración tarifaria del taxi (parámetros, multiplicadores,
+    // fallback municipal y simulador de cotización).
+    AppRoute(
+      route: '/muevete/tarifas',
+      label: 'Tarifas y Zonas',
+      group: 'Muévete',
+    ),
+    // H6 (segunda mitad): lista de zonas tarifarias y editor de polígonos.
+    AppRoute(
+      route: '/muevete/zonas',
+      label: 'Zonas y Polígonos',
+      group: 'Muévete',
+    ),
+    // H1: catálogo de tipos de vehículo (nombre visible, orden, capacidad y
+    // visibilidad). Se cambia sin recompilar la app del cliente.
+    AppRoute(
+      route: '/muevete/vehiculos',
+      label: 'Catálogo de Vehículos',
+      group: 'Muévete',
+    ),
+    // H1: versiones de los documentos legales y auditoría de consentimientos.
+    AppRoute(
+      route: '/muevete/documentos',
+      label: 'Documentos y Consentimientos',
+      group: 'Muévete',
+    ),
+    // H2: bandeja de incidentes, pánico reciente y puerta de identidad.
+    AppRoute(
+      route: '/muevete/incidentes',
+      label: 'Incidentes y Bloqueos',
+      group: 'Muévete',
+    ),
     AppRoute(
       route: '/carnaval-dashboard',
       label: 'Info de Carnaval',

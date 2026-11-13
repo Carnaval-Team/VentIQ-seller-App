@@ -1,9 +1,130 @@
-?# Plan de implementación — Taxi Muevete con precio automático por zonas
+# Plan de implementación — Taxi Muevete con precio automático por zonas
 
 > **Módulo**: taxi de pasajeros de `inventtia_muevete` + configuración en `ventiq_superadmin`.
 > **Objetivo**: eliminar la negociación cliente↔chofer y sustituirla por un precio calculado por el servidor según zona, distancia y tipo de vehículo; los choferes **toman** el viaje de una lista, el primero gana.
-> **Estado: PROPUESTA — pendiente de revisión del equipo.** No se ha implementado ni ejecutado nada. Sin migraciones aplicadas, sin cambios de código en las apps, sin bases de datos tocadas. Los `.sql` son **borradores** y viven en [`propuesta-migraciones/`](propuesta-migraciones/), fuera de la carpeta real de migraciones para que no se ejecuten por error.
-> **Fecha**: 2026-11-12 · **Repo**: `C:\Users\cesar\Documents\VentIQ-seller-App` · rama `main` · `git status` solo muestra esta carpeta de documentación.
+> **Estado: IMPLEMENTADO Y PROBADO — pendiente sólo el cutover.** Aprobado por el equipo el 2026-11-12 e implementado el 2026-11-12/13: base de datos (`030`–`045`) aplicada y probada en el proyecto de PRUEBAS, apps cliente y chofer reescritas sin negociación, y superadmin con zonas, tarifas, vehículos, documentos legales e incidentes. Nada está aún en producción: el orden de despliegue está en [`14-despliegue-y-cutover.md`](14-despliegue-y-cutover.md). Ver §"Estado de ejecución" abajo.
+> **Fecha**: 2026-11-12 · **Repo**: `C:\Users\cesar\Documents\VentIQ-seller-App` · rama `main`.
+
+---
+
+## Estado de ejecución (actualizado 2026-11-12)
+
+| Bloque | Entregable | Estado |
+|---|---|---|
+| H0 / H1 / H2 | `030`–`037` (zonas, tarifas, geo, identidad, seguridad, catálogo de vehículos) | ✅ Aplicadas en la BD de pruebas |
+| H3 · precio | `038` crear/cancelar solicitud | ✅ Aplicada · 13/13 pruebas |
+| H3 · precio | `039` lista de viajes + toma atómica | ✅ Aplicada · 8/8 pruebas E2E |
+| H3 · precio | `040` cierre + recarga de wallet | ✅ Aplicada · 8/8 pruebas E2E |
+| Cutover | `041` RLS y permisos | ✅ Escrita · **no se aplica hasta publicar las apps nuevas** |
+| H4 | App **cliente** sin negociación (desglose congelado, "Buscando conductor…", cancelar con reembolso) | ✅ Implementado · análisis sin errores |
+| H5 | App **chofer** (viajes disponibles, tomar, cerrar, deuda) + notificaciones del flujo nuevo | ✅ Implementado · análisis sin errores |
+| H6 | Superadmin: zonas poligonales, tarifas y simulador | ✅ Implementado · análisis sin errores · 12/12 tests de geometría |
+| H7 | Cierre por QR seguro (secreto fuera del código) + recibo con desglose congelado | ✅ Implementado · 8/8 tests |
+| H8 | QA integral, versión mínima forzada y cutover | ✅ Implementado · 10/10 concurrencia |
+| H1-UI | **Onboarding KYC + consentimiento + contacto de emergencia + gate en la app** | ✅ Implementado · 0 errores de análisis |
+
+> **Resuelto el 2026-11-13:** las pantallas ya existen. `lib/screens/identidad/`
+> (onboarding + consentimiento), `lib/screens/seguridad/` (contactos, hub, reporte
+> de incidente), widgets de pánico/compartir/ficha, y el gate enganchado en
+> publicar y tomar con rutas por código de error (`P0050`/`P0053`/`P0110`).
+> El usuario de debug completó su perfil y ya puede publicar viajes.
+
+### Auditoría 2026-11-13 · cierre al 100%
+
+Estado real tras la implementación (lo que **sí** está y lo que **faltaba**):
+
+| Área | Estado |
+|---|---|
+| BD: migraciones 030–043 aplicadas y probadas en PRUEBAS | ✅ |
+| BD: pepper `seguridad_token_pepper` en Vault (PRUEBAS) | ✅ (prod: paso del runbook) |
+| BD: documentos legales con texto real (`042`, v1.1.0 + 1.0.0 histórica) | ✅ |
+| BD: consentimientos append-only (`043`, trigger `P0060` + permisos) | ✅ |
+| BD: documento `contacto_emergencia` para la declaración de autorización (`044`) | ✅ |
+| BD: retención alineada con la política publicada — 90 días / 5 años (`045`) | ✅ |
+| App: flujo de viaje sin negociación (cliente y chofer) | ✅ |
+| App: onboarding KYC, consentimiento y gate visual (`identidad/`) | ✅ |
+| App: contacto de emergencia, pánico offline, compartir viaje, ficha de contraparte, 106, incidentes (`seguridad/`) | ✅ |
+| App: **FAB persistente de requisitos** con checklist tachado (cliente y chofer) | ✅ |
+| App: copy del dinero corregido (comisión se descuenta de la wallet) | ✅ |
+| Superadmin: tarifas, zonas y simulador | ✅ |
+| Superadmin: catálogo de vehículos (orden/capacidad/visibilidad/nombre) | ✅ |
+| Superadmin: documentos legales + auditoría de consentimientos | ✅ |
+| Superadmin: incidentes, pánico reciente y suspensión del gate | ✅ |
+| H0-A: `service_role` en repo público | ✅ decisión tomada: **no rotar**; riesgo aceptado por escrito en [`10-incidente-credenciales.md`](10-incidente-credenciales.md) §7 |
+
+Decisiones del usuario — **resueltas el 2026-11-13**:
+- ✅ Retención de ubicaciones: **90 días** → `045` alineó `configuracion_seguridad`
+  (estaba en 30) con la Política de Privacidad v1.1.0.
+- ✅ Retención de incidentes: **5 años** (60 meses) → `045` la subió de 24 meses.
+- ⏳ Firma legal del documento **KYC** (redactado de cero) e identificación
+  registral del responsable: depende del abogado, no del código.
+
+Criterios de H1/H2 que **sólo se pueden validar con las pantallas**:
+`ci`+`poblado` completables, re-aceptación al subir versión del documento,
+contacto de emergencia con declaración de autorización, pánico encolado sin
+red, enlace de viaje que caduca al cerrar, ficha con CI parcial, y bloqueo por
+incidente confirmado.
+
+### Checklist de aceptación H1/H2 (verificado 2026-11-13)
+
+`[x]` verificado · `[~]` implementado, pendiente de probar en dispositivo · `[ ]` pendiente
+
+**H1 · confianza**
+- [x] Lista Auto · Minivan · Microbús · Moto · Triciclo Eléctrico, en orden, editable en superadmin sin recompilar.
+- [x] Un cliente que pide 6 pasajeros no ve Auto ni Moto (filtro por `pasajeros_max`).
+- [x] Un chofer con 4 plazas no puede tomar un viaje de 5 (`P0052` + `puede_tomar=false`).
+- [x] Nadie publica ni toma sin CI, fotos del carnet, provincia/municipio/poblado, dirección y consentimiento: gate en servidor (13/13) + pantallas bloqueantes.
+- [x] El gate no se salta con un cliente modificado (probado llamando la RPC directo).
+- [x] Cambiar la versión de un documento obliga a re-aceptar y queda auditado (`042` + `043` append-only).
+- [x] Los 3 documentos legales tienen **texto real** (`042`, v1.1.0; la 1.0.0 queda en histórico).
+- [x] El gate se puede suspender desde superadmin y reanudar; `drivers.kyc` nunca se suspende.
+
+**H2 · seguridad del viaje**
+- [~] Pánico sin red queda en cola local y se envía al recuperar conexión (outbox FIFO idempotente); **falta la prueba en dispositivo con modo avión**.
+- [~] El enlace compartido deja de funcionar al terminar o cancelar y no expone teléfono ni CI completa (revocación por trigger de cierre + ficha con CI parcial); falta probarlo en dispositivo.
+- [x] Un usuario bloqueado por incidente confirmado no puede publicar ni tomar (`fn_gate_seguridad`; `fn_resolver_incidente` crea el bloqueo).
+- [x] El copy del botón deja claro que **no sustituye** a llamar a la policía (y botón directo al 106).
+- [x] `seguridad_token_pepper` existe en Vault en PRUEBAS (en producción es paso obligatorio del runbook).
+- [x] El contacto se muestra **"sin verificar"** y el OTP nunca se devuelve al cliente.
+- [x] El alta del contacto exige **declaración explícita** y queda registrada (`044` + `fn_aceptar_consentimiento`).
+
+**Limitaciones conocidas documentadas (no bloquean el MVP)**
+- El muestreo continuo de posición durante un pánico (`fn_registrar_posicion_panico` cada 15 s) no está en la UI; el pánico envía la ubicación del momento.
+- El selector de modo discreto/visible del pánico no está expuesto (usa el modo por defecto).
+- Las opciones de reporte de incidente no se filtran por rol (pasajero vs chofer).
+- La señal de lista negra al chofer no distingue si el bloqueado es él mismo; el texto podría quedar impreciso en ese caso.
+
+> **Estado global: IMPLEMENTADO Y PROBADO. Pendiente únicamente ejecutar el cutover**
+> (runbook: [`14-despliegue-y-cutover.md`](14-despliegue-y-cutover.md)). Nada de esto
+> está en producción todavía: el proyecto de pruebas es el único que tiene las
+> migraciones aplicadas.
+
+Pruebas: `inventtia_muevete/docs/migrations/tests/` (`test_038_solicitud.sql`,
+`test_039_040_flujo.sql`). Contrato app↔RPC: [`13-contrato-app-rpc.md`](13-contrato-app-rpc.md).
+
+Hallazgos que cambiaron el diseño durante la implementación:
+
+- **D-2b**: el seed del catálogo de vehículos usa una columna marcadora explícita
+  (`vehicle_type.catalogo_sembrado_at`); antes infería "ya sembrado" de `orden`/`nombre_ui`
+  y podía pisar el orden configurado por el superadmin.
+- **Códigos de error**: `P0001`–`P0004` son reservados por PL/pgSQL y `P0004`
+  (`assert_failure`) **no se puede capturar** con `EXCEPTION WHEN OTHERS`. El módulo usa
+  `P0005` en adelante.
+- **Wallet**: `transacciones_wallet.tipo` tiene CHECK y sólo admite
+  `recarga | cobro_viaje | pago_viaje | reembolso | comision_viaje`; el convenio de
+  retención/reembolso se ajustó a esos valores.
+- **Flag de corte**: `taxi_precio_fijo_activo` nace en `false`; hay que encenderlo al
+  desplegar (y sólo entonces deja de aceptar publicaciones del flujo viejo).
+- **Hotfix 2026-11-13 — permisos de las RPC de cálculo**: la primera llamada real
+  de la app (`POST /rest/v1/rpc/fn_cotizar_viaje` como `authenticated`) devolvió
+  `42501 permission denied for function fn_punto_en_anillo`. Causa: en `032`,
+  `fn_cotizar_viaje`, `fn_zona_de_punto` y `fn_punto_en_poligono` se crearon como
+  **SECURITY INVOKER** y delegaban en helpers internos revocados para clientes.
+  Corregido en `032` con `SECURITY DEFINER` + `search_path` fijado y sin
+  `PARALLEL SAFE`. Se añadió
+  [`tests/test_permisos_rpc.sql`](../../inventtia_muevete/docs/migrations/tests/test_permisos_rpc.sql)
+  como guardarraíl: las pruebas anteriores corrían como `postgres` y por eso no
+  podían detectar fallos de permisos.
 
 ---
 

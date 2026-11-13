@@ -70,8 +70,10 @@
     }
   }
 
-  // Exponer globalmente para scripts inline.
-  window.VentiqTracking = { track: trackLandingEvent };
+  // Exponer globalmente para scripts inline. `getClient` permite a r.html
+  // registrar la visita de referido reutilizando esta misma configuración de
+  // Supabase (sin duplicar URL ni anon key en la página).
+  window.VentiqTracking = { track: trackLandingEvent, getClient: getSupabase };
 
   function initAutoClicks() {
     document.querySelectorAll('[data-track-event]').forEach(function (el) {

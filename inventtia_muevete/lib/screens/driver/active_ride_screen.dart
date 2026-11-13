@@ -16,15 +16,20 @@ import '../../models/stop_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/location_provider.dart';
 import '../../providers/theme_provider.dart';
+import '../../providers/transport_provider.dart';
 import '../../services/completion_sync_service.dart';
 import '../../services/driver_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/routing_service.dart';
+import '../../services/seguridad_service.dart';
 import '../../services/stop_service.dart';
 import '../../services/background_service.dart';
 import '../../utils/helpers.dart';
 import '../../utils/app_error.dart';
+import '../../widgets/ficha_contraparte_sheet.dart';
 import '../../widgets/map_widget.dart';
+import '../../widgets/panic_button.dart';
+import '../../widgets/share_trip_sheet.dart';
 import '../../widgets/qr_scanner_dialog.dart';
 
 enum _RidePhase { goingToPickup, waitingAtPickup, inProgress, completed }
@@ -48,6 +53,11 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
   final MapController _mapController = MapController();
   final RoutingService _routingService = RoutingService();
   final DriverService _driverService = DriverService();
+  final SeguridadService _seguridad = SeguridadService();
+
+  /// Señal de lista negra del pasajero (`fn_estado_contraparte`).
+  bool _alertaPasajero = false;
+  bool _estadoPasajeroConsultado = false;
 
   _RidePhase _currentPhase = _RidePhase.goingToPickup;
   List<LatLng> _routePolyline = [];
@@ -63,6 +73,12 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
   late String _pickupAddress;
   late String _dropoffAddress;
   late double _tripPrice;
+
+  /// Neto del chofer tal como lo calculó la plataforma al asignar el viaje.
+  double _pagoChofer = 0;
+
+  /// Resultado de `fn_completar_viaje` (desglose final del cierre).
+  Map<String, dynamic>? _resultadoCierre;
   LatLng? _pickupLocation;
   LatLng? _dropoffLocation;
   int? _viajeId;
@@ -96,8 +112,6 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
   StopModel? _activeStop;
   Timer? _stopTimer;
   int _stopElapsedSeconds = 0;
-  double _precioEsperaMinuto = 0;
-  double _totalWaitCharge = 0;
 
   // Navigation mode state
   bool _tilt3D = false;
@@ -128,6 +142,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
     _dropoffAddress =
         data['direccion_destino'] as String? ?? 'Destino del viaje';
     _tripPrice = (data['precio'] as num?)?.toDouble() ?? 0.0;
+    _pagoChofer = (data['pago_chofer'] as num?)?.toDouble() ?? 0.0;
     _viajeId = data['viaje_id'] as int?;
     _solicitudId = data['solicitud_id'] as int?;
     _clientUuid = data['user_id'] as String?;
@@ -144,7 +159,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
       _dropoffLocation = LatLng(latDestino, lonDestino);
     }
 
-    _fetchPrecioEspera();
+    // El cobro de la espera lo calcula `fn_completar_viaje` en el servidor.
 
     // Restore phase from DB: estado=true means trip was already started
     final viajeEstado = data['estado'] as bool? ?? false;
@@ -158,6 +173,11 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
       _subscribeSolicitudChanges();
       _subscribeViajeChanges();
       _checkIfAlreadyCompleted();
+      // Si el viaje se abre ya en curso, se consulta de una el estado de
+      // seguridad del pasajero que va dentro.
+      if (_currentPhase == _RidePhase.inProgress) {
+        _consultarEstadoPasajero();
+      }
       BackgroundService.updateStatus(
         title: 'Muevete - Conductor',
         content: _getPhaseLabel(),
@@ -449,6 +469,10 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
   Future<void> _advancePhase() async {
     if (_isCompletingAction) return;
 
+    // Se captura antes de cualquier await para no usar `context` tras un
+    // hueco asíncrono.
+    final tp = context.read<TransportProvider>();
+
     switch (_currentPhase) {
       case _RidePhase.goingToPickup:
         setState(() => _currentPhase = _RidePhase.waitingAtPickup);
@@ -492,6 +516,8 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
             final loc = context.read<LocationProvider>().locationOrDefault;
             _updateDistanceAndBearing(loc);
             _loadRoute(); // Recalculate route pickup -> dropoff
+            // Ya va un pasajero dentro: se revisa su estado de seguridad.
+            _consultarEstadoPasajero();
             if (_clientUuid != null) {
               NotificationService().createNotification(
                 userUuid: _clientUuid!,
@@ -530,39 +556,15 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
             } catch (_) {}
           }
 
-          // Calculate wait time and charge
+          // Tiempo de espera medido en servidor. El monto lo calcula
+          // `fn_completar_viaje`: aquí no se estima ni se envía ningún precio.
           int totalWaitSeconds = 0;
-          double cobroEspera = 0;
-          double precioEsperaMinuto = 0;
           int waitMinutes = 0;
           if (_viajeId != null) {
             totalWaitSeconds =
                 await _stopService.getTotalWaitSeconds(_viajeId!);
-            if (totalWaitSeconds > 0 && _solicitudId != null) {
-              try {
-                final solRow = await Supabase.instance.client
-                    .schema('muevete')
-                    .from('solicitudes_transporte')
-                    .select('tipo_vehiculo')
-                    .eq('id', _solicitudId!)
-                    .maybeSingle();
-                final tipoVehiculo = solRow?['tipo_vehiculo'] as String?;
-                if (tipoVehiculo != null) {
-                  final vtRow = await Supabase.instance.client
-                      .schema('muevete')
-                      .from('vehicle_type')
-                      .select('precio_espera_min')
-                      .eq('tipo', tipoVehiculo)
-                      .maybeSingle();
-                  if (vtRow != null) {
-                    precioEsperaMinuto =
-                        (vtRow['precio_espera_min'] as num?)?.toDouble() ??
-                            0;
-                    waitMinutes = (totalWaitSeconds / 60).ceil();
-                    cobroEspera = waitMinutes * precioEsperaMinuto;
-                  }
-                }
-              } catch (_) {}
+            if (totalWaitSeconds > 0) {
+              waitMinutes = (totalWaitSeconds / 60).ceil();
             }
           }
 
@@ -592,22 +594,13 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                         color: AppTheme.warning.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Tiempo de espera: $waitMinutes min',
-                              style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 13,
-                                  color: AppTheme.textPrimary(isDark),
-                                  fontWeight: FontWeight.w600)),
-                          if (precioEsperaMinuto > 0)
-                            Text(
-                                'Cobro espera: \$${cobroEspera.toStringAsFixed(2)}',
-                                style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 13,
-                                    color: AppTheme.warning,
-                                    fontWeight: FontWeight.w700)),
-                        ],
+                      child: Text(
+                        'Tiempo de espera registrado: $waitMinutes min',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 13,
+                          color: AppTheme.textPrimary(isDark),
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ],
@@ -637,44 +630,40 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
             return;
           }
 
-          if (_viajeId != null) {
-            await Supabase.instance.client
-                .schema('muevete')
-                .from('viajes')
-                .update({
-                  'completado': true,
-                  'estado': false,
-                  'tiempo_espera_segundos': totalWaitSeconds,
-                  'cobro_espera': cobroEspera,
-                })
-                .eq('id', _viajeId!);
+          // Cierre por RPC: la plataforma calcula total, comisión y neto.
+          // `fn_completar_viaje` no recibe precio (es idempotente).
+          final resultado = await tp.completarViaje(
+            viajeId: _viajeId,
+            esperaMin: waitMinutes > 0 ? waitMinutes : null,
+          );
+          if (!mounted) return;
+
+          if (resultado == null) {
+            await _cerrarSinConexion(tp);
+            return;
           }
-          if (_solicitudId != null) {
-            await _driverService.updateSolicitudEstado(
-                _solicitudId!, 'completada');
-          }
-          if (mounted) {
-            setState(() {
-              _currentPhase = _RidePhase.completed;
-              _isCompletingAction = false;
-            });
-            if (_clientUuid != null) {
-              NotificationService().createNotification(
-                userUuid: _clientUuid!,
-                tipo: NotificationType.viajeCompletado,
-                titulo: 'Viaje completado',
-                mensaje: 'Has llegado a tu destino. Gracias por usar Muevete.',
-                data: {'viaje_id': _viajeId, 'solicitud_id': _solicitudId},
-              );
-            }
-            // Local notification for driver
-            NotificationService().pushLocal(
+
+          setState(() {
+            _resultadoCierre = resultado;
+            _currentPhase = _RidePhase.completed;
+            _isCompletingAction = false;
+          });
+          if (_clientUuid != null) {
+            NotificationService().createNotification(
+              userUuid: _clientUuid!,
               tipo: NotificationType.viajeCompletado,
               titulo: 'Viaje completado',
-              mensaje: 'El viaje ha finalizado correctamente.',
+              mensaje: 'Has llegado a tu destino. Gracias por usar Muevete.',
+              data: {'viaje_id': _viajeId, 'solicitud_id': _solicitudId},
             );
-            _showCompletionDialog();
           }
+          // Local notification for driver
+          NotificationService().pushLocal(
+            tipo: NotificationType.viajeCompletado,
+            titulo: 'Viaje completado',
+            mensaje: 'El viaje ha finalizado correctamente.',
+          );
+          _showCompletionDialog(resultado: resultado);
         } catch (e) {
           if (mounted) {
             setState(() => _isCompletingAction = false);
@@ -767,8 +756,22 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
 
   // ── Completion dialog ───────────────────────────────────────────────────
 
-  void _showCompletionDialog() {
+  /// Desglose del cierre devuelto por `fn_completar_viaje`.
+  void _showCompletionDialog({Map<String, dynamic>? resultado}) {
     final isDark = context.read<ThemeProvider>().isDark;
+
+    final total = (resultado?['precio_plataforma'] as num?)?.toDouble() ??
+        _tripPrice;
+    final precioViaje = (resultado?['precio_viaje'] as num?)?.toDouble();
+    final esperaMin = (resultado?['espera_cobrada_min'] as num?)?.toDouble();
+    final esperaMonto = (resultado?['espera_monto'] as num?)?.toDouble();
+    final comisionMonto = (resultado?['comision_monto'] as num?)?.toDouble();
+    final comisionPct = (resultado?['comision_pct'] as num?)?.toDouble();
+    final neto = (resultado?['precio_chofer'] as num?)?.toDouble() ??
+        (_pagoChofer > 0 ? _pagoChofer : _tripPrice);
+    final saldo = (resultado?['saldo_chofer'] as num?)?.toDouble();
+    final deuda = (resultado?['deuda_chofer'] as num?)?.toDouble();
+    final metodo = (resultado?['metodo_pago'] as String?) ?? 'efectivo';
 
     showDialog(
       context: context,
@@ -779,128 +782,239 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
           ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 72,
-                height: 72,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: AppTheme.success.withValues(alpha: 0.15),
-                ),
-                child: const Icon(
-                  Icons.check_circle,
-                  color: AppTheme.success,
-                  size: 40,
-                ),
-              ),
-              const SizedBox(height: 20),
-              Text(
-                'Viaje Completado',
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.textPrimary(isDark),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Has completado el viaje exitosamente.',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 14,
-                  color: AppTheme.textSecondary(isDark),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                Helpers.formatCurrency(_tripPrice + _totalWaitCharge),
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.success,
-                ),
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(dialogContext);
-                    Navigator.pop(context, true);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primaryColor,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppTheme.success.withValues(alpha: 0.15),
                     ),
-                    elevation: 0,
+                    child: const Icon(
+                      Icons.check_circle,
+                      color: AppTheme.success,
+                      size: 36,
+                    ),
                   ),
+                ),
+                const SizedBox(height: 14),
+                Center(
                   child: Text(
-                    'Volver al Inicio',
+                    'Viaje completado',
                     style: GoogleFonts.plusJakartaSans(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.textPrimary(isDark),
                     ),
                   ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 4),
+                Center(
+                  child: Text(
+                    metodo == 'wallet' ? 'Pago con wallet' : 'Pago en efectivo',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12,
+                      color: AppTheme.textTertiary(isDark),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _filaCierre(
+                  isDark,
+                  'Cobrado al cliente',
+                  Helpers.formatCup(total),
+                  destacado: true,
+                ),
+                _filaCierre(
+                  isDark,
+                  'Viaje',
+                  Helpers.formatCup(precioViaje ?? total),
+                ),
+                if (esperaMonto != null && esperaMonto > 0)
+                  _filaCierre(
+                    isDark,
+                    'Espera (${esperaMin?.toStringAsFixed(0) ?? '0'} min)',
+                    Helpers.formatCupSigned(esperaMonto),
+                  ),
+                if (comisionMonto != null)
+                  _filaCierre(
+                    isDark,
+                    comisionPct == null
+                        ? 'Comisión plataforma'
+                        : 'Comisión plataforma (${comisionPct.toStringAsFixed(0)}%)',
+                    Helpers.formatCupSigned(-comisionMonto),
+                  ),
+                const Divider(height: 22),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        metodo == 'wallet'
+                            ? 'Se te acredita en tu wallet'
+                            : 'Te queda en mano',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.textPrimary(isDark),
+                        ),
+                      ),
+                    ),
+                    Text(
+                      Helpers.formatCup(metodo == 'wallet' ? neto : total),
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                        color: AppTheme.success,
+                      ),
+                    ),
+                  ],
+                ),
+                if (metodo != 'wallet' && comisionMonto != null) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'La comisión de ${Helpers.formatCup(comisionMonto)} se te '
+                    'descuenta de la wallet y queda como deuda.',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 11.5,
+                      color: AppTheme.textTertiary(isDark),
+                      height: 1.3,
+                    ),
+                  ),
+                ],
+                if (saldo != null)
+                  _filaCierre(
+                    isDark,
+                    'Saldo en tu billetera',
+                    Helpers.formatCup(saldo),
+                  ),
+                if (deuda != null && deuda > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      'Deuda pendiente: ${Helpers.formatCup(deuda)}',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.warning,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(dialogContext);
+                      Navigator.pop(context, true);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primaryColor,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: Text(
+                      'Volver al inicio',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },
     );
   }
 
-  Future<void> _fetchPrecioEspera() async {
-    if (_solicitudId == null) return;
+  Widget _filaCierre(
+    bool isDark,
+    String etiqueta,
+    String valor, {
+    bool destacado = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              etiqueta,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 13,
+                color: AppTheme.textSecondary(isDark),
+              ),
+            ),
+          ),
+          Text(
+            valor,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 13,
+              fontWeight: destacado ? FontWeight.w800 : FontWeight.w600,
+              color: AppTheme.textPrimary(isDark),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Si el cierre falla por red se encola y se sincroniza después.
+  /// Un error de negocio del servidor NO se encola: se muestra tal cual.
+  Future<void> _cerrarSinConexion(TransportProvider tp) async {
+    if (!mounted) return;
+
+    if (tp.errorClave != null) {
+      setState(() => _isCompletingAction = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            tp.error ?? 'No se pudo completar el viaje.',
+            style: GoogleFonts.plusJakartaSans(),
+          ),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+      return;
+    }
+
     try {
-      final solRow = await Supabase.instance.client
-          .schema('muevete')
-          .from('solicitudes_transporte')
-          .select('tipo_vehiculo, id_tipo_vehiculo')
-          .eq('id', _solicitudId!)
-          .maybeSingle();
-
-      if (solRow != null) {
-        final idTipo = solRow['id_tipo_vehiculo'];
-        final tipoStr = solRow['tipo_vehiculo'];
-
-        var query = Supabase.instance.client
-            .schema('muevete')
-            .from('vehicle_type')
-            .select('precio_espera_min');
-            
-        if (idTipo != null) {
-          query = query.eq('id', idTipo);
-        } else if (tipoStr != null) {
-          query = query.eq('tipo', tipoStr);
-        } else {
-          return;
-        }
-
-        final vehicleRow = await query.maybeSingle();
-        if (vehicleRow != null && mounted) {
-          setState(() {
-            _precioEsperaMinuto =
-                (vehicleRow['precio_espera_min'] as num?)?.toDouble() ?? 0;
-          });
-        }
+      if (_viajeId != null) {
+        // Cola v2: el servidor recalcula total, comisión y neto. Sin precios.
+        await CompletionSyncService.enqueueCompletion(
+          viajeId: _viajeId!,
+          role: 'driver',
+        );
       }
     } catch (_) {}
 
-    // Also fetch current wait charges already in DB for this trip (if restoring)
-    if (_viajeId != null) {
-      final seconds = await _stopService.getTotalWaitSeconds(_viajeId!);
-      if (seconds > 0 && mounted) {
-        setState(() {
-          _totalWaitCharge = (seconds / 60).ceil() * _precioEsperaMinuto;
-        });
-      }
-    }
+    if (!mounted) return;
+    setState(() {
+      _currentPhase = _RidePhase.completed;
+      _isCompletingAction = false;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Sin conexión: el viaje se cerrará cuando vuelva la señal.',
+          style: GoogleFonts.plusJakartaSans(),
+        ),
+        backgroundColor: AppTheme.warning,
+        duration: const Duration(seconds: 4),
+      ),
+    );
+    _showCompletionDialog();
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────
@@ -919,6 +1033,62 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
     return 2 * earthR * asin(sqrt(h));
   }
 
+
+  // ── Seguridad del viaje (H2) ────────────────────────────────────────────
+
+  /// Consulta `fn_estado_contraparte` para el pasajero que va dentro.
+  ///
+  /// Se llama una sola vez por viaje y sólo cuando hay pasajero (fase en
+  /// curso). Si la RPC falla, no hay chofer identificado o no devuelve datos,
+  /// no se muestra nada: nunca se inventa una alarma.
+  Future<void> _consultarEstadoPasajero() async {
+    if (_estadoPasajeroConsultado) return;
+    final uuid = _clientUuid;
+    if (uuid == null || uuid.isEmpty) return;
+
+    // Mismo id que `muevete.get_my_driver_id()`: el perfil ya cargado.
+    final rawId = context.read<AuthProvider>().driverProfile?['id'];
+    final driverId =
+        rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
+    if (driverId == null) return;
+
+    _estadoPasajeroConsultado = true;
+    final estado = await _seguridad.estadoContraparte(
+      userUuid: uuid,
+      driverId: driverId,
+    );
+    if (!mounted || estado == null) return;
+    if (estado.tieneReportes) {
+      setState(() => _alertaPasajero = true);
+    }
+  }
+
+  /// Ficha de la contraparte: foto, nombre, CI parcial y confirmación de
+  /// abordaje (`fn_confirmar_abordaje`). El viaje lo inicia igual el botón
+  /// "Iniciar viaje": aquí sólo se deja la evidencia de la verificación.
+  Future<void> _abrirFichaContraparte() async {
+    final solicitudId = _solicitudId;
+    if (solicitudId == null) return;
+    await FichaContraparteSheet.mostrar(
+      context,
+      solicitudId: solicitudId,
+      rolPropio: 'chofer',
+      viajeId: _viajeId,
+    );
+  }
+
+  /// Enlace de viaje compartido (`fn_crear_enlace_viaje`).
+  Future<void> _abrirCompartirViaje() async {
+    final solicitudId = _solicitudId;
+    if (solicitudId == null) return;
+    final posicion = context.read<LocationProvider>().locationOrDefault;
+    await CompartirViajeSheet.mostrar(
+      context,
+      solicitudId: solicitudId,
+      conductor: _clientName,
+      posicion: posicion,
+    );
+  }
 
   Future<void> _launchCall(String phone) async {
     final url = Uri.parse(Helpers.buildPhoneUrl(phone));
@@ -1025,18 +1195,12 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
           );
         }
 
-        // Calculate and add this stop's charge to the total
-        final stopSeconds = DateTime.now()
-            .toUtc()
-            .difference(_activeStop!.createdAt)
-            .inSeconds;
-        final stopMinutes = (stopSeconds / 60).ceil();
-        final stopCharge = stopMinutes * _precioEsperaMinuto;
+        // La espera se cobra en `fn_completar_viaje` con el tiempo medido en
+        // servidor: aquí sólo se cierra la parada.
 
         setState(() {
           _activeStop = null;
           _stopElapsedSeconds = 0;
-          _totalWaitCharge += stopCharge;
         });
       } catch (e) {
         if (mounted) {
@@ -1119,6 +1283,8 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
 
   // ── QR scan for offline completion ─────────────────────────────────────
   Future<void> _scanQrCompletion() async {
+    // Se captura antes de los await (context no se usa tras huecos async).
+    final tp = context.read<TransportProvider>();
     final data = await showDialog<Map<String, dynamic>?>(
       context: context,
       builder: (_) => const QrScannerDialog(),
@@ -1136,76 +1302,65 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
     }
 
     setState(() => _isCompletingAction = true);
-    try {
-      // End active stop if any
-      if (_activeStop != null) {
-        try {
-          await _stopService.endStop(_activeStop!.id!);
-          _stopTimer?.cancel();
-          setState(() {
-            _activeStop = null;
-            _stopElapsedSeconds = 0;
-          });
-        } catch (_) {}
-      }
 
-      // Try online first
-      if (_viajeId != null) {
-        await _driverService.updateTripStatus(_viajeId!, completado: true);
-        await Supabase.instance.client
-            .schema('muevete')
-            .from('viajes')
-            .update({'completado': true, 'estado': false})
-            .eq('id', _viajeId!);
-      }
-      if (_solicitudId != null) {
-        await _driverService.updateSolicitudEstado(_solicitudId!, 'completada');
-      }
-
-      if (mounted) {
+    // End active stop if any
+    if (_activeStop != null) {
+      try {
+        await _stopService.endStop(_activeStop!.id!);
+        _stopTimer?.cancel();
         setState(() {
-          _currentPhase = _RidePhase.completed;
-          _isCompletingAction = false;
+          _activeStop = null;
+          _stopElapsedSeconds = 0;
         });
-        if (_clientUuid != null) {
-          NotificationService().createNotification(
-            userUuid: _clientUuid!,
-            tipo: NotificationType.viajeCompletado,
-            titulo: 'Viaje completado',
-            mensaje: 'Has llegado a tu destino. Gracias por usar Muevete.',
-            data: {'viaje_id': _viajeId, 'solicitud_id': _solicitudId},
-          );
-        }
-        _showCompletionDialog();
+      } catch (_) {}
+    }
+
+    // Cierre por RPC (idempotente). El servidor recalcula el monto: el QR ya
+    // no transporta precios.
+    final resultado = await tp.completarViaje(viajeId: qrViajeId);
+    if (!mounted) return;
+
+    if (resultado != null) {
+      setState(() {
+        _resultadoCierre = resultado;
+        _currentPhase = _RidePhase.completed;
+        _isCompletingAction = false;
+      });
+      if (_clientUuid != null) {
+        NotificationService().createNotification(
+          userUuid: _clientUuid!,
+          tipo: NotificationType.viajeCompletado,
+          titulo: 'Viaje completado',
+          mensaje: 'Has llegado a tu destino. Gracias por usar Muevete.',
+          data: {'viaje_id': _viajeId, 'solicitud_id': _solicitudId},
+        );
       }
-    } catch (_) {
-      // Offline: enqueue for later sync
+      _showCompletionDialog(resultado: resultado);
+      return;
+    }
+
+    // Sin conexión (o QR de otra version): se encola para sincronizar.
+    try {
       await CompletionSyncService.enqueueCompletion(
-        solicitudId: data['sol_id'] as int,
         viajeId: qrViajeId,
-        driverId: data['driver_id'] as int,
-        userId: data['user_id'] as String,
-        precio: (data['precio'] as num).toDouble(),
-        precioBase: (data['precio_base'] as num?)?.toDouble() ?? (data['precio'] as num).toDouble(),
-        metodoPago: data['metodo'] as String,
         role: 'driver',
       );
-      if (mounted) {
-        setState(() {
-          _currentPhase = _RidePhase.completed;
-          _isCompletingAction = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(
-            'Viaje completado localmente. Se sincronizará al tener conexión.',
-            style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
-          ),
-          backgroundColor: AppTheme.warning,
-          duration: const Duration(seconds: 4),
-        ));
-        _showCompletionDialog();
-      }
-    }
+    } catch (_) {}
+
+    if (!mounted) return;
+    setState(() {
+      _currentPhase = _RidePhase.completed;
+      _isCompletingAction = false;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(
+        'Viaje completado localmente. Se sincronizará al tener conexión.',
+        style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
+      ),
+      backgroundColor: AppTheme.warning,
+      duration: const Duration(seconds: 4),
+    ));
+    _showCompletionDialog();
   }
 
   // ── Navigation mode helpers ───────────────────────────────────────────
@@ -1365,6 +1520,9 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
 
     final driverLocation = locationProvider.locationOrDefault;
     final phaseColor = _getPhaseColor();
+
+    // Los banners flotantes cuelgan de aquí para no pisarse entre ellos.
+    final double barraSuperior = MediaQuery.of(context).padding.top + 70;
 
     // Build markers
     final markers = <Marker>[];
@@ -1570,11 +1728,61 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
               ),
             ),
 
+          // Señal de lista negra: el pasajero que va dentro tiene reportes
+          // de seguridad previos (lo confirma `fn_estado_contraparte`).
+          if (_alertaPasajero && _currentPhase == _RidePhase.inProgress)
+            Positioned(
+              top: barraSuperior,
+              left: 16,
+              right: 16,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                decoration: BoxDecoration(
+                  color: AppTheme.warning.withValues(
+                    alpha: isDark ? 0.20 : 0.14,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: AppTheme.warning.withValues(alpha: 0.5),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.10),
+                      blurRadius: 8,
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.shield_outlined,
+                      size: 18,
+                      color: AppTheme.warning,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Este pasajero tiene reportes de seguridad previos. '
+                        'Extrema precauciones.',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          height: 1.25,
+                          color: AppTheme.textPrimary(isDark),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
           // Turn-by-turn navigation banner
           if (_currentPhase == _RidePhase.inProgress &&
               _nextInstruction.isNotEmpty)
             Positioned(
-              top: MediaQuery.of(context).padding.top + 70,
+              top: barraSuperior + (_alertaPasajero ? 64 : 0),
               left: 16,
               right: 16,
               child: Container(
@@ -1829,7 +2037,13 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                             borderRadius: BorderRadius.circular(20),
                           ),
                           child: Text(
-                            Helpers.formatCurrency(_tripPrice + _totalWaitCharge),
+                            Helpers.formatCup(
+                              (_resultadoCierre?['precio_chofer'] as num?)
+                                      ?.toDouble() ??
+                                  (_pagoChofer > 0
+                                      ? _pagoChofer
+                                      : _tripPrice),
+                            ),
                             style: GoogleFonts.plusJakartaSans(
                               fontSize: 15,
                               fontWeight: FontWeight.w700,
@@ -1907,6 +2121,93 @@ class _ActiveRideScreenState extends State<ActiveRideScreen>
                       ),
                     ),
                     const SizedBox(height: 12),
+
+                    // Verificación mutua antes de subir (H2 · F4)
+                    if (_currentPhase == _RidePhase.goingToPickup ||
+                        _currentPhase == _RidePhase.waitingAtPickup)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: SizedBox(
+                          width: double.infinity,
+                          height: 44,
+                          child: OutlinedButton.icon(
+                            onPressed: _solicitudId == null
+                                ? null
+                                : _abrirFichaContraparte,
+                            icon: const Icon(Icons.badge_outlined, size: 20),
+                            label: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                'Verificar pasajero (foto, chapa, CI parcial)',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                maxLines: 1,
+                              ),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppTheme.primaryColor,
+                              side: const BorderSide(
+                                color: AppTheme.primaryColor,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                    // Emergencia + compartir viaje: disponibles en todo el
+                    // viaje, también mientras se espera en la calle.
+                    if (_currentPhase != _RidePhase.completed)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Row(
+                          children: [
+                            PanicButton(
+                              solicitudId: _solicitudId,
+                              posicion: driverLocation,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: SizedBox(
+                                height: 42,
+                                child: OutlinedButton.icon(
+                                  onPressed: _solicitudId == null
+                                      ? null
+                                      : _abrirCompartirViaje,
+                                  icon: const Icon(
+                                    Icons.share_location_outlined,
+                                    size: 18,
+                                  ),
+                                  label: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Text(
+                                      'Compartir viaje',
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor:
+                                        AppTheme.textSecondary(isDark),
+                                    side: BorderSide(
+                                      color: AppTheme.border(isDark),
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
 
                     // Stop (parada) button — only during inProgress
                     if (_currentPhase == _RidePhase.inProgress)

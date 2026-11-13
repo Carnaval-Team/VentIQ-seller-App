@@ -9,6 +9,7 @@ import '../../providers/wallet_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/profile_photo_service.dart';
+import '../../services/wallet_service.dart';
 import '../../utils/helpers.dart';
 import '../../widgets/wallet_balance_card.dart';
 import '../../widgets/transaction_list_item.dart';
@@ -21,13 +22,32 @@ class WalletScreen extends StatefulWidget {
 }
 
 class _WalletScreenState extends State<WalletScreen> {
+  final WalletService _walletService = WalletService();
+
+  /// % de recarga que configura el superadmin (`configuracion_tarifas`).
+  double _recargaPct = 0;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadWalletData();
+      _loadConfiguracion();
     });
   }
+
+  Future<void> _loadConfiguracion() async {
+    final cfg = await _walletService.configuracionRecarga();
+    if (!mounted) return;
+    setState(() {
+      _recargaPct = (cfg['recarga_pct'] as num?)?.toDouble() ?? 0;
+    });
+  }
+
+  /// `11` para 11.00, `12.5` para 12.50 (sin ceros de relleno).
+  String _pctTexto(double pct) => pct % 1 == 0
+      ? pct.toStringAsFixed(0)
+      : pct.toStringAsFixed(2).replaceFirst(RegExp(r'0+$'), '');
 
   void _loadWalletData() {
     final authProvider = context.read<AuthProvider>();
@@ -49,7 +69,7 @@ class _WalletScreenState extends State<WalletScreen> {
           builder: (dialogContext, setDialogState) {
             final parsed = double.tryParse(amountController.text);
             final totalPagar = parsed != null && parsed > 0
-                ? parsed * 1.11
+                ? parsed * (1 + _recargaPct / 100)
                 : null;
 
             return AlertDialog(
@@ -70,7 +90,8 @@ class _WalletScreenState extends State<WalletScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    'Ingresa el monto que deseas acreditar a tu billetera. Se aplica 11% de comision.',
+                    'Ingresa el monto que deseas acreditar a tu billetera. '
+                    'Incluye ${_pctTexto(_recargaPct)}% de comisión.',
                     style: GoogleFonts.plusJakartaSans(
                       fontSize: 13,
                       color: isDark ? Colors.white60 : Colors.grey[600],
@@ -168,7 +189,8 @@ class _WalletScreenState extends State<WalletScreen> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            '(\$${parsed!.toStringAsFixed(2)} recarga + 11% comision)',
+                            '(\$${parsed!.toStringAsFixed(2)} recarga + '
+                            '${_pctTexto(_recargaPct)}% de comisión)',
                             style: GoogleFonts.plusJakartaSans(
                               fontSize: 11,
                               color: isDark
@@ -238,7 +260,7 @@ class _WalletScreenState extends State<WalletScreen> {
     final detalleController = TextEditingController();
     String? _pickedImageName;
     XFile? _pickedFile;
-    final totalPagar = montoRecarga * 1.11;
+    final totalPagar = montoRecarga * (1 + _recargaPct / 100);
 
     showDialog(
       context: context,
@@ -296,7 +318,8 @@ class _WalletScreenState extends State<WalletScreen> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            '(\$${montoRecarga.toStringAsFixed(2)} recarga + 11% comision)',
+                            '(\$${montoRecarga.toStringAsFixed(2)} recarga + '
+                            '${_pctTexto(_recargaPct)}% de comisión)',
                             style: GoogleFonts.plusJakartaSans(
                               fontSize: 11,
                               color: isDark

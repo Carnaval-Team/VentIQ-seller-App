@@ -12,6 +12,7 @@ import 'services/local_notification_service.dart';
 import 'services/completion_sync_service.dart';
 import 'services/mbtiles_service.dart';
 import 'services/pushy_service.dart';
+import 'services/seguridad_service.dart';
 import 'providers/auth_provider.dart';
 import 'providers/carga_provider.dart';
 import 'providers/theme_provider.dart';
@@ -43,6 +44,11 @@ import 'screens/carrier/carrier_home_screen.dart';
 import 'screens/dispatcher/dispatcher_home_screen.dart';
 import 'screens/common/planes_screen.dart';
 import 'screens/common/unified_profile_screen.dart';
+import 'screens/identidad/onboarding_identidad_screen.dart';
+import 'screens/identidad/consentimiento_screen.dart';
+import 'screens/seguridad/mi_seguridad_screen.dart';
+import 'screens/seguridad/contactos_emergencia_screen.dart';
+import 'screens/seguridad/reporte_incidente_screen.dart';
 import 'widgets/notification_overlay.dart';
 import 'widgets/update_checker.dart';
 
@@ -87,6 +93,10 @@ Future<void> main() async {
   // Sync any pending offline completions from previous sessions
   CompletionSyncService.syncPendingCompletions();
 
+  // Reintenta los pánicos que quedaron en cola sin conexión (H2 · F1)
+  SeguridadService.sincronizarPanicosPendientes();
+  SeguridadService.iniciarReintentoPeriodico();
+
   runApp(const MueveteApp());
 }
 
@@ -125,9 +135,7 @@ class MueveteApp extends StatelessWidget {
             initialRoute: '/',
             builder: (context, child) {
               return NotificationOverlay(
-                child: UpdateChecker(
-                  child: child ?? const SizedBox.shrink(),
-                ),
+                child: UpdateChecker(child: child ?? const SizedBox.shrink()),
               );
             },
             routes: {
@@ -148,8 +156,7 @@ class MueveteApp extends StatelessWidget {
               '/client/request-history': (context) =>
                   const RequestHistoryScreen(),
               '/driver/home': (context) => const DriverHomeScreen(),
-              '/driver/requests': (context) =>
-                  const IncomingRequestsScreen(),
+              '/driver/requests': (context) => const IncomingRequestsScreen(),
               '/driver/active-ride': (context) => const ActiveRideScreen(),
               '/driver/wallet': (context) => const DriverWalletScreen(),
               '/shipper/home': (context) => const ShipperHomeScreen(),
@@ -161,10 +168,30 @@ class MueveteApp extends StatelessWidget {
               '/dispatcher/home': (context) => const DispatcherHomeScreen(),
               '/dispatcher/profile': (context) => const UnifiedProfileScreen(),
               '/planes': (context) {
-                final args = ModalRoute.of(context)!.settings.arguments
-                    as Map<String, dynamic>?;
+                final args =
+                    ModalRoute.of(context)!.settings.arguments
+                        as Map<String, dynamic>?;
                 final tipo = args?['tipoUsuario'] as String? ?? 'shipper';
                 return PlanesScreen(tipoUsuario: tipo);
+              },
+              // H1 · identidad y consentimiento
+              '/identidad/onboarding': (context) =>
+                  const OnboardingIdentidadScreen(),
+              '/identidad/consentimiento': (context) =>
+                  const ConsentimientoScreen(),
+              // H2 · seguridad del viaje
+              '/seguridad': (context) => const MiSeguridadScreen(),
+              '/seguridad/contactos': (context) =>
+                  const ContactosEmergenciaScreen(),
+              '/seguridad/reporte': (context) {
+                final args = ModalRoute.of(context)!.settings.arguments;
+                var solicitudId = 0;
+                if (args is Map) {
+                  solicitudId = (args['solicitudId'] as num?)?.toInt() ?? 0;
+                } else if (args is int) {
+                  solicitudId = args;
+                }
+                return ReporteIncidenteScreen(solicitudId: solicitudId);
               },
             },
           );

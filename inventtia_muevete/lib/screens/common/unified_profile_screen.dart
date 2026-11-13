@@ -1026,10 +1026,96 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen>
                 onDownload: _downloadOfflineMap,
               ),
             const SizedBox(height: 24),
+            _buildSeguridadCard(isDark),
+            const SizedBox(height: 24),
             _buildSignOutButton(),
             const SizedBox(height: 24),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Accesos a identidad, documentos legales y seguridad del viaje (H1 / H2).
+  Widget _buildSeguridadCard(bool isDark) {
+    final textPrimary = AppTheme.textPrimary(isDark);
+    final textSecondary = AppTheme.textSecondary(isDark);
+
+    Widget fila({
+      required IconData icon,
+      required String titulo,
+      required String subtitulo,
+      required String ruta,
+      Color? color,
+    }) {
+      return ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(icon, color: color ?? AppTheme.primaryColor, size: 22),
+        title: Text(
+          titulo,
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: textPrimary,
+          ),
+        ),
+        subtitle: Text(
+          subtitulo,
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 11.5,
+            color: textSecondary,
+          ),
+        ),
+        trailing: const Icon(Icons.chevron_right, size: 20),
+        onTap: () async {
+          await Navigator.pushNamed(context, ruta);
+          if (mounted) setState(() {});
+        },
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppTheme.card(isDark),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppTheme.border(isDark)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 10, bottom: 4),
+            child: Text(
+              'Seguridad y privacidad',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: textSecondary,
+              ),
+            ),
+          ),
+          fila(
+            icon: Icons.health_and_safety_outlined,
+            titulo: 'Mi seguridad',
+            subtitulo: 'Contactos de emergencia, 106 y reportes',
+            ruta: '/seguridad',
+          ),
+          Divider(height: 1, color: AppTheme.border(isDark)),
+          fila(
+            icon: Icons.badge_outlined,
+            titulo: 'Verificar mi identidad',
+            subtitulo: 'Carnet, fotos y datos de contacto',
+            ruta: '/identidad/onboarding',
+          ),
+          Divider(height: 1, color: AppTheme.border(isDark)),
+          fila(
+            icon: Icons.description_outlined,
+            titulo: 'Privacidad y términos',
+            subtitulo: 'Documentos legales y consentimientos',
+            ruta: '/identidad/consentimiento',
+          ),
+        ],
       ),
     );
   }

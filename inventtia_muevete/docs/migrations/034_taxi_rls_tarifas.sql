@@ -103,6 +103,16 @@ GRANT INSERT, UPDATE, DELETE ON muevete.zonas_tarifa      TO authenticated;
 GRANT INSERT, UPDATE, DELETE ON muevete.tarifas_municipio TO authenticated;
 GRANT UPDATE                 ON muevete.configuracion_tarifas TO authenticated;
 
+-- Refuerzo (hallazgo en la BD de prueba): los privilegios por defecto del
+-- esquema en Supabase conceden ALL a anon/authenticated sobre las tablas nuevas
+-- (pg_default_acl = arwdDxtm). El GRANT de arriba no quita lo heredado, así que
+-- `authenticated` conservaba INSERT/DELETE/TRUNCATE sobre el singleton.
+-- Se recorta explícitamente para que coincida con lo documentado.
+REVOKE INSERT, DELETE, TRUNCATE, REFERENCES, TRIGGER
+  ON muevete.configuracion_tarifas FROM authenticated;
+REVOKE INSERT, DELETE, TRUNCATE, REFERENCES, TRIGGER
+  ON muevete.configuracion_tarifas FROM anon;
+
 -- ----------------------------------------------------------------------------
 -- 6. Permisos de ejecución de las RPC de lectura/cotización
 --    (032 ya los concede; se repiten aquí de forma idempotente para que este

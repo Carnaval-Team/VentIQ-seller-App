@@ -215,6 +215,31 @@ class AppDrawer extends StatelessWidget {
                       title: 'Gestión de Cargas',
                       route: '/muevete/cargas',
                     ),
+                    _DrawerItem(
+                      icon: Icons.local_taxi_rounded,
+                      title: 'Tarifas y Zonas',
+                      route: '/muevete/tarifas',
+                    ),
+                    _DrawerItem(
+                      icon: Icons.polyline_rounded,
+                      title: 'Zonas y Polígonos',
+                      route: '/muevete/zonas',
+                    ),
+                    _DrawerItem(
+                      icon: Icons.directions_car_filled_rounded,
+                      title: 'Catálogo de Vehículos',
+                      route: '/muevete/vehiculos',
+                    ),
+                    _DrawerItem(
+                      icon: Icons.gavel_rounded,
+                      title: 'Documentos y Consentimientos',
+                      route: '/muevete/documentos',
+                    ),
+                    _DrawerItem(
+                      icon: Icons.shield_rounded,
+                      title: 'Incidentes y Bloqueos',
+                      route: '/muevete/incidentes',
+                    ),
                   ],
                 ),
                 _buildMenuSection(

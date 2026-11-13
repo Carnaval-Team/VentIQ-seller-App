@@ -283,8 +283,16 @@ CREATE INDEX IF NOT EXISTS solicitudes_pendientes_idx
 --    tiempo_espera_segundos.
 -- ----------------------------------------------------------------------------
 
--- 6.1 Ampliación de tipo (metadata-only en PostgreSQL 11+). Guardado para
---     que un segundo pase del archivo no falle ni dependa del estado previo.
+-- 6.1 Ampliación de tipo (metadata-only en PostgreSQL 11+).
+--     OJO: PostgreSQL rechaza ALTER TYPE de una columna referenciada por una
+--     política RLS ("0A000: cannot alter type of a column used in a policy
+--     definition"). En muevete.viajes hay 3 políticas que usan driver_id.
+--     Se eliminan, se altera el tipo y se recrean IDÉNTICAS en la misma
+--     transacción, para que un fallo posterior las deje como estaban.
+DROP POLICY IF EXISTS driver_own_viajes    ON muevete.viajes;
+DROP POLICY IF EXISTS viajes_select_driver ON muevete.viajes;
+DROP POLICY IF EXISTS viajes_update_driver ON muevete.viajes;
+
 DO $$
 BEGIN
   IF EXISTS (
@@ -295,6 +303,19 @@ BEGIN
     ALTER TABLE muevete.viajes ALTER COLUMN driver_id TYPE bigint;
   END IF;
 END $$;
+
+-- Recreación exacta. Sin cláusula TO => PUBLIC, como estaban definidas.
+CREATE POLICY driver_own_viajes ON muevete.viajes
+  FOR ALL
+  USING (driver_id IN (SELECT drivers.id FROM muevete.drivers WHERE drivers.uuid = auth.uid()));
+
+CREATE POLICY viajes_select_driver ON muevete.viajes
+  FOR SELECT
+  USING (driver_id IN (SELECT drivers.id FROM muevete.drivers WHERE drivers.uuid = auth.uid()));
+
+CREATE POLICY viajes_update_driver ON muevete.viajes
+  FOR UPDATE
+  USING (driver_id IN (SELECT drivers.id FROM muevete.drivers WHERE drivers.uuid = auth.uid()));
 
 -- 6.2 Columnas nuevas
 ALTER TABLE muevete.viajes

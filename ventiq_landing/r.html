@@ -652,6 +652,13 @@
             var GESTURE_REARM_MS = 1200;      // re-armado de gestos
             var STORE_NAV_DELAY_MS = 350;     // deja ver el toast antes de salir
 
+            // Captura de respaldo: la visita se registra en Supabase con un token
+            // único para que el alta en la app pueda recuperar el código aunque el
+            // portapapeles falle. Ver supabase/migrations/..._referral_capture_*.sql
+            var VISIT_TOKEN_KEY = "carnaval_visit_token";
+            var VISIT_TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // uno por código y día
+            var REFERRAL_REGISTER_RPC = "fn_referral_visit_register";
+
             /* ============================================================
                1. Tracking blindado.
                Si tracking.js / supabase.min.js no cargan (offline, adblock),
@@ -673,9 +680,9 @@
             var isIOS = /iPad|iPhone|iPod/.test(ua) ||
                 (nav.platform === "MacIntel" && nav.maxTouchPoints > 1);
             var isAndroid = /Android/i.test(ua);
-            // La tienda oficial es el único destino: Google Play en Android.
-            var STORE_URL = isIOS ? APPSTORE_URL : PLAY_URL;
-            var STORE_LABEL = isIOS ? "App Store" : "Google Play";
+            var PLATFORM = isIOS ? "iOS" : (isAndroid ? "Android" : "Desktop");
+            // La URL de tienda y el token de visita se resuelven en la sección 4.1,
+            // cuando ya se conoce el código de invitación.
 
             /* ============================================================
                3. Nodos del DOM
@@ -791,6 +798,94 @@
             var payload = code ? (CLIPBOARD_PREFIX + code) : "";
 
             /* ============================================================
+               4.1 Token único de visita + registro en Supabase.
+               NO identifica al teléfono ni a la persona: es un UUID v4 por
+               visita y código, guardado 24 h en localStorage. Su único fin es
+               que el servidor reconozca la visita si el portapapeles no llega
+               a la app: al crear la cuenta, un trigger compara IP/teléfono y
+               escribe el referido si hay una única coincidencia.
+               Si la RPC todavía no existe (SQL sin aplicar) falla en silencio.
+               ============================================================ */
+            function uuidV4() {
+                try {
+                    if (window.crypto && typeof window.crypto.randomUUID === "function") {
+                        return window.crypto.randomUUID();
+                    }
+                } catch (_) { }
+                var chars = "0123456789abcdef", out = [], i;
+                for (i = 0; i < 36; i++) { out[i] = chars.charAt(Math.floor(Math.random() * 16)); }
+                out[14] = "4";
+                out[19] = "89ab".charAt(Math.floor(Math.random() * 4));
+                return out.join("").replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, "$1-$2-$3-$4-$5");
+            }
+
+            function readVisitToken(code) {
+                try {
+                    var store = getStore("local");
+                    var raw = store ? store.getItem(VISIT_TOKEN_KEY) : null;
+                    if (!raw) { return ""; }
+                    var saved = JSON.parse(raw);
+                    if (!saved || typeof saved !== "object") { return ""; }
+                    if (normalizeCode(saved.code) !== code) { return ""; }
+                    if (!saved.token || typeof saved.token !== "string") { return ""; }
+                    if (!(Date.now() - Number(saved.at || 0) < VISIT_TOKEN_TTL_MS)) { return ""; }
+                    return saved.token;
+                } catch (_) { return ""; }
+            }
+
+            function ensureVisitToken(code) {
+                var saved = readVisitToken(code);
+                if (saved) { return saved; }
+                var token = uuidV4();
+                try {
+                    var store = getStore("local");
+                    if (store) {
+                        store.setItem(VISIT_TOKEN_KEY, JSON.stringify({
+                            code: code, token: token, at: Date.now()
+                        }));
+                    }
+                } catch (_) { }
+                return token;
+            }
+
+            // Enlace de Play con Install Referrer: deja el token de la visita
+            // dentro del referrer para que la app (cuando lo lea) sepa a qué fila
+            // corresponde. Hoy no cambia el destino ni añade dependencias.
+            function playUrlWithVisit(code, token) {
+                try {
+                    var referrer = "ref=" + encodeURIComponent(code) +
+                                   "&v=" + encodeURIComponent(token) +
+                                   "&src=landing";
+                    return PLAY_URL + "&referrer=" + encodeURIComponent(referrer);
+                } catch (_) { return PLAY_URL; }
+            }
+
+            function registerReferralVisit(code, token) {
+                if (!code || !token) { return; }
+                try {
+                    var vt = window.VentiqTracking;
+                    var client = (vt && typeof vt.getClient === "function") ? vt.getClient() : null;
+                    if (!client || typeof client.rpc !== "function") { return; }
+                    var request = client.rpc(REFERRAL_REGISTER_RPC, {
+                        p_ref_code: code,
+                        p_visit_token: token,
+                        p_platform: PLATFORM,
+                        p_user_agent: String(ua || "").slice(0, 300)
+                    });
+                    // Tolerante: si aún no se aplicó el SQL, no rompe la página.
+                    if (request && typeof request.then === "function") {
+                        request.then(function () { }, function () { });
+                    }
+                } catch (_) { }
+            }
+
+            var visitToken = code ? ensureVisitToken(code) : "";
+            var STORE_URL = isIOS
+                ? APPSTORE_URL
+                : (code && visitToken ? playUrlWithVisit(code, visitToken) : PLAY_URL);
+            var STORE_LABEL = isIOS ? "App Store" : "Google Play";
+
+            /* ============================================================
                5. UI base
                ============================================================ */
             if (ctaText) {
@@ -809,6 +904,9 @@
                 if (manualText) { manualText.value = payload; }
                 if (manualBox) { manualBox.hidden = false; }
                 track("referral_visit", { code: code });
+                // Respaldo del portapapeles: la visita queda registrada en
+                // Supabase y el alta del usuario la resuelve por IP/teléfono.
+                registerReferralVisit(code, visitToken);
             }
 
             /* ============================================================

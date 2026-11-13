@@ -1,38 +1,210 @@
 import 'dart:math';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import '../models/transport_request_model.dart';
-import '../models/driver_offer_model.dart';
-import '../models/notification_model.dart';
-import 'notification_service.dart';
 
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../models/tarifa_model.dart';
+
+/// Acceso a las RPC del flujo de taxi con precio fijo.
+///
+/// Contrato: `docs/plan-taxi-precio-fijo/13-contrato-app-rpc.md`.
+/// **Regla de oro: desde aquí nunca se envía un precio.** No existe parámetro
+/// de precio en ninguna firma; si el cliente lo intentara, el servidor
+/// recotiza y lo ignora.
 class TransportRequestService {
   final SupabaseClient _supabase = Supabase.instance.client;
-  RealtimeChannel? _offersChannel;
+
   RealtimeChannel? _solicitudChannel;
-  RealtimeChannel? _ofertaUpdateChannel;
+  RealtimeChannel? _disponiblesChannel;
 
-  /// Creates a new transport request in muevete.solicitudes_transporte.
-  Future<Map<String, dynamic>> createRequest(TransportRequestModel request) async {
-    final response = await _supabase
+  // ── Catálogo de vehículos (v_catalogo_vehiculos) ─────────────────────────
+
+  /// Lee `muevete.v_catalogo_vehiculos` (ya viene ordenado por `orden`).
+  ///
+  /// Columnas: `id`, `tipo`, `nombre`, `orden`, `pasajeros_max`, `categoria`.
+  /// `id` es lo que se manda como `p_id_tipo`.
+  Future<List<CatalogoVehiculo>> catalogoVehiculos() async {
+    final rows = await _supabase
         .schema('muevete')
-        .from('solicitudes_transporte')
-        .insert(request.toJson())
-        .select()
-        .single();
+        .from('v_catalogo_vehiculos')
+        .select('id, tipo, nombre, orden, pasajeros_max, categoria');
 
-    return response;
+    return List<Map<String, dynamic>>.from(rows)
+        .map(CatalogoVehiculo.fromJson)
+        .where((v) => v.id > 0)
+        .toList();
   }
 
-  /// Cancels a transport request by setting its estado to 'cancelada'.
-  Future<void> cancelRequest(int requestId) async {
-    await _supabase
-        .schema('muevete')
-        .from('solicitudes_transporte')
-        .update({'estado': 'cancelada'})
-        .eq('id', requestId);
+  // ── §3.1 fn_cotizar_viaje — preview (no escribe nada) ────────────────────
+
+  /// Cotiza el viaje. Devuelve el jsonb crudo de `fn_cotizar_viaje`; la UI
+  /// lo mapea con [Cotizacion.fromJson].
+  Future<Map<String, dynamic>> cotizar({
+    required double latOrigen,
+    required double lonOrigen,
+    required double latDestino,
+    required double lonDestino,
+    required int idTipo,
+    DateTime? at,
+    double? km,
+    String? provincia,
+    String? municipio,
+  }) async {
+    final res = await _supabase.schema('muevete').rpc(
+      'fn_cotizar_viaje',
+      params: {
+        'p_lat_o': latOrigen,
+        'p_lon_o': lonOrigen,
+        'p_lat_d': latDestino,
+        'p_lon_d': lonDestino,
+        'p_id_tipo': idTipo,
+        'p_at': (at ?? DateTime.now()).toUtc().toIso8601String(),
+        'p_km': km,
+        'p_provincia': provincia,
+        'p_municipio': municipio,
+      },
+    );
+
+    if (res is Map) return Map<String, dynamic>.from(res);
+    return const <String, dynamic>{};
   }
 
-  /// Fetches the active (pending) transport request for a given user UUID.
+  // ── §3.2 fn_crear_solicitud — publicar ──────────────────────────────────
+
+  /// Publica la solicitud. El precio lo calcula el servidor; devuelve la fila
+  /// completa de `muevete.solicitudes_transporte`.
+  Future<Map<String, dynamic>> crearSolicitud({
+    required double latOrigen,
+    required double lonOrigen,
+    required double latDestino,
+    required double lonDestino,
+    required int idTipo,
+    required String dirOrigen,
+    required String dirDestino,
+    required double km,
+    required String metodoPago, // 'efectivo' | 'wallet'
+    String? provincia,
+    String? municipio,
+    int pasajeros = 1,
+  }) async {
+    final res = await _supabase.schema('muevete').rpc(
+      'fn_crear_solicitud',
+      params: {
+        'p_lat_o': latOrigen,
+        'p_lon_o': lonOrigen,
+        'p_lat_d': latDestino,
+        'p_lon_d': lonDestino,
+        'p_id_tipo': idTipo,
+        'p_dir_o': dirOrigen,
+        'p_dir_d': dirDestino,
+        'p_km': km,
+        'p_metodo_pago': metodoPago,
+        'p_provincia': provincia,
+        'p_municipio': municipio,
+        'p_pasajeros': pasajeros,
+      },
+    );
+
+    if (res is Map) return Map<String, dynamic>.from(res);
+    if (res is List && res.isNotEmpty && res.first is Map) {
+      return Map<String, dynamic>.from(res.first as Map);
+    }
+    return const <String, dynamic>{};
+  }
+
+  // ── §3.3 fn_viajes_disponibles — lista del chofer ───────────────────────
+
+  /// Viajes disponibles para el chofer autenticado (`setof jsonb`).
+  Future<List<ViajeDisponible>> viajesDisponibles({
+    double? lat,
+    double? lon,
+    int limite = 30,
+  }) async {
+    final res = await _supabase.schema('muevete').rpc(
+      'fn_viajes_disponibles',
+      params: {
+        'p_lat': lat,
+        'p_lon': lon,
+        'p_limite': limite,
+      },
+    );
+
+    final rows = res is List ? res : const <dynamic>[];
+    return rows
+        .whereType<Map>()
+        .map((row) => ViajeDisponible.fromJson(Map<String, dynamic>.from(row)))
+        .where((v) => v.solicitudId > 0)
+        .toList();
+  }
+
+  // ── §3.4 fn_tomar_viaje — el primero gana ───────────────────────────────
+
+  /// Toma el viaje. Si otro chofer llegó primero lanza `P0020 ya_tomado`.
+  Future<Map<String, dynamic>> tomarViaje(int solicitudId) async {
+    final res = await _supabase.schema('muevete').rpc(
+      'fn_tomar_viaje',
+      params: {'p_solicitud_id': solicitudId},
+    );
+
+    if (res is Map) return Map<String, dynamic>.from(res);
+    return const <String, dynamic>{};
+  }
+
+  // ── §3.5 fn_completar_viaje — cerrar (no recibe precio) ─────────────────
+
+  /// Cierra el viaje. Idempotente: la cola offline puede repetir la llamada.
+  /// `p_espera_min` sólo se usa si el viaje no trae espera medida en servidor.
+  Future<Map<String, dynamic>> completarViaje(
+    int viajeId, {
+    int? esperaMin,
+  }) async {
+    final res = await _supabase.schema('muevete').rpc(
+      'fn_completar_viaje',
+      params: {
+        'p_viaje_id': viajeId,
+        'p_espera_min': esperaMin,
+      },
+    );
+
+    if (res is Map) return Map<String, dynamic>.from(res);
+    return const <String, dynamic>{};
+  }
+
+  // ── §3.6 fn_cancelar_solicitud — cancelar (idempotente) ─────────────────
+
+  Future<Map<String, dynamic>> cancelarSolicitud(
+    int solicitudId, {
+    String? motivo,
+  }) async {
+    final res = await _supabase.schema('muevete').rpc(
+      'fn_cancelar_solicitud',
+      params: {
+        'p_solicitud_id': solicitudId,
+        'p_motivo': motivo,
+      },
+    );
+
+    if (res is Map) return Map<String, dynamic>.from(res);
+    return const <String, dynamic>{};
+  }
+
+  // ── Lecturas de apoyo ───────────────────────────────────────────────────
+
+  /// Devuelve la fila pública de una solicitud concreta, o null.
+  Future<Map<String, dynamic>?> solicitudPorId(int solicitudId) async {
+    try {
+      final row = await _supabase
+          .schema('muevete')
+          .from('solicitudes_transporte')
+          .select()
+          .eq('id', solicitudId)
+          .maybeSingle();
+      return row == null ? null : Map<String, dynamic>.from(row);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Solicitud pendiente más reciente del usuario (para reanudar el flujo).
   Future<Map<String, dynamic>?> getActiveRequest(String userId) async {
     final response = await _supabase
         .schema('muevete')
@@ -47,14 +219,46 @@ class TransportRequestService {
     return response;
   }
 
-  /// Queries muevete.place (online drivers) with JOIN to muevete.drivers
-  /// for name and image. Filters by Haversine distance client-side.
+  /// Datos de contacto del cliente (nombre y teléfono) para el chofer.
+  Future<Map<String, dynamic>?> clienteDeUsuario(String userId) async {
+    try {
+      final row = await _supabase
+          .schema('muevete')
+          .from('users')
+          .select('name, phone')
+          .eq('uuid', userId)
+          .maybeSingle();
+      return row == null ? null : Map<String, dynamic>.from(row);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Best-effort: viaje (`viajes.id`) asociado a una solicitud.
+  /// Si la columna no existe en este despliegue devuelve null.
+  Future<int?> viajeDeSolicitud(int solicitudId) async {
+    try {
+      final row = await _supabase
+          .schema('muevete')
+          .from('viajes')
+          .select('id, completado')
+          .eq('solicitud_id', solicitudId)
+          .eq('completado', false)
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+      return (row?['id'] as num?)?.toInt();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Conductores en línea cerca de un punto (para el mapa).
   Future<List<Map<String, dynamic>>> getNearbyDrivers(
     double lat,
     double lon,
     double radiusKm,
   ) async {
-    // Single JOIN: place -> drivers (name, image, categoria)
     final response = await _supabase
         .schema('muevete')
         .from('place')
@@ -94,13 +298,11 @@ class TransportRequestService {
     return nearbyDrivers;
   }
 
-  /// Enriches an offer data map with full driver + vehicle info.
+  /// Enriches a driver data map with full driver + vehicle info.
   /// Joins: drivers -> vehiculos for marca/modelo/chapa/color.
-  /// Also counts completed offers for trip count.
-  Future<void> _enrichOfferData(
+  Future<void> _enrichDriverData(
       Map<String, dynamic> data, dynamic driverId) async {
     try {
-      // drivers JOIN vehiculos (via drivers.vehiculo FK)
       final driverRow = await _supabase
           .schema('muevete')
           .from('drivers')
@@ -127,7 +329,7 @@ class TransportRequestService {
         data['vehicle_color'] = veh?['color'];
       }
 
-      // Fetch average rating from valoraciones_viaje
+      // Average rating from valoraciones_viaje
       try {
         final ratingRows = await _supabase
             .schema('muevete')
@@ -142,158 +344,42 @@ class TransportRequestService {
         }
       } catch (_) {}
 
-      // Count completed trips: ofertas aceptadas where the solicitud is completada
-      final tripRows = await _supabase
-          .schema('muevete')
-          .from('ofertas_chofer')
-          .select('solicitud_id, solicitudes_transporte!ofertas_chofer_solicitud_id_fkey(estado)')
-          .eq('driver_id', driverId)
-          .eq('estado', 'aceptada');
-      int completedCount = 0;
-      for (final row in (tripRows as List)) {
-        final solicitud = row['solicitudes_transporte'] as Map<String, dynamic>?;
-        if (solicitud?['estado'] == 'completada') completedCount++;
+      // Completed trips: solicitudes completadas asignadas a este chofer.
+      try {
+        final tripRows = await _supabase
+            .schema('muevete')
+            .from('solicitudes_transporte')
+            .select('id')
+            .eq('driver_id', driverId)
+            .eq('estado', 'completada');
+        data['trip_count'] = List<dynamic>.from(tripRows).length;
+      } catch (_) {
+        data['trip_count'] = 0;
       }
-      data['trip_count'] = completedCount;
     } catch (_) {}
   }
 
-  /// Fetches detailed info for a single driver (name, image, vehicle, rating,
-  /// trip count). Used when tapping a driver marker on the map.
+  /// Datos del conductor (nombre, imagen, vehículo, rating, viajes).
+  /// Se usa para pintar al conductor que tomó la solicitud.
   Future<Map<String, dynamic>?> getDriverDetails(int driverId) async {
     final data = <String, dynamic>{'driver_id': driverId};
     try {
-      await _enrichOfferData(data, driverId);
+      await _enrichDriverData(data, driverId);
       return data;
     } catch (_) {
       return null;
     }
   }
 
-  /// Fetches all existing offers for a request, enriched with full driver info.
-  Future<List<DriverOfferModel>> getExistingOffers(int requestId) async {
-    final rows = await _supabase
-        .schema('muevete')
-        .from('ofertas_chofer')
-        .select('*')
-        .eq('solicitud_id', requestId)
-        .order('created_at', ascending: true);
+  // ── Realtime ────────────────────────────────────────────────────────────
 
-    final result = <DriverOfferModel>[];
-    for (final row in List<Map<String, dynamic>>.from(rows)) {
-      final enriched = Map<String, dynamic>.from(row);
-      final driverId = enriched['driver_id'];
-      if (driverId != null) await _enrichOfferData(enriched, driverId);
-      result.add(DriverOfferModel.fromJson(enriched));
-    }
-    return result;
-  }
-
-  /// Subscribes to driver offers for a given transport request using
-  /// Supabase Realtime on the muevete.ofertas_chofer table.
-  void subscribeToOffers(int requestId, Function(DriverOfferModel) onOffer) {
-    _offersChannel = _supabase
-        .channel('ofertas_chofer_$requestId')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.insert,
-          schema: 'muevete',
-          table: 'ofertas_chofer',
-          // Supabase Realtime filters require String values
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'solicitud_id',
-            value: requestId.toString(),
-          ),
-          callback: (payload) async {
-            final data = Map<String, dynamic>.from(payload.newRecord);
-            final driverId = data['driver_id'];
-            if (driverId != null) await _enrichOfferData(data, driverId);
-            final offer = DriverOfferModel.fromJson(data);
-            onOffer(offer);
-          },
-        )
-        .subscribe();
-  }
-
-  /// Accepts a driver offer: sets offer estado to 'aceptada' and
-  /// updates the parent request estado to 'aceptada'.
-  /// Returns the full solicitud row (contains destination coords).
-  Future<Map<String, dynamic>> acceptOffer(int offerId) async {
-    // Update the offer status
-    final offerResponse = await _supabase
-        .schema('muevete')
-        .from('ofertas_chofer')
-        .update({'estado': 'aceptada'})
-        .eq('id', offerId)
-        .select()
-        .single();
-
-    // Update the parent request and return full solicitud row
-    final solicitudId = offerResponse['solicitud_id'];
-    if (solicitudId != null) {
-      final solicitud = await _supabase
-          .schema('muevete')
-          .from('solicitudes_transporte')
-          .update({'estado': 'aceptada'})
-          .eq('id', solicitudId)
-          .select()
-          .single();
-
-      // Reject all other offers for this solicitud
-      await _supabase
-          .schema('muevete')
-          .from('ofertas_chofer')
-          .update({'estado': 'rechazada'})
-          .eq('solicitud_id', solicitudId)
-          .neq('id', offerId)
-          .neq('estado', 'aceptada');
-
-      // Reject all other pending offers this driver has with OTHER clients
-      final driverId = offerResponse['driver_id'];
-      if (driverId != null) {
-        await _supabase
-            .schema('muevete')
-            .from('ofertas_chofer')
-            .update({'estado': 'rechazada'})
-            .eq('driver_id', driverId)
-            .eq('estado', 'pendiente');
-      }
-
-      // Notify the driver that their offer was accepted
-      try {
-        final driverId = offerResponse['driver_id'];
-        if (driverId != null) {
-          // Get driver's auth UUID from muevete.drivers
-          final driverRow = await _supabase
-              .schema('muevete')
-              .from('drivers')
-              .select('uuid')
-              .eq('id', driverId)
-              .maybeSingle();
-          final driverUuid = driverRow?['uuid'] as String?;
-          if (driverUuid != null) {
-            await NotificationService().createNotification(
-              userUuid: driverUuid,
-              tipo: NotificationType.ofertaAceptada,
-              titulo: 'Oferta aceptada',
-              mensaje: 'Un pasajero aceptó tu oferta. Dirígete al punto de recogida.',
-              data: {'solicitud_id': solicitudId, 'oferta_id': offerId},
-            );
-          }
-        }
-      } catch (_) {}
-
-      return Map<String, dynamic>.from(solicitud);
-    }
-    return {};
-  }
-
-  /// Subscribes to UPDATE events on a specific solicitud.
-  /// [onEstadoChange] is called with the new estado string when it changes.
-  void subscribeToSolicitudChanges(
+  /// Escucha los cambios de estado de una solicitud concreta (cliente).
+  /// Llama a [onUpdate] con la fila nueva cuando cambia `estado`/`driver_id`.
+  void subscribeToSolicitud(
     int solicitudId,
-    void Function(String newEstado) onEstadoChange,
+    void Function(Map<String, dynamic> row) onUpdate,
   ) {
+    _solicitudChannel?.unsubscribe();
     _solicitudChannel = _supabase
         .channel('solicitud_$solicitudId')
         .onPostgresChanges(
@@ -306,56 +392,48 @@ class TransportRequestService {
             value: solicitudId.toString(),
           ),
           callback: (payload) {
-            final newEstado = payload.newRecord['estado'] as String?;
-            if (newEstado != null) onEstadoChange(newEstado);
+            onUpdate(Map<String, dynamic>.from(payload.newRecord));
           },
         )
         .subscribe();
   }
 
-  /// Subscribes to UPDATE events on ofertas for a solicitud.
-  /// [onOfertaUpdate] is called with the updated raw offer row.
-  void subscribeToOfertaUpdates(
-    int solicitudId,
-    void Function(Map<String, dynamic> row) onOfertaUpdate,
-  ) {
-    _ofertaUpdateChannel = _supabase
-        .channel('oferta_update_$solicitudId')
+  /// Escucha INSERT/UPDATE de `muevete.solicitudes_transporte` para refrescar
+  /// la lista de viajes disponibles del chofer (regla del §6 del contrato).
+  void subscribeToSolicitudesDisponibles(void Function() onCambio) {
+    _disponiblesChannel?.unsubscribe();
+    _disponiblesChannel = _supabase
+        .channel('driver_solicitudes_disponibles')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'muevete',
+          table: 'solicitudes_transporte',
+          callback: (_) => onCambio(),
+        )
         .onPostgresChanges(
           event: PostgresChangeEvent.update,
           schema: 'muevete',
-          table: 'ofertas_chofer',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'solicitud_id',
-            value: solicitudId.toString(),
-          ),
-          callback: (payload) {
-            onOfertaUpdate(Map<String, dynamic>.from(payload.newRecord));
-          },
+          table: 'solicitudes_transporte',
+          callback: (_) => onCambio(),
         )
         .subscribe();
   }
 
-  /// Removes all realtime subscriptions.
+  /// Baja todas las suscripciones abiertas.
   Future<void> unsubscribe() async {
-    if (_offersChannel != null) {
+    final solicitud = _solicitudChannel;
+    if (solicitud != null) {
       try {
-        await _supabase.removeChannel(_offersChannel!);
-      } catch (_) {}
-      _offersChannel = null;
-    }
-    if (_solicitudChannel != null) {
-      try {
-        await _supabase.removeChannel(_solicitudChannel!);
+        await _supabase.removeChannel(solicitud);
       } catch (_) {}
       _solicitudChannel = null;
     }
-    if (_ofertaUpdateChannel != null) {
+    final disponibles = _disponiblesChannel;
+    if (disponibles != null) {
       try {
-        await _supabase.removeChannel(_ofertaUpdateChannel!);
+        await _supabase.removeChannel(disponibles);
       } catch (_) {}
-      _ofertaUpdateChannel = null;
+      _disponiblesChannel = null;
     }
   }
 

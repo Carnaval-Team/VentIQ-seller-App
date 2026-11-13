@@ -7,6 +7,34 @@ class Helpers {
     return formatter.format(amount);
   }
 
+  /// Formatea un monto en CUP con separador de miles: `1 500 CUP`.
+  ///
+  /// Los montos enteros se muestran sin decimales (uso normal del peso
+  /// cubano); si el monto trae centavos se añaden con coma decimal.
+  static String formatCup(num amount) {
+    final value = amount.toDouble();
+    final negative = value < 0;
+    final totalCents = (value.abs() * 100).round();
+    final integerPart = totalCents ~/ 100;
+    final cents = totalCents % 100;
+
+    final digits = integerPart.toString();
+    final buffer = StringBuffer();
+    for (var i = 0; i < digits.length; i++) {
+      if (i > 0 && (digits.length - i) % 3 == 0) buffer.write(' ');
+      buffer.write(digits[i]);
+    }
+
+    final centsText = cents == 0 ? '' : ',${cents.toString().padLeft(2, '0')}';
+    return '${negative ? '-' : ''}$buffer$centsText CUP';
+  }
+
+  /// Igual que [formatCup] pero con signo explícito: `+225 CUP` / `-225 CUP`.
+  static String formatCupSigned(num amount) {
+    final prefix = amount < 0 ? '-' : '+';
+    return '$prefix${formatCup(amount.abs())}';
+  }
+
   /// Format distance in km
   static String formatDistance(double km) {
     if (km < 1) {

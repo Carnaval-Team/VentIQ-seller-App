@@ -10,9 +10,15 @@ import '../../providers/theme_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../utils/constants.dart';
+import '../../utils/gate_seguridad.dart';
+import '../../utils/helpers.dart';
 import '../../widgets/map_widget.dart';
 import 'driver_offers_screen.dart';
 
+/// Vista previa de la ruta con el precio calculado por la plataforma.
+///
+/// El monto es de SÓLO LECTURA: no hay campo de precio, slider ni botón de
+/// ofertar. El cliente elige tipo de vehículo, pasajeros y método de pago.
 class RoutePreviewScreen extends StatefulWidget {
   const RoutePreviewScreen({super.key});
 
@@ -22,88 +28,103 @@ class RoutePreviewScreen extends StatefulWidget {
 
 class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
   final MapController _mapController = MapController();
-  final TextEditingController _offerController = TextEditingController();
-  String _selectedPaymentMethod = 'Efectivo';
-  bool _userEditedPrice = false;
+  String _metodoPago = 'efectivo';
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final transportProvider = context.read<TransportProvider>();
-      transportProvider.calculateRoute();
-      transportProvider.loadVehicleTypes();
-      transportProvider.startVehicleTypesRealtime();
-      _offerController.text = transportProvider.offerPrice.toStringAsFixed(2);
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _inicializar());
   }
 
   @override
   void dispose() {
-    _offerController.dispose();
     _mapController.dispose();
     super.dispose();
   }
 
-  void _onSendRequest() async {
-    final transportProvider = context.read<TransportProvider>();
-    final authProvider = context.read<AuthProvider>();
-    final walletProvider = context.read<WalletProvider>();
+  Future<void> _inicializar() async {
+    final tp = context.read<TransportProvider>();
+    tp.loadVehicleTypes();
+    tp.startVehicleTypesRealtime();
 
-    // Update offer price from text field, enforce vehicle minimum
-    final price = double.tryParse(_offerController.text);
-    if (price != null) {
-      final vt = transportProvider.selectedVehicleType;
-      final distKm = transportProvider.routeDistanceKm;
-      final minPrice = vt?.precioInsideSc ??
-          (distKm > 0 ? (vt?.precioKmDefault ?? 0) * distKm : 0);
-      if (price < minPrice) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('La oferta mínima es \$${minPrice.toStringAsFixed(2)}'),
-          ),
-        );
-        _offerController.text = minPrice.toStringAsFixed(2);
-        transportProvider.setOfferPrice(minPrice.toDouble());
-        return;
-      }
-      transportProvider.setOfferPrice(price);
+    await tp.cargarCatalogoVehiculos();
+    if (!mounted) return;
+
+    await tp.calculateRoute();
+    if (!mounted) return;
+
+    // Si la ruta no llegó a cotizar (o el catálogo cargó después), forzamos.
+    if (tp.cotizacion == null) {
+      await tp.cotizar();
     }
+  }
 
-    // If wallet selected, check sufficient balance
-    if (_selectedPaymentMethod == 'Wallet') {
-      final userId = authProvider.user?.id ?? '';
-      await walletProvider.loadClientBalance(userId);
-      final finalPrice = double.tryParse(_offerController.text) ?? transportProvider.offerPrice;
-      if (!walletProvider.hasSufficientBalance(finalPrice)) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Saldo insuficiente. Tienes \$${walletProvider.balance.toStringAsFixed(2)} y necesitas \$${finalPrice.toStringAsFixed(2)}',
-              ),
-              backgroundColor: AppTheme.error,
-            ),
-          );
-        }
-        return;
-      }
-      transportProvider.setPaymentMethod('wallet');
+  Future<void> _reintentarCotizacion() async {
+    final tp = context.read<TransportProvider>();
+    if (tp.cotizacion == null) {
+      await tp.cotizar();
     } else {
-      transportProvider.setPaymentMethod('efectivo');
+      await tp.calculateRoute();
+    }
+  }
+
+  void _mostrarMensaje(String texto, {bool error = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(texto, style: GoogleFonts.plusJakartaSans()),
+        backgroundColor: error ? AppTheme.error : AppTheme.success,
+      ),
+    );
+  }
+
+  Future<void> _onSolicitar() async {
+    final tp = context.read<TransportProvider>();
+    final auth = context.read<AuthProvider>();
+    final wallet = context.read<WalletProvider>();
+    final cotizacion = tp.cotizacion;
+    if (cotizacion == null) {
+      _mostrarMensaje('Espera a que se calcule la tarifa.', error: true);
+      return;
     }
 
-    final userId = authProvider.user?.id ?? '';
-    await transportProvider.sendRequest(userId);
-
-    if (mounted && transportProvider.state == TransportState.waitingOffers) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => const DriverOffersScreen(),
-        ),
-      );
+    if (_metodoPago == 'wallet') {
+      final userId = auth.user?.id ?? '';
+      await wallet.loadClientBalance(userId);
+      if (!mounted) return;
+      if (!wallet.hasSufficientBalance(cotizacion.precioPlataforma)) {
+        _mostrarMensaje(
+          'Saldo insuficiente: necesitas '
+          '${Helpers.formatCup(cotizacion.precioPlataforma)} y tienes '
+          '${Helpers.formatCup(wallet.balance)}.',
+          error: true,
+        );
+        return;
+      }
+      tp.setPaymentMethod('wallet');
+    } else {
+      tp.setPaymentMethod('efectivo');
     }
+
+    final ok = await tp.crearSolicitud();
+    if (!mounted) return;
+    if (!ok) {
+      // P0050 / P0053 / P0110: en vez de un snackbar genérico, abrir la
+      // pantalla que falta (perfil, consentimiento o contacto de emergencia).
+      final abierto =
+          await GateSeguridad.desdeCodigoError(context, tp.errorClave);
+      if (!mounted) return;
+      if (!abierto) {
+        _mostrarMensaje(tp.error ?? 'No se pudo publicar el viaje.',
+            error: true);
+      }
+      return;
+    }
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => const DriverOffersScreen()),
+    );
   }
 
   @override
@@ -116,16 +137,6 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
     final dropoff = transportProvider.dropoffLocation;
     final polyline = transportProvider.routePolyline;
 
-    // Sync offer controller whenever vehicle type or route changes,
-    // unless the user has manually edited the price field.
-    if (!_userEditedPrice && transportProvider.offerPrice > 0) {
-      final priceStr = transportProvider.offerPrice.toStringAsFixed(2);
-      if (_offerController.text != priceStr) {
-        _offerController.text = priceStr;
-      }
-    }
-
-    // Build markers list
     final markers = <Marker>[];
     if (pickup != null) {
       markers.add(
@@ -190,15 +201,15 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
       );
     }
 
-    // Build polylines list
     final polylines = <Polyline>[];
     if (polyline != null && polyline.isNotEmpty) {
       polylines.addAll([
-        // White border
         Polyline(points: polyline, strokeWidth: 7.0, color: Colors.white),
-        // Blue line
         Polyline(
-            points: polyline, strokeWidth: 4.0, color: AppTheme.primaryColor),
+          points: polyline,
+          strokeWidth: 4.0,
+          color: AppTheme.primaryColor,
+        ),
       ]);
     }
 
@@ -226,7 +237,7 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
             ),
             const SizedBox(width: 8),
             Text(
-              'En linea',
+              'En línea',
               style: GoogleFonts.plusJakartaSans(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
@@ -239,7 +250,6 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
       ),
       body: Stack(
         children: [
-          // Full-screen map
           Positioned.fill(
             child: MapWidget(
               isDark: isDark,
@@ -252,13 +262,11 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
             ),
           ),
 
-          // Loading indicator
           if (transportProvider.state == TransportState.calculatingRoute)
             const Center(
               child: CircularProgressIndicator(color: AppTheme.primaryColor),
             ),
 
-          // Route info card pinned at top
           Positioned(
             top: 0,
             left: 0,
@@ -266,17 +274,16 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
             child: _buildRouteInfoCard(isDark, transportProvider),
           ),
 
-          // Draggable bottom sheet
           DraggableScrollableSheet(
-            initialChildSize: 0.45,
-            minChildSize: 0.08,
-            maxChildSize: 0.75,
+            initialChildSize: 0.58,
+            minChildSize: 0.12,
+            maxChildSize: 0.92,
             snap: true,
-            snapSizes: const [0.08, 0.45, 0.75],
+            snapSizes: const [0.12, 0.58, 0.92],
             builder: (context, scrollController) {
               return Container(
                 decoration: BoxDecoration(
-                  color: isDark ? AppTheme.darkSurface : Colors.white,
+                  color: AppTheme.surface(isDark),
                   borderRadius:
                       const BorderRadius.vertical(top: Radius.circular(24)),
                   boxShadow: [
@@ -288,7 +295,10 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
                   ],
                 ),
                 child: _buildBottomSheet(
-                    isDark, transportProvider, scrollController),
+                  isDark,
+                  transportProvider,
+                  scrollController,
+                ),
               );
             },
           ),
@@ -298,12 +308,14 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
   }
 
   Widget _buildRouteInfoCard(
-      bool isDark, TransportProvider transportProvider) {
+    bool isDark,
+    TransportProvider transportProvider,
+  ) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: isDark ? AppTheme.darkSurface : Colors.white,
+        color: AppTheme.surface(isDark),
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
@@ -315,7 +327,6 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
       ),
       child: Row(
         children: [
-          // Dots and dashed line
           Column(
             children: [
               Container(
@@ -347,17 +358,16 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
             ],
           ),
           const SizedBox(width: 14),
-          // Addresses
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  transportProvider.pickupAddress ?? 'Ubicacion actual',
+                  transportProvider.pickupAddress ?? 'Ubicación actual',
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.white : Colors.black87,
+                    color: AppTheme.textPrimary(isDark),
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -368,7 +378,7 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.white : Colors.black87,
+                    color: AppTheme.textPrimary(isDark),
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -376,7 +386,6 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
               ],
             ),
           ),
-          // Edit button
           IconButton(
             onPressed: () => Navigator.pop(context),
             icon: const Icon(
@@ -391,403 +400,663 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
   }
 
   Widget _buildBottomSheet(
-      bool isDark,
-      TransportProvider transportProvider,
-      ScrollController scrollController) {
-    return SingleChildScrollView(
+    bool isDark,
+    TransportProvider tp,
+    ScrollController scrollController,
+  ) {
+    final cotizacion = tp.cotizacion;
+    final precio = cotizacion?.precioPlataforma ?? 0;
+
+    return ListView(
       controller: scrollController,
-      child: Container(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+      children: [
+        Center(
+          child: Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppTheme.shimmer(isDark),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Icon(
+              Icons.verified_outlined,
+              size: 18,
+              color: AppTheme.primaryColor,
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                'Precio calculado por la plataforma',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.textPrimary(isDark),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'El monto no se negocia: es la tarifa oficial del viaje.',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 12,
+            color: AppTheme.textTertiary(isDark),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // ── Tipo de vehículo ─────────────────────────────────────────────
+        Text(
+          'Tipo de vehículo',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: AppTheme.textSecondary(isDark),
+          ),
+        ),
+        const SizedBox(height: 8),
+        _buildSelectorVehiculos(isDark, tp),
+        const SizedBox(height: 18),
+
+        // ── Pasajeros ────────────────────────────────────────────────────
+        Row(
+          children: [
+            Text(
+              'Pasajeros',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textSecondary(isDark),
+              ),
+            ),
+            const Spacer(),
+            _buildStepperPasajeros(isDark, tp),
+          ],
+        ),
+        const SizedBox(height: 18),
+
+        // ── Desglose de precio (sólo lectura) ───────────────────────────
+        _buildTarjetaPrecio(isDark, tp),
+        const SizedBox(height: 16),
+
+        // ── Método de pago ───────────────────────────────────────────────
+        Text(
+          'Método de pago',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: AppTheme.textSecondary(isDark),
+          ),
+        ),
+        const SizedBox(height: 8),
+        _buildSelectorPago(isDark),
+        const SizedBox(height: 18),
+
+        // ── CTA ──────────────────────────────────────────────────────────
+        SizedBox(
+          width: double.infinity,
+          height: 54,
+          child: ElevatedButton(
+            onPressed: (cotizacion == null ||
+                    tp.state == TransportState.requesting)
+                ? null
+                : _onSolicitar,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primaryColor,
+              foregroundColor: Colors.white,
+              disabledBackgroundColor: AppTheme.primaryColor.withValues(
+                alpha: 0.35,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+              elevation: 0,
+            ),
+            child: tp.state == TransportState.requesting
+                ? const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2.5,
+                    ),
+                  )
+                : FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      cotizacion == null
+                          ? 'Solicitar viaje'
+                          : 'Solicitar viaje · ${Helpers.formatCup(precio)}',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Center(
+          child: Text(
+            'Al solicitar aceptas las tarifas vigentes de Muévete.',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 11,
+              color: AppTheme.textTertiary(isDark),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ── Selector de vehículos ───────────────────────────────────────────────
+
+  Widget _buildSelectorVehiculos(bool isDark, TransportProvider tp) {
+    if (tp.cargandoCatalogo && tp.catalogoVehiculos.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 24),
+        child: Center(
+          child: SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(strokeWidth: 2.4),
+          ),
+        ),
+      );
+    }
+
+    if (tp.catalogoVehiculos.isEmpty) {
+      return _buildAviso(
+        isDark,
+        icono: Icons.directions_car_outlined,
+        mensaje: tp.errorCatalogo ?? 'No hay tipos de vehículo disponibles.',
+        accion: 'Reintentar',
+        onAccion: () => tp.cargarCatalogoVehiculos(force: true),
+      );
+    }
+
+    return SizedBox(
+      height: 92,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: tp.catalogoVehiculos.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        itemBuilder: (context, i) {
+          final vehiculo = tp.catalogoVehiculos[i];
+          final seleccionado = tp.vehiculoSeleccionado?.id == vehiculo.id;
+          return GestureDetector(
+            onTap: () => tp.setVehiculo(vehiculo),
+            child: Container(
+              width: 104,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              decoration: BoxDecoration(
+                color: seleccionado
+                    ? AppTheme.primaryColor.withValues(alpha: 0.12)
+                    : AppTheme.card(isDark),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: seleccionado
+                      ? AppTheme.primaryColor
+                      : AppTheme.border(isDark),
+                  width: seleccionado ? 2 : 1,
+                ),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    vehiculo.icon,
+                    size: 26,
+                    color: seleccionado
+                        ? AppTheme.primaryColor
+                        : AppTheme.iconColor(isDark),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    vehiculo.nombre,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: seleccionado
+                          ? AppTheme.primaryColor
+                          : AppTheme.textPrimary(isDark),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${vehiculo.pasajerosMax} pas.',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 10,
+                      color: AppTheme.textTertiary(isDark),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // ── Stepper de pasajeros ────────────────────────────────────────────────
+
+  Widget _buildStepperPasajeros(bool isDark, TransportProvider tp) {
+    final max = tp.pasajerosMax;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
       decoration: BoxDecoration(
-        color: isDark ? AppTheme.darkSurface : Colors.white,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.15),
-            blurRadius: 15,
-            offset: const Offset(0, -4),
+        color: AppTheme.card(isDark),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.border(isDark)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            onPressed: tp.pasajeros > 1
+                ? () => tp.setPasajeros(tp.pasajeros - 1)
+                : null,
+            icon: const Icon(Icons.remove, size: 18),
+            tooltip: 'Quitar pasajero',
+          ),
+          SizedBox(
+            width: 26,
+            child: Text(
+              '${tp.pasajeros}',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: AppTheme.textPrimary(isDark),
+              ),
+            ),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            onPressed: tp.pasajeros < max
+                ? () => tp.setPasajeros(tp.pasajeros + 1)
+                : null,
+            icon: const Icon(Icons.add, size: 18),
+            tooltip: 'Añadir pasajero',
           ),
         ],
       ),
-      child: SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Handle bar
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: isDark ? Colors.white24 : Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
+    );
+  }
+
+  // ── Tarjeta de precio (sólo lectura) ────────────────────────────────────
+
+  Widget _buildTarjetaPrecio(bool isDark, TransportProvider tp) {
+    final cotizacion = tp.cotizacion;
+
+    if (tp.cotizando || (cotizacion == null && tp.errorCotizacion == null)) {
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 28),
+        decoration: BoxDecoration(
+          color: AppTheme.card(isDark),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppTheme.border(isDark)),
+        ),
+        child: const Center(
+          child: SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(strokeWidth: 2.4),
+          ),
+        ),
+      );
+    }
+
+    if (cotizacion == null) {
+      return _buildAviso(
+        isDark,
+        icono: Icons.error_outline,
+        mensaje: tp.errorCotizacion ??
+            'No se pudo calcular la tarifa del viaje.',
+        accion: 'Reintentar',
+        onAccion: _reintentarCotizacion,
+      );
+    }
+
+    final recargo = cotizacion.recargoNocturno;
+    final base = cotizacion.precioAntesRedondeo - recargo;
+
+    return Container(
+      key: const Key('precio_plataforma_readonly'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.card(isDark),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.border(isDark)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.lock_outline,
+                size: 15,
+                color: AppTheme.textTertiary(isDark),
               ),
-            ),
-            const SizedBox(height: 16),
-            // Header
-            Text(
-              'Selecciona transporte',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: isDark ? Colors.white : Colors.black87,
-              ),
-            ),
-            const SizedBox(height: 14),
-            // Vehicle options from DB — horizontal scrollable.
-            // Keep showing the spinner while the list is empty so the user
-            // never sees a blank box: either the request is in flight, or it
-            // finished with no results and we'll keep retrying via realtime.
-            if (transportProvider.loadingVehicleTypes ||
-                transportProvider.vehicleTypes.isEmpty)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24),
-                  child: CircularProgressIndicator(
-                    color: AppTheme.primaryColor,
-                    strokeWidth: 2.5,
-                  ),
-                ),
-              )
-            else
-              SizedBox(
-                height: 90,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: transportProvider.vehicleTypes.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 10),
-                  itemBuilder: (context, i) {
-                    final vt = transportProvider.vehicleTypes[i];
-                    final isSelected =
-                        transportProvider.selectedVehicleType?.id == vt.id;
-                    final distKm = transportProvider.routeDistanceKm;
-                    final displayPrice = vt.precioInsideSc ??
-                        (distKm > 0 ? vt.precioKmDefault * distKm : vt.precioKmDefault);
-                    final totalPrice = distKm > 0
-                        ? '\$${displayPrice.toStringAsFixed(2)}'
-                        : '\$${vt.precioKmDefault.toStringAsFixed(2)}/km';
-                    final eta = distKm > 0
-                        ? vt.etaString(distKm)
-                        : '— min';
-                    return _buildVehicleOption(
-                      isDark: isDark,
-                      icon: vt.icon,
-                      label: vt.displayName,
-                      price: totalPrice,
-                      isSelected: isSelected,
-                      badgeText: eta,
-                      onTap: () => context
-                          .read<TransportProvider>()
-                          .setVehicleType(vt),
-                    );
-                  },
-                ),
-              ),
-            const SizedBox(height: 16),
-            // Offer price input
-            Text(
-              'Tu Oferta',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: isDark ? Colors.white70 : Colors.grey[700],
-              ),
-            ),
-            const SizedBox(height: 8),
-            TextFormField(
-              controller: _offerController,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-                color: isDark ? Colors.white : Colors.black87,
-              ),
-              decoration: InputDecoration(
-                prefixText: '\$ ',
-                prefixStyle: GoogleFonts.plusJakartaSans(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.primaryColor,
-                ),
-                filled: true,
-                fillColor: isDark ? AppTheme.darkCard : Colors.grey[100],
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(
-                    color: isDark ? AppTheme.darkBorder : Colors.grey[300]!,
-                  ),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(
-                    color: isDark ? AppTheme.darkBorder : Colors.grey[300]!,
-                  ),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(
-                    color: AppTheme.primaryColor,
-                    width: 2,
-                  ),
-                ),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              ),
-              onChanged: (value) {
-                _userEditedPrice = true;
-                final price = double.tryParse(value);
-                if (price != null) {
-                  context.read<TransportProvider>().setOfferPrice(price);
-                }
-              },
-            ),
-            const SizedBox(height: 8),
-            // Average rates link
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton(
-                onPressed: () {
-                  // Show average rates
-                },
-                style: TextButton.styleFrom(
-                  padding: EdgeInsets.zero,
-                  minimumSize: const Size(0, 30),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
+              const SizedBox(width: 6),
+              Expanded(
                 child: Text(
-                  'Ver tarifas promedio',
+                  cotizacion.zonaEtiqueta,
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 13,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.textPrimary(isDark),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  cotizacion.tarifaModoEtiqueta,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
                     color: AppTheme.primaryColor,
-                    decoration: TextDecoration.underline,
                   ),
                 ),
               ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          _filaDesglose(
+            isDark,
+            etiqueta: 'Tarifa de la zona',
+            detalle: '${cotizacion.kmTotal.toStringAsFixed(1)} km',
+            valor: Helpers.formatCup(base),
+          ),
+          _filaDesglose(
+            isDark,
+            etiqueta: 'Recargo nocturno',
+            valor: cotizacion.esNocturno && recargo > 0
+                ? Helpers.formatCupSigned(recargo)
+                : '—',
+            resaltado: cotizacion.esNocturno && recargo > 0,
+          ),
+          if (cotizacion.aplicaPrecioCorto)
+            _filaDesglose(
+              isDark,
+              etiqueta: 'Precio corto aplicado',
+              detalle: 'trayecto corto',
+              valor: 'Incluido',
+              resaltado: true,
             ),
-            const SizedBox(height: 12),
-            // Payment method selector
-            Row(
+          const Divider(height: 20),
+          _filaDesglose(
+            isDark,
+            etiqueta: 'Subtotal',
+            valor: Helpers.formatCup(cotizacion.precioAntesRedondeo),
+          ),
+          _filaDesglose(
+            isDark,
+            etiqueta: 'Redondeo',
+            valor: cotizacion.redondeoCup == 0
+                ? '—'
+                : Helpers.formatCupSigned(cotizacion.redondeoCup),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: Text(
+                  'TOTAL',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.6,
+                    color: AppTheme.textSecondary(isDark),
+                  ),
+                ),
+              ),
+              Text(
+                Helpers.formatCup(cotizacion.precioPlataforma),
+                key: const Key('precio_plataforma_valor'),
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 30,
+                  fontWeight: FontWeight.w800,
+                  color: AppTheme.textPrimary(isDark),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppTheme.success.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
               children: [
+                const Icon(
+                  Icons.account_balance_wallet_outlined,
+                  size: 16,
+                  color: AppTheme.success,
+                ),
+                const SizedBox(width: 8),
                 Expanded(
-                  child: GestureDetector(
-                    onTap: () => setState(() => _selectedPaymentMethod = 'Efectivo'),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        color: _selectedPaymentMethod == 'Efectivo'
-                            ? AppTheme.primaryColor.withValues(alpha: 0.15)
-                            : isDark ? AppTheme.darkCard : Colors.grey[100],
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: _selectedPaymentMethod == 'Efectivo'
-                              ? AppTheme.primaryColor
-                              : isDark ? AppTheme.darkBorder : Colors.grey[300]!,
-                          width: _selectedPaymentMethod == 'Efectivo' ? 2 : 1,
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.payments_outlined,
-                            color: _selectedPaymentMethod == 'Efectivo'
-                                ? AppTheme.primaryColor
-                                : isDark ? Colors.white70 : Colors.grey[700],
-                            size: 20),
-                          const SizedBox(width: 8),
-                          Text('Efectivo',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: _selectedPaymentMethod == 'Efectivo'
-                                  ? AppTheme.primaryColor
-                                  : isDark ? Colors.white : Colors.black87,
-                            )),
-                        ],
-                      ),
+                  child: Text(
+                    cotizacion.comisionMonto > 0
+                        ? 'Incluye ${Helpers.formatCup(cotizacion.comisionMonto)} '
+                            'de servicio de la plataforma'
+                        : 'Sin cargo de servicio',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.success,
                     ),
                   ),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => setState(() => _selectedPaymentMethod = 'Wallet'),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        color: _selectedPaymentMethod == 'Wallet'
-                            ? AppTheme.primaryColor.withValues(alpha: 0.15)
-                            : isDark ? AppTheme.darkCard : Colors.grey[100],
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: _selectedPaymentMethod == 'Wallet'
-                              ? AppTheme.primaryColor
-                              : isDark ? AppTheme.darkBorder : Colors.grey[300]!,
-                          width: _selectedPaymentMethod == 'Wallet' ? 2 : 1,
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.account_balance_wallet_outlined,
-                            color: _selectedPaymentMethod == 'Wallet'
-                                ? AppTheme.primaryColor
-                                : isDark ? Colors.white70 : Colors.grey[700],
-                            size: 20),
-                          const SizedBox(width: 8),
-                          Text('Wallet',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: _selectedPaymentMethod == 'Wallet'
-                                  ? AppTheme.primaryColor
-                                  : isDark ? Colors.white : Colors.black87,
-                            )),
-                        ],
-                      ),
-                    ),
+                Text(
+                  '${cotizacion.comisionPct.toStringAsFixed(0)}% servicio',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.textSecondary(isDark),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            // CTA Button
-            SizedBox(
-              width: double.infinity,
-              height: 54,
-              child: ElevatedButton(
-                onPressed: transportProvider.state ==
-                        TransportState.requesting
-                    ? null
-                    : _onSendRequest,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primaryColor,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  elevation: 0,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _filaDesglose(
+    bool isDark, {
+    required String etiqueta,
+    required String valor,
+    String? detalle,
+    bool resaltado = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Expanded(
+            child: RichText(
+              text: TextSpan(
+                text: etiqueta,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 13,
+                  color: AppTheme.textSecondary(isDark),
                 ),
-                child: transportProvider.state ==
-                        TransportState.requesting
-                    ? const SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2.5,
+                children: detalle == null
+                    ? null
+                    : [
+                        TextSpan(
+                          text: '  ·  $detalle',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 11,
+                            color: AppTheme.textTertiary(isDark),
+                          ),
                         ),
-                      )
-                    : Text(
-                        'Solicitar ${transportProvider.selectedVehicleType?.displayName ?? ''}',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
+                      ],
+              ),
+            ),
+          ),
+          Text(
+            valor,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: resaltado
+                  ? AppTheme.warning
+                  : AppTheme.textPrimary(isDark),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Selector de pago ────────────────────────────────────────────────────
+
+  Widget _buildSelectorPago(bool isDark) {
+    return Row(
+      children: [
+        Expanded(
+          child: _opcionPago(
+            isDark,
+            key: 'efectivo',
+            icono: Icons.payments_outlined,
+            etiqueta: 'Efectivo',
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _opcionPago(
+            isDark,
+            key: 'wallet',
+            icono: Icons.account_balance_wallet_outlined,
+            etiqueta: 'Wallet',
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _opcionPago(
+    bool isDark, {
+    required String key,
+    required IconData icono,
+    required String etiqueta,
+  }) {
+    final seleccionado = _metodoPago == key;
+    return GestureDetector(
+      onTap: () => setState(() => _metodoPago = key),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: seleccionado
+              ? AppTheme.primaryColor.withValues(alpha: 0.12)
+              : AppTheme.card(isDark),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color:
+                seleccionado ? AppTheme.primaryColor : AppTheme.border(isDark),
+            width: seleccionado ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icono,
+              size: 19,
+              color: seleccionado
+                  ? AppTheme.primaryColor
+                  : AppTheme.iconColor(isDark),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              etiqueta,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: seleccionado
+                    ? AppTheme.primaryColor
+                    : AppTheme.textPrimary(isDark),
               ),
             ),
           ],
         ),
       ),
-    ));
+    );
   }
 
-  Widget _buildVehicleOption({
-    required bool isDark,
-    required IconData icon,
-    required String label,
-    required String price,
-    required bool isSelected,
-    required String? badgeText,
-    required VoidCallback onTap,
+  // ── Aviso reutilizable (vacío / error) ──────────────────────────────────
+
+  Widget _buildAviso(
+    bool isDark, {
+    required IconData icono,
+    required String mensaje,
+    String? accion,
+    VoidCallback? onAccion,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 100,
-        height: 90,
-        padding: const EdgeInsets.symmetric(vertical: 0, horizontal: 8),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? AppTheme.primaryColor.withValues(alpha: 0.15)
-              : isDark
-                  ? AppTheme.darkCard
-                  : Colors.grey[100],
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: isSelected ? AppTheme.primaryColor : Colors.transparent,
-            width: 2,
-          ),
-        ),
-        child: Stack(
-          children: [
-            Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  icon,
-                  size: 28,
-                  color: isSelected
-                      ? AppTheme.primaryColor
-                      : isDark
-                          ? Colors.white70
-                          : Colors.grey[700],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  label,
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: isSelected
-                        ? AppTheme.primaryColor
-                        : isDark
-                            ? Colors.white
-                            : Colors.black87,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  price,
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: isSelected
-                        ? AppTheme.primaryColor
-                        : isDark
-                            ? Colors.white70
-                            : Colors.grey[700],
-                  ),
-                ),
-              ],
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.card(isDark),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppTheme.border(isDark)),
+      ),
+      child: Column(
+        children: [
+          Icon(icono, size: 28, color: AppTheme.textTertiary(isDark)),
+          const SizedBox(height: 8),
+          Text(
+            mensaje,
+            textAlign: TextAlign.center,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 13,
+              color: AppTheme.textSecondary(isDark),
             ),
-            if (badgeText != null)
-              Positioned(
-                top: 0,
-                right: 0,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: AppTheme.success,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    badgeText,
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
-                  ),
+          ),
+          if (accion != null && onAccion != null) ...[
+            const SizedBox(height: 10),
+            TextButton(
+              onPressed: onAccion,
+              child: Text(
+                accion,
+                style: GoogleFonts.plusJakartaSans(
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.primaryColor,
                 ),
               ),
+            ),
           ],
-        ),
+        ],
       ),
     );
   }

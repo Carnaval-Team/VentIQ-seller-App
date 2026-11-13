@@ -17,11 +17,20 @@
 --   5. solicitudes_transporte.pasajeros (+ check).
 --   6. Vista v_catalogo_vehiculos para la app.
 --
--- D-2 (corrección del Lead)
---   El seed de orden/nombre/capacidad se aplica SÓLO donde `orden IS NULL`.
---   Si el superadmin ya reordenó y este archivo se re-ejecuta, NO se pisa nada.
+-- D-2 / D-2b (corrección del Lead)
+--   El seed de orden/nombre/capacidad se aplica SÓLO a filas NUNCA sembradas,
+--   marcadas con `catalogo_sembrado_at IS NULL`. Si el superadmin ya reordenó
+--   y este archivo se re-ejecuta, NO se pisa nada.
 --   `orden` se añade NULLABLE, se siembra, se rellena lo que quede NULL y sólo
 --   al final se pone NOT NULL + DEFAULT.
+--
+--   D-2b: el marcador es una COLUMNA EXPLÍCITA, no una inferencia. La primera
+--   versión usaba `orden IS NULL OR nombre_ui IS NULL` y tenía dos agujeros:
+--     · las filas nacidas con el DEFAULT 100 de `orden` nunca eran NULL;
+--     · si el admin dejaba `nombre_ui` en NULL a propósito, la siguiente pasada
+--       le reescribía orden y capacidad.
+--   `catalogo_sembrado_at` cierra ambos. El backfill de §2.1 marca una sola vez
+--   las BD donde la versión anterior ya había corrido.
 --
 -- IDEMPOTENCIA
 --   CREATE TABLE/INDEX/VIEW .... IF NOT EXISTS / OR REPLACE
@@ -43,7 +52,11 @@ BEGIN;
 ALTER TABLE muevete.vehicle_type
   ADD COLUMN IF NOT EXISTS orden         smallint,               -- nullable de momento (D-2)
   ADD COLUMN IF NOT EXISTS pasajeros_max smallint NOT NULL DEFAULT 4,
-  ADD COLUMN IF NOT EXISTS nombre_ui     text;
+  ADD COLUMN IF NOT EXISTS nombre_ui     text,
+  -- D-2b: marcador EXPLÍCITO de "esta fila ya fue sembrada por 035".
+  -- No se infiere de nombre_ui/orden: si el admin los deja NULL a propósito,
+  -- una pasada futura le reescribiría el orden. Ver nota D-2b en la cabecera.
+  ADD COLUMN IF NOT EXISTS catalogo_sembrado_at timestamptz;
 
 DO $$
 BEGIN
@@ -74,16 +87,33 @@ COMMENT ON COLUMN muevete.vehicle_type.pasajeros_max IS
   'Máximo de pasajeros que este TIPO admite. El cliente filtra por pasajeros_max >= pasajeros elegidos.';
 COMMENT ON COLUMN muevete.vehicle_type.nombre_ui IS
   'Etiqueta visible. Permite renombrar (tuktuk -> "Triciclo Eléctrico") sin tocar la clave tipo.';
+COMMENT ON COLUMN muevete.vehicle_type.catalogo_sembrado_at IS
+  'INTERNA (D-2b). Instante en que 035 sembró esta fila. NULL = nunca sembrada → el seed puede escribirla. Una vez marcada, re-ejecutar 035 NO la toca aunque el admin deje nombre_ui/orden en NULL.';
 
 -- ----------------------------------------------------------------------------
--- 2. Seed del catálogo — SÓLO donde orden IS NULL (D-2)
---    Si el admin ya configuró el orden, este UPDATE no toca su fila.
+-- 2. Seed del catálogo — SÓLO donde `catalogo_sembrado_at IS NULL` (D-2/D-2b)
+--    Si el admin ya configuró la fila, este UPDATE no la toca.
 -- ----------------------------------------------------------------------------
+
+-- 2.1 Backfill ÚNICO del marcador para BD donde una versión anterior de 035 ya
+--     corrió (y por tanto el marcador todavía no existía). Se considera sembrada
+--     una fila que ya tiene etiqueta y orden: esa combinación sólo la produce
+--     un seed previo o una edición del admin, y en ambos casos NO hay que pisar.
+--     En una BD nueva este UPDATE no afecta a nadie (las filas de 033 nacieron
+--     antes de que existiera `nombre_ui`, así que lo tienen NULL).
+UPDATE muevete.vehicle_type
+   SET catalogo_sembrado_at = now()
+ WHERE catalogo_sembrado_at IS NULL
+   AND nombre_ui IS NOT NULL
+   AND orden IS NOT NULL;
+
+-- 2.2 Seed de las filas nunca sembradas
 UPDATE muevete.vehicle_type AS vt SET
-  nombre_ui     = v.nombre_ui,
-  orden         = v.orden,
-  pasajeros_max = v.pasajeros_max,
-  status        = v.status
+  nombre_ui            = v.nombre_ui,
+  orden                = v.orden,
+  pasajeros_max        = v.pasajeros_max,
+  status               = v.status,
+  catalogo_sembrado_at = now()
 FROM (VALUES
   -- tipo        nombre_ui               orden  pasajeros_max  status
   ('auto',      'Auto',                    10,   4,             true),
@@ -96,15 +126,18 @@ FROM (VALUES
   ('bicicleta', 'Bicicleta',              910,   1,             false)
 ) AS v(tipo, nombre_ui, orden, pasajeros_max, status)
 WHERE lower(vt.tipo) = v.tipo
-  AND vt.orden IS NULL;          -- ← D-2: no pisar lo que el admin ya ordenó
+  -- D-2/D-2b: el único criterio es el marcador explícito. No se infiere de
+  -- `orden` (existe con DEFAULT 100) ni de `nombre_ui` (el admin puede vaciarlo).
+  AND vt.catalogo_sembrado_at IS NULL;
 
--- Tipos no listados (presentes en prod y no contemplados arriba):
--- se les da etiqueta legible y una posición al final, sin tocar los sembrados.
+-- 2.3 Tipos no listados (presentes en prod y no contemplados arriba):
+--     etiqueta legible y posición al final, sin tocar los ya sembrados.
 UPDATE muevete.vehicle_type
-   SET nombre_ui     = coalesce(nombre_ui, initcap(tipo)),
-       orden         = 500,
-       pasajeros_max = coalesce(pasajeros_max, 4)
- WHERE orden IS NULL
+   SET nombre_ui            = coalesce(nombre_ui, initcap(tipo)),
+       orden                = coalesce(orden, 500),
+       pasajeros_max        = coalesce(pasajeros_max, 4),
+       catalogo_sembrado_at = now()
+ WHERE catalogo_sembrado_at IS NULL
    AND tipo IS NOT NULL;
 
 -- Cierre: garantizar que ninguna fila queda sin orden y fijar el contrato
@@ -184,7 +217,8 @@ SELECT
   vt.categoria,
   true                                      AS activo
 FROM muevete.vehicle_type vt
-WHERE coalesce(vt.status, true);
+WHERE coalesce(vt.status, true)
+ORDER BY vt.orden, vt.id;
 
 COMMENT ON VIEW muevete.v_catalogo_vehiculos IS
   'Catálogo visible en la app del cliente: ya ordenado y con etiqueta UI. Sólo tipos con status=true.';
@@ -213,6 +247,16 @@ COMMIT;
 --   UPDATE muevete.vehicle_type SET orden = 5 WHERE lower(tipo) = 'moto';
 --   -- (re-ejecutar este archivo)
 --   SELECT orden FROM muevete.vehicle_type WHERE lower(tipo) = 'moto';  -- 5
+--
+-- 3b) D-2b · el marcador es lo que protege. Vaciar nombre_ui a propósito y
+--     re-ejecutar: NO debe recuperar el orden de fábrica:
+--   UPDATE muevete.vehicle_type
+--      SET nombre_ui = NULL, orden = 77 WHERE lower(tipo) = 'minivan';
+--   -- (re-ejecutar este archivo)
+--   SELECT nombre_ui, orden FROM muevete.vehicle_type
+--    WHERE lower(tipo) = 'minivan';      -- NULL, 77
+--   -- restaurar: UPDATE muevete.vehicle_type SET nombre_ui='Minivan', orden=20
+--   --             WHERE lower(tipo)='minivan';
 --
 -- 4) Capacidad efectiva:
 --   SELECT muevete.fn_capacidad_vehiculo(<vehiculo_id>);
@@ -248,6 +292,7 @@ COMMIT;
 --   DROP CONSTRAINT IF EXISTS vehicle_type_pasajeros_chk,
 --   DROP COLUMN IF EXISTS nombre_ui,
 --   DROP COLUMN IF EXISTS pasajeros_max,
+--   DROP COLUMN IF EXISTS catalogo_sembrado_at,
 --   DROP COLUMN IF EXISTS orden;
 -- -- Los valores de status que se ocultaron NO se revierten automáticamente:
 -- -- volver a mostrarlos es una decisión de negocio (UPDATE ... SET status=true).

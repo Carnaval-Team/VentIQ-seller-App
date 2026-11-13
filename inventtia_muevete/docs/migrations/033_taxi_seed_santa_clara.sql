@@ -87,6 +87,33 @@ ON CONFLICT (provincia, municipio) DO UPDATE
       updated_at = now();
 
 -- ----------------------------------------------------------------------------
+-- 2.5 · Catálogo base de tipos de vehículo (idempotente)
+--    PROBLEMA DETECTADO EN LA BD DE PRUEBA: `muevete.vehicle_type` puede estar
+--    VACÍA en un entorno nuevo (los tipos nunca se versionaron; sólo existen en
+--    producción como datos). Sin filas, los multiplicadores de §3 y el catálogo
+--    de 035 no actualizan nada y el smoke test no puede cotizar.
+--    Aquí se insertan SÓLO los que falten, con las columnas que ya existen en
+--    este punto (031 sólo añadió multiplicador_tarifa; orden/nombre_ui/pasajeros_max
+--    llegan en 035 y los siembra ese archivo).
+-- ----------------------------------------------------------------------------
+INSERT INTO muevete.vehicle_type
+  (tipo, precio_km_default, precio_inside_sc, status, tiempo_min_por_km,
+   precio_espera_min, categoria)
+SELECT v.tipo, v.km, v.inside, v.status, v.tmin, v.espera, 'pasajero'
+FROM (VALUES
+  ('auto',      200::numeric, 800::numeric, true,  2.0::numeric, 40::numeric),
+  ('minivan',   250::numeric, 800::numeric, true,  2.2::numeric, 60::numeric),
+  ('microbus',  250::numeric, 800::numeric, true,  2.5::numeric, 60::numeric),
+  ('moto',      300::numeric, 500::numeric, true,  2.0::numeric, 100::numeric),
+  ('tuktuk',    200::numeric, 500::numeric, true,  2.5::numeric, 60::numeric),
+  ('camioneta', 250::numeric, NULL::numeric, false, 2.0::numeric, NULL::numeric),
+  ('bicicleta', 100::numeric, NULL::numeric, false, 5.0::numeric, NULL::numeric)
+) AS v(tipo, km, inside, status, tmin, espera)
+WHERE NOT EXISTS (
+  SELECT 1 FROM muevete.vehicle_type vt WHERE lower(vt.tipo) = v.tipo
+);
+
+-- ----------------------------------------------------------------------------
 -- 3. D2 · Multiplicador por tipo de vehículo (PLAN §2.5)
 --    7 tipos pasajeros activos en producción:
 --      moto 0.60 · auto 1.00 · microbus 1.50 · camioneta 1.20

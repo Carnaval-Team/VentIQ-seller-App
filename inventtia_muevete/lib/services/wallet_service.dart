@@ -1,7 +1,11 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class WalletService {
   final SupabaseClient _supabase = Supabase.instance.client;
+
+  /// Caché en memoria de `muevete.configuracion_tarifas` (singleton `id = 1`).
+  static Map<String, dynamic>? _configuracionCache;
 
   /// Fetches the client balance from muevete.suscription_user.
   /// Creates a row if one doesn't exist yet.
@@ -37,30 +41,89 @@ class WalletService {
     return (response['balance'] as num?)?.toDouble() ?? 0.0;
   }
 
-  /// Creates a pending recharge transaction for a client wallet.
-  /// Does NOT update the balance — it stays pending until admin approval.
-  /// Returns the transaction ID.
+  /// % de recarga configurado en el servidor (configuracion_tarifas.recarga_pct).
+  /// Se cachea en memoria: cambia como mucho por configuración del superadmin.
+  ///
+  /// Devuelve además `limite_deuda_efectivo`, `permite_deuda` y `moneda` para
+  /// que la billetera del chofer pinte el tope real de deuda. Si la consulta
+  /// falla devuelve valores seguros (`recarga_pct: 0`, sin deuda permitida)
+  /// sin cachearlos, para reintentar en la siguiente apertura.
+  Future<Map<String, dynamic>> configuracionRecarga() async {
+    final cache = _configuracionCache;
+    if (cache != null) return cache;
+
+    const defaults = <String, dynamic>{
+      'recarga_pct': 0,
+      'limite_deuda_efectivo': 0,
+      'permite_deuda': false,
+      'moneda': 'CUP',
+    };
+
+    try {
+      final row = await _supabase
+          .schema('muevete')
+          .from('configuracion_tarifas')
+          .select('recarga_pct, limite_deuda_efectivo, permite_deuda, moneda')
+          .eq('id', 1)
+          .maybeSingle();
+
+      if (row == null) return defaults;
+
+      final config = <String, dynamic>{
+        'recarga_pct': (row['recarga_pct'] as num?)?.toDouble() ?? 0,
+        'limite_deuda_efectivo':
+            (row['limite_deuda_efectivo'] as num?)?.toDouble() ?? 0,
+        'permite_deuda': row['permite_deuda'] as bool? ?? false,
+        'moneda': row['moneda']?.toString() ?? 'CUP',
+      };
+      _configuracionCache = config;
+      return config;
+    } catch (e) {
+      debugPrint('WalletService.configuracionRecarga error: $e');
+      return defaults;
+    }
+  }
+
+  /// Crea una recarga pendiente para el cliente a través de `fn_recargar_wallet`.
+  ///
+  /// [uuid] se conserva por compatibilidad con las pantallas existentes: el
+  /// servidor identifica al usuario por el token de sesión. El monto a pagar y
+  /// el % de recarga los calcula la RPC (`total_a_pagar`, `recarga_pct`); la
+  /// app ya no aplica ningún multiplicador.
   Future<int> addFunds(String uuid, double amount) async {
-    // Ensure wallet row exists
-    await getClientBalance(uuid);
+    final res = await recargar(metodo: 'efectivo', monto: amount);
+    return _transaccionId(res);
+  }
 
-    // amount = lo que se acredita al usuario
-    // El usuario debe pagar amount * 1.11 (recarga + 11% comisión)
-    final response = await _supabase
-        .schema('muevete')
-        .from('transacciones_wallet')
-        .insert({
-          'user_id': uuid,
-          'tipo': 'recarga',
-          'monto': amount,
-          'estado': 'pendiente',
-          'descripcion':
-              'Recarga de \$${amount.toStringAsFixed(2)} — pago total: \$${(amount * 1.11).toStringAsFixed(2)} (incluye 11% comisión)',
-        })
-        .select('id')
-        .single();
+  /// §3.7 `fn_recargar_wallet`.
+  ///
+  /// `total_a_pagar` ya incluye el % de recarga: la app no aplica ningún
+  /// multiplicador fijo (antes se duplicaba el porcentaje en Dart).
+  Future<Map<String, dynamic>> recargar({
+    required String metodo, // 'efectivo' | 'transferencia' | 'usd' ...
+    required double monto,
+    String? evidencia,
+  }) async {
+    final res = await _supabase.schema('muevete').rpc(
+      'fn_recargar_wallet',
+      params: {
+        'p_metodo': metodo,
+        'p_monto': monto,
+        'p_evidencia': evidencia,
+      },
+    );
+    if (res is Map) return Map<String, dynamic>.from(res);
+    return const <String, dynamic>{};
+  }
 
-    return response['id'] as int;
+  int _transaccionId(Map<String, dynamic> res) {
+    final id = (res['transaccion_id'] as num?)?.toInt();
+    if (id == null) {
+      throw Exception(
+        res['error']?.toString() ?? 'No se pudo registrar la recarga',
+      );
+    }
+    return id;
   }
 
   /// Fetches all wallet transactions for a given user UUID.
@@ -75,42 +138,13 @@ class WalletService {
     return List<Map<String, dynamic>>.from(response);
   }
 
-  /// Creates a pending recharge transaction for a driver wallet.
-  /// Does NOT update the balance — it stays pending until admin approval.
-  /// Returns the transaction ID.
+  /// Crea una recarga pendiente para el chofer vía `fn_recargar_wallet`.
+  ///
+  /// [driverId] se conserva por compatibilidad: la RPC decide si la recarga es
+  /// de chofer (`es_recarga_chofer`) según la sesión autenticada.
   Future<int> addDriverFunds(int driverId, double amount) async {
-    // Ensure wallet row exists
-    final existing = await _supabase
-        .schema('muevete')
-        .from('wallet_drivers')
-        .select('id')
-        .eq('driver_id', driverId)
-        .maybeSingle();
-
-    if (existing == null) {
-      await _supabase
-          .schema('muevete')
-          .from('wallet_drivers')
-          .insert({'driver_id': driverId, 'balance': 0});
-    }
-
-    // amount = lo que se acredita al conductor
-    // El conductor debe pagar amount * 1.11 (recarga + 11% comisión)
-    final response = await _supabase
-        .schema('muevete')
-        .from('transacciones_wallet')
-        .insert({
-          'driver_id': driverId,
-          'tipo': 'recarga',
-          'monto': amount,
-          'estado': 'pendiente',
-          'descripcion':
-              'Recarga de \$${amount.toStringAsFixed(2)} — pago total: \$${(amount * 1.11).toStringAsFixed(2)} (incluye 11% comisión)',
-        })
-        .select('id')
-        .single();
-
-    return response['id'] as int;
+    final res = await recargar(metodo: 'efectivo', monto: amount);
+    return _transaccionId(res);
   }
 
   /// Fetches all wallet transactions for a given driver ID.
@@ -176,8 +210,8 @@ class WalletService {
     return List<Map<String, dynamic>>.from(response);
   }
 
-  /// Holds (deducts) client funds when an offer is accepted (wallet payment).
-  /// Throws if insufficient balance.
+  /// LEGACY: la retención del cliente la hace `fn_tomar_viaje` en el servidor.
+  @Deprecated('La retención de wallet vive en fn_tomar_viaje (servidor).')
   Future<void> holdClientFunds(String clientUuid, double amount) async {
     final clientBalance = await getClientBalance(clientUuid);
     if (clientBalance < amount) {
@@ -192,8 +226,8 @@ class WalletService {
         .eq('user_id', clientUuid);
   }
 
-  /// Records the client wallet transaction after ride completion.
-  /// Funds were already deducted at holdClientFunds.
+  /// LEGACY: el movimiento lo registra `fn_completar_viaje`.
+  @Deprecated('El pago del viaje lo registra fn_completar_viaje (servidor).')
   Future<void> confirmClientPayment(
     String clientUuid, double amount, int viajeId) async {
     final currentBalance = await getClientBalance(clientUuid);
@@ -207,7 +241,9 @@ class WalletService {
     });
   }
 
-  /// Refunds held client funds (on cancellation).
+  /// LEGACY: el reembolso lo aplica `fn_cancelar_solicitud` y la RPC devuelve
+  /// `reembolso` y `saldo`.
+  @Deprecated('El reembolso lo aplica fn_cancelar_solicitud (servidor).')
   Future<void> refundClientFunds(
     String clientUuid, double amount, int solicitudId) async {
     final currentBalance = await getClientBalance(clientUuid);
@@ -228,84 +264,18 @@ class WalletService {
     });
   }
 
-  /// Charges the driver 15% commission on ride completion.
-  /// Throws if insufficient balance.
-  Future<void> chargeDriverCommission(
-    int driverId, double commission, int viajeId) async {
-    final driverBalance = await getDriverBalance(driverId);
-    if (driverBalance < commission) {
-      throw Exception(
-        'Saldo del conductor insuficiente para comisión de \$${commission.toStringAsFixed(2)}');
-    }
-
-    final newBalance = driverBalance - commission;
-    await _supabase
-        .schema('muevete')
-        .from('wallet_drivers')
-        .update({'balance': newBalance})
-        .eq('driver_id', driverId);
-
-    await _supabase.schema('muevete').from('transacciones_wallet').insert({
-      'driver_id': driverId,
-      'tipo': 'comision_viaje',
-      'monto': -commission,
-      'balance_despues': newBalance,
-      'viaje_id': viajeId,
-      'descripcion': 'Comisión 15% por viaje completado',
-    });
-  }
-
-  /// Credits the driver wallet with the ride fare minus 15% commission
-  /// when the client paid via wallet.
-  Future<void> creditDriverForWalletPayment(
-    int driverId, double rideFare, int viajeId) async {
-    final commission = rideFare * 0.15;
-    final netAmount = rideFare - commission;
-
-    final currentBalance = await getDriverBalance(driverId);
-    final newBalance = currentBalance + netAmount;
-
-    // Ensure wallet row exists
-    final existing = await _supabase
-        .schema('muevete')
-        .from('wallet_drivers')
-        .select('id')
-        .eq('driver_id', driverId)
-        .maybeSingle();
-
-    if (existing == null) {
-      await _supabase
-          .schema('muevete')
-          .from('wallet_drivers')
-          .insert({'driver_id': driverId, 'balance': newBalance});
-    } else {
-      await _supabase
-          .schema('muevete')
-          .from('wallet_drivers')
-          .update({'balance': newBalance})
-          .eq('driver_id', driverId);
-    }
-
-    await _supabase.schema('muevete').from('transacciones_wallet').insert({
-      'driver_id': driverId,
-      'tipo': 'pago_viaje',
-      'monto': netAmount,
-      'balance_despues': newBalance,
-      'viaje_id': viajeId,
-      'descripcion':
-          'Pago por viaje (tarifa \$${rideFare.toStringAsFixed(2)} - 15% comisión)',
-    });
-  }
-
-  /// Checks if driver has enough balance for 15% commission.
-  Future<bool> driverHasEnoughForCommission(
-    int driverId, double offerPrice) async {
-    final balance = await getDriverBalance(driverId);
-    return balance >= (offerPrice * 0.15);
-  }
+  // La comisión del chofer y su crédito los calcula y aplica
+  // `fn_completar_viaje` en el servidor: `chargeDriverCommission`,
+  // `creditDriverForWalletPayment` y `driverHasEnoughForCommission` se
+  // eliminaron de la app porque duplicaban esa aritmética.
 
   /// Processes ride completion payment via RPC (SECURITY DEFINER).
-  /// This bypasses RLS so the client can trigger driver wallet updates.
+  ///
+  /// LEGACY: el flujo de precio fijo cierra con `fn_completar_viaje`
+  /// (`TransportProvider.completarViaje`), que no recibe precios. Se mantiene
+  /// sólo para builds antiguas y viajes históricos; no debe llamarse desde el
+  /// flujo nuevo.
+  @Deprecated('Usa fn_completar_viaje vía TransportProvider.completarViaje.')
   Future<void> completeRidePaymentRpc({
     required String metodoPago,
     required String clientUuid,

@@ -44,6 +44,10 @@ dependencies:
   intl: any
   uuid: ^4.3.3
   url_launcher: ^6.3.0
+
+  # Hash SHA-256 de los documentos legales (mismo criterio que
+  # muevete.fn_doc_legal_hash(): encode(digest(contenido_md, 'sha256'), 'hex')).
+  crypto: ^3.0.6
   
   # Platform Detection
   universal_platform: ^1.1.0

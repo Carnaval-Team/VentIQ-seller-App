@@ -21,8 +21,10 @@ import '../../services/transport_request_service.dart';
 import '../../services/routing_service.dart';
 import '../../models/transport_request_model.dart';
 import '../../utils/constants.dart';
+import '../../utils/gate_seguridad.dart';
 import '../../widgets/client_drawer.dart';
 import '../../widgets/map_widget.dart';
+import '../../widgets/onboarding_checklist_fab.dart';
 import '../../widgets/transport_type_card.dart';
 import 'location_search_screen.dart';
 import 'ride_confirmed_screen.dart';
@@ -46,6 +48,10 @@ class _HomeMapScreenState extends State<HomeMapScreen>
   late Animation<double> _pulseAnimation;
 
   bool _mapCenteredOnUser = false;
+
+  /// Checklist de requisitos (perfil, consentimiento, contacto, KYC).
+  final GlobalKey<OnboardingChecklistFabState> _checklistKey =
+      GlobalKey<OnboardingChecklistFabState>();
 
   final TransportRequestService _requestService = TransportRequestService();
   final RoutingService _routingService = RoutingService();
@@ -201,33 +207,97 @@ class _HomeMapScreenState extends State<HomeMapScreen>
     }
   }
 
+  /// Carga el conductor asignado desde `solicitudes_transporte.driver_id`
+  /// (flujo de precio fijo: el conductor ya no sale de una oferta aceptada).
+  ///
+  /// Conserva la forma de `_activeSolicitudDriver` que consumen el panel y los
+  /// marcadores del mapa: `driver_id`, `drivers`, `precio`, `tiempo_estimado`.
   Future<void> _loadAcceptedTripDriver(int solicitudId) async {
+    Map<String, dynamic>? fila;
     try {
-      final offerRows = await Supabase.instance.client
-          .schema('muevete')
-          .from('ofertas_chofer')
-          .select('''
-            driver_id,
-            tiempo_estimado,
-            precio,
-            drivers!ofertas_chofer_driver_id_fkey(
-              id, name, image, telefono, kyc,
-              vehiculos!drivers_vehiculo_fkey(marca, modelo, chapa, color)
-            )
-          ''')
-          .eq('solicitud_id', solicitudId)
-          .eq('estado', 'aceptada')
-          .limit(1);
-
-      if (offerRows != null && (offerRows as List).isNotEmpty) {
-        setState(() {
-          _activeSolicitudDriver =
-              Map<String, dynamic>.from(offerRows.first);
-        });
-      }
+      fila = await _solicitudAsignadaConDriver(solicitudId);
     } catch (e, st) {
-      debugPrint('[HomeMap] _loadAcceptedTripDriver error: $e\n$st');
+      // Si el join por nombre de FK no está disponible, se resuelve en dos
+      // consultas: la solicitud y luego el driver con su vehículo.
+      debugPrint('[HomeMap] join driver error: $e\n$st');
+      try {
+        fila = await _solicitudAsignadaSinJoin(solicitudId);
+      } catch (e2, st2) {
+        debugPrint('[HomeMap] _loadAcceptedTripDriver error: $e2\n$st2');
+        return;
+      }
     }
+
+    if (fila == null) return;
+    final driverId = (fila['driver_id'] as num?)?.toInt();
+    if (driverId == null) return;
+
+    final driver = fila['drivers'] as Map<String, dynamic>?;
+    final precio = (fila['precio_plataforma'] as num?)?.toDouble();
+
+    if (!mounted) return;
+    setState(() {
+      _activeSolicitudDriver = {
+        'driver_id': driverId,
+        'drivers': driver,
+        'precio': precio,
+        // El ETA lo calcula el mapa con la posición real del conductor.
+        'tiempo_estimado': 0,
+      };
+    });
+  }
+
+  /// Solicitud + conductor + vehículo en una sola consulta (join por FK).
+  Future<Map<String, dynamic>?> _solicitudAsignadaConDriver(
+      int solicitudId) async {
+    final row = await Supabase.instance.client
+        .schema('muevete')
+        .from('solicitudes_transporte')
+        .select('''
+          driver_id, precio_plataforma, precio_chofer, comision_pct,
+          lat_origen, lon_origen, lat_destino, lon_destino,
+          direccion_origen, direccion_destino, metodo_pago,
+          drivers!solicitudes_transporte_driver_id_fkey(
+            id, name, image, telefono, kyc,
+            vehiculos!drivers_vehiculo_fkey(marca, modelo, chapa, color)
+          )
+        ''')
+        .eq('id', solicitudId)
+        .maybeSingle();
+
+    if (row == null) return null;
+    return Map<String, dynamic>.from(row);
+  }
+
+  /// Respaldo sin join por nombre de FK: solicitud + `drivers` (con vehículo).
+  Future<Map<String, dynamic>?> _solicitudAsignadaSinJoin(
+      int solicitudId) async {
+    final client = Supabase.instance.client;
+    final row = await client
+        .schema('muevete')
+        .from('solicitudes_transporte')
+        .select('driver_id, precio_plataforma, precio_chofer, comision_pct, '
+            'lat_origen, lon_origen, lat_destino, lon_destino, '
+            'direccion_origen, direccion_destino, metodo_pago')
+        .eq('id', solicitudId)
+        .maybeSingle();
+
+    if (row == null) return null;
+    final fila = Map<String, dynamic>.from(row);
+
+    final driverId = (fila['driver_id'] as num?)?.toInt();
+    if (driverId == null) return fila;
+
+    final driver = await client
+        .schema('muevete')
+        .from('drivers')
+        .select('id, name, image, telefono, kyc, '
+            'vehiculos!drivers_vehiculo_fkey(marca, modelo, chapa, color)')
+        .eq('id', driverId)
+        .maybeSingle();
+
+    fila['drivers'] = driver;
+    return fila;
   }
 
   Future<void> _loadActiveViajeStatus(String userId) async {
@@ -416,6 +486,8 @@ class _HomeMapScreenState extends State<HomeMapScreen>
   void _refreshAfterNav() {
     if (!mounted) return;
     _loadNearbyDrivers();
+    // Al volver de otra pantalla puede haberse completado algún requisito.
+    _checklistKey.currentState?.refresh();
     final uuid = context.read<AuthProvider>().user?.id;
     if (uuid != null) _checkActiveTrip(uuid);
   }
@@ -1218,9 +1290,14 @@ class _HomeMapScreenState extends State<HomeMapScreen>
                                   address: addr.direccion,
                                 );
                                 await tp.calculateRoute();
-                                if (mounted) {
-                                  nav.pushNamed('/client/route-preview');
-                                }
+                                if (!mounted) return;
+                                // Gate H1/H2: identidad → consentimiento →
+                                // contacto de emergencia. Si falta algo, abre
+                                // la pantalla que toca en vez de navegar.
+                                final habilitado =
+                                    await GateSeguridad.asegurar(context);
+                                if (!habilitado) return;
+                                nav.pushNamed('/client/route-preview');
                               },
                             ),
                           ],
@@ -1346,6 +1423,18 @@ class _HomeMapScreenState extends State<HomeMapScreen>
                   isDark: isDark,
                 ),
               ],
+            ),
+          ),
+
+          // Checklist de requisitos (H1/H2): acceso persistente mientras falte
+          // algo para operar. Va abajo a la izquierda, con margen, para no
+          // tapar los botones del mapa ni el panel del viaje en curso.
+          Positioned(
+            left: 16,
+            bottom: _hasActiveTrip ? 252 : 16,
+            child: OnboardingChecklistFab(
+              key: _checklistKey,
+              rol: 'cliente',
             ),
           ),
 

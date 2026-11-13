@@ -71,7 +71,7 @@ class _MueveteRequestsScreenState extends State<MueveteRequestsScreen> with Sing
                 labelColor: const Color(0xFF6366F1), unselectedLabelColor: const Color(0xFF94A3B8),
                 indicatorColor: const Color(0xFF6366F1), indicatorWeight: 2.5,
                 labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                tabs: [Tab(text: 'Solicitudes (${_requests.length})'), Tab(text: 'Ofertas (${_offers.length})')],
+                tabs: [Tab(text: 'Solicitudes (${_requests.length})'), Tab(text: 'Ofertas · histórico (${_offers.length})')],
               ),
             ),
           ])),
@@ -193,7 +193,31 @@ class _MueveteRequestsScreenState extends State<MueveteRequestsScreen> with Sing
   Widget _buildOffersTab(bool isDesktop) {
     return SingleChildScrollView(
       padding: EdgeInsets.all(isDesktop ? 32 : 16),
-      child: isDesktop ? _offersTable() : _offersCards(),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // El flujo de negociación ya no existe: esta pestaña es sólo histórico.
+        Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFFBEB),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFFDE68A)),
+          ),
+          child: const Row(children: [
+            Icon(Icons.history_rounded, size: 18, color: Color(0xFFB45309)),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Histórico del flujo anterior de negociación. Con el precio fijo por zonas '
+                'las ofertas ya no se usan: los choferes toman el viaje de una lista con el '
+                'precio que fija la plataforma. Esta pestaña es sólo de lectura.',
+                style: TextStyle(fontSize: 12.5, color: Color(0xFF92400E), height: 1.35),
+              ),
+            ),
+          ]),
+        ),
+        if (isDesktop) _offersTable() else _offersCards(),
+      ]),
     );
   }
 
