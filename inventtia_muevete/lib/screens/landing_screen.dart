@@ -7,6 +7,25 @@ import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../services/update_service.dart';
 import '../widgets/update_dialog_helper.dart';
+import 'legal/documento_legal_screen.dart';
+
+/// Mapea la etiqueta del footer al `codigo` de `muevete.documentos_legales`.
+/// Devuelve `null` para los enlaces que no son documentos legales.
+String? _codigoLegalDe(String etiqueta) {
+  switch (etiqueta.trim().toLowerCase()) {
+    case 'terminos':
+    case 'términos':
+    case 'terminos y condiciones':
+    case 'términos y condiciones':
+      return 'terminos';
+    case 'privacidad':
+    case 'politica de privacidad':
+    case 'política de privacidad':
+      return 'privacidad';
+    default:
+      return null;
+  }
+}
 
 class LandingScreen extends StatefulWidget {
   const LandingScreen({super.key});
@@ -1702,13 +1721,32 @@ class _FooterColumn extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         for (final link in links) ...[
-          Text(
-            link,
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 13,
-              fontWeight: FontWeight.w400,
-              color: AppTheme.textSecondary(isDark),
-            ),
+          Builder(
+            builder: (context) {
+              final estilo = GoogleFonts.plusJakartaSans(
+                fontSize: 13,
+                fontWeight: FontWeight.w400,
+                color: AppTheme.textSecondary(isDark),
+              );
+              final codigo = _codigoLegalDe(link);
+              final texto = Text(link, style: estilo);
+              if (codigo == null) return texto;
+              // Los documentos legales se abren sin sesión (RLS de 046).
+              return InkWell(
+                onTap: () => DocumentoLegalScreen.abrir(
+                  context,
+                  codigo: codigo,
+                  tituloRespaldo: link,
+                ),
+                child: Text(
+                  link,
+                  style: estilo.copyWith(
+                    decoration: TextDecoration.underline,
+                    color: AppTheme.primaryColor,
+                  ),
+                ),
+              );
+            },
           ),
           const SizedBox(height: 8),
         ],

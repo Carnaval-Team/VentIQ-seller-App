@@ -15,6 +15,8 @@ List<String> _lista(Object? value) {
         .where((e) => e.isNotEmpty)
         .toList(growable: false);
   }
+  // Por si el servidor devolviera un único texto en vez de un array.
+  if (value is String && value.trim().isNotEmpty) return <String>[value.trim()];
   return const <String>[];
 }
 
@@ -368,7 +370,14 @@ class IdentidadService {
 
   // ── Documentos legales y consentimiento ─────────────────────────────────
 
-  /// Documentos publicados y obligatorios desde `muevete.documentos_legales`.
+  /// Documentos **publicados, obligatorios y VIGENTES** desde
+  /// `muevete.documentos_legales`.
+  ///
+  /// OJO con `vigente_hasta`: al publicar una versión nueva (p. ej. `1.1.0`) la
+  /// anterior (`1.0.0`) queda `publicado = true` pero con `vigente_hasta` en el
+  /// pasado, para conservar el histórico y las aceptaciones. Si no se filtra por
+  /// vigencia, la pantalla de consentimiento listaba **las dos versiones** del
+  /// mismo documento y el usuario veía 6 tarjetas en vez de 3.
   Future<List<DocumentoLegal>> documentosLegales() async {
     try {
       final rows = await _supabase
@@ -376,13 +385,20 @@ class IdentidadService {
           .from('documentos_legales')
           .select(
             'codigo, version, titulo, resumen, contenido_md, '
-            'es_obligatorio, publicado',
+            'es_obligatorio, publicado, vigente_hasta',
           )
           .eq('publicado', true)
           .eq('es_obligatorio', true)
           .order('codigo');
 
+      final ahora = DateTime.now().toUtc();
       return List<Map<String, dynamic>>.from(rows)
+          .where((r) {
+            final hasta = r['vigente_hasta'];
+            if (hasta == null) return true;
+            final fecha = DateTime.tryParse(hasta.toString());
+            return fecha == null || fecha.isAfter(ahora);
+          })
           .map(DocumentoLegal.fromJson)
           .where((d) => d.codigo.isNotEmpty && d.version.isNotEmpty)
           .toList();

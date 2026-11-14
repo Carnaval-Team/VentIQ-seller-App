@@ -278,17 +278,111 @@ class MueveteService {
 
   // ─── KYC & DOCUMENT VERIFICATION ─────────────────────────────────────
 
-  /// Fetches drivers pending KYC review (revisado = false).
+  /// Columnas de `muevete.users` que consume la ficha KYC de cliente.
+  static const String _kycClientColumns =
+      'uuid, name, email, phone, ci, tipo_documento, doc_frente_url, '
+      'doc_dorso_url, province, municipality, poblado, direccion, '
+      'kyc_estado, kyc_motivo, kyc_revisado_at, created_at';
+
+  /// Clientes con KYC pendiente de revisión.
+  ///
+  /// Sólo se devuelven los que ya cargaron CI **y** las dos fotos del
+  /// documento: sin esos datos no hay nada que verificar, así que no deben
+  /// llegar al panel. Estados considerados pendientes: `pendiente` y
+  /// `en_revision`. Orden: el más antiguo primero (cola FIFO de revisión).
+  static Future<List<Map<String, dynamic>>> getPendingKycClients() async {
+    final rows = await _supabase
+        .schema('muevete')
+        .from('users')
+        .select(_kycClientColumns)
+        .not('ci', 'is', null)
+        .not('doc_frente_url', 'is', null)
+        .not('doc_dorso_url', 'is', null)
+        .inFilter('kyc_estado', ['pendiente', 'en_revision'])
+        .order('created_at', ascending: true);
+    return List<Map<String, dynamic>>.from(rows);
+  }
+
+  /// Conductores pendientes de revisión KYC (revisado = false).
+  ///
+  /// Se listan las columnas una a una (en vez de `*`) para dejar explícito
+  /// `uuid`, que es la llave que consume
+  /// `muevete.fn_kyc_revisar(p_rol => 'chofer')`. El resto de la consulta
+  /// (filtro y orden) se mantiene igual.
   static Future<List<Map<String, dynamic>>> getPendingKycDrivers() async {
     final rows = await _supabase
         .schema('muevete')
         .from('drivers')
         .select(
-          '*, vehiculos!drivers_vehiculo_fkey(marca, modelo, chapa, color)',
+          'id, uuid, name, email, telefono, ci, tipo_documento, '
+          'doc_frente_url, doc_dorso_url, province, municipality, poblado, '
+          'direccion, kyc, kyc_estado, revisado, motivo, '
+          'vehiculos!drivers_vehiculo_fkey(marca, modelo, chapa, color)',
         )
         .eq('revisado', false)
         .order('created_at', ascending: false);
     return List<Map<String, dynamic>>.from(rows);
+  }
+
+  /// Revisa el KYC de un cliente o de un chofer.
+  ///
+  /// Llama a `muevete.fn_kyc_revisar` (SECURITY DEFINER, exige
+  /// `muevete.is_superadmin()`), que es la única vía que escribe
+  /// `kyc_estado` en `users` (clientes) y en `drivers` (choferes).
+  /// [rol] es `'cliente'` o `'chofer'`; [decision] es `'aprobado'`,
+  /// `'rechazado'` o `'en_revision'`. [motivo] se guarda tal cual.
+  ///
+  /// Devuelve el jsonb de la RPC. Lanza [Exception] con mensaje en español.
+  static Future<Map<String, dynamic>> revisarKyc({
+    required String rol,
+    required String uuid,
+    required String decision,
+    String? motivo,
+  }) async {
+    try {
+      final res = await _supabase.schema('muevete').rpc(
+        'fn_kyc_revisar',
+        params: {
+          'p_rol': rol,
+          'p_uuid': uuid,
+          'p_decision': decision,
+          'p_motivo': motivo,
+        },
+      );
+      if (res is Map) return Map<String, dynamic>.from(res);
+      return <String, dynamic>{'success': true, 'rol': rol, 'uuid': uuid};
+    } on PostgrestException catch (e) {
+      debugPrint(
+        '[MueveteService.revisarKyc] rol=$rol decision=$decision '
+        'code=${e.code} message=${e.message}',
+      );
+      throw Exception(_detalleKyc(e));
+    } on AuthException catch (e) {
+      debugPrint('[MueveteService.revisarKyc] auth=${e.message}');
+      throw Exception(
+        'La sesión expiró o no es válida. Vuelve a iniciar sesión.',
+      );
+    } catch (e) {
+      debugPrint('[MueveteService.revisarKyc] $e');
+      throw Exception('No se pudo guardar la revisión: $e');
+    }
+  }
+
+  /// Traduce los errores de `fn_kyc_revisar` a español de Cuba.
+  static String _detalleKyc(PostgrestException e) {
+    switch (e.code) {
+      case 'P0045':
+        // usuario_no_existe / chofer_no_existe: la fila ya no está.
+        return 'Ese usuario ya no existe';
+      case '42501':
+        return 'No tienes permisos de superadministrador';
+      case 'P0001':
+        return 'La base de datos rechazó la revisión: ${e.message}';
+      case '42883':
+        return 'La función de revisión KYC no está desplegada';
+      default:
+        return 'No se pudo guardar la revisión: ${e.message}';
+    }
   }
 
   /// Approves a driver KYC.
@@ -403,6 +497,16 @@ class MueveteService {
         .eq('revisado', false)
         .count(CountOption.exact);
 
+    // El KYC también es obligatorio para los CLIENTES (migración 048): la
+    // verificación se cuenta en las dos colas, no sólo en la de conductores.
+    final pendingKycClients = await _supabase
+        .schema('muevete')
+        .from('users')
+        .select('user_id')
+        .eq('kyc_estado', 'en_revision')
+        .not('ci', 'is', null)
+        .count(CountOption.exact);
+
     return {
       'total_drivers': drivers.count,
       'drivers_online': driversOnline.count,
@@ -411,7 +515,9 @@ class MueveteService {
       'total_requests': requests.count,
       'requests_pending': requestsPending.count,
       'total_users': users.count,
-      'pending_kyc': pendingKyc.count,
+      'pending_kyc': pendingKyc.count + pendingKycClients.count,
+      'pending_kyc_drivers': pendingKyc.count,
+      'pending_kyc_clients': pendingKycClients.count,
     };
   }
 
