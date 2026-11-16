@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
@@ -7,6 +8,10 @@ import '../../providers/theme_provider.dart';
 import '../../services/identidad_service.dart';
 import '../../services/seguridad_service.dart';
 import '../../utils/app_error.dart';
+
+/// Cómo se verifica un contacto de emergencia: enlace público (no depende del
+/// gateway de WhatsApp) o el código OTP de siempre.
+enum _MetodoVerificacion { enlace, whatsapp }
 
 /// Contactos de emergencia (H2 · F3).
 ///
@@ -160,7 +165,174 @@ class _ContactosEmergenciaScreenState extends State<ContactosEmergenciaScreen> {
 
   // ── Verificación ────────────────────────────────────────────────────────
 
+  /// Punto de entrada de "Verificar": primero se elige el método.
   Future<void> _verificar(ContactoEmergencia contacto) async {
+    final metodo = await _elegirMetodoVerificacion(contacto);
+    if (metodo == null) return;
+    if (metodo == _MetodoVerificacion.enlace) {
+      await _compartirEnlace(contacto);
+    } else {
+      await _enviarCodigoWhatsApp(contacto);
+    }
+  }
+
+  /// Diálogo de dos opciones. La recomendada va primera y destacada: el enlace
+  /// público no depende de que el WhatsApp del bot esté conectado.
+  Future<_MetodoVerificacion?> _elegirMetodoVerificacion(
+    ContactoEmergencia contacto,
+  ) {
+    return showDialog<_MetodoVerificacion>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          'Verificar a ${contacto.nombre}',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Elige cómo confirmar que ${contacto.nombre} acepta ser tu '
+                'contacto de emergencia.',
+                style: GoogleFonts.plusJakartaSans(fontSize: 13.5, height: 1.4),
+              ),
+              const SizedBox(height: 14),
+              _OpcionVerificacion(
+                icono: Icons.link,
+                titulo: 'Compartir enlace de invitación',
+                detalle:
+                    'Recomendado. Abre el enlace en su navegador y confirma; '
+                    'no necesita instalar la app.',
+                destacada: true,
+                onTap: () => Navigator.pop(ctx, _MetodoVerificacion.enlace),
+              ),
+              const SizedBox(height: 10),
+              _OpcionVerificacion(
+                icono: Icons.chat_outlined,
+                titulo: 'Enviar código por WhatsApp',
+                detalle:
+                    'Recibe un código de 4 dígitos. Requiere que el WhatsApp '
+                    'del bot esté conectado.',
+                color: AppTheme.whatsappGreen,
+                onTap: () => Navigator.pop(ctx, _MetodoVerificacion.whatsapp),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Crea el enlace público y lo deja listo para compartir.
+  ///
+  /// `share_plus` no está en pubspec: se copia al portapapeles y se muestra el
+  /// texto en un diálogo con el botón "Copiar enlace" (igual de válido para
+  /// pegarlo en WhatsApp, Telegram o SMS).
+  Future<void> _compartirEnlace(ContactoEmergencia contacto) async {
+    try {
+      final invitacion = await _seguridad.crearInvitacionContacto(contacto.id);
+      if (!mounted) return;
+
+      if (invitacion.yaConfirmado) {
+        await _cargar();
+        if (!mounted) return;
+        _snack('Ese contacto ya estaba verificado');
+        return;
+      }
+
+      final isDark = context.read<ThemeProvider>().isDark;
+      final texto = invitacion.textoCompartir;
+      await Clipboard.setData(ClipboardData(text: texto));
+      if (!mounted) return;
+
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Enlace de invitación'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Ya lo copiamos. Envíalo a ${contacto.nombre} por WhatsApp, '
+                  'Telegram o SMS:',
+                  style: GoogleFonts.plusJakartaSans(fontSize: 13, height: 1.4),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppTheme.card(isDark),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppTheme.border(isDark)),
+                  ),
+                  child: SelectableText(
+                    texto,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12.5,
+                      height: 1.45,
+                      color: AppTheme.textPrimary(isDark),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'El enlace dura 7 días y se usa una sola vez.',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 11,
+                    color: AppTheme.textSecondary(isDark),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cerrar'),
+            ),
+            FilledButton.icon(
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: texto));
+                if (!ctx.mounted) return;
+                Navigator.pop(ctx);
+              },
+              icon: const Icon(Icons.copy_all_outlined, size: 18),
+              label: const Text('Copiar enlace'),
+            ),
+          ],
+        ),
+      );
+
+      await _cargar();
+      if (!mounted) return;
+      _snack(
+        'Enlace enviado. El contacto quedará verificado cuando lo abra.',
+        error: false,
+      );
+    } on SeguridadException catch (e) {
+      _snack(e.mensaje);
+      await _cargar();
+    } catch (e) {
+      _snack(AppError.message(e, action: 'crear el enlace de invitación'));
+    }
+  }
+
+  /// Flujo anterior con el gateway de WhatsApp (`iniciarValidacion` + OTP).
+  Future<void> _enviarCodigoWhatsApp(ContactoEmergencia contacto) async {
     try {
       final res = await _seguridad.iniciarValidacion(contacto.id);
       if (!mounted) return;
@@ -337,12 +509,12 @@ class _ContactosEmergenciaScreenState extends State<ContactosEmergenciaScreen> {
     }
   }
 
-  void _snack(String mensaje) {
+  void _snack(String mensaje, {bool error = true}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(mensaje, style: GoogleFonts.plusJakartaSans()),
-        backgroundColor: AppTheme.error,
+        backgroundColor: error ? AppTheme.error : AppTheme.success,
       ),
     );
   }
@@ -693,6 +865,21 @@ class _ContactosEmergenciaScreenState extends State<ContactosEmergenciaScreen> {
               ),
             ],
           ),
+          // Reintento rápido sin reabrir el diálogo de verificación.
+          if (contacto.estado == 'pendiente')
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () => _compartirEnlace(contacto),
+                icon: const Icon(Icons.share_outlined, size: 17),
+                label: const Text('Compartir enlace'),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppTheme.primaryColor,
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -711,6 +898,118 @@ class _ContactosEmergenciaScreenState extends State<ContactosEmergenciaScreen> {
           fontSize: 10.5,
           fontWeight: FontWeight.w700,
           color: color,
+        ),
+      ),
+    );
+  }
+}
+
+/// Opción pulsable del diálogo de verificación de contacto.
+class _OpcionVerificacion extends StatelessWidget {
+  final IconData icono;
+  final String titulo;
+  final String detalle;
+  final bool destacada;
+  final Color? color;
+  final VoidCallback onTap;
+
+  const _OpcionVerificacion({
+    required this.icono,
+    required this.titulo,
+    required this.detalle,
+    required this.onTap,
+    this.destacada = false,
+    this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = context.watch<ThemeProvider>().isDark;
+    final acento = color ?? AppTheme.primaryColor;
+    final textPrimary = AppTheme.textPrimary(isDark);
+    final textSecondary = AppTheme.textSecondary(isDark);
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.all(13),
+        decoration: BoxDecoration(
+          color: destacada
+              ? acento.withValues(alpha: isDark ? 0.18 : 0.07)
+              : AppTheme.card(isDark),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: destacada
+                ? acento.withValues(alpha: 0.55)
+                : AppTheme.border(isDark),
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: acento.withValues(alpha: 0.16),
+              ),
+              child: Icon(icono, color: acento, size: 20),
+            ),
+            const SizedBox(width: 11),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          titulo,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: textPrimary,
+                          ),
+                        ),
+                      ),
+                      if (destacada) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: acento.withValues(alpha: 0.16),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            'Recomendado',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w700,
+                              color: acento,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    detalle,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 11.5,
+                      height: 1.35,
+                      color: textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -168,6 +168,50 @@ class EnlaceViaje {
   }
 }
 
+/// Enlace de invitación para que el contacto confirme desde el navegador
+/// (`muevete.fn_contacto_invitacion`, migración 050).
+///
+/// La RPC devuelve la `url` relativa (`/c/<token>`), pensada para un dominio
+/// público que todavía no está configurado. Aquí se ignora y se arma la URL
+/// absoluta de la Edge Function pública que sirve la página de confirmación:
+/// `SupabaseConfig.contactoInvitacionUrlBase?token=<token>`.
+class InvitacionContacto {
+  final int? contactoId;
+  final String token;
+  final String urlCompleta;
+  final DateTime? expiraAt;
+
+  /// El contacto ya estaba aceptado/verificado: no hay token que compartir.
+  final bool yaConfirmado;
+
+  const InvitacionContacto({
+    required this.token,
+    required this.urlCompleta,
+    this.contactoId,
+    this.expiraAt,
+    this.yaConfirmado = false,
+  });
+
+  factory InvitacionContacto.fromJson(Map<String, dynamic> json) {
+    final token = (json['token'] ?? '').toString().trim();
+    return InvitacionContacto(
+      contactoId: (json['contacto_id'] as num?)?.toInt(),
+      token: token,
+      urlCompleta: token.isEmpty
+          ? ''
+          : '${SupabaseConfig.contactoInvitacionUrlBase}'
+                '?token=${Uri.encodeQueryComponent(token)}',
+      expiraAt: DateTime.tryParse((json['expira_at'] ?? '').toString()),
+      yaConfirmado: json['ya_confirmado'] == true,
+    );
+  }
+
+  /// Texto exacto que se comparte por WhatsApp/Telegram/SMS.
+  String get textoCompartir =>
+      'Te agregué como contacto de emergencia en Muévete. '
+      'Abre este enlace para confirmar: $urlCompleta';
+}
+
 /// Resultado de intentar disparar el pánico.
 class ResultadoPanico {
   final bool enviado;
@@ -424,6 +468,43 @@ class SeguridadService {
       params: {'p_contacto_id': contactoId, 'p_codigo': codigo.trim()},
       accion: 'confirmar el código',
     );
+  }
+
+  /// `fn_contacto_invitacion(p_contacto_id)`.
+  ///
+  /// Genera (o regenera) el enlace de un solo uso para que el contacto
+  /// confirme desde el navegador: no necesita instalar la app y no depende de
+  /// que el gateway de WhatsApp del bot esté levantado. El token vive 7 días
+  /// y en la base sólo queda su hash; al confirmar se limpia.
+  ///
+  /// Devuelve `yaConfirmado = true` si el contacto ya estaba verificado (en
+  /// ese caso `token` viene vacío y no hay nada que compartir).
+  Future<InvitacionContacto> crearInvitacionContacto(int contactoId) async {
+    final res = await _rpc(
+      'fn_contacto_invitacion',
+      params: {'p_contacto_id': contactoId},
+      accion: 'crear el enlace de invitación',
+    );
+
+    final map = _asMap(res);
+    if (map['success'] == false) {
+      final motivo = (map['motivo'] ?? '').toString();
+      throw SeguridadException(
+        motivo == 'contacto_no_existe'
+            ? 'Ese contacto ya no existe'
+            : 'No se pudo crear el enlace. Inténtalo de nuevo',
+        clave: motivo.isEmpty ? null : motivo,
+      );
+    }
+
+    final invitacion = InvitacionContacto.fromJson(map);
+    if (invitacion.yaConfirmado) return invitacion;
+    if (invitacion.token.isEmpty) {
+      throw const SeguridadException(
+        'El servidor no devolvió el enlace. Inténtalo de nuevo',
+      );
+    }
+    return invitacion;
   }
 
   // ── Pánico con cola local ───────────────────────────────────────────────

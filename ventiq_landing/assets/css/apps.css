@@ -1,0 +1,1337 @@
+/* =========================================================
+   INVENTTIA · APPS.CSS
+   Componentes de las páginas de presentación de cada app,
+   del índice de apps y de la página de descargas.
+
+   Depende de los tokens de premium-v3.css (--v2-*).
+   Escrito mobile-first: la base funciona en 320 px y solo se
+   amplía con min-width, así el móvil no puede romperse.
+   ========================================================= */
+
+/* ---------------------------------------------------------
+   1. MIGAS DE PAN
+   --------------------------------------------------------- */
+.crumbs {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    font-family: var(--v2-font-mono);
+    font-size: 11.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.62);
+}
+
+.crumbs a {
+    color: rgba(255, 255, 255, 0.78);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .crumbs a:hover { color: #fff; border-bottom-color: rgba(94, 184, 209, 0.7); }
+}
+
+.crumbs .sep { opacity: 0.45; }
+
+/* ---------------------------------------------------------
+   2. HERO DE LA APP
+   --------------------------------------------------------- */
+.app-hero {
+    position: relative;
+    overflow: hidden;
+    padding-top: clamp(96px, 13vh, 132px);
+    padding-bottom: clamp(44px, 7vw, 84px);
+    color: #fff;
+    background:
+        radial-gradient(900px 500px at 82% 8%, rgba(94, 184, 209, 0.22), transparent 58%),
+        radial-gradient(700px 420px at 8% 92%, rgba(22, 51, 83, 0.62), transparent 55%),
+        linear-gradient(180deg, #0C1A2A 0%, #0F2438 46%, #14304F 100%);
+}
+
+.app-hero::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(600px 380px at 30% 20%, rgba(94, 184, 209, 0.10), transparent 62%);
+    pointer-events: none;
+}
+
+.app-hero > .v2-shell { position: relative; z-index: 1; }
+
+.app-hero-grid {
+    display: grid;
+    gap: 34px;
+    margin-top: 22px;
+}
+
+@media (min-width: 980px) {
+    .app-hero-grid {
+        grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+        align-items: center;
+        gap: 56px;
+        margin-top: 30px;
+    }
+}
+
+.app-icon {
+    width: 68px;
+    height: 68px;
+    border-radius: 19px;
+    display: grid;
+    place-items: center;
+    font-size: 27px;
+    color: #fff;
+    flex: 0 0 auto;
+    background: linear-gradient(150deg, #2A5F8A 0%, #163353 60%, #0F2438 100%);
+    box-shadow:
+        0 18px 36px -14px rgba(0, 0, 0, 0.62),
+        inset 0 1px 0 rgba(255, 255, 255, 0.22),
+        0 0 0 1px rgba(255, 255, 255, 0.10);
+}
+
+.app-icon[data-tone="muevete"] { background: linear-gradient(150deg, #0E7490 0%, #155E75 55%, #0C4A5E 100%); }
+.app-icon[data-tone="flow"] { background: linear-gradient(150deg, #0F766E 0%, #0D5F5A 55%, #083F3C 100%); }
+.app-icon[data-tone="carnaval"] { background: linear-gradient(150deg, #B4232F 0%, #8C1620 55%, #5C0D14 100%); }
+.app-icon[data-tone="catalogo"] { background: linear-gradient(150deg, #3A9BB8 0%, #2A5F8A 55%, #163353 100%); }
+.app-icon[data-tone="admin"] { background: linear-gradient(150deg, #1E4A6E 0%, #163353 55%, #0F2438 100%); }
+
+.app-hero-head {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+}
+
+.app-kicker {
+    font-family: var(--v2-font-mono);
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.58);
+}
+
+.app-hero h1 {
+    font-family: var(--v2-font-display);
+    font-weight: 600;
+    font-size: clamp(32px, 8.4vw, 64px);
+    line-height: 1.06;
+    letter-spacing: -0.035em;
+    margin: 0 0 14px;
+    color: #fff;
+    text-wrap: balance;
+}
+
+.app-hero h1 em {
+    font-style: italic;
+    background: linear-gradient(135deg, #5EB8D1 0%, #B8E3F0 60%, #FFFFFF 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    display: inline-block;
+    padding: 0 0.12em 0.1em;
+    margin-inline: -0.06em;
+    line-height: 1.1;
+}
+
+.app-hero-claim {
+    font-family: var(--v2-font-display);
+    font-size: clamp(17px, 4.4vw, 22px);
+    font-weight: 600;
+    line-height: 1.35;
+    letter-spacing: -0.015em;
+    color: #fff;
+    max-width: 30ch;
+    margin: 0 0 12px;
+    text-wrap: balance;
+}
+
+.app-hero-sub {
+    font-size: clamp(16px, 4vw, 19px);
+    line-height: 1.58;
+    color: rgba(255, 255, 255, 0.80);
+    max-width: 54ch;
+    margin: 0 0 24px;
+    text-wrap: pretty;
+}
+
+.app-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 26px;
+    padding: 0;
+    list-style: none;
+}
+
+.app-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    font-family: var(--v2-font-mono);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    color: rgba(255, 255, 255, 0.9);
+    white-space: nowrap;
+}
+
+.app-badge i { color: #5EB8D1; font-size: 10px; }
+
+.app-hero-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.app-hero-actions .v2-btn {
+    justify-content: center;
+    min-height: 52px;
+    font-size: 15.5px;
+}
+
+.app-hero-note {
+    margin: 14px 0 0;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: rgba(255, 255, 255, 0.55);
+}
+
+/* Marco del mockup: en móvil se oculta el marco de escritorio
+   y se muestra el teléfono; así nunca hay overflow. */
+.app-hero-visual {
+    display: grid;
+    place-items: center;
+    gap: 14px;
+}
+
+.app-hero-visual .v2-phone {
+    max-width: min(290px, 72vw);
+}
+
+.app-hero-shot {
+    width: 100%;
+    max-width: 340px;
+    border-radius: 20px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 30px 70px -30px rgba(0, 0, 0, 0.7);
+    background: #0A1522;
+}
+
+.app-hero-shot img {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+/* ---------------------------------------------------------
+   3. DATOS RÁPIDOS
+   --------------------------------------------------------- */
+.app-facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 30px;
+    padding-top: 24px;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.app-fact { display: flex; flex-direction: column; gap: 4px; }
+
+.app-fact b {
+    font-family: var(--v2-font-display);
+    font-size: 17px;
+    font-weight: 600;
+    color: #fff;
+    letter-spacing: -0.01em;
+}
+
+.app-fact span {
+    font-family: var(--v2-font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+/* ---------------------------------------------------------
+   4. SECCIONES
+   --------------------------------------------------------- */
+.app-section {
+    padding-block: clamp(48px, 7vw, 92px);
+    position: relative;
+}
+
+/* Tinte suave para separar secciones sin romper la identidad navy. */
+.v2-section--tint { background: var(--v2-surface-2); }
+
+.app-section--tint { background: var(--v2-surface-2); }
+
+.app-head { margin-bottom: 28px; }
+
+.app-head .app-kicker {
+    display: block;
+    color: var(--v2-text-mute);
+    margin-bottom: 10px;
+}
+
+.app-head h2 {
+    font-family: var(--v2-font-display);
+    font-weight: 600;
+    font-size: clamp(26px, 6.4vw, 42px);
+    line-height: 1.14;
+    letter-spacing: -0.028em;
+    color: var(--v2-text);
+    margin: 0 0 12px;
+    max-width: 26ch;
+    text-wrap: balance;
+}
+
+.app-head h2 em {
+    font-style: italic;
+    background: linear-gradient(135deg, #116278 0%, #2A5F8A 70%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.app-head p {
+    font-size: clamp(15.5px, 3.8vw, 17.5px);
+    line-height: 1.6;
+    color: var(--v2-text-soft);
+    margin: 0;
+    max-width: 62ch;
+}
+
+/* ---------------------------------------------------------
+   5. TARJETAS DE CARACTERÍSTICAS
+   --------------------------------------------------------- */
+.feature-cards {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+}
+
+.feature-card {
+    position: relative;
+    background: var(--v2-surface);
+    border: 1px solid var(--v2-border);
+    border-radius: 18px;
+    padding: 20px;
+    box-shadow: var(--v2-sh-xs);
+    transition: transform 220ms var(--v2-ease-out),
+                box-shadow 220ms var(--v2-ease-out),
+                border-color 220ms var(--v2-ease-out);
+}
+
+.feature-card i {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 11px;
+    background: rgba(58, 155, 184, 0.12);
+    color: #2A5F8A;
+    font-size: 16px;
+    margin-bottom: 14px;
+}
+
+.feature-card h3 {
+    font-family: var(--v2-font-display);
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    color: var(--v2-text);
+    margin: 0 0 6px;
+}
+
+.feature-card p {
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--v2-text-soft);
+    margin: 0;
+}
+
+@media (min-width: 620px) {
+    .feature-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (min-width: 980px) {
+    .feature-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+    .feature-card { padding: 24px; }
+    .feature-card h3 { font-size: 18px; }
+    .feature-card p { font-size: 14.5px; }
+
+    @media (hover: hover) and (pointer: fine) {
+        .feature-card:hover {
+            transform: translateY(-3px);
+            box-shadow: var(--v2-sh-md);
+            border-color: var(--v2-border-strong);
+        }
+    }
+}
+
+/* ---------------------------------------------------------
+   6. "QUÉ HACE" — lista de capacidades
+   --------------------------------------------------------- */
+.capability-list {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px 22px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.capability-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--v2-text-soft);
+}
+
+.capability-list li i {
+    flex: 0 0 auto;
+    width: 22px;
+    height: 22px;
+    margin-top: 1px;
+    border-radius: 6px;
+    display: grid;
+    place-items: center;
+    font-size: 10px;
+    background: rgba(58, 155, 184, 0.14);
+    color: #1E6E88;
+}
+
+@media (min-width: 760px) {
+    .capability-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* ---------------------------------------------------------
+   7. PASOS (cómo funciona)
+   --------------------------------------------------------- */
+.steps {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    counter-reset: step;
+}
+
+.step {
+    position: relative;
+    background: var(--v2-surface);
+    border: 1px solid var(--v2-border);
+    border-radius: 18px;
+    padding: 22px 20px 20px;
+}
+
+.step::before {
+    counter-increment: step;
+    content: counter(step, decimal-leading-zero);
+    display: block;
+    font-family: var(--v2-font-mono);
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    color: #2A5F8A;
+    margin-bottom: 10px;
+}
+
+.step h3 {
+    font-family: var(--v2-font-display);
+    font-size: 16.5px;
+    font-weight: 600;
+    margin: 0 0 6px;
+    color: var(--v2-text);
+}
+
+.step p {
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--v2-text-soft);
+    margin: 0;
+}
+
+@media (min-width: 760px) {
+    .steps { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* ---------------------------------------------------------
+   8. PRECIOS
+   --------------------------------------------------------- */
+.price-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 14px;
+    align-items: stretch;
+}
+
+.price-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    background: var(--v2-surface);
+    border: 1px solid var(--v2-border);
+    border-radius: 20px;
+    padding: 24px 22px;
+    box-shadow: var(--v2-sh-xs);
+}
+
+.price-card--featured {
+    background:
+        radial-gradient(90% 70% at 100% 0%, rgba(94, 184, 209, 0.16), transparent 62%),
+        linear-gradient(160deg, #14304F 0%, #0F2438 100%);
+    border-color: rgba(94, 184, 209, 0.34);
+    color: #fff;
+    box-shadow: var(--v2-sh-lg);
+}
+
+.price-flag {
+    position: absolute;
+    top: -11px;
+    left: 22px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #5EB8D1, #3A9BB8);
+    color: #08131F;
+    font-family: var(--v2-font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+}
+
+.price-name {
+    font-family: var(--v2-font-mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--v2-text-mute);
+    margin: 0 0 10px;
+}
+
+.price-card--featured .price-name { color: rgba(255, 255, 255, 0.66); }
+
+.price-amount {
+    font-family: var(--v2-font-display);
+    font-size: clamp(30px, 8vw, 40px);
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    line-height: 1;
+    color: var(--v2-text);
+    margin: 0;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.price-card--featured .price-amount { color: #fff; }
+
+.price-amount small {
+    font-family: var(--v2-font-body);
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0;
+    color: var(--v2-text-mute);
+}
+
+.price-card--featured .price-amount small { color: rgba(255, 255, 255, 0.64); }
+
+.price-desc {
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: var(--v2-text-soft);
+    margin: 8px 0 16px;
+}
+
+.price-card--featured .price-desc { color: rgba(255, 255, 255, 0.74); }
+
+.price-list {
+    list-style: none;
+    margin: 0 0 20px;
+    padding: 0;
+    display: grid;
+    gap: 8px;
+    flex: 1 1 auto;
+}
+
+.price-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 13.5px;
+    line-height: 1.45;
+    color: var(--v2-text-soft);
+}
+
+.price-list li i {
+    color: #1E8E6A;
+    font-size: 10px;
+    margin-top: 4px;
+    flex: 0 0 auto;
+}
+
+.price-card--featured .price-list li { color: rgba(255, 255, 255, 0.82); }
+.price-card--featured .price-list li i { color: #5EB8D1; }
+
+.price-card .v2-btn {
+    justify-content: center;
+    min-height: 46px;
+    width: 100%;
+}
+
+.price-note {
+    margin: 18px 0 0;
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--v2-text-mute);
+    max-width: 70ch;
+}
+
+@media (min-width: 700px) {
+    .price-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+}
+
+@media (min-width: 1020px) {
+    .price-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+    .price-grid--four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+/* Tarifa de transporte (Muevete): desglose tipo recibo */
+.fare-card {
+    background: var(--v2-surface);
+    border: 1px solid var(--v2-border);
+    border-radius: 20px;
+    padding: 22px;
+    box-shadow: var(--v2-sh-sm);
+}
+
+.fare-rows {
+    display: grid;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+}
+
+.fare-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 14px;
+    padding-bottom: 10px;
+    border-bottom: 1px dashed var(--v2-border-strong);
+    font-size: 14px;
+    color: var(--v2-text-soft);
+}
+
+.fare-row:last-child { border-bottom: 0; padding-bottom: 0; }
+
+.fare-row b {
+    font-family: var(--v2-font-mono);
+    font-size: 14px;
+    color: var(--v2-text);
+    white-space: nowrap;
+}
+
+.fare-row--total {
+    padding-top: 6px;
+    font-weight: 600;
+    color: var(--v2-text);
+}
+
+.fare-row--total b { font-size: 19px; }
+
+.fare-formula {
+    margin-top: 16px;
+    padding: 14px 16px;
+    border-radius: 12px;
+    background: var(--v2-surface-2);
+    font-family: var(--v2-font-mono);
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: var(--v2-text-soft);
+    overflow-x: auto;
+}
+
+/* ---------------------------------------------------------
+   9. GALERÍA DE PANTALLAS
+   --------------------------------------------------------- */
+.shot-strip {
+    display: flex;
+    gap: 12px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    padding: 4px 4px 14px;
+    margin: 0 -4px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+}
+
+.shot-strip::-webkit-scrollbar { height: 6px; }
+.shot-strip::-webkit-scrollbar-thumb {
+    background: var(--v2-border-strong);
+    border-radius: 999px;
+}
+
+.shot {
+    flex: 0 0 auto;
+    width: min(230px, 68vw);
+    scroll-snap-align: start;
+    border-radius: 16px;
+    overflow: hidden;
+    border: 1px solid var(--v2-border);
+    background: var(--v2-surface);
+    box-shadow: var(--v2-sh-sm);
+}
+
+.shot img {
+    width: 100%;
+    display: block;
+    aspect-ratio: 9 / 16;
+    object-fit: cover;
+    object-position: top center;
+}
+
+.shot figcaption {
+    padding: 10px 12px;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--v2-text-mute);
+    border-top: 1px solid var(--v2-border);
+}
+
+/* ---------------------------------------------------------
+   10. FAQ
+   --------------------------------------------------------- */
+.faq {
+    display: grid;
+    gap: 10px;
+    max-width: 780px;
+}
+
+.faq details {
+    background: var(--v2-surface);
+    border: 1px solid var(--v2-border);
+    border-radius: 14px;
+    padding: 0 18px;
+    transition: border-color 180ms var(--v2-ease-out);
+}
+
+.faq details[open] {
+    border-color: var(--v2-border-strong);
+    box-shadow: var(--v2-sh-xs);
+}
+
+.faq summary {
+    cursor: pointer;
+    list-style: none;
+    padding: 16px 28px 16px 0;
+    position: relative;
+    font-family: var(--v2-font-display);
+    font-size: 15.5px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--v2-text);
+}
+
+.faq summary::-webkit-details-marker { display: none; }
+
+.faq summary::after {
+    content: "+";
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    font-family: var(--v2-font-mono);
+    font-size: 18px;
+    color: var(--v2-text-mute);
+    transition: transform 200ms var(--v2-ease-out);
+}
+
+.faq details[open] summary::after {
+    content: "−";
+    color: #2A5F8A;
+}
+
+.faq p {
+    margin: 0 0 18px;
+    font-size: 14.5px;
+    line-height: 1.62;
+    color: var(--v2-text-soft);
+}
+
+/* ---------------------------------------------------------
+   11. PANEL DE DESCARGA
+   --------------------------------------------------------- */
+.dl-panel {
+    border-radius: 22px;
+    padding: 26px 22px;
+    background:
+        radial-gradient(90% 90% at 100% 0%, rgba(94, 184, 209, 0.18), transparent 60%),
+        linear-gradient(160deg, #14304F 0%, #0C1A2A 100%);
+    color: #fff;
+    box-shadow: var(--v2-sh-lg);
+}
+
+.dl-panel h2,
+.dl-panel h3 {
+    font-family: var(--v2-font-display);
+    font-size: clamp(22px, 5.6vw, 30px);
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    margin: 0 0 10px;
+    color: #fff;
+}
+
+.dl-panel p {
+    font-size: 14.5px;
+    line-height: 1.58;
+    color: rgba(255, 255, 255, 0.74);
+    margin: 0 0 20px;
+    max-width: 56ch;
+}
+
+.dl-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.dl-actions .v2-btn {
+    justify-content: center;
+    min-height: 52px;
+    font-size: 15px;
+}
+
+.dl-meta {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 16px;
+    margin: 20px 0 0;
+    padding: 18px 0 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.14);
+    list-style: none;
+}
+
+.dl-meta li {
+    font-size: 12.5px;
+    color: rgba(255, 255, 255, 0.62);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.dl-meta b {
+    font-family: var(--v2-font-mono);
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    color: #fff;
+    font-weight: 500;
+}
+
+@media (min-width: 760px) {
+    .dl-panel { padding: 34px 32px; }
+    .dl-actions { flex-direction: row; flex-wrap: wrap; }
+    .dl-actions .v2-btn { min-width: 210px; }
+    .dl-meta { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+/* Barra de descarga fija en móvil */
+.dl-sticky {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 70;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px));
+    background: rgba(10, 21, 34, 0.94);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    transform: translateY(110%);
+    transition: transform 260ms var(--v2-ease-out);
+}
+
+.dl-sticky.is-visible { transform: translateY(0); }
+
+.dl-sticky .dl-sticky-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 12px;
+    line-height: 1.3;
+    color: rgba(255, 255, 255, 0.66);
+}
+
+.dl-sticky .dl-sticky-label b {
+    display: block;
+    font-family: var(--v2-font-display);
+    font-size: 13.5px;
+    color: #fff;
+    letter-spacing: -0.01em;
+}
+
+.dl-sticky .v2-btn {
+    flex: 0 0 auto;
+    min-height: 44px;
+    font-size: 14px;
+    padding: 12px 18px;
+}
+
+@media (min-width: 900px) {
+    .dl-sticky { display: none; }
+}
+
+/* ---------------------------------------------------------
+   12. REJILLA DE APPS (apps/index.html)
+   --------------------------------------------------------- */
+.apps-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 14px;
+}
+
+.app-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    background: var(--v2-surface);
+    border: 1px solid var(--v2-border);
+    border-radius: 20px;
+    padding: 22px 20px;
+    box-shadow: var(--v2-sh-xs);
+    transition: transform 220ms var(--v2-ease-out),
+                box-shadow 220ms var(--v2-ease-out),
+                border-color 220ms var(--v2-ease-out);
+}
+
+.app-card-top {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.app-card .app-icon {
+    width: 54px;
+    height: 54px;
+    border-radius: 15px;
+    font-size: 21px;
+}
+
+.app-card h3 {
+    font-family: var(--v2-font-display);
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--v2-text);
+    margin: 0 0 3px;
+}
+
+.app-card .app-card-cat {
+    font-family: var(--v2-font-mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--v2-text-mute);
+}
+
+.app-card p {
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--v2-text-soft);
+    margin: 0;
+    flex: 1 1 auto;
+}
+
+.app-card-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.app-card-tags li {
+    font-family: var(--v2-font-mono);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    padding: 4px 9px;
+    border-radius: 999px;
+    background: var(--v2-surface-2);
+    border: 1px solid var(--v2-border);
+    color: var(--v2-text-mute);
+}
+
+.app-card-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.app-card-actions .v2-btn {
+    flex: 1 1 auto;
+    justify-content: center;
+    min-height: 44px;
+    font-size: 13.5px;
+    padding: 11px 14px;
+}
+
+/* Enlace “stretched” para que toda la tarjeta sea clicable sin anidar <a>. */
+.app-card__cover {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    border-radius: inherit;
+}
+
+.app-card__cover:focus-visible {
+    outline: 2px solid #2A5F8A;
+    outline-offset: 3px;
+}
+
+.app-card-actions { position: relative; z-index: 2; }
+
+@media (min-width: 620px) {
+    .apps-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+}
+
+@media (min-width: 1020px) {
+    .apps-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .app-card { padding: 24px 22px; }
+
+    @media (hover: hover) and (pointer: fine) {
+        .app-card:hover {
+            transform: translateY(-3px);
+            box-shadow: var(--v2-sh-md);
+            border-color: var(--v2-border-strong);
+        }
+    }
+}
+
+/* ---------------------------------------------------------
+   13. PÁGINA DE DESCARGAS
+   --------------------------------------------------------- */
+.dl-group { margin-bottom: 44px; }
+
+.dl-group-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--v2-border);
+}
+
+.dl-group-head h2 {
+    font-family: var(--v2-font-display);
+    font-size: clamp(20px, 5vw, 26px);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--v2-text);
+    margin: 0;
+}
+
+.dl-group-head span {
+    font-family: var(--v2-font-mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--v2-text-mute);
+}
+
+.dl-rows {
+    display: grid;
+    gap: 10px;
+}
+
+.dl-row {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr);
+    gap: 6px 14px;
+    align-items: center;
+    background: var(--v2-surface);
+    border: 1px solid var(--v2-border);
+    border-radius: 16px;
+    padding: 14px 16px;
+}
+
+.dl-row .app-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    font-size: 17px;
+    grid-row: span 2;
+}
+
+.dl-row-main { min-width: 0; }
+
+.dl-row h3 {
+    font-family: var(--v2-font-display);
+    font-size: 15.5px;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    color: var(--v2-text);
+    margin: 0 0 2px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.dl-row p {
+    margin: 0;
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: var(--v2-text-mute);
+}
+
+.dl-row-actions {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.dl-row-actions .v2-btn {
+    flex: 1 1 140px;
+    justify-content: center;
+    min-height: 44px;
+    font-size: 13px;
+    padding: 11px 14px;
+}
+
+.tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-family: var(--v2-font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    background: rgba(58, 155, 184, 0.12);
+    color: #1E6E88;
+    border: 1px solid rgba(58, 155, 184, 0.22);
+}
+
+.tag--warn {
+    background: rgba(180, 83, 9, 0.10);
+    color: #9A5B0B;
+    border-color: rgba(180, 83, 9, 0.22);
+}
+
+.tag--new {
+    background: rgba(16, 142, 106, 0.12);
+    color: #0F7A5B;
+    border-color: rgba(16, 142, 106, 0.24);
+}
+
+@media (min-width: 760px) {
+    .dl-row {
+        grid-template-columns: 48px minmax(0, 1fr) auto;
+        align-items: center;
+    }
+
+    .dl-row .app-icon { grid-row: auto; }
+
+    .dl-row-actions {
+        grid-column: auto;
+        margin-top: 0;
+        flex-wrap: nowrap;
+    }
+
+    .dl-row-actions .v2-btn { flex: 0 0 auto; }
+}
+
+/* Instrucciones de instalación */
+.steps-inline {
+    display: grid;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: inst;
+}
+
+.steps-inline li {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    font-size: 14.5px;
+    line-height: 1.55;
+    color: var(--v2-text-soft);
+}
+
+.steps-inline li::before {
+    counter-increment: inst;
+    content: counter(inst);
+    flex: 0 0 auto;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: var(--v2-accent);
+    color: #fff;
+    font-family: var(--v2-font-mono);
+    font-size: 11px;
+}
+
+/* ---------------------------------------------------------
+   14. CTA FINAL DE LA PÁGINA
+   --------------------------------------------------------- */
+.app-cta {
+    padding-block: clamp(52px, 8vw, 96px);
+    text-align: center;
+    background:
+        radial-gradient(800px 420px at 50% 0%, rgba(58, 155, 184, 0.18), transparent 55%),
+        linear-gradient(180deg, #0F2438 0%, #0C1A2A 100%);
+    color: #fff;
+}
+
+.app-cta h2 {
+    font-family: var(--v2-font-display);
+    font-size: clamp(26px, 6.6vw, 46px);
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    line-height: 1.15;
+    margin: 0 auto 14px;
+    max-width: 20ch;
+    color: #fff;
+    text-wrap: balance;
+}
+
+.app-cta p {
+    font-size: 15.5px;
+    line-height: 1.6;
+    color: rgba(255, 255, 255, 0.72);
+    max-width: 52ch;
+    margin: 0 auto 24px;
+}
+
+.app-cta-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-width: 420px;
+    margin: 0 auto;
+}
+
+.app-cta-actions .v2-btn { justify-content: center; min-height: 50px; }
+
+@media (min-width: 620px) {
+    .app-cta-actions { flex-direction: row; justify-content: center; max-width: none; }
+    .app-cta-actions .v2-btn { min-width: 200px; }
+}
+
+/* ---------------------------------------------------------
+   15. NAVEGACIÓN ENTRE APPS (anterior / siguiente)
+   --------------------------------------------------------- */
+.app-pager {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding-block: 40px;
+}
+
+.app-pager a {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 16px 18px;
+    border-radius: 16px;
+    border: 1px solid var(--v2-border);
+    background: var(--v2-surface);
+    text-decoration: none;
+    transition: border-color 180ms var(--v2-ease-out), background 180ms var(--v2-ease-out);
+}
+
+.app-pager a span {
+    font-family: var(--v2-font-mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--v2-text-mute);
+}
+
+.app-pager a b {
+    font-family: var(--v2-font-display);
+    font-size: 15.5px;
+    font-weight: 600;
+    color: var(--v2-text);
+    letter-spacing: -0.01em;
+}
+
+.app-pager a.is-next { text-align: right; }
+
+@media (hover: hover) and (pointer: fine) {
+    .app-pager a:hover { border-color: var(--v2-border-strong); background: var(--v2-surface-2); }
+}
+
+@media (min-width: 620px) {
+    .app-pager { grid-template-columns: 1fr 1fr; }
+}
+
+/* Pantalla navy genérica para los mockups de las apps sin captura real. */
+.v2-phone .v2-phone-screen.v2-phone-screen-navy {
+    background:
+        radial-gradient(60% 55% at 50% 38%, #2A5F8A 0%, #163353 55%, #0C1A2A 100%) !important;
+}
+
+.v2-phone-screen-navy .v2-phone-status {
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+.v2-phone-screen-navy::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(45% 45% at 30% 20%, rgba(255, 255, 255, 0.18), transparent 70%),
+        radial-gradient(40% 40% at 75% 85%, rgba(0, 0, 0, 0.28), transparent 70%);
+    pointer-events: none;
+    z-index: 1;
+}
+
+.v2-phone-content-center .app-icon {
+    width: 62px;
+    height: 62px;
+    border-radius: 17px;
+    font-size: 24px;
+    margin: 0 auto 16px;
+}
+
+/* ---------------------------------------------------------
+   16. UTILIDADES
+   --------------------------------------------------------- */
+.stack-sm > * + * { margin-top: 10px; }
+.stack-md > * + * { margin-top: 18px; }
+.mt-lg { margin-top: 28px; }
+.text-center { text-align: center; }
+
+.app-page .v2-footer { margin-top: 0; }
+
+/* La barra sticky necesita aire al final en móvil. */
+.app-page.has-dl-sticky { padding-bottom: 76px; }
+
+@media (prefers-reduced-motion: reduce) {
+    .dl-sticky { transition: none; }
+}

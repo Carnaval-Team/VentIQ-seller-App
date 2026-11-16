@@ -154,6 +154,33 @@ class Cotizacion {
   final double precioAntesRedondeo;
   final String moneda;
 
+  // ── Área base de Santa Clara (migraciones 053/054) ────────────────────
+  //
+  // La RPC añade estas claves de forma ADITIVA. Si el servidor todavía no tiene
+  // la 053 aplicada llegan a null/false y la UI cae en las etiquetas antiguas.
+
+  /// `true` cuando la cotización trae la geometría del área base.
+  final bool esTarifaBase;
+
+  /// Nombre del área base (`base_nombre`), p. ej. "Base Santa Clara (Parque Vidal)".
+  final String? baseNombre;
+
+  /// El origen cae dentro del área base.
+  final bool enBaseOrigen;
+
+  /// El destino cae dentro del área base.
+  final bool enBaseDestino;
+
+  /// Km del tramo de recogida (hub de flota → origen). 0 si el origen está
+  /// dentro del área base.
+  final double tramoRecogidaKm;
+
+  /// Km del tramo de viaje cobrados (origen → destino).
+  final double tramoViajeKm;
+
+  /// Km totales cobrados = recogida + viaje.
+  final double kmCobrados;
+
   /// Desglose interno completo (no se muestra crudo).
   final Map<String, dynamic> detalle;
 
@@ -175,6 +202,13 @@ class Cotizacion {
     this.redondeoCup = 0,
     this.precioAntesRedondeo = 0,
     this.moneda = 'CUP',
+    this.esTarifaBase = false,
+    this.baseNombre,
+    this.enBaseOrigen = false,
+    this.enBaseDestino = false,
+    this.tramoRecogidaKm = 0,
+    this.tramoViajeKm = 0,
+    this.kmCobrados = 0,
     this.detalle = const <String, dynamic>{},
   });
 
@@ -219,6 +253,14 @@ class Cotizacion {
       redondeoCup: redondeo,
       precioAntesRedondeo: antes,
       moneda: _toStr(pick('moneda')) ?? 'CUP',
+      esTarifaBase: pick('base_nombre') != null,
+      baseNombre: _toStr(pick('base_nombre')),
+      enBaseOrigen: _toBool(pick('en_base_origen')),
+      enBaseDestino: _toBool(pick('en_base_destino')),
+      tramoRecogidaKm:
+          _toDouble(pick('tramo_recogida_km') ?? d['km_recogida']),
+      tramoViajeKm: _toDouble(pick('tramo_viaje_km')),
+      kmCobrados: _toDouble(pick('km_cobrados') ?? d['km_cobrables']),
       detalle: d,
     );
   }
@@ -235,6 +277,19 @@ class Cotizacion {
   /// se cobra el tramo por km de esa misma zona, así que no hay que decir
   /// "fuera de zona".
   String get zonaEtiqueta {
+    // Migración 053: la tarifa se explica por el área base, no por el polígono
+    // de emparejamiento (`zona_nombre` sigue siendo el municipio).
+    if (esTarifaBase) {
+      if (dentroDeZona) return 'Tarifa base · área SC';
+      if (enBaseOrigen && !enBaseDestino) {
+        return 'Tarifa base + km del viaje';
+      }
+      if (!enBaseOrigen && enBaseDestino) {
+        return 'Tarifa base + recogida + km';
+      }
+      return 'Tarifa base + recogida + km';
+    }
+
     if (dentroDeZona) {
       return zonaNombre != null ? 'Tarifa de $zonaNombre' : 'Tarifa de la zona';
     }
@@ -251,6 +306,9 @@ class Cotizacion {
   }
 
   String get tarifaModoEtiqueta {
+    if (esTarifaBase) {
+      return dentroDeZona ? 'Base SC' : 'Base + por km';
+    }
     switch (tarifaModo) {
       case 'fijo_mas_km':
         return 'Tarifa fija + km';
@@ -260,6 +318,13 @@ class Cotizacion {
       default:
         return 'Tarifa fija por zona';
     }
+  }
+
+  /// Etiqueta del tramo de recogida, sólo si el pasajero está fuera del área
+  /// base y hay que ir a buscarlo desde el hub de flota.
+  String? get recogidaEtiqueta {
+    if (!esTarifaBase || tramoRecogidaKm <= 0) return null;
+    return 'Recogida hasta el origen · ${tramoRecogidaKm.toStringAsFixed(1)} km';
   }
 }
 

@@ -21,4 +21,16 @@ class SupabaseConfig {
   static const String supabaseUrl = kReleaseMode ? _releaseUrl : _debugUrl;
   static const String supabaseAnonKey =
       kReleaseMode ? _releaseAnonKey : _debugAnonKey;
+
+  // ── Edge Functions públicas de Muévete ────────────────────────────────────
+  //
+  // Página de confirmación de un contacto de emergencia
+  // (`supabase/functions/contacto-invitacion/index.ts`, desplegada con
+  // `--no-verify-jwt`: la abre el contacto desde el navegador, sin cuenta).
+  //
+  // PRUEBAS (`qhprswhhfasrikhawjoz`). En producción se cambia al ref de
+  // producción cuando la función se despliegue allí:
+  //   https://vsieeihstajlrdvpuooh.supabase.co/functions/v1/contacto-invitacion
+  static const String contactoInvitacionUrlBase =
+      'https://qhprswhhfasrikhawjoz.supabase.co/functions/v1/contacto-invitacion';
 }

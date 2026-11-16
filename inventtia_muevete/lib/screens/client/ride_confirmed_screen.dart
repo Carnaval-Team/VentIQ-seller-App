@@ -691,6 +691,16 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
     if (base != null && base > 0) {
       filas.add(_filaRecibo(isDark, 'Tarifa base', Helpers.formatCup(base)));
     }
+    // 053: si hubo que ir a buscar al pasajero fuera del área base, se explica
+    // de dónde salen los km (el monto ya está sumado en "Tarifa base").
+    final recogidaKm = (desglose['tramo_recogida_km'] as num?)?.toDouble();
+    if (recogidaKm != null && recogidaKm > 0) {
+      filas.add(_filaRecibo(
+        isDark,
+        'Recogida hasta el origen',
+        '${recogidaKm.toStringAsFixed(1)} km',
+      ));
+    }
     final nocturno = (desglose['recargo_nocturno'] as num?)?.toDouble();
     if (nocturno != null && nocturno > 0) {
       filas.add(_filaRecibo(
@@ -868,12 +878,15 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
   }
 
   /// Etiqueta legible del modo tarifario que guardó el servidor.
+  ///
+  /// Desde las migraciones 053/054 `fijo` = dentro del área base de SC (1.500 planos)
+  /// y `fijo_mas_km` = base + 120 CUP por km (recogida + viaje).
   String _etiquetaModoTarifa(String modo) {
     switch (modo) {
       case 'fijo':
-        return 'Fija';
+        return 'Base SC';
       case 'fijo_mas_km':
-        return 'Fija + por km';
+        return 'Base + por km';
       case 'por_km':
         return 'Por kilómetro';
       default:

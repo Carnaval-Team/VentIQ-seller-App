@@ -787,10 +787,24 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
 
           _filaDesglose(
             isDark,
-            etiqueta: 'Tarifa de la zona',
-            detalle: '${cotizacion.kmTotal.toStringAsFixed(1)} km',
+            etiqueta: cotizacion.esTarifaBase
+                ? (cotizacion.dentroDeZona
+                    ? 'Tarifa base del área SC'
+                    : 'Base + km cobrados')
+                : 'Tarifa de la zona',
+            detalle: cotizacion.esTarifaBase && !cotizacion.dentroDeZona
+                ? '${cotizacion.kmCobrados.toStringAsFixed(1)} km'
+                : '${cotizacion.kmTotal.toStringAsFixed(1)} km',
             valor: Helpers.formatCup(base),
           ),
+          if (cotizacion.recogidaEtiqueta != null)
+            _filaDesglose(
+              isDark,
+              etiqueta: 'Recogida hasta el origen',
+              detalle:
+                  '${cotizacion.tramoRecogidaKm.toStringAsFixed(1)} km desde el Parque Vidal',
+              valor: 'Incluido',
+            ),
           _filaDesglose(
             isDark,
             etiqueta: 'Recargo nocturno',
