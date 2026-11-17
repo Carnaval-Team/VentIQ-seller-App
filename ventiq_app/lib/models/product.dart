@@ -5,6 +5,12 @@ class Product {
   final String? sku;
   final String? foto;
   final double precio;
+
+  /// USD propio del catálogo. Null si el payload no lo trae; no se rellena con cero.
+  final double? precioUsd;
+
+  /// De dónde salió [precioUsd]: tpv, general o no_disponible.
+  final String? origenPrecioUsd;
   final num cantidad;
   final bool esRefrigerado;
   final bool esFragil;
@@ -145,6 +151,8 @@ class Product {
     this.sku,
     this.foto,
     required this.precio,
+    this.precioUsd,
+    this.origenPrecioUsd,
     required this.cantidad,
     required this.esRefrigerado,
     required this.esFragil,
@@ -175,6 +183,61 @@ class Product {
     this.presentacionesCount = 0,
   });
 
+  Product copiar({
+    double? precio,
+    double? precioUsd,
+    String? origenPrecioUsd,
+    bool reemplazarUsd = false,
+    List<ProductVariant>? variantes,
+  }) {
+    return Product(
+      id: id,
+      denominacion: denominacion,
+      descripcion: descripcion,
+      sku: sku,
+      foto: foto,
+      precio: precio ?? this.precio,
+      precioUsd: reemplazarUsd ? precioUsd : (precioUsd ?? this.precioUsd),
+      origenPrecioUsd:
+          reemplazarUsd ? origenPrecioUsd : (origenPrecioUsd ?? this.origenPrecioUsd),
+      cantidad: cantidad,
+      esRefrigerado: esRefrigerado,
+      esFragil: esFragil,
+      esPeligroso: esPeligroso,
+      esVendible: esVendible,
+      esComprable: esComprable,
+      esInventariable: esInventariable,
+      esPorLotes: esPorLotes,
+      esElaborado: esElaborado,
+      esServicio: esServicio,
+      esPaquete: esPaquete,
+      categoria: categoria,
+      variantes: variantes ?? this.variantes,
+      inventoryMetadata: inventoryMetadata,
+      reservadoCarnaval: reservadoCarnaval,
+      enOrdenesCarnaval: enOrdenesCarnaval,
+      idCocina: idCocina,
+      cocina: cocina,
+      idAlmacenCocina: idAlmacenCocina,
+      impresoraCocina: impresoraCocina,
+      modoElaboracion: modoElaboracion,
+      ilimitado: ilimitado,
+      stockTexto: stockTexto,
+      stockEquivalenteBase: stockEquivalenteBase,
+      stockMixto: stockMixto,
+      presentacionesCount: presentacionesCount,
+    );
+  }
+
+  static double? _precioOpcional(Object? raw) {
+    if (raw == null) return null;
+    final value = raw is num ? raw.toDouble() : double.tryParse(raw.toString());
+    if (value == null || value <= 0 || value.isNaN || value.isInfinite) {
+      return null;
+    }
+    return value;
+  }
+
   factory Product.fromJson(Map<String, dynamic> json) {
     return Product(
       id: json['id'],
@@ -183,6 +246,8 @@ class Product {
       sku: json['sku'],
       foto: json['foto'],
       precio: json['precio']?.toDouble() ?? 0.0,
+      precioUsd: _precioOpcional(json['precio_venta_usd']),
+      origenPrecioUsd: json['origen_precio_usd']?.toString(),
       cantidad: json['cantidad'] ?? 0,
       esRefrigerado: json['es_refrigerado'] ?? false,
       esFragil: json['es_fragil'] ?? false,
@@ -231,6 +296,8 @@ class Product {
       'sku': sku,
       'foto': foto,
       'precio': precio,
+      'precio_venta_usd': precioUsd,
+      'origen_precio_usd': origenPrecioUsd,
       'cantidad': cantidad,
       'es_refrigerado': esRefrigerado,
       'es_fragil': esFragil,
@@ -268,6 +335,7 @@ class ProductVariant {
   final int id;
   final String nombre;
   final double precio;
+  final double? precioUsd;
   final num cantidad;
   final String? descripcion;
   final Map<String, dynamic>?
@@ -283,6 +351,7 @@ class ProductVariant {
     required this.id,
     required this.nombre,
     required this.precio,
+    this.precioUsd,
     required this.cantidad,
     this.descripcion,
     this.inventoryMetadata,
@@ -295,6 +364,9 @@ class ProductVariant {
       id: json['id'],
       nombre: json['nombre'],
       precio: json['precio']?.toDouble() ?? 0.0,
+      precioUsd: json['precio_usd'] == null
+          ? null
+          : (json['precio_usd'] as num).toDouble(),
       cantidad: json['cantidad'] ?? 0,
       descripcion: json['descripcion'],
       reservadoCarnaval: json['reservado_carnaval'] ?? 0,
@@ -308,6 +380,7 @@ class ProductVariant {
       'id': id,
       'nombre': nombre,
       'precio': precio,
+      'precio_usd': precioUsd,
       'cantidad': cantidad,
       'descripcion': descripcion,
       'inventoryMetadata': inventoryMetadata,

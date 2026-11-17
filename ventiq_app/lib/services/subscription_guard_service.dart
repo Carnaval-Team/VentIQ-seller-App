@@ -54,29 +54,54 @@ class SubscriptionGuardService {
             currentStoreId,
           );
 
-      // Sin red: solo licencia local. Nunca RPC (DNS/socket).
+      // Sin red: nunca RPC (DNS/socket). Orden de validación:
+      //   1) Licencia offline firmada (flujo full-offline).
+      //   2) Suscripción persistida por la última verificación online
+      //      (saveSubscriptionData): autoriza seguir trabajando offline
+      //      mientras no esté vencida — es lo que permite reabrir la app
+      //      tras un cierre inesperado aunque nunca se descargó licencia.
       if (!hasNetwork) {
-        if (!offlineCompleto) {
-          print('❌ Sin conexión y modo offline completo deshabilitado');
-          _lastOfflineStatus = OfflineLicenseStatus.blocked(
-            reason: OfflineLicenseBlockReason.offlineNotAllowed,
-            message:
-                'Se requiere conexión a internet. El modo offline completo '
-                'no está habilitado para esta tienda.',
+        // La licencia firmada solo es requisito con modo offline completo.
+        var rollbackBlocked = false;
+        if (offlineCompleto) {
+          final status = await _offlineLicenseService.validateLocalLicense(
+            storeId: currentStoreId,
           );
-          return false;
+          if (status.isValid) {
+            print('✅ Licencia offline firmada válida');
+            _lastOfflineStatus = status;
+            await _ensureCachedSubscriptionFromPrefs(currentStoreId);
+            return true;
+          }
+          print('⚠️ Licencia offline inválida: ${status.message}');
+          rollbackBlocked =
+              status.reason == OfflineLicenseBlockReason.clockRollback;
+          _lastOfflineStatus = status;
         }
 
-        final status = await _offlineLicenseService.validateLocalLicense(
-          storeId: currentStoreId,
-        );
-        _lastOfflineStatus = status;
-        if (status.isValid) {
-          print('✅ Licencia offline firmada válida');
-          await _ensureCachedSubscriptionFromPrefs(currentStoreId);
-          return true;
+        // Anti-rollback: un reloj atrasado puede "revivir" una suscripción
+        // vencida leyendo la persistida; ese bloqueo no tiene fallback.
+        if (!rollbackBlocked) {
+          final storedActive =
+              await _userPreferencesService.hasActiveSubscriptionStored();
+          if (storedActive) {
+            print('✅ Sin red: suscripción persistida sigue vigente');
+            _lastOfflineStatus = null;
+            await _ensureCachedSubscriptionFromPrefs(currentStoreId);
+            return true;
+          }
         }
-        print('❌ Licencia offline inválida: ${status.message}');
+
+        _lastOfflineStatus = offlineCompleto
+            ? _lastOfflineStatus
+            : OfflineLicenseStatus.blocked(
+                reason: OfflineLicenseBlockReason.offlineNotAllowed,
+                message:
+                    'Se requiere conexión a internet para verificar la '
+                    'suscripción. El modo offline completo no está habilitado '
+                    'para esta tienda.',
+              );
+        print('❌ Sin conexión y sin suscripción válida persistida');
         return false;
       }
 
@@ -118,9 +143,11 @@ class SubscriptionGuardService {
         final shouldRefresh =
             await _userPreferencesService.shouldRefreshSubscription();
         if (!shouldRefresh) {
-          // Preferir token firmado si existe
-          final signed =
-              await _userPreferencesService.getSignedOfflineLicense();
+          // Preferir token firmado si existe (solo lo exige el modo offline
+          // completo; sin él una licencia fallida no debe bloquear).
+          final signed = offlineCompleto
+              ? await _userPreferencesService.getSignedOfflineLicense()
+              : null;
           if (signed != null) {
             final status = await _offlineLicenseService.validateLocalLicense(
               storeId: currentStoreId,
@@ -165,6 +192,42 @@ class SubscriptionGuardService {
       _lastCheck = DateTime.now();
 
       if (_cachedSubscription == null) {
+        // `getActiveSubscription` devuelve null tanto si no hay suscripción
+        // como si la consulta falló por red. `isConnected` puede estar stale
+        // (arranca en true al abrir la app), así que probamos de verdad:
+        // sin internet real el null es indeterminado y NO se puede borrar
+        // la suscripción persistida ni la licencia — dejaría al dispositivo
+        // sin forma de abrir offline.
+        final reallyOnline =
+            await _connectivityService.probeInternetSilent();
+        if (!reallyOnline) {
+          print(
+            '⚠️ Consulta de suscripción falló sin internet real; '
+            'validando datos locales',
+          );
+          var rollbackBlocked = false;
+          if (offlineCompleto) {
+            final status = await _offlineLicenseService.validateLocalLicense(
+              storeId: currentStoreId,
+            );
+            _lastOfflineStatus = status;
+            if (status.isValid) {
+              await _ensureCachedSubscriptionFromPrefs(currentStoreId);
+              return true;
+            }
+            rollbackBlocked =
+                status.reason == OfflineLicenseBlockReason.clockRollback;
+          }
+          if (!rollbackBlocked &&
+              await _userPreferencesService.hasActiveSubscriptionStored()) {
+            print('✅ Sin internet: suscripción persistida sigue vigente');
+            _lastOfflineStatus = null;
+            await _ensureCachedSubscriptionFromPrefs(currentStoreId);
+            return true;
+          }
+          return false;
+        }
+
         print(
           '❌ No se encontró suscripción activa para tienda: $currentStoreId',
         );
@@ -193,8 +256,9 @@ class SubscriptionGuardService {
         );
         await _userPreferencesService.updateLastSeenTimestamp();
 
-        // Renovar token firmado (obligatorio para operar offline después)
-        final ensured = await _ensureSignedLicense(currentStoreId);
+        // Renovar token firmado (solo lo exige el modo offline completo)
+        final ensured =
+            offlineCompleto && await _ensureSignedLicense(currentStoreId);
         if (!ensured && offlineCompleto) {
           print(
             '⚠️ Suscripción activa pero no se pudo obtener licencia firmada',
@@ -220,17 +284,32 @@ class SubscriptionGuardService {
     } catch (e) {
       print('❌ Error verificando suscripción activa: $e');
 
-      // Si falló la red pero hay modo offline completo, intentar licencia local
+      // Si falló la red pero hay modo offline completo, intentar licencia
+      // local; si no, la suscripción persistida por la última verificación
+      // online autoriza seguir offline hasta su fecha de fin.
       final storeId = await _userPreferencesService.getIdTienda();
       if (storeId != null) {
-        final offlineCompleto =
+        final catchOfflineCompleto =
             await StoreConfigService.getPermitirModoOfflineCompleto(storeId);
-        if (offlineCompleto) {
+        var rollbackBlocked = false;
+        if (catchOfflineCompleto) {
           final status = await _offlineLicenseService.validateLocalLicense(
             storeId: storeId,
           );
           _lastOfflineStatus = status;
-          return status.isValid;
+          if (status.isValid) return true;
+          rollbackBlocked =
+              status.reason == OfflineLicenseBlockReason.clockRollback;
+        }
+
+        // Anti-rollback: no tiene fallback (reloj atrasado reviviría una
+        // suscripción vencida).
+        if (!rollbackBlocked &&
+            await _userPreferencesService.hasActiveSubscriptionStored()) {
+          print('✅ Falló la red: suscripción persistida sigue vigente');
+          _lastOfflineStatus = null;
+          await _ensureCachedSubscriptionFromPrefs(storeId);
+          return true;
         }
       }
       return false;
@@ -437,8 +516,13 @@ class SubscriptionGuardService {
       '🔐 forceCheck: storeId=$storeId isConnected=$online',
     );
     if (storeId != null && online) {
-      await _offlineLicenseService.fetchAndStoreSignedLicense(storeId);
-      online = _connectivityService.isConnected;
+      // La licencia firmada solo aplica a tiendas con modo offline completo.
+      final offlineCompleto =
+          await StoreConfigService.getPermitirModoOfflineCompleto(storeId);
+      if (offlineCompleto) {
+        await _offlineLicenseService.fetchAndStoreSignedLicense(storeId);
+        online = _connectivityService.isConnected;
+      }
     } else if (storeId != null) {
       print('📵 forceCheck: sin conexión — validando licencia local');
     }

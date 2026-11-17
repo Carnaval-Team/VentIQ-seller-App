@@ -2,6 +2,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/comanda.dart';
 import '../models/tanda.dart';
+import '../utils/uuid_generator.dart';
+import 'cocina_offline_queue.dart';
 
 /// Servicio del KDS (Kitchen Display System).
 ///
@@ -15,6 +17,9 @@ class ComandaService {
   ComandaService._internal();
 
   final SupabaseClient _supabase = Supabase.instance.client;
+
+  /// Misma clave si se vuelve a marcar el mismo plato al mismo estado.
+  final Map<String, String> _uuidEstadoItem = {};
 
   /// Cocinas que el usuario puede operar. Vacío = no tiene ninguna asignada,
   /// que es distinto de un error: la UI debe explicarlo en vez de fallar.
@@ -99,11 +104,37 @@ class ComandaService {
   Future<String> cambiarEstadoItem({
     required int idItem,
     required int nuevoEstado,
+    String? clientUuid,
   }) async {
-    final response = await _supabase.rpc(
-      'fn_cambiar_estado_comanda_item',
-      params: {'p_id_item': idItem, 'p_nuevo_estado': nuevoEstado},
-    );
+    final uuid =
+        (clientUuid != null && clientUuid.isNotEmpty)
+            ? clientUuid
+            : UuidGenerator.v4();
+    dynamic response;
+    try {
+      response = await _supabase.rpc(
+        'fn_cambiar_estado_comanda_item_offline',
+        params: {
+          'p_client_uuid': uuid,
+          'p_id_item': idItem,
+          'p_nuevo_estado': nuevoEstado,
+        },
+      );
+    } catch (e) {
+      if (_rpcAusente(e, 'fn_cambiar_estado_comanda_item_offline')) {
+        throw ComandaException(
+          'RPC_AUSENTE',
+          'fn_cambiar_estado_comanda_item_offline no está disponible. '
+          'No se cambió el plato.',
+        );
+      }
+      return _encolarEstadoSiEsRed(
+        e,
+        idItem: idItem,
+        nuevoEstado: nuevoEstado,
+        clientUuid: uuid,
+      );
+    }
 
     final mapa = _comoMapa(response);
     if (mapa == null) {
@@ -122,30 +153,59 @@ class ComandaService {
 
   /// Cambia el estado del ticket completo ("marchando todo").
   ///
-  /// Los platos ya entregados o cancelados se saltan sin fallar; el mensaje
-  /// devuelto lo indica entre paréntesis.
+  /// Cada plato sale por la RPC con clave. Entregado, cancelado o ya en ese
+  /// estado se salta. Sin platos no hay una RPC de ticket con clave.
   Future<String> cambiarEstadoComanda({
     required int idComanda,
     required int nuevoEstado,
+    List<int> idsItems = const [],
   }) async {
-    final response = await _supabase.rpc(
-      'fn_cambiar_estado_comanda',
-      params: {'p_id_comanda': idComanda, 'p_nuevo_estado': nuevoEstado},
-    );
-
-    final mapa = _comoMapa(response);
-    if (mapa == null) {
-      throw ComandaException('FORMATO', 'Respuesta inesperada del servidor');
-    }
-
-    if (mapa['status'] != 'success') {
+    if (idsItems.isEmpty) {
       throw ComandaException(
-        mapa['error_code'] as String? ?? 'UNKNOWN',
-        mapa['message'] as String? ?? 'No se pudo cambiar la comanda',
+        'SIN_ITEMS',
+        'El ticket $idComanda no tiene platos para marcar',
       );
     }
+    return _cambiarEstadoPorPlatos(idsItems, nuevoEstado);
+  }
 
-    return mapa['message'] as String? ?? 'Comanda actualizada';
+  Future<String> _cambiarEstadoPorPlatos(List<int> idsItems, int nuevoEstado) async {
+    var saltados = 0;
+    var encolados = 0;
+    for (final id in idsItems) {
+      final clave = _uuidEstadoItem.putIfAbsent(
+        '$id:$nuevoEstado',
+        UuidGenerator.v4,
+      );
+      try {
+        final msg = await cambiarEstadoItem(
+          idItem: id,
+          nuevoEstado: nuevoEstado,
+          clientUuid: clave,
+        );
+        if (msg.startsWith('Sin conexión')) {
+          encolados++;
+        } else if (_estadoYaAplicado(msg)) {
+          saltados++;
+        }
+      } on ComandaException {
+        saltados++;
+      }
+    }
+    if (encolados == idsItems.length) {
+      return 'Sin conexión: el cambio quedó guardado y se enviará al recuperar la red';
+    }
+    if (saltados == 0 && encolados == 0) return 'Comanda actualizada';
+    final notas = <String>[
+      if (saltados > 0) '$saltados sin cambiar',
+      if (encolados > 0) '$encolados pendientes de red',
+    ];
+    return 'Comanda actualizada (${notas.join(', ')})';
+  }
+
+  bool _estadoYaAplicado(String message) {
+    final text = message.toLowerCase();
+    return text.contains('ya estaba') || text.contains('ya se habia');
   }
 
   // ══════════════════════════════════════════════════════════════════════
@@ -302,6 +362,49 @@ class ComandaService {
     }
 
     return mapa;
+  }
+
+  /// Una denegación no abre la función sin clave. «Schema cache» sí cuenta
+  /// como ausente cuando el mensaje no es un 42501.
+  bool _rpcAusente(Object error, String functionName) {
+    final text = error.toString().toLowerCase();
+    if (text.contains('42501') ||
+        text.contains('insufficient_privilege') ||
+        text.contains('permission denied') ||
+        text.contains('acceso denegado')) {
+      return false;
+    }
+    final fn = functionName.toLowerCase();
+    return text.contains('pgrst202') ||
+        text.contains('could not find the function') ||
+        text.contains('schema cache') ||
+        (text.contains('does not exist') && text.contains(fn));
+  }
+
+  bool _esErrorDeRed(Object error) {
+    final msg = error.toString().toLowerCase();
+    return msg.contains('socket') ||
+        msg.contains('timeout') ||
+        msg.contains('failed host lookup') ||
+        msg.contains('connection') ||
+        msg.contains('network');
+  }
+
+  /// Si la red se cortó, la cola conserva el mismo `client_uuid`. Una
+  /// denegación o un rechazo de negocio se propaga.
+  Future<String> _encolarEstadoSiEsRed(
+    Object error, {
+    required int idItem,
+    required int nuevoEstado,
+    required String clientUuid,
+  }) async {
+    if (!_esErrorDeRed(error)) throw error;
+    await CocinaOfflineQueue().encolarCambioEstado(
+      idComandaItem: idItem,
+      nuevoEstado: nuevoEstado,
+      clientUuid: clientUuid,
+    );
+    return 'Sin conexión: el cambio quedó guardado y se enviará al recuperar la red';
   }
 
   Map<String, dynamic>? _comoMapa(dynamic response) {

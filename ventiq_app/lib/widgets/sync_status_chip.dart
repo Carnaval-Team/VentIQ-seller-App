@@ -12,6 +12,11 @@ class SyncStatusChip extends StatefulWidget {
 }
 
 class _SyncStatusChipState extends State<SyncStatusChip> with SingleTickerProviderStateMixin {
+  /// Cierre manual compartido entre pantallas: cada vista monta su propio chip,
+  /// así que un bool de instancia no servía — al navegar reaparecía. Se resetea
+  /// solo cuando arranca una sincronización nueva.
+  static bool _userDismissed = false;
+
   final AutoSyncService _autoSyncService = AutoSyncService();
   StreamSubscription<AutoSyncEvent>? _syncSubscription;
   
@@ -78,6 +83,7 @@ class _SyncStatusChipState extends State<SyncStatusChip> with SingleTickerProvid
       
       switch (event.type) {
         case AutoSyncEventType.started:
+          _userDismissed = false;
           setState(() {
             _isVisible = true;
             _isSyncing = false;
@@ -89,7 +95,8 @@ class _SyncStatusChipState extends State<SyncStatusChip> with SingleTickerProvid
         case AutoSyncEventType.syncStarted:
           // Cancelar timer de auto-ocultado si existe
           _autoHideTimer?.cancel();
-          
+          _userDismissed = false;
+
           print('📊 SyncStatusChip: Mostrando widget - Sincronización iniciada');
           setState(() {
             _isVisible = true; // ✅ Asegurar que se muestre al iniciar sincronización
@@ -220,7 +227,7 @@ class _SyncStatusChipState extends State<SyncStatusChip> with SingleTickerProvid
 
   @override
   Widget build(BuildContext context) {
-    if (!_isVisible) return const SizedBox.shrink();
+    if (!_isVisible || _userDismissed) return const SizedBox.shrink();
     
     return AnimatedBuilder(
       animation: _pulseAnimation,
@@ -311,6 +318,7 @@ class _SyncStatusChipState extends State<SyncStatusChip> with SingleTickerProvid
               // Botón de cerrar
               InkWell(
                 onTap: () {
+                  _userDismissed = true;
                   setState(() {
                     _isVisible = false;
                   });

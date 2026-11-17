@@ -5,7 +5,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../tutorial/tutorial_anchor.dart';
 import '../tutorial/tutorial_flujos.dart';
-import 'tutorial_venta_screen.dart';
 import '../controllers/home_controller.dart';
 import '../models/changelog.dart';
 import '../models/home_catalogo.dart';
@@ -13,6 +12,7 @@ import '../models/product.dart';
 import '../services/changelog_service.dart';
 import '../services/home_catalog_service.dart';
 import '../services/home_extras_service.dart';
+import '../money/politica_moneda_store.dart';
 import '../services/moneda_venta_service.dart';
 import '../services/notification_service.dart';
 import '../services/order_service.dart';
@@ -36,17 +36,12 @@ import '../widgets/home/categoria_drawer_route.dart';
 import '../widgets/home/home_buscador.dart';
 import '../widgets/home/home_catalogo_view.dart';
 import '../widgets/home/home_estado_vacio.dart';
-import '../widgets/home/home_quick_chips.dart';
 import '../widgets/home/home_seccion_titulo.dart';
 import '../widgets/home/producto_tile.dart';
 import '../widgets/home/quick_add_sheet.dart';
 import '../widgets/home/riel_productos.dart';
 import '../widgets/moneda_venta_chip.dart';
-import '../widgets/notification_widget.dart';
 import '../widgets/sales_monitor_fab.dart';
-import '../widgets/sync_status_chip.dart';
-import '../widgets/usd_rate_chip.dart';
-import 'barcode_scanner_screen.dart';
 import 'product_details_screen.dart';
 import 'products_screen.dart';
 
@@ -165,10 +160,12 @@ class _HomeShellScreenState extends State<HomeShellScreen>
   StreamSubscription<SmartOfflineEvent>? _subOffline;
   Timer? _debounceBusqueda;
 
-  bool _soloConStock = false;
+  /// Filtro «solo con stock» de la búsqueda. El chip que lo alternaba se
+  /// retiró del Home junto con el resto de chips rápidos; queda el campo
+  /// para cuando el filtro vuelva (o se mueva a la pantalla de resultados).
+  final bool _soloConStock = false;
   bool _mostrarSku = false;
   bool _ahorroDeDatos = false;
-  bool _modoFluido = false;
 
   /// Nombre del trabajador logueado, para el saludo del hero.
   ///
@@ -176,6 +173,10 @@ class _HomeShellScreenState extends State<HomeShellScreen>
   /// guardado en `SharedPreferences` desde el login: se leía `nombres` solo
   /// para resolver la tienda y se descartaba.
   String? _nombreTrabajador;
+
+  /// Correo del usuario logueado: sustituye al subtítulo «¿Qué vas a vender?»
+  /// del hero. `null` mientras carga o si la sesión no lo tiene.
+  String? _emailTrabajador;
 
   List<Product> _resultados = const <Product>[];
   bool _buscandoProductos = false;
@@ -241,6 +242,8 @@ class _HomeShellScreenState extends State<HomeShellScreen>
   Future<void> _cargarMonedaVenta() async {
     try {
       await MonedaVentaService.cargarDesdeTienda();
+      final estado = await PoliticaMonedaStore.leer();
+      MonedaVentaService.usarSeleccionPorLinea(estado.modoActivo);
     } catch (e) {
       debugPrint('⚠️ No se pudo cargar la moneda de venta: $e');
     }
@@ -287,8 +290,16 @@ class _HomeShellScreenState extends State<HomeShellScreen>
     try {
       final Map<String, dynamic?> perfil = await _prefs.getWorkerProfile();
       final String? nombres = (perfil['nombres'] as String?)?.trim();
-      if (!mounted || nombres == null || nombres.isEmpty) return;
-      setState(() => _nombreTrabajador = nombres);
+      final String? email = (await _prefs.getUserEmail())?.trim();
+      if (!mounted) return;
+      setState(() {
+        if (nombres != null && nombres.isNotEmpty) {
+          _nombreTrabajador = nombres;
+        }
+        if (email != null && email.isNotEmpty) {
+          _emailTrabajador = email;
+        }
+      });
     } catch (e) {
       debugPrint('⚠️ No se pudo leer el nombre del trabajador: $e');
     }
@@ -312,12 +323,10 @@ class _HomeShellScreenState extends State<HomeShellScreen>
   Future<void> _cargarAjustes() async {
     try {
       final bool ahorro = await _prefs.isLimitDataUsageEnabled();
-      final bool fluido = await _prefs.isFluidModeEnabled();
       final bool sku = await _prefs.isShowSkuEnabled();
       if (!mounted) return;
       setState(() {
         _ahorroDeDatos = ahorro;
-        _modoFluido = fluido;
         _mostrarSku = sku;
       });
     } catch (e) {
@@ -845,6 +854,8 @@ class _HomeShellScreenState extends State<HomeShellScreen>
                   idTpv: idTpv,
                 ),
             agregar: _quickAddService.agregar,
+            agregarEnMoneda: (preparado, cantidad, moneda) =>
+                _quickAddService.agregar(preparado, cantidad, moneda: moneda),
           ),
     );
 
@@ -979,13 +990,6 @@ class _HomeShellScreenState extends State<HomeShellScreen>
     }
   }
 
-  void _abrirEscaner() {
-    Navigator.push(
-      context,
-      MaterialPageRoute<void>(builder: (_) => const BarcodeScannerScreen()),
-    );
-  }
-
   // ── Construcción ───────────────────────────────────────────────────────
 
   @override
@@ -1003,7 +1007,7 @@ class _HomeShellScreenState extends State<HomeShellScreen>
                 onRefresh: () => _cargarCatalogo(forceRefresh: true),
                 child: HomeCatalogoView(
                   saludo: _saludo,
-                  subtitulo: '¿Qué vas a vender?',
+                  subtitulo: _emailTrabajador,
                   estado: _home.estado,
                   catalogo: _home.catalogo,
                   // El estado online/offline va en su propio hueco (abajo a la
@@ -1020,15 +1024,6 @@ class _HomeShellScreenState extends State<HomeShellScreen>
                         if (mounted) setState(() {});
                       },
                     ),
-                    IconButton(
-                      tooltip: 'Escanear código de barras',
-                      onPressed: _abrirEscaner,
-                      icon: const Icon(
-                        Icons.qr_code_scanner_rounded,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const NotificationWidget(),
                   ],
                   buscador: TutorialAnchor(
                     id: 'home_buscar',
@@ -1038,10 +1033,6 @@ class _HomeShellScreenState extends State<HomeShellScreen>
                       onChanged: _onBuscar,
                       onLimpiar: _limpiarBusqueda,
                     ),
-                  ),
-                  chips: TutorialAnchor(
-                    id: 'home_chips',
-                    child: _chipsRapidos(),
                   ),
                   rieles: _rielesDelHome(),
                   nombreTienda: _nombreTienda,
@@ -1055,9 +1046,7 @@ class _HomeShellScreenState extends State<HomeShellScreen>
                   onRefrescar: () => _cargarCatalogo(forceRefresh: true),
                 ),
               ),
-              if (mostrarFlotantes) ...<Widget>[
-                const Positioned(bottom: 16, left: 16, child: UsdRateChip()),
-                const Positioned(bottom: 80, left: 16, child: SyncStatusChip()),
+              if (mostrarFlotantes)
                 // Pleca lateral centrada: abre el menú (endDrawer) sin gastar
                 // sitio en el AppBar. Sustituye al icono de menú retirado.
                 Positioned(
@@ -1074,7 +1063,6 @@ class _HomeShellScreenState extends State<HomeShellScreen>
                     ),
                   ),
                 ),
-              ],
             ],
           );
         },
@@ -1088,6 +1076,7 @@ class _HomeShellScreenState extends State<HomeShellScreen>
           MediaQuery.sizeOf(context).width < 300
               ? null
               : const SalesMonitorFAB(),
+      floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
     );
   }
 
@@ -1098,85 +1087,6 @@ class _HomeShellScreenState extends State<HomeShellScreen>
   /// el Home desaparecía diciendo «No hay productos que coincidan con “”»,
   /// dejando la pantalla en blanco al tocar el chip.
   bool get _hayBusqueda => HomeShellScreen.hayBusquedaCon(_buscador.text);
-
-  Widget _chipsRapidos() {
-    return HomeQuickChips(
-      chips: <Widget>[
-        HomeQuickChip(
-          label: 'Solo con stock',
-          icono: Icons.inventory_2_outlined,
-          selected: _soloConStock,
-          onTap: () {
-            setState(() => _soloConStock = !_soloConStock);
-            if (_buscador.text.trim().isNotEmpty) {
-              _ejecutarBusqueda(_buscador.text);
-            } else if (_soloConStock) {
-              // El filtro es de la búsqueda, no del lienzo: sin texto no hay
-              // nada que filtrar. Mejor decirlo que dejar la pantalla igual y
-              // que parezca que el chip no hace nada.
-              _avisar(
-                '«Solo con stock» se aplica a los resultados de la búsqueda.',
-              );
-            }
-          },
-        ),
-        if (_ahorroDeDatos)
-          HomeQuickChip(
-            label: 'Ahorro de datos',
-            icono: Icons.data_saver_on,
-            live: true,
-            onTap:
-                () => _avisar(
-                  'Modo ahorro de datos activo: las imágenes no se cargan.',
-                ),
-          ),
-        if (_modoFluido)
-          HomeQuickChip(
-            label: 'Modo fluido',
-            icono: Icons.bolt_rounded,
-            live: true,
-            onTap:
-                () => _avisar(
-                  'El modo fluido se retirará: el nuevo Home ya es el camino rápido.',
-                ),
-          ),
-        HomeQuickChip(
-          label: 'Tutorial',
-          icono: Icons.school_rounded,
-          onTap: _abrirTutorial,
-        ),
-        HomeQuickChip(
-          label: _mostrarSku ? 'SKU visible' : 'SKU oculto',
-          icono: Icons.tag_rounded,
-          onTap: () => _avisar('El SKU se cambia en Configuración.'),
-        ),
-      ],
-    );
-  }
-
-  /// Relanza el tutorial guiado (overlay con foco) del modo actual.
-  void _abrirTutorial() {
-    final bool restaurante =
-        StoreConfigService.modoRestauranteSync ||
-        StoreConfigService.cocinaActivaSync;
-    final String uuid = Supabase.instance.client.auth.currentUser?.id ?? '';
-    if (uuid.isEmpty) {
-      // Sin sesión no hay tutorial que recordar: se abre el recorrido simple.
-      Navigator.push(
-        context,
-        MaterialPageRoute<void>(
-          builder: (_) => TutorialVentaScreen(modoRestaurante: restaurante),
-        ),
-      );
-      return;
-    }
-    TutorialAutoStart.reiniciarIntento();
-    TutorialFlujos.iniciarVenta(
-      context,
-      restaurante: restaurante,
-      uuidUsuario: uuid,
-    );
-  }
 
   void _avisar(String mensaje) {
     ScaffoldMessenger.of(context).showSnackBar(

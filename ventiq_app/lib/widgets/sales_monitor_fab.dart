@@ -393,7 +393,7 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
   @override
   Widget build(BuildContext context) {
     return Stack(
-      alignment: Alignment.bottomRight,
+      alignment: Alignment.bottomLeft,
       children: <Widget>[
         // Panel expandible
         AnimatedBuilder(
@@ -401,7 +401,7 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
           builder: (BuildContext context, Widget? child) {
             return Transform.scale(
               scale: _expandAnimation.value.clamp(0.0, 1.05),
-              alignment: Alignment.bottomRight,
+              alignment: Alignment.bottomLeft,
               child: Opacity(
                 opacity: _expandAnimation.value.clamp(0.0, 1.0),
                 child:
@@ -542,7 +542,7 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
 
   Widget _buildSalesPanel() {
     return Container(
-      margin: const EdgeInsets.only(right: 16, bottom: 78),
+      margin: const EdgeInsets.only(left: 16, bottom: 78),
       width: 340,
       decoration: BoxDecoration(
         color: VentiqHomeTheme.card,

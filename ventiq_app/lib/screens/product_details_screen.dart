@@ -2,8 +2,13 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import '../models/product.dart';
+import '../money/detalle_moneda.dart';
+import '../money/politica_moneda_store.dart';
+import '../money/product_currency_order.dart';
+import '../services/currency_service.dart';
 import '../services/moneda_venta_service.dart';
 import '../services/order_service.dart';
+import '../services/payment_method_service.dart';
 import '../services/product_detail_service.dart';
 import '../services/promotion_service.dart';
 import '../services/user_preferences_service.dart';
@@ -87,10 +92,13 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   final Map<int, int> _bultosDesarmados = {};
   // Stock simulado offline de cada presentación: {presentacionId: cantidad}
   final Map<int, double> _stockPresentacionesSimulado = {};
+  bool _monedaPorProducto = false;
+  String _monedaLinea = 'CUP';
 
   @override
   void initState() {
     super.initState();
+    _cargarModoMoneda();
 
     // Si es paquete, redirigir a pantalla dedicada de paquetes
     if (widget.product.esPaquete) {
@@ -652,6 +660,15 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                     (productData['cantidad'] as num?)?.toDouble() ??
                     widget.product.cantidadReal.toDouble(),
               );
+              // Los precios vigentes CUP/USD viajan en el detalle cacheado;
+              // sin aplicarlos aquí el detalle offline sale sin divisa.
+              final filasPrecio = detalles['precios_vigentes'];
+              if (filasPrecio is List && filasPrecio.isNotEmpty) {
+                foundProduct = ProductDetailService.aplicarPreciosVigentes(
+                  foundProduct,
+                  filasPrecio,
+                );
+              }
               print('Detalles del producto cargados desde cache offline');
               print('  - Producto: ${foundProduct.denominacion}');
               print('  - Variantes: ${foundProduct.variantes.length}');
@@ -1029,6 +1046,17 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     bool showEditButton = true,
   }) {
     final basePrice = _getEffectiveBasePrice(product, variant);
+    if (_monedaPorProducto && _monedaLinea == 'USD') {
+      return Text(
+        _fmtUnitario(product, variant, basePrice),
+        style: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+          color: widget.categoryColor,
+          height: 1.2,
+        ),
+      );
+    }
     final originalBasePrice = _getOriginalBasePrice(product, variant);
     final hasCustom = _hasCustomPrice(product, variant);
     final prices = _calculatePromotionPrices(basePrice);
@@ -1188,6 +1216,18 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
 
   Widget _buildVariantPriceSection(Product product, ProductVariant variant) {
     final basePrice = _getEffectiveBasePrice(product, variant);
+    if (_monedaPorProducto && _monedaLinea == 'USD') {
+      return Text(
+        _fmtUnitario(product, variant, basePrice),
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: widget.categoryColor,
+          height: 1.2,
+        ),
+        overflow: TextOverflow.ellipsis,
+      );
+    }
     final prices = _calculatePromotionPrices(basePrice);
     final activePromotion = _getActivePromotion();
     final hasPromotion =
@@ -1652,7 +1692,14 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
               ),
               boxShadow: VentiqHomeTheme.shadowCard,
             ),
-            child: Row(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_monedaPorProducto) ...[
+                  _selectorMoneda(),
+                  const SizedBox(height: 8),
+                ],
+                Row(
               children: [
                 // Stepper siempre visible: con la variante auto-seleccionada se
                 // ajusta la cantidad sin tener que buscar el control en el
@@ -1676,10 +1723,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                         ),
                       ),
                       Text(
-                        MonedaVentaService.formatearPrecio(
-                          totalPrice,
-                          conSimbolo: true,
-                        ),
+                        _etiquetaPrecio(),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -1717,10 +1761,164 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                   ),
                 ),
               ],
+                ),
+              ],
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _selectorMoneda() {
+    return Row(
+      children: [
+        for (final moneda in const ['CUP', 'USD'])
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: ChoiceChip(
+              label: Text(moneda),
+              selected: _monedaLinea == moneda,
+              onSelected: (_) => setState(() => _monedaLinea = moneda),
+            ),
+          ),
+      ],
+    );
+  }
+
+  bool _esVariantePrecio(ProductVariant? variant) {
+    final id = variant?.inventoryMetadata?['id_variante'];
+    return id is num && id > 0;
+  }
+
+  String? _precioEnMoneda(
+    Product product,
+    ProductVariant? variant,
+    double factor,
+  ) {
+    final esVariante = _esVariantePrecio(variant);
+    return DetalleMoneda.precioConfigurado(
+      moneda: 'USD',
+      precioCup: esVariante ? variant!.precio : product.precio,
+      precioUsd: esVariante ? variant!.precioUsd : product.precioUsd,
+      origenUsd: esVariante
+          ? (variant!.precioUsd == null ? null : 'general')
+          : product.origenPrecioUsd,
+      factor: factor,
+      esVariante: esVariante,
+    );
+  }
+
+  String _etiquetaPrecio() {
+    if (!_monedaPorProducto || _monedaLinea == 'CUP') {
+      return MonedaVentaService.formatearPrecio(totalPrice, conSimbolo: true);
+    }
+    final texto = _totalConfigurado('USD');
+    return texto ?? 'Sin precio';
+  }
+
+  String _fmtNumero(double valor) => PriceUtils.formatAmount(valor);
+
+  String _fmtUnitario(Product product, ProductVariant? variant, double cup) {
+    if (!_monedaPorProducto || _monedaLinea == 'CUP') {
+      return MonedaVentaService.formatearPrecio(cup, conSimbolo: true);
+    }
+    final usd = _precioEnMoneda(product, variant, 1);
+    return usd == null ? 'Sin precio' : _fmtNumero(double.parse(usd));
+  }
+
+  String _fmtImporte(
+    Product product,
+    ProductVariant? variant,
+    double cup,
+    double cantidad,
+  ) {
+    if (!_monedaPorProducto || _monedaLinea == 'CUP') {
+      return MonedaVentaService.formatearPrecio(cup, conSimbolo: true);
+    }
+    final factor = _getPresentationConversionFactor(product, variant);
+    final usd = _precioEnMoneda(product, variant, factor);
+    if (usd == null) return 'Sin precio';
+    return _fmtNumero(double.parse(usd) * cantidad);
+  }
+
+  String? _totalConfigurado(String moneda) {
+    if (currentProduct.variantes.isEmpty) {
+      final factor = _getPresentationConversionFactor(currentProduct);
+      final unitario = DetalleMoneda.precioConfigurado(
+        moneda: moneda,
+        precioCup: currentProduct.precio,
+        precioUsd: currentProduct.precioUsd,
+        origenUsd: currentProduct.origenPrecioUsd,
+        factor: factor,
+        esVariante: false,
+      );
+      if (unitario == null) return null;
+      return _fmtNumero(double.parse(unitario) * selectedQuantity);
+    }
+    var total = 0.0;
+    for (final entry in variantQuantities.entries) {
+      if (entry.value <= 0) continue;
+      final factor = _getPresentationConversionFactor(currentProduct, entry.key);
+      final unitario = _precioEnMoneda(currentProduct, entry.key, factor);
+      if (unitario == null) return null;
+      total += double.parse(unitario) * entry.value;
+    }
+    return _fmtNumero(total);
+  }
+
+  Future<void> _cargarModoMoneda() async {
+    final estado = await PoliticaMonedaStore.leer();
+    if (!mounted) return;
+    setState(() => _monedaPorProducto = estado.modoActivo);
+  }
+
+  Future<ProductCurrencySeleccion?> _seleccionDeLinea({
+    required Product product,
+    ProductVariant? variant,
+    required double cantidad,
+    required double factor,
+    required double precioCup,
+  }) async {
+    if (!_monedaPorProducto) return null;
+    final precio = _monedaLinea == 'CUP'
+        ? DetalleMoneda.precioConfigurado(
+            moneda: 'CUP',
+            precioCup: precioCup,
+            precioUsd: null,
+            origenUsd: null,
+            factor: factor,
+            esVariante: false,
+          )
+        : _precioEnMoneda(product, variant, factor);
+    if (precio == null) {
+      throw DetalleMonedaException(
+        'No hay precio configurado en $_monedaLinea para este producto',
+      );
+    }
+    final tasa = _monedaLinea == 'CUP'
+        ? 1.0
+        : await CurrencyService.getRate('USD', 'CUP');
+    if (_monedaLinea == 'USD' && tasa <= 0) {
+      throw DetalleMonedaException('Falta la tasa configurada de USD');
+    }
+    final offline = await _userPreferencesService.shouldUseLocalData();
+    final medios = await PaymentMethodService.getPaymentMethodsWithCache(
+      isOfflineModeEnabled: offline,
+    );
+    final medio = DetalleMoneda.medioReal(medios);
+    if (medio == null) {
+      throw DetalleMonedaException(
+        'No hay un medio de pago activo para esta linea',
+      );
+    }
+    return DetalleMoneda.seleccion(
+      idProducto: product.id,
+      cantidad: cantidad,
+      moneda: _monedaLinea,
+      precio: precio,
+      tasa: tasa.toStringAsFixed(2),
+      idMedioPago: medio.id,
     );
   }
 
@@ -2398,14 +2596,16 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  MonedaVentaService.formatearPrecio(
+                  _fmtImporte(
+                    currentProduct,
+                    variant,
                     _calculateTotalPriceWithPresentation(
                       finalPrice,
                       quantity,
                       currentProduct,
-                      variant, // FASE 4: factor POR VARIANTE
+                      variant,
                     ),
-                    conSimbolo: true,
+                    quantity,
                   ),
                   style: TextStyle(
                     fontSize: 14,
@@ -2441,8 +2641,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                     children: [
                       Text(
                         isRecargo
-                            ? 'Venta: ${MonedaVentaService.formatearPrecio(prices['precio_venta']!, conSimbolo: true)}'
-                            : 'Base: ${MonedaVentaService.formatearPrecio(price, conSimbolo: true)}',
+                            ? 'Venta: ${_fmtUnitario(currentProduct, variant, prices['precio_venta']!)}'
+                            : 'Base: ${_fmtUnitario(currentProduct, variant, price)}',
                         style: TextStyle(
                           fontSize: 11,
                           color: VentiqHomeTheme.textSecondary,
@@ -2453,8 +2653,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                       ),
                       Text(
                         isRecargo
-                            ? 'Oferta: ${MonedaVentaService.formatearPrecio(PriceUtils.roundDiscountPrice(prices['precio_oferta']!), conSimbolo: true)}'
-                            : 'Oferta: ${MonedaVentaService.formatearPrecio(PriceUtils.roundDiscountPrice(finalPrice), conSimbolo: true)}',
+                            ? 'Oferta: ${_fmtUnitario(currentProduct, variant, PriceUtils.roundDiscountPrice(prices['precio_oferta']!))}'
+                            : 'Oferta: ${_fmtUnitario(currentProduct, variant, PriceUtils.roundDiscountPrice(finalPrice))}',
                         style: TextStyle(
                           fontSize: 13,
                           color: locationColor,
@@ -2464,7 +2664,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                     ],
                   )
                   : Text(
-                    'Precio: ${MonedaVentaService.formatearPrecio(price, conSimbolo: true)}',
+                    'Precio: ${_fmtUnitario(currentProduct, variant, price)}',
                     style: TextStyle(
                       fontSize: 13,
                       color: locationColor,
@@ -3945,8 +4145,18 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
           // arqueo se mueven.
           // ══════════════════════════════════════════════════════════════════
           final cantidadEnPresentacion = selectedQuantity;
-          final precioPorPresentacion = finalPrice * conversionFactor;
-          final precioBasePorPresentacion = basePrice * conversionFactor;
+          final seleccion = await _seleccionDeLinea(
+            product: currentProduct,
+            cantidad: cantidadEnPresentacion,
+            factor: conversionFactor,
+            precioCup: currentProduct.precio,
+          );
+          final precioPorPresentacion = seleccion == null
+              ? finalPrice * conversionFactor
+              : double.parse(seleccion.precioUnitarioNativo);
+          final precioBasePorPresentacion = seleccion == null
+              ? basePrice * conversionFactor
+              : precioPorPresentacion;
 
           // await: con cocina activa esto PIDE el plato (mueve inventario y
           // dispara comanda) y puede fallar por falta de stock. Sin await la
@@ -3959,6 +4169,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
             precioUnitario: precioPorPresentacion,
             precioBase: precioBasePorPresentacion,
             promotionData: _getActivePromotion(),
+            seleccion: seleccion,
           );
           _acumularDestinoCocina(orderService, destinosCocina);
           totalItemsAdded += cantidadEnPresentacion;
@@ -3988,8 +4199,19 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
               currentProduct,
               entry.key,
             );
-            final precioPorPresentacion = finalPrice * factorVariante;
-            final precioBasePorPresentacion = basePrice * factorVariante;
+            final seleccion = await _seleccionDeLinea(
+              product: currentProduct,
+              variant: entry.key,
+              cantidad: cantidadEnPresentacion,
+              factor: factorVariante,
+              precioCup: entry.key.precio,
+            );
+            final precioPorPresentacion = seleccion == null
+                ? finalPrice * factorVariante
+                : double.parse(seleccion.precioUnitarioNativo);
+            final precioBasePorPresentacion = seleccion == null
+                ? basePrice * factorVariante
+                : precioPorPresentacion;
 
             await orderService.addItemToCurrentOrder(
               producto: currentProduct,
@@ -4000,6 +4222,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
               precioUnitario: precioPorPresentacion,
               precioBase: precioBasePorPresentacion,
               promotionData: _getActivePromotion(),
+              seleccion: seleccion,
             );
             _acumularDestinoCocina(orderService, destinosCocina);
             totalItemsAdded += cantidadEnPresentacion;

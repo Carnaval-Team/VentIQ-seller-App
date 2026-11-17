@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'user_preferences_service.dart';
 import '../models/expense.dart';
 import '../utils/price_utils.dart';
+import '../utils/uuid_generator.dart';
 import 'currency_service.dart';
 import 'payment_method_service.dart';
 
@@ -28,7 +29,11 @@ class TurnoOperationResult {
   final TurnoErrorKind? errorKind;
   final dynamic data;
 
-  const TurnoOperationResult.success({this.message, this.data})
+  /// Clave enviada al cierre. Si la red falla, la cola debe conservar esta
+  /// misma clave para que el reintento no abra otro cierre.
+  final String? clientUuid;
+
+  const TurnoOperationResult.success({this.message, this.data, this.clientUuid})
       : success = true,
         errorKind = null;
 
@@ -36,6 +41,7 @@ class TurnoOperationResult {
     required this.message,
     required this.errorKind,
     this.data,
+    this.clientUuid,
   }) : success = false;
 
   bool get isNetworkError => errorKind == TurnoErrorKind.network;
@@ -76,6 +82,12 @@ String _extractErrorMessage(Object error) {
 /// `MesaCuentaService._isRpcUnavailable`.
 bool _isRpcUnavailable(Object error, String functionName) {
   final text = error.toString().toLowerCase();
+  if (text.contains('42501') ||
+      text.contains('insufficient_privilege') ||
+      text.contains('permission denied') ||
+      text.contains('acceso denegado')) {
+    return false;
+  }
   final fn = functionName.toLowerCase();
   return text.contains('pgrst202') ||
       text.contains('could not find the function') ||
@@ -472,6 +484,23 @@ class TurnoService {
     required DateTime fechaCierre,
   }) async {
     try {
+      try {
+        await _supabase.rpc(
+          'fn_m01_marcar_cierre_solicitado',
+          params: {
+            'p_client_uuid': UuidGenerator.v4(),
+            'p_id_turno': serverTurnoId,
+            'p_fecha': fechaCierre.toUtc().toIso8601String(),
+          },
+        );
+        print('🔖 cierre_solicitado_at marcado en turno $serverTurnoId');
+        return true;
+      } catch (e) {
+        if (!_isRpcUnavailable(e, 'fn_m01_marcar_cierre_solicitado')) {
+          print('⚠️ cierre solicitado rechazado: $e');
+          return false;
+        }
+      }
       await _supabase
           .from('app_dat_caja_turno')
           .update({
@@ -675,7 +704,9 @@ class TurnoService {
     double? efectivoRealUsd,
     required List<Map<String, dynamic>> productos,
     String? observaciones,
+    String? clientUuid,
   }) async {
+    var claveCierre = clientUuid;
     try {
       final realPorDivisa =
           efectivoRealPorDivisa ??
@@ -711,12 +742,19 @@ class TurnoService {
       final creadoPor = await _resolveCreadoPorForOpenTpv(idTpvInt);
       final usuarioParaCierre = creadoPor ?? userUuid;
 
-      print('🔄 Calling fn_cerrar_turno_tpv_monedas with:');
+      final clientUuidCierre =
+          (claveCierre != null && claveCierre.isNotEmpty)
+              ? claveCierre
+              : UuidGenerator.v4();
+      claveCierre = clientUuidCierre;
+
+      print('🔄 Calling fn_cerrar_turno_offline_monedas with:');
       print('  - ID TPV: $idTpvInt');
       print('  - Efectivo real por divisa: $monedas');
       print('  - Usuario (creado_por): $usuarioParaCierre');
       print('  - Productos: ${productos.length} items');
       print('  - Observaciones: $observaciones');
+      print('  - client_uuid: $clientUuidCierre');
 
       final paramsMonedas = <String, dynamic>{
         'p_id_tpv': idTpvInt,
@@ -731,54 +769,88 @@ class TurnoService {
       dynamic response;
       try {
         response = await _supabase.rpc(
-          'fn_cerrar_turno_tpv_monedas',
-          params: paramsMonedas,
-        );
-      } catch (e) {
-        if (!_isRpcUnavailable(e, 'fn_cerrar_turno_tpv_monedas')) rethrow;
-        // GATE: la RPC multimoneda todavía no está aplicada. La variante
-        // vigente solo entiende base + USD; con más divisas se pierde el
-        // desglose que no cabe en su firma, pero el cierre no se bloquea.
-        print('⚠️ fn_cerrar_turno_tpv_monedas no disponible ($e). Fallback.');
-        response = await _supabase.rpc(
-          usaVarianteUsd ? 'fn_cerrar_turno_tpv_usd' : 'fn_cerrar_turno_tpv',
+          'fn_cerrar_turno_offline_monedas',
           params: {
-            'p_id_tpv': idTpvInt,
-            'p_efectivo_real': monedas[PriceUtils.baseCurrency] ?? 0,
-            if (usaVarianteUsd) 'p_efectivo_real_usd': monedas['USD'] ?? 0,
-            'p_usuario': usuarioParaCierre,
-            'p_productos': productos.isNotEmpty ? productos : null,
-            'p_observaciones': observaciones,
+            'p_client_uuid': clientUuidCierre,
+            ...paramsMonedas,
           },
         );
+      } catch (e) {
+        if (!_isRpcUnavailable(e, 'fn_cerrar_turno_offline_monedas')) rethrow;
+        print(
+          '⚠️ fn_cerrar_turno_offline_monedas no disponible ($e). '
+          'Fallback a fn_cerrar_turno_tpv_monedas.',
+        );
+        try {
+          response = await _supabase.rpc(
+            'fn_cerrar_turno_tpv_monedas',
+            params: paramsMonedas,
+          );
+        } catch (e2) {
+          if (!_isRpcUnavailable(e2, 'fn_cerrar_turno_tpv_monedas')) rethrow;
+          // GATE: la RPC multimoneda todavía no está aplicada. La variante
+          // vigente solo entiende base + USD; con más divisas se pierde el
+          // desglose que no cabe en su firma, pero el cierre no se bloquea.
+          print('⚠️ fn_cerrar_turno_tpv_monedas no disponible ($e2). Fallback.');
+          response = await _supabase.rpc(
+            usaVarianteUsd ? 'fn_cerrar_turno_tpv_usd' : 'fn_cerrar_turno_tpv',
+            params: {
+              'p_id_tpv': idTpvInt,
+              'p_efectivo_real': monedas[PriceUtils.baseCurrency] ?? 0,
+              if (usaVarianteUsd) 'p_efectivo_real_usd': monedas['USD'] ?? 0,
+              'p_usuario': usuarioParaCierre,
+              'p_productos': productos.isNotEmpty ? productos : null,
+              'p_observaciones': observaciones,
+            },
+          );
+        }
       }
 
-      print('✅ fn_cerrar_turno_tpv_monedas response: $response');
+      print('✅ cierre de turno response: $response');
 
-      if (response == true) {
+      if (_cierreRespondioOk(response)) {
         await _userPrefs.clearOfflineTurno();
-        return const TurnoOperationResult.success();
+        return TurnoOperationResult.success(clientUuid: clientUuidCierre);
       }
 
-      // El backend respondió pero no con true → tratarlo como error de negocio.
+      final mensaje =
+          response is Map ? response['message']?.toString() : null;
       return TurnoOperationResult.failure(
-        message: 'El servidor rechazó el cierre del turno',
+        message: mensaje ?? 'El servidor rechazó el cierre del turno',
         errorKind: TurnoErrorKind.business,
         data: response,
+        clientUuid: clientUuidCierre,
       );
     } catch (e) {
       print('❌ Error in cerrarTurno: $e');
       if (_isNetworkException(e)) {
-        return const TurnoOperationResult.failure(
+        return TurnoOperationResult.failure(
           message: 'Sin conexión al servidor',
           errorKind: TurnoErrorKind.network,
+          clientUuid: claveCierre,
         );
       }
       return TurnoOperationResult.failure(
         message: _extractErrorMessage(e),
         errorKind: TurnoErrorKind.business,
+        clientUuid: claveCierre,
       );
     }
+  }
+
+  /// La RPC con clave responde `{status: success}`. Las anteriores responden
+  /// `true`.
+  static bool _cierreRespondioOk(dynamic response) {
+    if (response == true) return true;
+    final map =
+        response is Map
+            ? response
+            : (response is List &&
+                    response.isNotEmpty &&
+                    response.first is Map
+                ? response.first as Map
+                : null);
+    return map != null && map['status'] == 'success';
   }
 
   /// Normaliza un mapa de importes por divisa: códigos en mayúsculas, sin
@@ -926,7 +998,12 @@ class TurnoService {
     required bool manejaInventario,
     List<Map<String, dynamic>>? productos,
     String? observaciones,
+    String? clientUuid,
   }) async {
+    final clave =
+        (clientUuid != null && clientUuid.isNotEmpty)
+            ? clientUuid
+            : UuidGenerator.v4();
     try {
       final inicialPorDivisa =
           efectivoInicialPorDivisa ??
@@ -936,7 +1013,7 @@ class TurnoService {
           };
       final monedas = _monedasNormalizadas(inicialPorDivisa);
 
-      print('🔄 Calling registrar_apertura_turno_monedas with:');
+      print('🔄 Calling fn_apertura_turno_offline_monedas with:');
       print('  - Efectivo inicial por divisa: $monedas');
       print('  - ID TPV: $idTpv');
       print('  - ID Vendedor: $idVendedor');
@@ -944,78 +1021,135 @@ class TurnoService {
       print('  - Maneja inventario: $manejaInventario');
       print('  - Productos: ${productos?.length ?? 0} items');
       print('  - Observaciones: ${observaciones ?? "Sin observaciones"}');
+      print('  - client_uuid: $clave');
 
       // La variante vigente solo conoce base + USD: decide el respaldo.
       final usaVarianteUsd = _tieneDivisaExtra(monedas);
+      final paramsMonedas = <String, dynamic>{
+        'p_id_tpv': idTpv,
+        'p_id_vendedor': idVendedor,
+        'p_usuario': usuario,
+        'p_maneja_inventario': manejaInventario,
+        'p_productos': productos,
+        'p_efectivo_inicial_por_moneda': monedas,
+        'p_observaciones': observaciones,
+      };
 
       dynamic response;
       try {
         response = await _supabase.rpc(
-          'registrar_apertura_turno_monedas',
-          params: {
-            'p_id_tpv': idTpv,
-            'p_id_vendedor': idVendedor,
-            'p_usuario': usuario,
-            'p_maneja_inventario': manejaInventario,
-            'p_productos': productos,
-            'p_efectivo_inicial_por_moneda': monedas,
-            'p_observaciones': observaciones,
-          },
+          'fn_apertura_turno_offline_monedas',
+          params: {'p_client_uuid': clave, ...paramsMonedas},
         );
       } catch (e) {
-        if (!_isRpcUnavailable(e, 'registrar_apertura_turno_monedas')) rethrow;
-        // GATE: la RPC multimoneda todavía no está aplicada. La variante
-        // vigente solo entiende base + USD; con más divisas se pierde el
-        // desglose que no cabe en su firma, pero la apertura no se bloquea.
-        print('⚠️ registrar_apertura_turno_monedas no disponible ($e). Fallback.');
-        response = await _supabase.rpc(
-          usaVarianteUsd
-              ? 'registrar_apertura_turno_usd'
-              : 'registrar_apertura_turno_v3',
-          params: {
-            'p_efectivo_inicial': monedas[PriceUtils.baseCurrency] ?? 0,
-            if (usaVarianteUsd) 'p_efectivo_inicial_usd': monedas['USD'] ?? 0,
-            'p_id_tpv': idTpv,
-            'p_id_vendedor': idVendedor,
-            'p_usuario': usuario,
-            'p_maneja_inventario': manejaInventario,
-            'p_productos': productos,
-            'p_observaciones': observaciones,
-          },
+        if (!_isRpcUnavailable(e, 'fn_apertura_turno_offline_monedas')) {
+          rethrow;
+        }
+        print(
+          '⚠️ fn_apertura_turno_offline_monedas no disponible ($e). '
+          'Fallback a registrar_apertura_turno_monedas.',
         );
+        try {
+          response = await _supabase.rpc(
+            'registrar_apertura_turno_monedas',
+            params: paramsMonedas,
+          );
+        } catch (e2) {
+          if (!_isRpcUnavailable(e2, 'registrar_apertura_turno_monedas')) {
+            rethrow;
+          }
+          // GATE: la RPC multimoneda todavía no está aplicada. La variante
+          // vigente solo entiende base + USD; con más divisas se pierde el
+          // desglose que no cabe en su firma, pero la apertura no se bloquea.
+          print(
+            '⚠️ registrar_apertura_turno_monedas no disponible ($e2). Fallback.',
+          );
+          response = await _supabase.rpc(
+            usaVarianteUsd
+                ? 'registrar_apertura_turno_usd'
+                : 'registrar_apertura_turno_v3',
+            params: {
+              'p_efectivo_inicial': monedas[PriceUtils.baseCurrency] ?? 0,
+              if (usaVarianteUsd) 'p_efectivo_inicial_usd': monedas['USD'] ?? 0,
+              'p_id_tpv': idTpv,
+              'p_id_vendedor': idVendedor,
+              'p_usuario': usuario,
+              'p_maneja_inventario': manejaInventario,
+              'p_productos': productos,
+              'p_observaciones': observaciones,
+            },
+          );
+        }
       }
 
-      print('✅ registrar_apertura_turno_monedas response: $response');
-
-      if (response != null) {
+      print('✅ apertura de turno response: $response');
+      final parsed = _aperturaDesdeRespuesta(response);
+      if (!parsed.ok) {
         return {
-          'success': true,
-          'message': 'Apertura registrada exitosamente',
-          'operacion_id': response,
-          'errorKind': null,
+          'success': false,
+          'message': parsed.message ?? 'El servidor rechazó la apertura',
+          'operacion_id': null,
+          'client_uuid': clave,
+          'errorKind': TurnoErrorKind.business,
         };
       }
 
       return {
-        'success': false,
-        'message': 'Respuesta inválida del servidor',
-        'operacion_id': null,
-        'errorKind': TurnoErrorKind.business,
+        'success': true,
+        'message': parsed.message ?? 'Apertura registrada exitosamente',
+        'operacion_id': parsed.id,
+        'client_uuid': clave,
+        'errorKind': null,
       };
     } catch (e) {
       print('❌ Error in registrarAperturaTurno: $e');
       final isNetwork = _isNetworkException(e);
       return {
         'success': false,
-        'message': isNetwork
-            ? 'Sin conexión al servidor'
-            : _extractErrorMessage(e),
+        'message':
+            isNetwork ? 'Sin conexión al servidor' : _extractErrorMessage(e),
         'operacion_id': null,
-        'errorKind': isNetwork
-            ? TurnoErrorKind.network
-            : TurnoErrorKind.business,
+        'client_uuid': clave,
+        'errorKind':
+            isNetwork ? TurnoErrorKind.network : TurnoErrorKind.business,
       };
     }
+  }
+
+  /// La RPC con clave responde `{status, id_turno}`. Las anteriores responden
+  /// el id escalar de la operación.
+  static ({bool ok, dynamic id, String? message}) _aperturaDesdeRespuesta(
+    dynamic response,
+  ) {
+    final map =
+        response is Map
+            ? response
+            : (response is List &&
+                    response.isNotEmpty &&
+                    response.first is Map
+                ? response.first as Map
+                : null);
+    if (map != null) {
+      final status = map['status']?.toString();
+      if (status != null && status != 'success') {
+        return (
+          ok: false,
+          id: null,
+          message: map['message']?.toString(),
+        );
+      }
+      if (status == 'success') {
+        return (
+          ok: true,
+          id: map['id_turno'] ?? map['id_operacion'],
+          message: map['message']?.toString(),
+        );
+      }
+    }
+    if (response == null) {
+      return (ok: false, id: null, message: 'Respuesta inválida del servidor');
+    }
+    return (ok: true, id: response, message: null);
   }
 
   /// Divisas con las que trabaja la caja, en orden de presentación.

@@ -1,6 +1,22 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/shift_worker.dart';
+import '../utils/uuid_generator.dart';
 import 'user_preferences_service.dart';
+
+bool _rpcAusente(Object error, String functionName) {
+  final text = error.toString().toLowerCase();
+  if (text.contains('42501') ||
+      text.contains('insufficient_privilege') ||
+      text.contains('permission denied') ||
+      text.contains('acceso denegado')) {
+    return false;
+  }
+  final fn = functionName.toLowerCase();
+  return text.contains('pgrst202') ||
+      text.contains('could not find the function') ||
+      text.contains('schema cache') ||
+      (text.contains('does not exist') && text.contains(fn));
+}
 
 /// Servicio para gestión de trabajadores de turno con soporte offline
 class ShiftWorkersService {
@@ -146,6 +162,35 @@ class ShiftWorkersService {
       }
 
       final entrada = horaEntrada ?? DateTime.now();
+      try {
+        final respuesta = await _supabase.rpc(
+          'fn_m01_registrar_trabajador_turno',
+          params: {
+            'p_client_uuid': UuidGenerator.v4(),
+            'p_id_turno': idTurno,
+            'p_ids': idsTrabajadores,
+            'p_hora': entrada.toIso8601String(),
+          },
+        );
+        final mapa = respuesta is Map
+            ? Map<String, dynamic>.from(respuesta)
+            : null;
+        if (mapa != null && mapa['success'] == true) {
+          return {
+            'success': true,
+            'message':
+                '${idsTrabajadores.length} trabajador(es) agregado(s) al turno',
+          };
+        }
+        return {
+          'success': false,
+          'message': mapa?['message'] ?? 'No se agregaron los trabajadores',
+        };
+      } catch (e) {
+        if (!_rpcAusente(e, 'fn_m01_registrar_trabajador_turno')) {
+          return {'success': false, 'message': 'Error: $e'};
+        }
+      }
       final List<Map<String, dynamic>> insertData = [];
 
       for (final idTrabajador in idsTrabajadores) {
@@ -204,6 +249,37 @@ class ShiftWorkersService {
       }
 
       final salida = horaSalida ?? DateTime.now();
+
+      try {
+        for (final id in idsRegistros) {
+          final respuesta = await _supabase.rpc(
+            'fn_m01_registrar_salida_trabajador',
+            params: {
+              'p_client_uuid': UuidGenerator.v4(),
+              'p_id_registro': id,
+              'p_hora': salida.toIso8601String(),
+            },
+          );
+          final mapa = respuesta is Map
+              ? Map<String, dynamic>.from(respuesta)
+              : null;
+          if (mapa == null || mapa['success'] != true) {
+            return {
+              'success': false,
+              'message': mapa?['message'] ?? 'No se registró la salida',
+            };
+          }
+        }
+        return {
+          'success': true,
+          'message':
+              'Salida registrada para ${idsRegistros.length} trabajador(es)',
+        };
+      } catch (e) {
+        if (!_rpcAusente(e, 'fn_m01_registrar_salida_trabajador')) {
+          return {'success': false, 'message': 'Error: $e'};
+        }
+      }
 
       // Actualizar registros en Supabase
       for (final id in idsRegistros) {
@@ -430,36 +506,90 @@ class ShiftWorkersService {
         final type = op['type'] as String?;
 
         if (type == 'add_shift_worker') {
-          final data = op['data'] as Map<String, dynamic>;
+          final data = Map<String, dynamic>.from(
+            op['data'] as Map,
+          );
+          data['client_uuid'] ??= UuidGenerator.v4();
+          op['data'] = data;
           try {
-            // Upsert idempotente: si ya existe (id_turno, id_trabajador), no
-            // duplica. Requiere el índice único app_dat_turno_trabajadores_unique_active.
-            await _supabase.from('app_dat_turno_trabajadores').upsert({
-              'id_turno': data['id_turno'],
-              'id_trabajador': data['id_trabajador'],
-              'hora_entrada': data['hora_entrada'],
-            }, onConflict: 'id_turno,id_trabajador', ignoreDuplicates: true);
-
+            final respuesta = await _supabase.rpc(
+              'fn_m01_registrar_trabajador_turno',
+              params: {
+                'p_client_uuid': data['client_uuid'],
+                'p_id_turno': data['id_turno'],
+                'p_ids': [data['id_trabajador']],
+                'p_hora': data['hora_entrada'],
+              },
+            );
+            final mapa = respuesta is Map
+                ? Map<String, dynamic>.from(respuesta)
+                : null;
+            if (mapa == null || mapa['success'] != true) {
+              remaining.add(op);
+              continue;
+            }
             syncedCount++;
             print('  ✅ Trabajador agregado sincronizado (idempotente)');
           } catch (e) {
-            print('  ❌ Error sincronizando trabajador: $e');
-            remaining.add(op); // conservar para reintento
+            if (!_rpcAusente(e, 'fn_m01_registrar_trabajador_turno')) {
+              print('  ❌ Error sincronizando trabajador: $e');
+              remaining.add(op);
+              continue;
+            }
+            try {
+              await _supabase.from('app_dat_turno_trabajadores').upsert({
+                'id_turno': data['id_turno'],
+                'id_trabajador': data['id_trabajador'],
+                'hora_entrada': data['hora_entrada'],
+              }, onConflict: 'id_turno,id_trabajador', ignoreDuplicates: true);
+              syncedCount++;
+              print('  ✅ Trabajador agregado sincronizado (idempotente)');
+            } catch (upsertError) {
+              print('  ❌ Error sincronizando trabajador: $upsertError');
+              remaining.add(op);
+            }
           }
         } else if (type == 'register_worker_exit') {
-          final data = op['data'] as Map<String, dynamic>;
+          final data = Map<String, dynamic>.from(
+            op['data'] as Map,
+          );
+          data['client_uuid'] ??= UuidGenerator.v4();
+          op['data'] = data;
           try {
-            // Update por id_registro: idempotente por naturaleza.
-            await _supabase
-                .from('app_dat_turno_trabajadores')
-                .update({'hora_salida': data['hora_salida']})
-                .eq('id', data['id_registro']);
-
+            final respuesta = await _supabase.rpc(
+              'fn_m01_registrar_salida_trabajador',
+              params: {
+                'p_client_uuid': data['client_uuid'],
+                'p_id_registro': data['id_registro'],
+                'p_hora': data['hora_salida'],
+              },
+            );
+            final mapa = respuesta is Map
+                ? Map<String, dynamic>.from(respuesta)
+                : null;
+            if (mapa == null || mapa['success'] != true) {
+              remaining.add(op);
+              continue;
+            }
             syncedCount++;
             print('  ✅ Salida de trabajador sincronizada');
           } catch (e) {
-            print('  ❌ Error sincronizando salida: $e');
-            remaining.add(op); // conservar para reintento
+            if (!_rpcAusente(e, 'fn_m01_registrar_salida_trabajador')) {
+              print('  ❌ Error sincronizando salida: $e');
+              remaining.add(op);
+              continue;
+            }
+            try {
+              await _supabase
+                  .from('app_dat_turno_trabajadores')
+                  .update({'hora_salida': data['hora_salida']})
+                  .eq('id', data['id_registro']);
+              syncedCount++;
+              print('  ✅ Salida de trabajador sincronizada');
+            } catch (updateError) {
+              print('  ❌ Error sincronizando salida: $updateError');
+              remaining.add(op);
+            }
           }
         } else {
           // Otros tipos (apertura/cierre/cambio estado) NO los gestiona este

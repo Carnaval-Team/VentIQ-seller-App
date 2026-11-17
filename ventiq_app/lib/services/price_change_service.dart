@@ -1,6 +1,22 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../utils/uuid_generator.dart';
 import 'user_preferences_service.dart';
+
+bool _rpcAusente(Object error, String functionName) {
+  final text = error.toString().toLowerCase();
+  if (text.contains('42501') ||
+      text.contains('insufficient_privilege') ||
+      text.contains('permission denied') ||
+      text.contains('acceso denegado')) {
+    return false;
+  }
+  final fn = functionName.toLowerCase();
+  return text.contains('pgrst202') ||
+      text.contains('could not find the function') ||
+      text.contains('schema cache') ||
+      (text.contains('does not exist') && text.contains(fn));
+}
 
 class PriceChangeService {
   static final PriceChangeService _instance = PriceChangeService._internal();
@@ -46,7 +62,23 @@ class PriceChangeService {
         'monto_descontado': montoDescontado,
       }..removeWhere((key, value) => value == null);
 
-      await _supabase.from('app_dat_cambio_precio').insert(payload);
+      try {
+        await _supabase.rpc(
+          'fn_m01_registrar_cambio_precio',
+          params: {
+            'p_client_uuid': UuidGenerator.v4(),
+            'p_id_producto': productId,
+            'p_id_variante': variantId,
+            'p_precio_anterior': originalPrice,
+            'p_precio_nuevo': resultPrice,
+            'p_motivo': tipo,
+            'p_id_tpv': idTpv,
+          },
+        );
+      } catch (e) {
+        if (!_rpcAusente(e, 'fn_m01_registrar_cambio_precio')) rethrow;
+        await _supabase.from('app_dat_cambio_precio').insert(payload);
+      }
     } catch (e) {
       debugPrint('❌ Error registrando cambio de precio: $e');
     }

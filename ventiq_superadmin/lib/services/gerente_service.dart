@@ -313,15 +313,32 @@ class GerenteService {
       debugPrint('Apellidos: $apellidos');
       debugPrint('ID Tienda: $idTienda');
       
-      final response = await _supabase.rpc(
-        'create_gerente_from_email',
-        params: {
-          'p_email': email,
-          'p_nombres': nombres,
-          'p_apellidos': apellidos,
-          'p_id_tienda': idTienda,
-        },
-      );
+      final params = {
+        'p_email': email,
+        'p_nombres': nombres,
+        'p_apellidos': apellidos,
+        'p_id_tienda': idTienda,
+      };
+      dynamic response;
+      try {
+        response = await _supabase.rpc('fn_m01_crear_gerente', params: params);
+      } catch (e) {
+        final text = e.toString().toLowerCase();
+        final denied = text.contains('42501') ||
+            text.contains('insufficient_privilege') ||
+            text.contains('permission denied') ||
+            text.contains('acceso denegado');
+        final missing = !denied &&
+            (text.contains('pgrst202') ||
+                text.contains('could not find the function') ||
+                (text.contains('does not exist') &&
+                    text.contains('fn_m01_crear_gerente')));
+        if (!missing) rethrow;
+        response = await _supabase.rpc(
+          'create_gerente_from_email',
+          params: params,
+        );
+      }
 
       debugPrint('✅ Gerente creado exitosamente');
       debugPrint('Gerente ID: ${response[0]['gerente_id']}');

@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../models/product.dart';
+import '../../money/detalle_moneda.dart';
+import '../../money/politica_moneda_store.dart';
 import '../../services/moneda_venta_service.dart';
 import '../../services/quick_add_service.dart';
 import '../../theme/ventiq_home_theme.dart';
+import '../../utils/price_utils.dart';
 
 /// Qué decidió el vendedor en la hoja de cantidad.
 enum QuickAddSalidaTipo { agregado, requiereDetalle }
@@ -49,6 +52,7 @@ class QuickAddSheet extends StatefulWidget {
     required this.nombreProducto,
     required this.evaluar,
     required this.agregar,
+    this.agregarEnMoneda,
   });
 
   /// Nombre que se pinta en la cabecera mientras carga el detalle. Sirve tanto
@@ -64,6 +68,13 @@ class QuickAddSheet extends StatefulWidget {
   )
   agregar;
 
+  final Future<QuickAddResultado> Function(
+    QuickAddPreparado preparado,
+    double cantidad,
+    String moneda,
+  )?
+  agregarEnMoneda;
+
   @override
   State<QuickAddSheet> createState() => _QuickAddSheetState();
 }
@@ -74,6 +85,8 @@ class _QuickAddSheetState extends State<QuickAddSheet> {
   QuickAddEvaluacion? _evaluacion;
   bool _cargando = true;
   bool _agregando = false;
+  bool _monedaPorProducto = false;
+  String _monedaLinea = 'CUP';
   String? _error;
 
   double get _cantidad {
@@ -84,7 +97,16 @@ class _QuickAddSheetState extends State<QuickAddSheet> {
   @override
   void initState() {
     super.initState();
+    _cargarMoneda();
     _evaluar();
+  }
+
+  Future<void> _cargarMoneda() async {
+    try {
+      final estado = await PoliticaMonedaStore.leer();
+      if (!mounted) return;
+      setState(() => _monedaPorProducto = estado.modoActivo);
+    } catch (_) {}
   }
 
   @override
@@ -145,10 +167,10 @@ class _QuickAddSheetState extends State<QuickAddSheet> {
     });
 
     try {
-      final QuickAddResultado resultado = await widget.agregar(
-        preparado,
-        cantidad,
-      );
+      final QuickAddResultado resultado = _monedaPorProducto &&
+              widget.agregarEnMoneda != null
+          ? await widget.agregarEnMoneda!(preparado, cantidad, _monedaLinea)
+          : await widget.agregar(preparado, cantidad);
       if (!mounted) return;
 
       if (resultado.requiereDetalle) {
@@ -278,6 +300,10 @@ class _QuickAddSheetState extends State<QuickAddSheet> {
                       ),
                     ] else if (preparado != null) ...<Widget>[
                       _detallePreparado(preparado),
+                      if (_monedaPorProducto) ...<Widget>[
+                        const SizedBox(height: 14),
+                        _selectorMoneda(),
+                      ],
                       const SizedBox(height: 14),
                       _selectorCantidad(preparado),
                       const SizedBox(height: 14),
@@ -381,6 +407,22 @@ class _QuickAddSheetState extends State<QuickAddSheet> {
     );
   }
 
+  Widget _selectorMoneda() {
+    return Row(
+      children: <Widget>[
+        for (final String moneda in const <String>['CUP', 'USD'])
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: ChoiceChip(
+              label: Text(moneda),
+              selected: _monedaLinea == moneda,
+              onSelected: (_) => setState(() => _monedaLinea = moneda),
+            ),
+          ),
+      ],
+    );
+  }
+
   Widget _selectorCantidad(QuickAddPreparado preparado) {
     return Row(
       children: <Widget>[
@@ -431,7 +473,7 @@ class _QuickAddSheetState extends State<QuickAddSheet> {
   }
 
   Widget _total(QuickAddPreparado preparado) {
-    final double total = preparado.precioUnitario * _cantidad;
+    final String texto = _textoTotal(preparado);
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: <Widget>[
@@ -444,7 +486,7 @@ class _QuickAddSheetState extends State<QuickAddSheet> {
           ),
         ),
         Text(
-          MonedaVentaService.formatearPrecio(total),
+          texto,
           style: const TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.w900,
@@ -453,6 +495,34 @@ class _QuickAddSheetState extends State<QuickAddSheet> {
         ),
       ],
     );
+  }
+
+  String _textoTotal(QuickAddPreparado preparado) {
+    if (!_monedaPorProducto || _monedaLinea == 'CUP') {
+      return MonedaVentaService.formatearPrecio(
+        preparado.precioUnitario * _cantidad,
+      );
+    }
+    final idVariante = preparado.inventoryData['id_variante'];
+    final bool esVariante = idVariante is num && idVariante > 0;
+    final String? unitario = DetalleMoneda.precioConfigurado(
+      moneda: 'USD',
+      precioCup: esVariante
+          ? (preparado.variante?.precio ?? preparado.producto.precio)
+          : preparado.producto.precio,
+      precioUsd: esVariante
+          ? preparado.variante?.precioUsd
+          : preparado.producto.precioUsd,
+      origenUsd: esVariante
+          ? (preparado.variante?.precioUsd == null ? null : 'general')
+          : preparado.producto.origenPrecioUsd,
+      factor: preparado.factorPresentacion <= 0
+          ? 1
+          : preparado.factorPresentacion,
+      esVariante: esVariante,
+    );
+    if (unitario == null) return 'Sin precio';
+    return PriceUtils.formatAmount(double.parse(unitario) * _cantidad);
   }
 
   static String _formato(double valor) =>

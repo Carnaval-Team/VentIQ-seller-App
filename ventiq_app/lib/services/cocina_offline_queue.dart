@@ -137,25 +137,29 @@ class CocinaOfflineQueue {
     required int idComandaItem,
     required int nuevoEstado,
     String? descripcion,
+    String? clientUuid,
   }) async {
-    final clientUuid = UuidGenerator.v4();
+    final uuid =
+        (clientUuid != null && clientUuid.isNotEmpty)
+            ? clientUuid
+            : UuidGenerator.v4();
     final ops = await _leer();
 
     ops.add({
       'tipo': 'estado_comanda_item',
-      'client_uuid': clientUuid,
+      'client_uuid': uuid,
       'creado_en': DateTime.now().toIso8601String(),
       'intentos': 0,
       'descripcion': descripcion ?? 'Cambio de estado a $nuevoEstado',
       'params': {
-        'p_client_uuid': clientUuid,
+        'p_client_uuid': uuid,
         'p_id_item': idComandaItem,
         'p_nuevo_estado': nuevoEstado,
       },
     });
 
     await _guardar(ops);
-    return clientUuid;
+    return uuid;
   }
 
   // ── Sincronizar ────────────────────────────────────────────────────────

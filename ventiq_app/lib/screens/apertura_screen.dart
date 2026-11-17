@@ -20,6 +20,21 @@ import '../widgets/connection_status_widget.dart';
 import '../services/notification_service.dart';
 import '../models/notification_model.dart';
 
+bool _rpcAusente(Object error, String functionName) {
+  final text = error.toString().toLowerCase();
+  if (text.contains('42501') ||
+      text.contains('insufficient_privilege') ||
+      text.contains('permission denied') ||
+      text.contains('acceso denegado')) {
+    return false;
+  }
+  final fn = functionName.toLowerCase();
+  return text.contains('pgrst202') ||
+      text.contains('could not find the function') ||
+      text.contains('schema cache') ||
+      (text.contains('does not exist') && text.contains(fn));
+}
+
 class AperturaScreen extends StatefulWidget {
   const AperturaScreen({Key? key}) : super(key: key);
 
@@ -343,10 +358,25 @@ class _AperturaScreenState extends State<AperturaScreen>
         return false;
       }
 
-      await supabase
-          .from('app_dat_operaciones')
-          .update({'created_at': DateTime.now().toIso8601String()})
-          .eq('id', operacionId);
+      try {
+        final respuesta = await supabase.rpc(
+          'fn_m01_recibir_operacion_turno',
+          params: {
+            'p_client_uuid': UuidGenerator.v4(),
+            'p_id_operacion': operacionId,
+          },
+        );
+        final mapa = respuesta is Map
+            ? Map<String, dynamic>.from(respuesta)
+            : null;
+        if (mapa == null || mapa['success'] != true) return false;
+      } catch (e) {
+        if (!_rpcAusente(e, 'fn_m01_recibir_operacion_turno')) return false;
+        await supabase
+            .from('app_dat_operaciones')
+            .update({'created_at': DateTime.now().toIso8601String()})
+            .eq('id', operacionId);
+      }
 
       await _notificationService.markAsRead(notification.id);
       return true;
@@ -1171,9 +1201,16 @@ class _AperturaScreenState extends State<AperturaScreen>
                         ),
                       ),
 
-                      const SizedBox(height: 20),
+                      // El card de inventario solo aparece si la tienda maneja
+                      // inventario y el trabajador está obligado al conteo de
+                      // apertura; si el conteo no se pide no se muestra nada.
+                      if (_isLoadingStoreConfig ||
+                          _checkingInventoryStatus ||
+                          (_manejaInventario &&
+                              _trabajadorManejaAperturaControl)) ...[
+                        const SizedBox(height: 20),
 
-                      Container(
+                        Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
                           color: VentiqHomeTheme.card,
@@ -1215,7 +1252,7 @@ class _AperturaScreenState extends State<AperturaScreen>
                                   ),
                                 ),
                               )
-                            else if (_manejaInventario)
+                            else
                               Container(
                                 padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
@@ -1326,97 +1363,11 @@ class _AperturaScreenState extends State<AperturaScreen>
                                     ),
                                   ],
                                 ),
-                              )
-                            else
-                              Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: VentiqHomeTheme.primary.withValues(
-                                    alpha: 0.06,
-                                  ),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: VentiqHomeTheme.primary.withValues(
-                                      alpha: 0.25,
-                                    ),
-                                  ),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        const Icon(
-                                          Icons.info_outline,
-                                          color: VentiqHomeTheme.primary,
-                                          size: 18,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          'Opciones de Inventario',
-                                          style: VentiqHomeTheme.rotuloBloque
-                                              .copyWith(
-                                                color: VentiqHomeTheme.primary,
-                                              ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 12),
-                                    Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          '1. ',
-                                          style: TextStyle(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w700,
-                                            color: VentiqHomeTheme.textPrimary,
-                                          ),
-                                        ),
-                                        Expanded(
-                                          child: Text(
-                                            'Este turno no manejará inventario (solo ventas)',
-                                            style: const TextStyle(
-                                              fontSize: 13,
-                                              color:
-                                                  VentiqHomeTheme.textSecondary,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          '2. ',
-                                          style: TextStyle(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w700,
-                                            color: VentiqHomeTheme.textPrimary,
-                                          ),
-                                        ),
-                                        Expanded(
-                                          child: Text(
-                                            'La apertura se realizará sin conteo de productos',
-                                            style: const TextStyle(
-                                              fontSize: 13,
-                                              color:
-                                                  VentiqHomeTheme.textSecondary,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
                               ),
                           ],
                         ),
-                      ),
+                        ),
+                      ],
 
                       const SizedBox(height: 20),
 
@@ -2055,7 +2006,7 @@ class _AperturaScreenState extends State<AperturaScreen>
         );
       } else {
         print('🌐 Modo online - Creando apertura en Supabase...');
-        // Usar el nuevo método del TurnoService
+        final clientUuidApertura = UuidGenerator.v4();
         final result = await TurnoService.registrarAperturaTurno(
           efectivoInicialPorDivisa: efectivoInicialPorDivisa,
           idTpv: tpvId,
@@ -2064,6 +2015,7 @@ class _AperturaScreenState extends State<AperturaScreen>
           manejaInventario: _manejaInventario,
           productos: productCounts,
           observaciones: observacionesFinales,
+          clientUuid: clientUuidApertura,
         );
 
         if (mounted) {
@@ -2099,17 +2051,26 @@ class _AperturaScreenState extends State<AperturaScreen>
           } else {
             final errorKind = result['errorKind'];
             final isNetwork = errorKind == TurnoErrorKind.network;
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  isNetwork
-                      ? 'Sin conexión al servidor. Intenta nuevamente cuando tengas conexión.'
-                      : (result['message'] ?? 'Error desconocido'),
+            if (isNetwork) {
+              await _createOfflineApertura(
+                efectivoInicialPorDivisa: efectivoInicialPorDivisa,
+                idTpv: tpvId,
+                idVendedor: sellerId,
+                usuario: userUuid,
+                observaciones: observacionesFinales,
+                productos: productCounts,
+                clientUuid:
+                    result['client_uuid']?.toString() ?? clientUuidApertura,
+              );
+            } else if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(result['message'] ?? 'Error desconocido'),
+                  backgroundColor: VentiqHomeTheme.danger,
+                  duration: const Duration(seconds: 4),
                 ),
-                backgroundColor: VentiqHomeTheme.danger,
-                duration: const Duration(seconds: 4),
-              ),
-            );
+              );
+            }
           }
         }
       }
@@ -2614,10 +2575,14 @@ class _AperturaScreenState extends State<AperturaScreen>
     required String usuario,
     String? observaciones,
     List<Map<String, dynamic>>? productos,
+    String? clientUuid,
   }) async {
     try {
-      // client_uuid estable para idempotencia al sincronizar la apertura.
-      final clientUuid = UuidGenerator.v4();
+      // Si la red cortó un intento online, se reutiliza esa clave.
+      final clave =
+          (clientUuid != null && clientUuid.isNotEmpty)
+              ? clientUuid
+              : UuidGenerator.v4();
       final localId = UuidGenerator.v4();
 
       // Usar la hora corregida contra el servidor (ver ServerTimeService)
@@ -2630,7 +2595,7 @@ class _AperturaScreenState extends State<AperturaScreen>
         'id': localId,
         'local_id': localId,
         'local_turno_id': localId,
-        'client_uuid': clientUuid,
+        'client_uuid': clave,
         'id_tpv': idTpv,
         'id_vendedor': idVendedor,
         'usuario': usuario,
@@ -2654,12 +2619,14 @@ class _AperturaScreenState extends State<AperturaScreen>
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Text(
-              'Apertura creada offline. Se sincronizará al desactivar el modo offline.',
+              clientUuid != null && clientUuid.isNotEmpty
+                  ? 'Sin conexión: la apertura quedó guardada y se enviará al recuperar la red.'
+                  : 'Apertura creada offline. Se sincronizará al desactivar el modo offline.',
             ),
             backgroundColor: VentiqHomeTheme.warning,
-            duration: Duration(seconds: 3),
+            duration: const Duration(seconds: 3),
           ),
         );
         Navigator.of(context).pop(true);

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../money/politica_moneda_store.dart';
 import '../services/currency_service.dart';
 import '../services/moneda_venta_service.dart';
 import '../utils/price_utils.dart';
@@ -53,6 +54,14 @@ class _MonedaVentaChipState extends State<MonedaVentaChip> {
 
   Future<void> _cargar() async {
     try {
+      final estado = await PoliticaMonedaStore.leer();
+      if (estado.modoActivo) {
+        MonedaVentaService.usarSeleccionPorLinea(true);
+        if (!mounted) return;
+        setState(() => _cargando = false);
+        return;
+      }
+      MonedaVentaService.usarSeleccionPorLinea(false);
       final monedas = await CurrencyService.getMonedasTienda();
       final tasas = await CurrencyService.getRatesForStore();
 
@@ -160,7 +169,7 @@ class _MonedaVentaChipState extends State<MonedaVentaChip> {
 
   @override
   Widget build(BuildContext context) {
-    if (_cargando) {
+    if (_cargando || MonedaVentaService.porLinea) {
       return const SizedBox.shrink();
     }
 

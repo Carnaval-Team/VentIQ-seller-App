@@ -121,13 +121,8 @@ BEGIN
             COALESCE(u.email, 'Sistema')        AS usuario_email,
             e.estado,
             desc_vendedor.descuento             AS descuento,
-            CASE
-                WHEN e.estado = 1 THEN 'Pendiente'
-                WHEN e.estado = 2 THEN 'Completada'
-                WHEN e.estado = 3 THEN 'Cancelada'
-                WHEN e.estado = 4 THEN 'En Proceso'
-                ELSE 'Desconocido'
-            END                                 AS estado_nombre,
+            COALESCE(es.denominacion::text, 'Desconocido')
+                                                AS estado_nombre,
             o.observaciones::TEXT,
             -- Datos específicos de TPV (usa la variable v_id_tipo_venta cacheada)
             CASE
@@ -186,6 +181,7 @@ BEGIN
              ORDER BY er.id DESC
              LIMIT 1
         ) e ON TRUE
+        LEFT JOIN app_nom_estado_operacion es ON e.estado = es.id
         WHERE
             -- (OPT 2) filtro de acceso por array precalculado
             o.id_tienda = ANY(v_tiendas)

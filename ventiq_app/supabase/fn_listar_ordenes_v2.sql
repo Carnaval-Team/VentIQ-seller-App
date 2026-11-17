@@ -89,13 +89,8 @@ BEGIN
             COALESCE(u.email, 'Sistema')        AS usuario_email,
             e.estado,
             desc_vendedor.descuento             AS descuento,
-            CASE
-                WHEN e.estado = 1 THEN 'Pendiente'
-                WHEN e.estado = 2 THEN 'Completada'
-                WHEN e.estado = 3 THEN 'Cancelada'
-                WHEN e.estado = 4 THEN 'En Proceso'
-                ELSE 'Desconocido'
-            END                                 AS estado_nombre,
+            COALESCE(es.denominacion::text, 'Desconocido')
+                                                AS estado_nombre,
             o.observaciones::TEXT,
             -- Datos específicos de TPV
             CASE
@@ -153,6 +148,7 @@ BEGIN
                   SELECT MAX(id) FROM app_dat_estado_operacion er
                    WHERE er.id_operacion = o.id
               )
+        LEFT JOIN app_nom_estado_operacion es ON e.estado = es.id
         WHERE
             (id_tienda_param IS NULL OR o.id_tienda = id_tienda_param)
             AND (id_tpv_param IS NULL OR EXISTS (

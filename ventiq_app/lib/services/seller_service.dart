@@ -82,95 +82,18 @@ class SellerService {
     }
   }
 
-  /// Primer TPV de la tienda (fallback para gerente/supervisor sin vendedor).
-  Future<Map<String, dynamic>?> getDefaultTpvForStore(int idTienda) async {
-    try {
-      final response = await client
-          .from('app_dat_tpv')
-          .select('*')
-          .eq('id_tienda', idTienda)
-          .order('id')
-          .limit(1);
-      if (response.isEmpty) return null;
-      return Map<String, dynamic>.from(response.first as Map);
-    } catch (e) {
-      print('❌ Error obteniendo TPV por defecto: $e');
-      return null;
-    }
-  }
-
-  Future<Map<String, dynamic>?> _findGerenteByUuid(String userUuid) async {
-    try {
-      final response = await client
-          .from('app_dat_gerente')
-          .select('*')
-          .eq('uuid', userUuid)
-          .order('id')
-          .limit(1);
-      if (response.isEmpty) return null;
-      return Map<String, dynamic>.from(response.first as Map);
-    } catch (e) {
-      print('❌ Error consultando gerente: $e');
-      return null;
-    }
-  }
-
-  Future<Map<String, dynamic>?> _findSupervisorByUuid(String userUuid) async {
-    try {
-      final response = await client
-          .from('app_dat_supervisor')
-          .select('*')
-          .eq('uuid', userUuid)
-          .order('id')
-          .limit(1);
-      if (response.isEmpty) return null;
-      return Map<String, dynamic>.from(response.first as Map);
-    } catch (e) {
-      print('❌ Error consultando supervisor: $e');
-      return null;
-    }
-  }
-
   /// Verifica acceso a Caja.
-  /// Prioridad: gerente → supervisor → vendedor.
-  /// Gerente/supervisor son sesión solo-gestión (no venta).
+  /// Solo vendedor: gerente/supervisor sin fila en app_dat_vendedor no entran.
   Future<Map<String, dynamic>> verifySellerAndGetProfile(
     String userUuid,
   ) async {
     try {
-      // 1) Gerente (solo inventario/productos)
-      final gerente = await _findGerenteByUuid(userUuid);
-      if (gerente != null) {
-        return await _profileFromAdminRole(
-          userUuid: userUuid,
-          role: CajaEntryRole.gerente,
-          idTienda: (gerente['id_tienda'] as num).toInt(),
-          idTrabajador: (gerente['id_trabajador'] as num?)?.toInt(),
-          defaultRoll: 1,
-        );
-      }
-
-      // 2) Supervisor (solo inventario/productos)
-      final supervisor = await _findSupervisorByUuid(userUuid);
-      if (supervisor != null) {
-        return await _profileFromAdminRole(
-          userUuid: userUuid,
-          role: CajaEntryRole.supervisor,
-          idTienda: (supervisor['id_tienda'] as num).toInt(),
-          idTrabajador: (supervisor['id_trabajador'] as num?)?.toInt(),
-          defaultRoll: 2,
-        );
-      }
-
-      // 3) Vendedor (flujo de venta)
       final sellerData = await checkSellerByUuid(userUuid);
       if (sellerData != null) {
         return await _profileFromSeller(sellerData);
       }
 
-      throw Exception(
-        'Usuario no autorizado: debe ser vendedor, gerente o supervisor',
-      );
+      throw Exception('Usuario no autorizado: debe ser vendedor');
     } catch (e) {
       print('❌ Error en verificación de acceso a Caja: $e');
       rethrow;
@@ -204,60 +127,4 @@ class SellerService {
     };
   }
 
-  Future<Map<String, dynamic>> _profileFromAdminRole({
-    required String userUuid,
-    required CajaEntryRole role,
-    required int idTienda,
-    required int? idTrabajador,
-    required int defaultRoll,
-  }) async {
-    print('✅ Acceso Caja como ${role.name} (sin vendedor obligatorio)');
-    print('  - ID Tienda: $idTienda');
-    print('  - ID Trabajador: $idTrabajador');
-
-    Map<String, dynamic>? workerData;
-    if (idTrabajador != null) {
-      workerData = await getWorkerById(idTrabajador);
-    }
-
-    workerData ??= {
-      'id': idTrabajador,
-      'nombres': role == CajaEntryRole.gerente ? 'Gerente' : 'Supervisor',
-      'apellidos': '',
-      'id_tienda': idTienda,
-      'id_roll': defaultRoll,
-    };
-
-    final tpvData = await getDefaultTpvForStore(idTienda);
-    if (tpvData == null || tpvData['id'] == null) {
-      throw Exception(
-        'La tienda $idTienda no tiene TPV configurado. '
-        'Crea un TPV antes de entrar a Caja como ${role.name}.',
-      );
-    }
-
-    final idTpv = (tpvData['id'] as num).toInt();
-    final syntheticSeller = <String, dynamic>{
-      'id': 0,
-      'uuid': userUuid,
-      'id_tpv': idTpv,
-      'id_trabajador': idTrabajador ?? 0,
-      'permitir_customizar_precio_venta': true,
-      'es_admin_sin_vendedor': true,
-    };
-
-    return {
-      'seller': syntheticSeller,
-      'worker': {
-        ...workerData,
-        'id_tienda': workerData['id_tienda'] ?? idTienda,
-        'id_roll': workerData['id_roll'] ?? defaultRoll,
-      },
-      'idTpv': idTpv,
-      'idTienda': idTienda,
-      'idAlmacen': tpvData['id_almacen'],
-      'entryRole': role.name,
-      'inventoryOnly': true,
-    };
-  }
 }

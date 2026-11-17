@@ -192,13 +192,60 @@ class CurrencyService {
   }
 
   /// Descarga y cachea tasa actual + historial (para sync / prep offline).
+  ///
+  /// Además guarda las monedas aceptadas por la tienda y sus tasas a moneda
+  /// base: así el checkout offline no intenta la red para resolver
+  /// `getMonedasTienda` / `getRate` / `getRatesForStore`.
   static Future<void> syncUsdRatesForOffline() async {
     try {
       await getUsdRate();
       await loadUsdToCupRateTimelines(forceRefresh: true);
+
+      // Monedas + tasas de la tienda (usa los fetchers directos: durante la
+      // prep offline o un sync con modo offline activo no queremos leer el
+      // cache viejo que justo estamos refrescando).
+      try {
+        final prefs = UserPreferencesService();
+        final monedas = await _fetchMonedasTienda();
+        await prefs.saveMonedasTienda(monedas);
+        final tasas = await _fetchRatesForStore();
+        await prefs.saveTasasTienda(tasas);
+      } catch (e) {
+        print('⚠️ Sync monedas/tasas de tienda (no bloqueante): $e');
+      }
+
       print('✅ Tasas USD→CUP sincronizadas para offline');
     } catch (e) {
       print('⚠️ Sync tasas USD→CUP (no bloqueante): $e');
+    }
+
+    // Denominaciones: módulo independiente — que falle la parte de tasas no
+    // puede dejar el conteo de billetes offline sin datos.
+    await syncMonedasDenominacion();
+  }
+
+  /// Sincroniza las denominaciones de billetes/monedas por divisa
+  /// (`app_dat_denominaciones_moneda` → cache `monedas_denominacion`).
+  ///
+  /// Las leen offline `CashCountDialog` y `BillCountDialog`. Antes solo se
+  /// descargaban en el login, así que cualquier denominación creada después
+  /// (o un login fallido) dejaba el cache vacío/stale. En error de red se
+  /// conserva el cache anterior: nunca se sobreescribe con una lista vacía.
+  static Future<void> syncMonedasDenominacion() async {
+    try {
+      final response = await _supabase
+          .from('app_dat_denominaciones_moneda')
+          .select('*')
+          .eq('active', true)
+          .order('codigo_moneda', ascending: true)
+          .order('denominacion', ascending: true);
+
+      await UserPreferencesService().saveMonedasDenominacion(
+        List<Map<String, dynamic>>.from(response as List),
+      );
+      print('💱 Denominaciones de moneda sincronizadas: ${response.length}');
+    } catch (e) {
+      print('⚠️ Sync denominaciones de moneda (no bloqueante): $e');
     }
   }
 
@@ -255,17 +302,25 @@ class CurrencyService {
   /// Precedencia en servidor: tasa de tienda → tasa global manual → automática
   /// («el toque»). Devuelve **0** si no hay ninguna.
   ///
-  /// Offline: la única tasa cacheada es USD→CUP. Por eso, sin conexión solo se
-  /// puede cobrar en CUP y USD; cualquier otra divisa exige conexión
-  /// (decisión D2, hasta la Fase 4).
+  /// Offline: se resuelve desde `tasas_tienda_cup` (todas las monedas de la
+  /// tienda, refrescadas en cada sync) con `cambio_cup_usd` como respaldo
+  /// histórico. Offline se cobra igual que online.
   static Future<double> getRate(String origen, String destino) async {
     final o = origen.trim().toUpperCase();
     final d = destino.trim().toUpperCase();
     if (o == d) return 1;
     if (o.isEmpty || d.isEmpty) return 0;
 
+    final prefs = UserPreferencesService();
+
+    // Offline / full-offline: no se toca la red — se usa la tasa que el sync
+    // dejó cacheada (tasas a moneda base de todas las monedas de la tienda).
+    if (await prefs.shouldUseLocalData()) {
+      return _rateFromCache(prefs, o, d);
+    }
+
     try {
-      final storeId = await UserPreferencesService().getIdTienda();
+      final storeId = await prefs.getIdTienda();
       final res = await _supabase.rpc(
         'fn_tasa_cambio',
         params: {
@@ -282,9 +337,27 @@ class CurrencyService {
       print('❌ getRate($o→$d): $e');
     }
 
-    // Respaldo offline: la única tasa disponible sin red es USD→CUP.
+    // Respaldo ante error de red/servidor: cache del último sync.
+    return _rateFromCache(prefs, o, d);
+  }
+
+  /// Tasa desde el cache offline del último sync.
+  ///
+  /// Solo se cachean pares `→ moneda base` (tasas_tienda_cup) más el atajo
+  /// histórico USD→CUP (`cambio_cup_usd`); cualquier otro par devuelve 0.
+  static Future<double> _rateFromCache(
+    UserPreferencesService prefs,
+    String o,
+    String d,
+  ) async {
+    if (d == 'CUP') {
+      final tasas = await prefs.getTasasTiendaCache();
+      final t = tasas[o];
+      if (t != null && t > 0) return t;
+    }
+    // Respaldo histórico: la tasa suelta USD→CUP de siempre.
     if (o == 'USD' && d == 'CUP') {
-      return await UserPreferencesService().getCambioCupUsd();
+      return await prefs.getCambioCupUsd();
     }
     return 0;
   }
@@ -294,7 +367,28 @@ class CurrencyService {
   /// Devuelve `[{codigo, nombre, simbolo, decimales, orden}]`.
   /// Si la tienda no tiene configuración o falla la consulta, devuelve una
   /// lista vacía y el llamador decide el respaldo (CUP/USD).
+  ///
+  /// Offline / full-offline: devuelve el cache del último sync
+  /// ([saveMonedasTienda]) sin tocar la red.
   static Future<List<Map<String, dynamic>>> getMonedasTienda() async {
+    final prefs = UserPreferencesService();
+    if (await prefs.shouldUseLocalData()) {
+      final cache = await prefs.getMonedasTiendaCache();
+      print('🔌 Monedas de tienda desde cache offline: ${cache.length}');
+      return cache;
+    }
+    try {
+      return await _fetchMonedasTienda();
+    } catch (e) {
+      print('❌ getMonedasTienda: $e');
+      // Respaldo: último snapshot del sync (puede estar vacío).
+      return prefs.getMonedasTiendaCache();
+    }
+  }
+
+  /// Descarga las monedas de la tienda desde Supabase (sin chequear offline:
+  /// lo usan también el sync y la prep offline).
+  static Future<List<Map<String, dynamic>>> _fetchMonedasTienda() async {
     try {
       final storeId = await UserPreferencesService().getIdTienda();
       if (storeId == null) return const [];
@@ -334,7 +428,7 @@ class CurrencyService {
       return salida;
     } catch (e) {
       print('❌ getMonedasTienda: $e');
-      return const [];
+      rethrow;
     }
   }
 
@@ -343,8 +437,28 @@ class CurrencyService {
   /// Ejemplo: `{'CUP': 1, 'USD': 900, 'EUR': 990}`.
   /// Las divisas sin tasa resoluble se **omiten**: el cobro en ellas queda
   /// bloqueado en la UI, que es la decisión B4 del plan.
+  ///
+  /// Offline / full-offline: devuelve el cache del último sync
+  /// ([saveTasasTienda]) sin tocar la red.
   static Future<Map<String, double>> getRatesForStore() async {
-    final monedas = await getMonedasTienda();
+    final prefs = UserPreferencesService();
+    if (await prefs.shouldUseLocalData()) {
+      final cache = await prefs.getTasasTiendaCache();
+      print('🔌 Tasas de tienda desde cache offline: ${cache.keys.join(', ')}');
+      return cache;
+    }
+    try {
+      return await _fetchRatesForStore();
+    } catch (e) {
+      print('❌ getRatesForStore: $e');
+      return prefs.getTasasTiendaCache();
+    }
+  }
+
+  /// Descarga las tasas a CUP desde Supabase (sin chequear offline: lo usan
+  /// también el sync y la prep offline).
+  static Future<Map<String, double>> _fetchRatesForStore() async {
+    final monedas = await _fetchMonedasTienda();
     final tasas = <String, double>{};
     for (final m in monedas) {
       final codigo = (m['codigo'] ?? '').toString().trim();

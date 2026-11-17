@@ -4,6 +4,7 @@ import '../models/product.dart';
 import 'user_preferences_service.dart';
 import 'supabase_retry_helper.dart';
 import 'offline_database_service.dart';
+import 'product_detail_service.dart';
 
 class ProductService {
   static final ProductService _instance = ProductService._internal();
@@ -157,6 +158,7 @@ class ProductService {
     final products = <String, List<Product>>{};
     for (final prodData in categoryProducts) {
       final subcategory = prodData['subcategoria'] as String? ?? 'General';
+      final precioUsd = ProductDetailService.precioUsdDeProductoCache(prodData);
       final product = Product(
         id: (prodData['id'] as num?)?.toInt() ?? 0,
         denominacion: prodData['denominacion'] as String? ?? 'Sin nombre',
@@ -164,6 +166,8 @@ class ProductService {
         sku: prodData['sku'] as String?,
         foto: prodData['foto'] as String?,
         precio: (prodData['precio'] as num?)?.toDouble() ?? 0.0,
+        precioUsd: precioUsd,
+        origenPrecioUsd: precioUsd == null ? null : 'general',
         cantidad: prodData['cantidad'] as num? ?? 0,
         categoria: prodData['categoria'] as String? ?? '',
         esRefrigerado: prodData['es_refrigerado'] as bool? ?? false,

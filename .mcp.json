@@ -1,12 +1,3 @@
 {
-  "mcpServers": {
-    "supabase-newa": {
-      "type": "http",
-      "url": "https://mcp.supabase.com/mcp?project_ref=qhprswhhfasrikhawjoz&read_only=true&features=database,docs"
-    },
-    "supabase-main": {
-      "type": "http",
-      "url": "https://mcp.supabase.com/mcp?project_ref=vsieeihstajlrdvpuooh&read_only=true&features=database,docs"
-    }
-  }
+  "mcpServers": {}
 }

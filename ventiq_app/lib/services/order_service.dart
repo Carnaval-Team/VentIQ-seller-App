@@ -1,3 +1,8 @@
+import '../money/politica_moneda.dart';
+import '../money/politica_moneda_store.dart';
+import '../money/product_currency_order.dart';
+import '../money/venta_v1_envio.dart';
+import 'venta_v1_cliente.dart';
 import '../models/order.dart';
 import '../models/product.dart';
 import '../models/payment_method.dart';
@@ -5,6 +10,7 @@ import '../models/mesa_cuenta.dart';
 import '../models/pedido_resultado.dart';
 import '../utils/promotion_rules.dart';
 import '../utils/price_utils.dart';
+import '../utils/uuid_generator.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'user_preferences_service.dart';
@@ -20,7 +26,12 @@ class OrderService extends ChangeNotifier {
   OrderService._internal();
 
   Order? _currentOrder;
+  DecisionDuplicado? duplicadoPendiente;
   final List<Order> _orders = [];
+
+  /// Clave estable por operación y estado destino. Un reintento de la misma
+  /// sesión no abre otro cambio.
+  final Map<String, String> _estadoUuidPorOperacion = {};
 
   // ID de mesa activa para el flujo de modo restaurante (se setea desde
   // MesaDetailScreen antes de empezar a agregar productos; el checkout la lee
@@ -30,6 +41,14 @@ class OrderService extends ChangeNotifier {
 
   // Getter para la orden actual
   Order? get currentOrder => _currentOrder;
+
+  bool _mismaSeleccion(OrderItem item, ProductCurrencySeleccion? seleccion) {
+    if (item.seleccion == null && seleccion == null) return true;
+    if (item.seleccion == null || seleccion == null) return false;
+    return item.seleccion!.monedaVenta == seleccion.monedaVenta &&
+        item.seleccion!.tipoCobro == seleccion.tipoCobro &&
+        item.seleccion!.idMedioPago == seleccion.idMedioPago;
+  }
   List<Order> get orders => List.from(_orders);
 
   /// Mutates the in-memory list. Do not assign into [orders] (it is a copy).
@@ -149,7 +168,23 @@ class OrderService extends ChangeNotifier {
     double? precioUnitario,
     double? precioBase,
     Map<String, dynamic>? promotionData,
+    ProductCurrencySeleccion? seleccion,
+    bool unirConfirmado = false,
+    bool unirCancelado = false,
   }) async {
+    final politica = await PoliticaMonedaStore.leer();
+    if (politica.bloqueaOrdenNueva) {
+      throw PoliticaMonedaException(
+        'La politica de moneda esta incompleta. No se creo una orden legacy.',
+      );
+    }
+    if (politica.modoActivo && seleccion == null) {
+      throw PoliticaMonedaException('La linea necesita moneda, precio y tasa');
+    }
+    if (!politica.modoActivo && seleccion != null) {
+      throw PoliticaMonedaException('La moneda por producto no esta activa');
+    }
+    duplicadoPendiente = null;
     final precio = precioUnitario ?? (variante?.precio ?? producto.precio);
     final precioOriginal = precioBase ?? (variante?.precio ?? producto.precio);
 
@@ -158,6 +193,24 @@ class OrderService extends ChangeNotifier {
     final idCuentaActiva =
         SalesModeService.mostradorActivo ? null : cuentaService.activeCuentaId;
     if (idCuentaActiva != null) {
+      if (seleccion != null) {
+        await cuentaService.pedirOrderItem(
+          idCuenta: idCuentaActiva,
+          item: OrderItem(
+            id: 'mesa-${seleccion.idLineaCliente}',
+            producto: producto,
+            variante: variante,
+            cantidad: cantidad,
+            precioUnitario: precio,
+            precioBase: precioOriginal,
+            ubicacionAlmacen: ubicacionAlmacen,
+            inventoryData: inventoryData,
+            promotionData: promotionData,
+            seleccion: seleccion,
+          ),
+        );
+        return;
+      }
       final inv = inventoryData ?? const {};
       final idOpcionVariante =
           inv['id_opcion_variante'] is num
@@ -244,8 +297,21 @@ class OrderService extends ChangeNotifier {
           ((item.variante == null && variante == null) ||
               (item.variante?.id == variante?.id)) &&
           (item.inventoryData?['id_presentacion'] as num?)?.toInt() ==
-              idPresNuevo,
+              idPresNuevo &&
+          _mismaSeleccion(item, seleccion),
     );
+
+    if (existingItemIndex != -1 && seleccion != null) {
+      final decision = DuplicadoLinea.decidir(
+        mismaPresentacion: true,
+        mismaMoneda: true,
+        mismoMedio: true,
+        confirmado: unirConfirmado,
+        cancelado: unirCancelado,
+      );
+      duplicadoPendiente = decision;
+      if (decision != DecisionDuplicado.unir) return;
+    }
 
     if (existingItemIndex != -1) {
       // Actualizar cantidad del item existente
@@ -275,12 +341,21 @@ class OrderService extends ChangeNotifier {
         idPresentacion: presDatos?.$1,
         presentacionNombre: presDatos?.$2,
         presentacionFactor: presDatos?.$3,
+        seleccion: seleccion,
       );
       order.items.add(newItem);
     }
 
+    // Una orden versionada exige client_uuid propio: el contrato v1 lo
+    // requiere y la preorden persistida se relee con esa misma validacion.
+    final ordenVersionada = seleccion == null
+        ? order
+        : order.copyWith(
+            versionMonetaria: ProductCurrencySeleccion.version,
+            clientUuid: order.clientUuid ?? UuidGenerator.v4(),
+          );
     // Actualizar total de la orden
-    _updateOrderTotal(order);
+    _updateOrderTotal(ordenVersionada);
 
     // Guardar automáticamente en persistencia
     _savePersistentPreorder();
@@ -394,6 +469,58 @@ class OrderService extends ChangeNotifier {
           'error':
               'Faltan datos del vendedor o usuario para registrar el descuento',
         };
+      }
+
+      try {
+        final response = await Supabase.instance.client.rpc(
+          'fn_m01_aplicar_descuento_manual',
+          params: {
+            'p_client_uuid': UuidGenerator.v4(),
+            'p_id_operacion': operationId,
+            'p_tipo_descuento': discountType,
+            'p_valor_descuento': discountValue,
+          },
+        );
+        final map = response is Map
+            ? Map<String, dynamic>.from(response)
+            : null;
+        if (map == null || map['success'] != true) {
+          return {
+            'success': false,
+            'error': map?['message'] ?? 'No se aplicó el descuento',
+          };
+        }
+        final precioFinalRpc = (map['precio_final'] as num?)?.toDouble();
+        final montoBaseRpc = (map['monto_base'] as num?)?.toDouble();
+        final montoDescontadoRpc =
+            (map['monto_descontado'] as num?)?.toDouble();
+        if (precioFinalRpc != null) {
+          final idx = _orders.indexWhere((o) => o.id == order.id);
+          if (idx != -1) {
+            _orders[idx] = _orders[idx].copyWith(
+              total: precioFinalRpc,
+              descuento: {
+                'monto_real': montoBaseRpc,
+                'monto_descontado': montoDescontadoRpc,
+                'tipo_descuento': discountType,
+                'valor_descuento': discountValue,
+              },
+            );
+          }
+        }
+        return {
+          'success': true,
+          'montoBase': montoBaseRpc,
+          'montoDescontado': montoDescontadoRpc,
+          'precioFinal': precioFinalRpc,
+        };
+      } catch (e) {
+        if (!_isRpcUnavailable(e, 'fn_m01_aplicar_descuento_manual')) {
+          return {
+            'success': false,
+            'error': 'Error al aplicar el descuento: $e',
+          };
+        }
       }
 
       // Obtener datos de la operación para conocer cliente e importe original
@@ -566,18 +693,36 @@ class OrderService extends ChangeNotifier {
         return {'success': false, 'error': 'No hay datos para actualizar'};
       }
 
-      // Las ventas a "Pago Pendiente" usan la tabla independiente
-      // app_dat_cliente_cxc (no app_dat_clientes).
+      // Los clientes de cuentas por cobrar (app_dat_cliente_cxc) se editan
+      // desde administración; el TPV solo actualiza app_dat_clientes.
       if (idClienteCxc != null) {
-        await Supabase.instance.client
-            .from('app_dat_cliente_cxc')
-            .update(updateData)
-            .eq('id', idClienteCxc);
-      } else if (idCliente != null) {
-        await Supabase.instance.client
-            .from('app_dat_clientes')
-            .update(updateData)
-            .eq('id', idCliente);
+        return {
+          'success': false,
+          'error':
+              'Los datos de clientes de cuentas por cobrar se editan desde administración',
+        };
+      }
+      if (idCliente != null) {
+        try {
+          await Supabase.instance.client.rpc(
+            'fn_m01_actualizar_cliente_venta',
+            params: {
+              'p_client_uuid': UuidGenerator.v4(),
+              'p_id_operacion': operationId,
+              'p_nombre': buyerName,
+              'p_telefono': buyerPhone,
+              'p_actualizar_telefono': buyerPhone != null,
+            },
+          );
+        } catch (e) {
+          if (!_isRpcUnavailable(e, 'fn_m01_actualizar_cliente_venta')) {
+            rethrow;
+          }
+          await Supabase.instance.client
+              .from('app_dat_clientes')
+              .update(updateData)
+              .eq('id', idCliente);
+        }
       }
 
       // Actualizar cache local
@@ -605,6 +750,8 @@ class OrderService extends ChangeNotifier {
     required int fromPaymentMethodId,
     required int toPaymentMethodId,
     required double amount,
+    String? sourceCurrencyCode,
+    double? sourceExchangeRate,
   }) async {
     try {
       final userPrefs = UserPreferencesService();
@@ -615,6 +762,8 @@ class OrderService extends ChangeNotifier {
           fromPaymentMethodId: fromPaymentMethodId,
           toPaymentMethodId: toPaymentMethodId,
           amount: amount,
+          sourceCurrencyCode: sourceCurrencyCode,
+          sourceExchangeRate: sourceExchangeRate,
           userPrefs: userPrefs,
         );
       }
@@ -649,9 +798,46 @@ class OrderService extends ChangeNotifier {
         };
       }
 
+      try {
+        final response = await Supabase.instance.client.rpc(
+          'fn_m01_mover_pago_venta',
+          params: {
+            'p_client_uuid': UuidGenerator.v4(),
+            'p_id_operacion': operationId,
+            'p_id_medio_origen': fromPaymentMethodId,
+            'p_id_medio_destino': toPaymentMethodId,
+            'p_monto': amount,
+            'p_moneda': sourceCurrencyCode,
+            'p_tasa': sourceExchangeRate,
+          },
+        );
+        final map = response is Map
+            ? Map<String, dynamic>.from(response)
+            : null;
+        if (map == null || map['success'] != true) {
+          return {
+            'success': false,
+            'error': map?['message'] ?? 'No se movió el pago',
+          };
+        }
+        return {
+          'success': true,
+          'sourceAmount': (map['source_amount'] as num?)?.toDouble(),
+          'newSourceAmount': (map['new_source_amount'] as num?)?.toDouble(),
+          'movedAmount': (map['moved_amount'] as num?)?.toDouble() ?? amount,
+        };
+      } catch (e) {
+        if (!_isRpcUnavailable(e, 'fn_m01_mover_pago_venta')) {
+          return {
+            'success': false,
+            'error': 'Error al ajustar el desglose: $e',
+          };
+        }
+      }
+
       final List<dynamic>? pagosResponse = await Supabase.instance.client
           .from('app_dat_pago_venta')
-          .select('id, id_medio_pago, monto, moneda, tasa_usd, monto_cup_equivalente')
+          .select('id, id_medio_pago, monto, moneda, tasa_cambio, tasa_usd, monto_cup_equivalente')
           .eq('id_operacion_venta', operationId);
 
       if (pagosResponse == null || pagosResponse.isEmpty) {
@@ -663,7 +849,9 @@ class OrderService extends ChangeNotifier {
 
       final pagos = List<Map<String, dynamic>>.from(pagosResponse);
       final sourceIndex = pagos.indexWhere(
-        (pago) => pago['id_medio_pago'] == fromPaymentMethodId,
+        (pago) => pago['id_medio_pago'] == fromPaymentMethodId &&
+            (sourceCurrencyCode == null || PriceUtils.paymentCurrency(pago) == sourceCurrencyCode) &&
+            (sourceExchangeRate == null || PriceUtils.paymentRate(pago) == sourceExchangeRate),
       );
 
       if (sourceIndex == -1) {
@@ -688,11 +876,17 @@ class OrderService extends ChangeNotifier {
           PriceUtils.paymentCurrency(sourcePago) == PriceUtils.baseCurrency
           ? 1.0
           : PriceUtils.paymentRate(sourcePago);
-      final double valorMovidoBase =
-          amount * (sourceRate > 0 ? sourceRate : 1.0);
+      if (!sourceRate.isFinite || sourceRate <= 0) {
+        return {'success': false, 'error': 'El pago origen no tiene una tasa válida.'};
+      }
+      final sourceCurrency = PriceUtils.paymentCurrency(sourcePago);
+      final double valorMovidoBase = amount * sourceRate;
 
       final targetPago = pagos.firstWhere(
-        (pago) => pago['id_medio_pago'] == toPaymentMethodId,
+        (pago) => pago['id_medio_pago'] == toPaymentMethodId &&
+            PriceUtils.paymentCurrency(pago) == sourceCurrency &&
+            (sourceCurrency == PriceUtils.baseCurrency ||
+                PriceUtils.paymentRate(pago) == sourceRate),
         orElse: () => {},
       );
 
@@ -721,13 +915,8 @@ class OrderService extends ChangeNotifier {
       }
 
       if (targetPago.isNotEmpty) {
-        final double targetRate =
-            PriceUtils.paymentCurrency(targetPago) == PriceUtils.baseCurrency
-            ? 1.0
-            : PriceUtils.paymentRate(targetPago);
         final double nuevoMontoDestino =
-            PriceUtils.paymentAmount(targetPago) +
-            (targetRate > 0 ? valorMovidoBase / targetRate : valorMovidoBase);
+            PriceUtils.paymentAmount(targetPago) + amount;
         final double nuevoEquivDestino =
             PriceUtils.paymentCupEquivalent(targetPago) + valorMovidoBase;
 
@@ -750,8 +939,10 @@ class OrderService extends ChangeNotifier {
         await Supabase.instance.client.from('app_dat_pago_venta').insert({
           'id_operacion_venta': operationId,
           'id_medio_pago': toPaymentMethodId,
-          'monto': valorMovidoBase,
-          'moneda': PriceUtils.baseCurrency,
+          'monto': amount,
+          'moneda': sourceCurrency,
+          'tasa_cambio': sourceRate,
+          if (sourceCurrency == 'USD') 'tasa_usd': sourceRate,
           'monto_cup_equivalente': valorMovidoBase,
           'tipo_pago': tipoPago,
           'referencia_pago':
@@ -780,6 +971,8 @@ class OrderService extends ChangeNotifier {
     required int fromPaymentMethodId,
     required int toPaymentMethodId,
     required double amount,
+    String? sourceCurrencyCode,
+    double? sourceExchangeRate,
     required UserPreferencesService userPrefs,
   }) async {
     if (fromPaymentMethodId == toPaymentMethodId) {
@@ -808,7 +1001,9 @@ class OrderService extends ChangeNotifier {
     final sourceIndex = payments.indexWhere((payment) {
       final rawId = payment['medio_pago_id'] ?? payment['id_medio_pago'];
       return (rawId is num ? rawId.toInt() : int.tryParse('$rawId')) ==
-          fromPaymentMethodId;
+          fromPaymentMethodId &&
+          (sourceCurrencyCode == null || PriceUtils.paymentCurrency(payment) == sourceCurrencyCode) &&
+          (sourceExchangeRate == null || PriceUtils.paymentRate(payment) == sourceExchangeRate);
     });
     if (sourceIndex == -1) {
       return {'success': false, 'error': 'El pago origen no fue encontrado.'};
@@ -831,30 +1026,34 @@ class OrderService extends ChangeNotifier {
         PriceUtils.paymentCurrency(sourcePago) == PriceUtils.baseCurrency
         ? 1.0
         : PriceUtils.paymentRate(sourcePago);
-    final double valorMovidoBase = amount * (sourceRate > 0 ? sourceRate : 1.0);
+    if (!sourceRate.isFinite || sourceRate <= 0) {
+      return {'success': false, 'error': 'El pago origen no tiene una tasa válida.'};
+    }
+    final sourceCurrency = PriceUtils.paymentCurrency(sourcePago);
+    final double valorMovidoBase = amount * sourceRate;
 
     final newSourceAmount = sourceAmount - amount;
     if (newSourceAmount <= 0.0001) {
       payments.removeAt(sourceIndex);
     } else {
       payments[sourceIndex]['monto'] = newSourceAmount;
+      payments[sourceIndex]['monto_cup_equivalente'] = newSourceAmount * sourceRate;
     }
 
     final targetIndex = payments.indexWhere((payment) {
       final rawId = payment['medio_pago_id'] ?? payment['id_medio_pago'];
       return (rawId is num ? rawId.toInt() : int.tryParse('$rawId')) ==
-          toPaymentMethodId;
+          toPaymentMethodId &&
+          PriceUtils.paymentCurrency(payment) == sourceCurrency &&
+          (sourceCurrency == PriceUtils.baseCurrency ||
+              PriceUtils.paymentRate(payment) == sourceRate);
     });
     if (targetIndex != -1) {
       final targetPago = payments[targetIndex];
-      final double targetRate =
-          PriceUtils.paymentCurrency(targetPago) == PriceUtils.baseCurrency
-          ? 1.0
-          : PriceUtils.paymentRate(targetPago);
       final targetAmount = PriceUtils.paymentAmount(targetPago);
-      payments[targetIndex]['monto'] =
-          targetAmount +
-          (targetRate > 0 ? valorMovidoBase / targetRate : valorMovidoBase);
+      payments[targetIndex]['monto'] = targetAmount + amount;
+      payments[targetIndex]['monto_cup_equivalente'] =
+          (targetAmount + amount) * sourceRate;
     } else {
       final methods = await userPrefs.getPaymentMethodsOffline();
       final target = methods.cast<Map<String, dynamic>?>().firstWhere(
@@ -866,8 +1065,11 @@ class OrderService extends ChangeNotifier {
       payments.add({
         'id_medio_pago': toPaymentMethodId,
         'denominacion': target?['denominacion'] ?? 'Método $toPaymentMethodId',
-        'monto': valorMovidoBase,
-        'moneda': PriceUtils.baseCurrency,
+        'monto': amount,
+        'moneda': sourceCurrency,
+        'tasa_cambio': sourceRate,
+        if (sourceCurrency == 'USD') 'tasa_usd': sourceRate,
+        'monto_cup_equivalente': valorMovidoBase,
         'es_digital': target?['es_digital'] ?? false,
         'es_efectivo': target?['es_efectivo'] ?? false,
       });
@@ -1255,22 +1457,48 @@ class OrderService extends ChangeNotifier {
       print('userId: $userId');
       print('================================');
 
-      // Llamar a fn_registrar_cambio_estado_operacion
-      final response = await Supabase.instance.client.rpc(
-        'fn_registrar_cambio_estado_operacion',
-        params: {
-          'p_id_operacion': operationId,
-          'p_nuevo_estado': statusNumber,
-          'p_uuid_usuario': userId,
-        },
+      final estadoUuid = _estadoUuidPorOperacion.putIfAbsent(
+        '$operationId:$statusNumber',
+        UuidGenerator.v4,
       );
+      final paramsEstado = <String, dynamic>{
+        'p_id_operacion': operationId,
+        'p_nuevo_estado': statusNumber,
+        'p_uuid_usuario': userId,
+      };
+      dynamic response;
+      try {
+        response = await Supabase.instance.client.rpc(
+          'fn_registrar_cambio_estado_offline',
+          params: {'p_client_uuid': estadoUuid, ...paramsEstado},
+        );
+      } catch (e) {
+        if (!_isRpcUnavailable(e, 'fn_registrar_cambio_estado_offline')) {
+          rethrow;
+        }
+        print(
+          '⚠️ fn_registrar_cambio_estado_offline no disponible ($e). '
+          'Fallback a fn_registrar_cambio_estado_operacion.',
+        );
+        response = await Supabase.instance.client.rpc(
+          'fn_registrar_cambio_estado_operacion',
+          params: paramsEstado,
+        );
+      }
 
-      print('Respuesta fn_registrar_cambio_estado_operacion: $response');
+      print('Respuesta cambio de estado: $response');
+      if (response is Map && response['status']?.toString() == 'error') {
+        return {
+          'success': false,
+          'error': response['message']?.toString() ?? 'El servidor rechazó el cambio',
+        };
+      }
 
       return {
         'success': true,
         'message': 'Estado actualizado en Supabase',
         'data': response,
+        'client_uuid': estadoUuid,
       };
     } catch (e) {
       print('Error en updateOrderStatusInSupabase: $e');
@@ -1305,6 +1533,14 @@ class OrderService extends ChangeNotifier {
 
   // Obtener desglose de pagos de una venta específica
   Future<List<Map<String, dynamic>>> getSalePayments(int operationId) async {
+    // En modo offline/full-offline la RPC get_sale_payments2 fallaría por DNS
+    // tras el timeout: al abrir el detalle de una orden se congelaba la
+    // pantalla. Devolvemos vacío y el caller conserva los pagos que ya tenga
+    // la orden en cache.
+    if (await UserPreferencesService().shouldUseLocalData()) {
+      print('🔌 Modo offline - getSalePayments omite la RPC');
+      return [];
+    }
     try {
       print('=== DEBUG GET SALE PAYMENTS ===');
       print('operationId: $operationId');
@@ -1369,6 +1605,61 @@ class OrderService extends ChangeNotifier {
     );
   }
 
+  /// La venta nueva sale antes del registro anterior. Sin version sigue igual.
+  Future<Map<String, dynamic>?> _rutaProductoV1({
+    required String orderId,
+    required String? version,
+    required Map<String, dynamic> orderData,
+    required bool mesa,
+    required List<Map<String, dynamic>?> selecciones,
+  }) async {
+    final politica = await PoliticaMonedaStore.leer();
+    final origen = EnvioV1.origenDe(orderData, mesa: mesa);
+    final completas = version != 'producto-v1' ||
+        (selecciones.isNotEmpty && selecciones.every((s) => s != null));
+    final decision = EnvioV1.decidir(
+      version: version,
+      modoActivo: politica.modoActivo,
+      bloqueaOrdenNueva: politica.bloqueaOrdenNueva,
+      tieneTasa: !completas
+          ? true
+          : VentaV1Lineas.todasConTasa(
+              selecciones.whereType<Map<String, dynamic>>().toList(),
+            ),
+      lineasCompletas: completas,
+      origen: origen,
+    );
+    if (decision.ruta == RutaEnvio.legacy) return null;
+    if (decision.ruta != RutaEnvio.productoV1) {
+      return {
+        'success': false,
+        'retenida': decision.ruta == RutaEnvio.retener,
+        'error': decision.motivo,
+      };
+    }
+    final prefs = UserPreferencesService();
+    final idTienda = await prefs.getIdTienda();
+    final idTpv = await prefs.getIdTpv();
+    final idVendedor = await prefs.getIdSeller();
+    if (idTienda == null || idTpv == null || idVendedor == null) {
+      return {
+        'success': false,
+        'retenida': true,
+        'error': 'Faltan tienda, TPV o vendedor. La orden se conserva.',
+      };
+    }
+    return VentaV1Cliente.enviar(
+      orderId: orderId,
+      prefs: prefs,
+      orderData: orderData,
+      lineas: selecciones.whereType<Map<String, dynamic>>().toList(),
+      idTienda: idTienda,
+      idTpv: idTpv,
+      idVendedor: idVendedor,
+      origen: origen,
+    );
+  }
+
   // Registrar venta en Supabase usando fn_registrar_venta
   Future<Map<String, dynamic>> _registerSaleInSupabase(
     Order order,
@@ -1408,6 +1699,17 @@ class OrderService extends ChangeNotifier {
           'Datos de usuario incompletos - idTpv: $idTpv, idTienda: $idTienda, userId: $userId',
         );
       }
+
+      final rutaV1 = await _rutaProductoV1(
+        orderId: order.id,
+        version: order.versionMonetaria,
+        orderData: orderData,
+        mesa: order.idMesa != null,
+        selecciones: [
+          for (final item in order.items) item.seleccion?.toJson(),
+        ],
+      );
+      if (rutaV1 != null) return rutaV1;
 
       // Preparar productos para fn_registrar_venta
       final productos = <Map<String, dynamic>>[];
@@ -1532,15 +1834,11 @@ class OrderService extends ChangeNotifier {
         if (useMesaRpc) 'p_id_mesa': idMesa,
       };
 
-      // Fase 3 del plan (decisión 1B): la app debe usar la cadena corregida
-      // `_v3`. GATE: si el backend todavía NO tiene aplicadas las RPC nuevas,
-      // el fallback mantiene la app funcionando, pero el bug SQL de consumo de
-      // ingredientes por equivalente base SIGUE VIVO en las funciones viejas.
+      // La venta online usa la cadena `_v3`. Si no está, no se llama
+      // `fn_registrar_venta`: esa función consume ingredientes mal.
       final rpcNameV3 =
           useMesaRpc ? 'fn_registrar_venta_mesa_v3' : 'fn_registrar_venta_v3';
-      final rpcNameLegacy =
-          useMesaRpc ? 'fn_registrar_venta_mesa' : 'fn_registrar_venta';
-      var rpcName = rpcNameV3;
+      final rpcName = rpcNameV3;
 
       print('=== PARAMETROS RPC $rpcNameV3 ===');
       print('p_codigo_promocion: ${rpcParams['p_codigo_promocion']}');
@@ -1554,8 +1852,6 @@ class OrderService extends ChangeNotifier {
       if (useMesaRpc) print('p_id_mesa: ${rpcParams['p_id_mesa']}');
       print('========================================');
 
-      // Llamar al RPC apropiado: primero la versión nueva (`_v3`), y sólo si
-      // PostgREST confirma que no existe, la función viva del mismo nombre.
       dynamic response;
       try {
         response = await Supabase.instance.client.rpc(
@@ -1564,12 +1860,14 @@ class OrderService extends ChangeNotifier {
         );
       } catch (e) {
         if (!_isRpcUnavailable(e, rpcNameV3)) rethrow;
-        rpcName = rpcNameLegacy;
-        debugPrint('⚠️ $rpcNameV3 no disponible ($e). Usando $rpcNameLegacy.');
-        response = await Supabase.instance.client.rpc(
-          rpcNameLegacy,
-          params: rpcParams,
+        debugPrint(
+          '⚠️ $rpcNameV3 no disponible ($e). '
+          'No se registra con la función sin clave.',
         );
+        return {
+          'success': false,
+          'error': '$rpcNameV3 no está disponible. La venta no se registró.',
+        };
       }
       debugPrint('✅ RPC de venta usada: $rpcName');
 
@@ -1586,46 +1884,29 @@ class OrderService extends ChangeNotifier {
         }
         final fotoOperacionUrl = orderData['fotoOperacionUrl'] as String?;
         if (fotoOperacionUrl != null && fotoOperacionUrl.isNotEmpty) {
-          await Supabase.instance.client
-              .from('app_dat_operacion_venta')
-              .update({'foto_operacion_url': fotoOperacionUrl})
-              .eq('id_operacion', operationId);
-        }
-
-        // Cuentas por cobrar: si algún ítem quedó como "Pago Pendiente", la
-        // venta NO se marca como pagada (fn_registrar_venta la crea con
-        // es_pagada = true por defecto). El monto pendiente simplemente no
-        // genera fila en app_dat_pago_venta (ver _registerPaymentsInSupabase),
-        // quedando como saldo a favor de la tienda contra ese cliente.
-        final montoPendienteCxc = order.items
-            .where((item) => item.paymentMethod?.esPagoPendiente ?? false)
-            .fold<double>(0.0, (sum, item) => sum + item.subtotal);
-        if (montoPendienteCxc > 0) {
           try {
-            // id_cliente_cxc apunta a app_dat_cliente_cxc, una tabla
-            // INDEPENDIENTE de app_dat_clientes (donde no se registró este
-            // cliente, precisamente para no seguir engordando esa tabla).
-            final idClienteCxc = orderData['idClienteCxc'];
-            if (idClienteCxc == null) {
-              print(
-                '⚠️ Venta $operationId tiene pago pendiente pero sin '
-                'idClienteCxc — no se puede asociar a cartera CxC',
-              );
+            await Supabase.instance.client.rpc(
+              'fn_m01_adjuntar_foto_operacion',
+              params: {
+                'p_client_uuid': UuidGenerator.v4(),
+                'p_id_operacion': operationId,
+                'p_url': fotoOperacionUrl,
+              },
+            );
+          } catch (e) {
+            if (!_isRpcUnavailable(e, 'fn_m01_adjuntar_foto_operacion')) {
+              rethrow;
             }
             await Supabase.instance.client
                 .from('app_dat_operacion_venta')
-                .update({
-                  'es_pagada': false,
-                  if (idClienteCxc != null) 'id_cliente_cxc': idClienteCxc,
-                })
+                .update({'foto_operacion_url': fotoOperacionUrl})
                 .eq('id_operacion', operationId);
-            print(
-              '💳 Venta $operationId marcada como pago pendiente (CxC): \$${montoPendienteCxc.toStringAsFixed(2)} - Cliente CxC: $idClienteCxc',
-            );
-          } catch (e) {
-            print('⚠️ No se pudo marcar es_pagada=false en $operationId: $e');
           }
         }
+
+        // CxC no se gestiona en el TPV: las ventas nuevas nunca traen
+        // ítems a "Pago Pendiente" (998), así que aquí no hay nada que marcar.
+        // Las ventas CxC históricas se administran desde la app de admin.
 
         final paymentResult = await _registerPaymentsInSupabase(
           order,
@@ -1734,9 +2015,8 @@ class OrderService extends ChangeNotifier {
 
       for (final item in lineas.isEmpty ? order.items : <OrderItem>[]) {
         if (item.paymentMethod != null) {
-          // "Pago Pendiente" (cuenta por cobrar): no genera fila en
-          // app_dat_pago_venta. El monto queda como saldo pendiente (ver
-          // es_pagada = false en _registerSaleInSupabase).
+          // "Pago Pendiente" (cuenta por cobrar, solo en órdenes legacy):
+          // no genera fila en app_dat_pago_venta.
           if (item.paymentMethod!.esPagoPendiente) {
             print(
               'Item: ${item.nombre} -> Pago Pendiente (CxC), no se registra como pago',
@@ -1838,8 +2118,8 @@ class OrderService extends ChangeNotifier {
         }
 
         try {
-          // Cadena de RPC, de la más nueva a la más vieja:
-          //   _v3 (genérica, cualquier divisa) -> _v2 -> _v1
+          // Cadena de RPC: _v3 y, si PostgREST confirma que no existe, _v2.
+          // No se llama fn_registrar_pago_venta: no tiene clave de idempotencia.
           //
           // IMPORTANTE: si alguna línea NO está en CUP/USD, NO se cae a `_v2`
           // ni a `_v1`. Esas funciones solo entienden CUP/USD y, hasta la Fase
@@ -1879,9 +2159,9 @@ class OrderService extends ChangeNotifier {
               if (!_isRpcUnavailable(e2, 'fn_registrar_pago_venta_v2')) {
                 rethrow;
               }
-              response = await Supabase.instance.client.rpc(
-                'fn_registrar_pago_venta',
-                params: {'p_id_operacion_venta': operationId, 'p_pagos': pagos},
+              throw Exception(
+                'fn_registrar_pago_venta_v2 no está disponible. '
+                'No se registra el cobro sin clave de idempotencia.',
               );
             }
           }
@@ -1938,6 +2218,12 @@ class OrderService extends ChangeNotifier {
   /// versión anterior sin tratarlo como fallo de negocio.
   bool _isRpcUnavailable(Object error, String functionName) {
     final text = error.toString().toLowerCase();
+    if (text.contains('42501') ||
+        text.contains('insufficient_privilege') ||
+        text.contains('permission denied') ||
+        text.contains('acceso denegado')) {
+      return false;
+    }
     final fn = functionName.toLowerCase();
     return text.contains('pgrst202') ||
         text.contains('could not find the function') ||
@@ -2208,7 +2494,10 @@ class OrderService extends ChangeNotifier {
     _orders.clear();
     final pending = await userPrefs.getSellerVisiblePendingOrders();
     if (pending.isNotEmpty) {
-      addPendingOrdersToList(pending);
+      addPendingOrdersToList(
+        pending,
+        nombresMedios: await _nombresMediosPagoOffline(),
+      );
     }
     final pendingOrders = List<Order>.from(_orders);
 
@@ -2299,8 +2588,27 @@ class OrderService extends ChangeNotifier {
 
     final pending = await userPrefs.getSellerVisiblePendingOrders();
     if (pending.isNotEmpty) {
-      addPendingOrdersToList(pending);
+      addPendingOrdersToList(
+        pending,
+        nombresMedios: await _nombresMediosPagoOffline(),
+      );
       print('⏳ Pendientes del turno abierto: ${pending.length}');
+    }
+  }
+
+  /// Nombres de medios de pago desde el cache offline, para que el desglose
+  /// de una orden pendiente v1 etiquete igual que el listado del servidor.
+  Future<Map<int, String>> _nombresMediosPagoOffline() async {
+    try {
+      final metodos =
+          await UserPreferencesService().getPaymentMethodsOffline();
+      return {
+        for (final m in metodos)
+          if (m['id'] is num)
+            (m['id'] as num).toInt(): m['denominacion']?.toString() ?? '',
+      };
+    } catch (_) {
+      return const {};
     }
   }
 
@@ -2504,14 +2812,66 @@ class OrderService extends ChangeNotifier {
               ingredientes = item['ingredientes'] as List<dynamic>;
             }
 
-            // Crear OrderItem
+            // Reconstruir la seleccion v1 si la linea viene versionada
+            // (script 52). Los importes viajan como texto decimal; sin
+            // seleccion valida la linea queda como legacy.
+            ProductCurrencySeleccion? seleccion;
+            if (item['version_monetaria'] == 'producto-v1') {
+              try {
+                final pendiente = item['seleccion_pendiente'] == true;
+                final medio = item['id_medio_pago_seleccionado'];
+                final descuentos = item['snapshot_descuentos'];
+                seleccion = ProductCurrencySeleccion.fromJson({
+                  'id_linea_cliente': item['id_linea_cliente']?.toString(),
+                  'id_producto': '${item['id_producto']}',
+                  'cantidad': '${item['cantidad']}',
+                  'moneda_venta': item['moneda_venta'],
+                  'seleccion_cobro': {
+                    'tipo': pendiente ? 'pendiente' : 'medio_pago',
+                    'id_medio_pago':
+                        pendiente ? null : (medio as num?)?.toInt(),
+                  },
+                  'precio_unitario_nativo':
+                      '${item['precio_unitario_nativo']}',
+                  'descuento_manual_unitario_nativo':
+                      '${item['descuento_manual_unitario_nativo'] ?? '0'}',
+                  'snapshot_precio': item['snapshot_precio'],
+                  'snapshot_tasa': item['snapshot_tasa'],
+                  'snapshot_ajustes_automaticos':
+                      descuentos is Map
+                          ? (descuentos['automaticos'] ?? const [])
+                          : const [],
+                });
+              } catch (e) {
+                print('⚠️ Linea v1 sin seleccion reconstruible: $e');
+              }
+            }
+
+            // Crear OrderItem. En lineas v1 `precio_unitario` legacy es NULL
+            // (los montos viven en las columnas nativas): el unitario que la
+            // UI usa para `subtotal` debe ser el neto nativo de su moneda.
+            final cantidadLinea = (item['cantidad'] ?? 1).toDouble();
+            double? precioUnitarioNativo;
+            if (seleccion != null) {
+              precioUnitarioNativo = double.tryParse(
+                '${item['precio_unitario_neto_nativo']}',
+              );
+              precioUnitarioNativo ??=
+                  cantidadLinea > 0
+                      ? (double.tryParse('${item['importe_neto_nativo']}') ??
+                              0.0) /
+                          cantidadLinea
+                      : null;
+            }
             final orderItem = OrderItem(
               id:
                   'ITEM-${item['id_producto']}-${DateTime.now().millisecondsSinceEpoch}',
               producto: product,
               variante: variant,
-              cantidad: (item['cantidad'] ?? 1).toDouble(),
-              precioUnitario: (item['precio_unitario'] ?? 0.0).toDouble(),
+              cantidad: cantidadLinea,
+              precioUnitario:
+                  precioUnitarioNativo ??
+                  (item['precio_unitario'] ?? 0.0).toDouble(),
               ubicacionAlmacen:
                   item['nombre_ubicacion'] as String? ?? 'Principal',
               // Guardar id_extraccion para permitir edición de órdenes pendientes.
@@ -2544,6 +2904,7 @@ class OrderService extends ChangeNotifier {
                       as String?,
               presentacionFactor:
                   (item['presentacion_factor'] as num?)?.toDouble(),
+              seleccion: seleccion,
             );
 
             orderItems.add(orderItem);
@@ -2590,6 +2951,13 @@ class OrderService extends ChangeNotifier {
           mesaNumero = mesaData['numero']?.toString();
         }
 
+        // Orden v1 solo si la operacion viene versionada y cada linea
+        // conserva su seleccion; si falta una, queda como legacy.
+        final esV1 =
+            supabaseOrder['detalles']?['version_monetaria'] == 'producto-v1' &&
+            orderItems.isNotEmpty &&
+            orderItems.every((it) => it.seleccion != null);
+
         // Crear orden desde los datos de Supabase
         final order = Order(
           id: 'ORD-${supabaseOrder['id_operacion']}',
@@ -2613,6 +2981,8 @@ class OrderService extends ChangeNotifier {
               supabaseOrder['detalles']?['paqueteria'] as Map<String, dynamic>?,
           idMesa: idMesa,
           mesaNumero: mesaNumero,
+          versionMonetaria: esV1 ? ProductCurrencySeleccion.version : null,
+          clientUuid: supabaseOrder['detalles']?['client_uuid']?.toString(),
         );
 
         _orders.add(order);
@@ -2657,7 +3027,10 @@ class OrderService extends ChangeNotifier {
   }
 
   /// Agregar órdenes pendientes de sincronización a la lista
-  void addPendingOrdersToList(List<Map<String, dynamic>> pendingOrders) {
+  void addPendingOrdersToList(
+    List<Map<String, dynamic>> pendingOrders, {
+    Map<int, String> nombresMedios = const {},
+  }) {
     try {
       print(
         '📋 Agregando ${pendingOrders.length} órdenes pendientes a la lista...',
@@ -2704,17 +3077,45 @@ class OrderService extends ChangeNotifier {
                 ingredientes = List<dynamic>.from(rawIngs);
               }
 
+              // Contrato v1 guardado por ContratoPendiente: la línea conserva
+              // su selección; si no se puede reconstruir queda como legacy.
+              ProductCurrencySeleccion? seleccion;
+              final rawSeleccion = itemData['seleccion'];
+              if (rawSeleccion is Map) {
+                try {
+                  seleccion = ProductCurrencySeleccion.fromJson(
+                    Map<String, dynamic>.from(rawSeleccion),
+                  );
+                } catch (e) {
+                  print('⚠️ Selección v1 ilegible en orden pendiente: $e');
+                }
+              }
+
+              // En lineas v1 el unitario debe ser el neto nativo de su moneda
+              // (los importes CUP/USD no se mezclan en `subtotal`).
+              double? precioNativo;
+              if (seleccion != null) {
+                final bruto = double.tryParse(seleccion.precioUnitarioNativo);
+                final manual = double.tryParse(seleccion.descuentoManualUnitario);
+                if (bruto != null) {
+                  precioNativo = bruto - (manual ?? 0);
+                }
+              }
               // Crear OrderItem
               return OrderItem(
                 id: '${orderData['id']}_${itemData['id_producto']}',
                 producto: product,
                 variante: null,
                 cantidad: (itemData['cantidad'] as num).toDouble(),
-                precioUnitario: (itemData['precio_unitario'] as num).toDouble(),
+                precioUnitario:
+                    precioNativo ??
+                    (itemData['precio_unitario'] as num?)?.toDouble() ??
+                    0.0,
                 ubicacionAlmacen: ubicacionAlmacen,
                 inventoryData: inventoryMetadata,
                 paymentMethod: null, // Se reconstruirá si es necesario
                 ingredientes: ingredientes,
+                seleccion: seleccion,
                 // FASE 4: reconstruir la presentación al releer la orden
                 // pendiente. Sin esto, `cantidadFormateada` y
                 // `equivalenteBase` mienten en el resumen de cierre de una
@@ -2755,6 +3156,35 @@ class OrderService extends ChangeNotifier {
         final localId = orderData['id']?.toString() ?? '';
         final displayId = opId != null ? 'ORD-$opId' : localId;
 
+        // La orden pendiente v1 se marca como tal solo si TODAS sus líneas
+        // conservan selección reconstruible (misma regla que el listado).
+        final versionPendiente = orderData['version_monetaria']?.toString();
+        final esV1 =
+            versionPendiente == ProductCurrencySeleccion.version &&
+            items.isNotEmpty &&
+            items.every((it) => it.seleccion != null);
+
+        // Una pendiente v1 no guarda desglose_pagos: el cobro se deriva de las
+        // líneas, igual que al sincronizar. Se reconstruye por (medio, moneda)
+        // para que el detalle offline desglose igual que el online.
+        final pagosV1 =
+            esV1
+                ? CheckoutV1.agrupar(
+                  VentaV1Lineas.desdeMapas([
+                    for (final it in items) it.seleccion!.toJson(),
+                  ]),
+                ).map(
+                  (g) => <String, dynamic>{
+                    'id_medio_pago': g.medio,
+                    if (nombresMedios[g.medio] != null)
+                      'denominacion': nombresMedios[g.medio],
+                    'moneda': g.moneda,
+                    'monto': double.tryParse(g.neto) ?? 0.0,
+                    'monto_cup_equivalente': double.tryParse(g.cup) ?? 0.0,
+                  },
+                ).toList()
+                : const <Map<String, dynamic>>[];
+
         final order = Order(
           id: displayId.isNotEmpty ? displayId : localId,
           fechaCreacion: DateTime.parse(orderData['fecha_creacion'] as String),
@@ -2769,9 +3199,14 @@ class OrderService extends ChangeNotifier {
               orderData['buyerPhone']?.toString(),
           notas: orderData['notas']?.toString(),
           operationId: opId,
-          pagos: PriceUtils.normalizePayments(
-            orderData['pagos'] ?? orderData['desglose_pagos'],
-          ),
+          versionMonetaria: esV1 ? ProductCurrencySeleccion.version : null,
+          clientUuid: orderData['client_uuid']?.toString(),
+          pagos:
+              esV1
+                  ? pagosV1
+                  : PriceUtils.normalizePayments(
+                    orderData['pagos'] ?? orderData['desglose_pagos'],
+                  ),
         );
 
         _orders.add(order);
@@ -2992,6 +3427,10 @@ class OrderService extends ChangeNotifier {
       } else {
         print('📱 No hay preorden persistente para cargar');
       }
+    } on ProductCurrencyException catch (e) {
+      print('⚠️ Preorden persistida con contrato incompatible, se descarta: $e');
+      _currentOrder = null;
+      await UserPreferencesService().clearPersistentPreorder();
     } catch (e) {
       print('❌ Error cargando preorden desde persistencia: $e');
       _currentOrder = null;
@@ -3067,9 +3506,8 @@ class OrderService extends ChangeNotifier {
         return {'success': false, 'error': 'Usuario no encontrado'};
       }
 
-      // Fase 2 (decisión 1B): `_v2` convierte la cantidad a equivalente base.
-      // GATE: sin las RPC nuevas aplicadas, el fallback mantiene la app, pero
-      // el bug SQL de consumo (C5) sigue vivo.
+      // `_v2` convierte la cantidad a equivalente base. Si no está, no se
+      // llama la función anterior: esa pierde la conversión.
       final params = <String, dynamic>{
         'p_id_extraccion': idExtraccion,
         'p_nueva_cantidad': nuevaCantidad,
@@ -3087,12 +3525,14 @@ class OrderService extends ChangeNotifier {
         }
         debugPrint(
           '⚠️ fn_actualizar_cantidad_producto_orden_v2 no disponible ($e). '
-          'Usando fn_actualizar_cantidad_producto_orden.',
+          'No se usa la función sin conversión a base.',
         );
-        response = await Supabase.instance.client.rpc(
-          'fn_actualizar_cantidad_producto_orden',
-          params: params,
-        );
+        return {
+          'success': false,
+          'error':
+              'fn_actualizar_cantidad_producto_orden_v2 no está disponible. '
+              'No se cambió la cantidad.',
+        };
       }
 
       if (response != null && response['status'] == 'success') {
@@ -3124,7 +3564,8 @@ class OrderService extends ChangeNotifier {
         return {'success': false, 'error': 'Usuario no encontrado'};
       }
 
-      // Fase 4 (decisión 1B): `_v2` devuelve a la presentación base.
+      // `_v2` devuelve el stock a la presentación base. Si no está, no se
+      // llama la función anterior.
       final params = <String, dynamic>{
         'p_id_extraccion': idExtraccion,
         'p_uuid_usuario': userId,
@@ -3139,12 +3580,14 @@ class OrderService extends ChangeNotifier {
         if (!_isRpcUnavailable(e, 'fn_eliminar_producto_orden_v2')) rethrow;
         debugPrint(
           '⚠️ fn_eliminar_producto_orden_v2 no disponible ($e). '
-          'Usando fn_eliminar_producto_orden.',
+          'No se usa la función sin conversión a base.',
         );
-        response = await Supabase.instance.client.rpc(
-          'fn_eliminar_producto_orden',
-          params: params,
-        );
+        return {
+          'success': false,
+          'error':
+              'fn_eliminar_producto_orden_v2 no está disponible. '
+              'No se quitó el producto.',
+        };
       }
 
       if (response != null && response['status'] == 'success') {
@@ -3177,7 +3620,8 @@ class OrderService extends ChangeNotifier {
         return {'success': false, 'error': 'Usuario no encontrado'};
       }
 
-      // Fase 2 (decisión 1B): `_v2` convierte la cantidad a equivalente base.
+      // `_v2` convierte la cantidad a equivalente base. Si no está, no se
+      // llama la función anterior.
       final params = <String, dynamic>{
         'p_id_operacion': operationId,
         'p_producto': producto,
@@ -3195,12 +3639,14 @@ class OrderService extends ChangeNotifier {
         }
         debugPrint(
           '⚠️ fn_agregar_producto_orden_pendiente_v2 no disponible ($e). '
-          'Usando fn_agregar_producto_orden_pendiente.',
+          'No se usa la función sin conversión a base.',
         );
-        response = await Supabase.instance.client.rpc(
-          'fn_agregar_producto_orden_pendiente',
-          params: params,
-        );
+        return {
+          'success': false,
+          'error':
+              'fn_agregar_producto_orden_pendiente_v2 no está disponible. '
+              'No se agregó el producto.',
+        };
       }
 
       if (response != null && response['status'] == 'success') {

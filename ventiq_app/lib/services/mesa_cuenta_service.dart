@@ -3,6 +3,9 @@ import '../models/mesa_cuenta.dart';
 import '../models/order.dart';
 import '../models/payment_method.dart';
 import '../models/pedido_resultado.dart';
+import '../money/mesa_v1.dart';
+import '../money/product_currency_order.dart';
+import '../utils/uuid_generator.dart';
 import 'user_preferences_service.dart';
 
 /// Servicio para gestionar **cuentas abiertas** de mesas en modo restaurante.
@@ -279,11 +282,10 @@ class MesaCuentaService {
     String? uuidVendedor,
     bool forzarSinStock = false,
   }) async {
-    // Fase 2 del plan (decisión 1B): `_v2` convierte la cantidad a equivalente
-    // base. GATE: si el backend no tiene la RPC nueva, el fallback mantiene la
-    // app, pero el bug SQL de consumo (C5) sigue vivo en la función viva.
+    // `_v2` convierte la cantidad a equivalente base. Si no está, no se llama
+    // la función con clave ni la anterior: las dos pierden esa conversión
+    // hasta que el script 17 haga que la de clave delegue en v2.
     const fnNueva = 'fn_pedir_item_cuenta_v2';
-    const fnViva = 'fn_pedir_item_cuenta';
     var fnUsada = fnNueva;
     final params = <String, dynamic>{
       'p_id_cuenta': idCuenta,
@@ -310,9 +312,13 @@ class MesaCuentaService {
       response = await _supabase.rpc(fnNueva, params: params);
     } catch (e) {
       if (!_isRpcUnavailable(e, fnNueva)) rethrow;
-      fnUsada = fnViva;
-      print('⚠️ $fnNueva no disponible ($e). Usando $fnViva.');
-      response = await _supabase.rpc(fnViva, params: params);
+      print(
+        '⚠️ $fnNueva no disponible ($e). '
+        'No se pide con la función que pierde la cantidad en base.',
+      );
+      throw Exception(
+        '$fnNueva no está disponible. No se pidió el plato.',
+      );
     }
 
     final mapa = _comoMapa(response);
@@ -335,6 +341,9 @@ class MesaCuentaService {
     String? uuidVendedor,
     bool forzarSinStock = false,
   }) async {
+    if (item.seleccion != null) {
+      return _pedirProductoV1(idCuenta: idCuenta, item: item);
+    }
     final inv = item.inventoryData ?? const {};
     return pedirItem(
       idCuenta: idCuenta,
@@ -362,6 +371,58 @@ class MesaCuentaService {
     );
   }
 
+  /// La línea nueva no usa el pedido que une por producto.
+  Future<PedidoResultado> _pedirProductoV1({
+    required int idCuenta,
+    required OrderItem item,
+  }) async {
+    final seleccion = item.seleccion;
+    if (seleccion == null) {
+      throw ProductCurrencyException('SNAPSHOT_INVALID');
+    }
+    final politica = await _userPrefs.getPoliticaMoneda() ?? <String, dynamic>{};
+    final revision = politica['revision'];
+    final constancia = politica['constancia'];
+    if (revision is! Map || constancia is! Map) {
+      throw Exception('Falta la constancia. La linea no se pidio.');
+    }
+    try {
+      final response = await _supabase.rpc(
+        'fn_m01_pedir_item_mesa_v1',
+        params: {
+          'p_solicitud': {
+            'version_monetaria': 'producto-v1',
+            'client_uuid': seleccion.idLineaCliente,
+            'id_cuenta': '$idCuenta',
+            'id_revision': '${revision['id']}',
+            'id_constancia': '${constancia['id']}',
+            'dispositivo': constancia['dispositivo'],
+            'huella': constancia['huella'],
+            'linea': seleccion.toJson(),
+          },
+        },
+      );
+      final mapa = _comoMapa(response);
+      if (mapa == null || mapa['status'] != 'success') {
+        throw Exception('La linea nueva no se pidio');
+      }
+      return PedidoResultado.fromJson(mapa);
+    } catch (error) {
+      if (_esDenegacion(error) || _isRpcUnavailable(error, 'fn_m01_pedir_item_mesa_v1')) {
+        throw Exception('La linea nueva no se pidio por la via anterior');
+      }
+      rethrow;
+    }
+  }
+
+  bool _esDenegacion(Object error) {
+    final text = error.toString().toLowerCase();
+    return text.contains('42501') ||
+        text.contains('permission denied') ||
+        text.contains('acceso denegado') ||
+        text.contains('insufficient_privilege');
+  }
+
   /// Cancela un item ya pedido.
   ///
   /// Si el plato **no** se sirvió, devuelve el stock y cancela la comanda. Si
@@ -370,12 +431,37 @@ class MesaCuentaService {
   Future<CancelacionResultado> cancelarItemPedido({
     required int idItem,
     String? motivo,
+    String? versionMonetaria,
   }) async {
-    // Fase 4 del plan (decisión 1B): `_v2` devuelve el stock a la presentación
-    // base. GATE: sin la RPC nueva, el fallback mantiene la app, pero el bug
-    // SQL de devolución (C7) sigue vivo.
+    if (versionMonetaria == 'producto-v1') {
+      final clave = 'mesa-cancel-$idItem';
+      final guardado = await _userPrefs.leerIntentoVentaV1(clave);
+      final uuid = guardado?['client_uuid']?.toString() ?? UuidGenerator.v4();
+      await _userPrefs.guardarIntentoVentaV1(clave, {'client_uuid': uuid});
+      try {
+        final response = await _supabase.rpc(
+          'fn_m01_cancelar_item_mesa_v1',
+          params: {
+            'p_solicitud': {
+              'version_monetaria': 'producto-v1',
+              'client_uuid': uuid,
+              'id_item': '$idItem',
+              'motivo': motivo,
+            },
+          },
+        );
+        final mapa = _comoMapa(response);
+        if (mapa == null || mapa['status'] != 'success') {
+          throw Exception('La linea nueva no se cancelo');
+        }
+        return CancelacionResultado.fromJson(mapa);
+      } catch (error) {
+        throw Exception('La linea nueva no se cancelo por la via anterior');
+      }
+    }
+    // `_v2` devuelve el stock a la presentación base. Si no está, no se llama
+    // la función anterior.
     const fnNueva = 'fn_cancelar_item_pedido_v2';
-    const fnViva = 'fn_cancelar_item_pedido';
     var fnUsada = fnNueva;
     final params = <String, dynamic>{'p_id_item': idItem, 'p_motivo': motivo};
 
@@ -384,9 +470,13 @@ class MesaCuentaService {
       response = await _supabase.rpc(fnNueva, params: params);
     } catch (e) {
       if (!_isRpcUnavailable(e, fnNueva)) rethrow;
-      fnUsada = fnViva;
-      print('⚠️ $fnNueva no disponible ($e). Usando $fnViva.');
-      response = await _supabase.rpc(fnViva, params: params);
+      print(
+        '⚠️ $fnNueva no disponible ($e). '
+        'No se cancela con la función sin conversión a base.',
+      );
+      throw Exception(
+        '$fnNueva no está disponible. No se canceló el plato.',
+      );
     }
 
     final mapa = _comoMapa(response);
@@ -408,6 +498,12 @@ class MesaCuentaService {
   /// `AutoSyncService._isRpcUnavailable`.
   bool _isRpcUnavailable(Object error, String functionName) {
     final text = error.toString().toLowerCase();
+    if (text.contains('42501') ||
+        text.contains('insufficient_privilege') ||
+        text.contains('permission denied') ||
+        text.contains('acceso denegado')) {
+      return false;
+    }
     final fn = functionName.toLowerCase();
     return text.contains('pgrst202') ||
         text.contains('could not find the function') ||
@@ -428,7 +524,11 @@ class MesaCuentaService {
   Future<void> actualizarCantidad({
     required int idItem,
     required double cantidad,
+    String? versionMonetaria,
   }) async {
+    if (!MesaV1.permiteEditar(versionMonetaria)) {
+      throw Exception('La cantidad de la linea nueva no se cambia aqui');
+    }
     await _supabase.rpc(
       'fn_actualizar_item_cuenta_mesa',
       params: {'p_id_item': idItem, 'p_cantidad': cantidad},
@@ -463,6 +563,39 @@ class MesaCuentaService {
       params: {'p_id_cuenta': idCuenta},
     );
     if (_activeCuentaId == idCuenta) clearActive();
+  }
+
+  /// Cierra una cuenta producto-v1. No registra la venta ni el cobro por la vía anterior.
+  Future<int> finalizarCuentaV1({
+    required int idCuenta,
+    int? idCliente,
+  }) async {
+    final clave = 'mesa-cierre-$idCuenta';
+    final guardado = await _userPrefs.leerIntentoVentaV1(clave);
+    final venta = guardado?['client_uuid']?.toString() ?? UuidGenerator.v4();
+    final pago = guardado?['client_uuid_pago']?.toString() ?? UuidGenerator.v4();
+    final solicitud = MesaV1.solicitudCierre(
+      clientUuid: venta,
+      clientUuidPago: pago,
+      idCuenta: idCuenta,
+      idCliente: idCliente,
+    );
+    await _userPrefs.guardarIntentoVentaV1(clave, solicitud);
+    try {
+      final response = await _supabase.rpc(
+        'fn_m01_finalizar_cuenta_v1',
+        params: {'p_solicitud': solicitud},
+      );
+      final mapa = _comoMapa(response);
+      final id = mapa?['id_operacion'];
+      if (mapa == null || mapa['status'] != 'success' || id is! num) {
+        throw Exception('La cuenta nueva no se cerro');
+      }
+      if (_activeCuentaId == idCuenta) clearActive();
+      return id.toInt();
+    } catch (error) {
+      throw Exception('La cuenta nueva no se cerro por la via anterior');
+    }
   }
 
   /// Vincula la cuenta a una operación de venta y la marca cerrada.

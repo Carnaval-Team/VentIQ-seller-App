@@ -28,6 +28,10 @@ import '../utils/promotion_rules.dart';
 import '../utils/uuid_generator.dart';
 import '../utils/package_image_picker.dart' as web_picker;
 import '../widgets/checkout_amount_row.dart';
+import '../widgets/checkout_payment_lines_editor.dart';
+import '../widgets/checkout_v1_grupos.dart';
+import '../money/venta_v1_envio.dart';
+import '../services/payment_method_service.dart';
 import '../widgets/transfer_sms_confirmation_banner.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:convert';
@@ -35,7 +39,12 @@ import 'package:crypto/crypto.dart';
 
 class CheckoutScreen extends StatefulWidget {
   final Order order;
-  const CheckoutScreen({Key? key, required this.order}) : super(key: key);
+  final String origenTipo;
+  const CheckoutScreen({
+    Key? key,
+    required this.order,
+    this.origenTipo = 'mostrador',
+  }) : super(key: key);
 
   @override
   State<CheckoutScreen> createState() => _CheckoutScreenState();
@@ -66,17 +75,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   String? _fotoOperacionNombre;
   String? _fotoOperacionMime;
   Mesa? _mesaSeleccionada; // Mesa elegida en modo restaurante
-  // Cliente existente elegido desde el buscador de Cuentas por Cobrar (si es
-  // null, se crea/encuentra un cliente por nombre como en el flujo normal).
-  int? _selectedExistingClientId;
   List<Mesa> _mesasDisponibles = []; // Cache de mesas activas para el selector
   Map<int, List<Map<String, dynamic>>> _productPromotions =
       {}; // productId -> promotions
   Map<String, dynamic>? _globalPromotionData;
   double _usdRate = 0.0;
   bool _isLoadingUsdRate = false;
-  bool _mostrarSelectorMoneda = false;
+  // `mostrar_selector_moneda` retirado del admin; el selector lo gobiernan
+  // las monedas aceptadas y la forzada (ver `_haySelectorMoneda`).
   final Map<int, String> _paymentCurrencyByMethodId = {};
+  List<Map<String, dynamic>>? _editedPaymentLines;
+  bool _loadingPaymentEditor = false;
 
   // ===== Multimoneda (Fase 3) =====
   // Monedas que acepta la tienda y su tasa a la moneda base (CUP).
@@ -103,8 +112,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   ///
   /// Con la tienda forzando la divisa tampoco: el vendedor no puede cobrar en
   /// otra, así que ofrecerle el selector sería ofrecerle un error.
+  ///
+  /// El flag legacy `mostrar_selector_moneda` ya no gobierna esto: bastan las
+  /// monedas aceptadas por la tienda. Quedó retirado del admin; la columna
+  /// sigue existiendo solo para clientes anteriores.
   bool get _haySelectorMoneda =>
-      _mostrarSelectorMoneda &&
       _monedaForzada == null &&
       _divisasDisponibles.length > 1;
 
@@ -146,13 +158,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   /// `true` si algún producto de la orden se paga por transferencia.
-  bool get _tieneTransferencia => widget.order.items.any(
-    (item) => item.paymentMethod?.esTransferencia ?? false,
-  );
+  bool get _tieneTransferencia => _editedPaymentLines != null
+      ? _editedPaymentLines!.any((line) => line['es_transferencia'] == true)
+      : widget.order.items.any(
+          (item) => item.paymentMethod?.esTransferencia ?? false,
+        );
 
   /// Monto que debe casar el SMS: solo la parte por transferencia.
   /// Si todo es transferencia, coincide con [finalTotal].
   double get transferExpectedAmount {
+    if (_editedPaymentLines != null) {
+      return PriceUtils.paymentTotalCup(_editedPaymentLines!
+          .where((line) => line['es_transferencia'] == true).toList());
+    }
     var total = 0.0;
     for (final item in widget.order.items) {
       if (item.paymentMethod?.esTransferencia ?? false) {
@@ -309,7 +327,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               !SalesModeService.mostradorActivo;
           _solicitarImagenOperacion =
               config['solicitar_imagen_operacion'] ?? false;
-          _mostrarSelectorMoneda = config['mostrar_selector_moneda'] ?? false;
+          // `mostrar_selector_moneda` ya no gobierna el selector: bastan las
+          // monedas aceptadas por la tienda (ver `_haySelectorMoneda`).
           print(
             '✅ Configuración cargada desde cache - No solicitar cliente: $_noSolicitarCliente, Modo restaurante: $_modoRestaurante',
           );
@@ -327,8 +346,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               !SalesModeService.mostradorActivo;
           _solicitarImagenOperacion =
               await StoreConfigService.getSolicitarImagenOperacion(storeId);
-          _mostrarSelectorMoneda =
-              await StoreConfigService.getMostrarSelectorMoneda(storeId);
           print(
             '✅ Configuración cargada desde Supabase - No solicitar cliente: $_noSolicitarCliente, Modo restaurante: $_modoRestaurante',
           );
@@ -347,7 +364,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           }
           // Y disparamos la carga de mesas disponibles para el selector.
           _cargarMesasDisponibles();
-        } else if (_noSolicitarCliente && !_tienePagoPendiente) {
+        } else if (_noSolicitarCliente) {
           _buyerNameController.text = 'Cliente';
         }
 
@@ -357,9 +374,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             _configLoading = false;
           });
         }
-        // `_mostrarSelectorMoneda` se resuelve aquí y `_loadUsdRate()` corre en
-        // paralelo: si esta carga termina después, es la que puede aplicar la
-        // divisa por defecto. Es idempotente.
+        // La moneda forzada/aceptada se resuelve aquí y `_loadUsdRate()`
+        // corre en paralelo: si esta carga termina después, es la que puede
+        // aplicar la divisa por defecto. Es idempotente.
         _aplicarMonedaVentaPorDefecto();
       }
     } catch (e) {
@@ -527,9 +544,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   double get finalTotal => totalAfterPromo;
 
-  /// Ids de método con pago real (ni nulo ni "Pago Pendiente").
+  /// Ids de método de pago presentes en la orden.
   Set<int> get _methodIdsCobrados => widget.order.items
-      .where((item) => !(item.paymentMethod?.esPagoPendiente ?? false))
       .map((item) => item.paymentMethod?.id)
       .whereType<int>()
       .toSet();
@@ -539,6 +555,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   /// Si todas las líneas comparten una divisa distinta de la base, se muestra
   /// en esa divisa; si hay mezcla (o es la base), se muestra en la moneda base.
   String get _monedaVisualizacion {
+    if (_editedPaymentLines != null) {
+      final currencies = _editedPaymentLines!.map(PriceUtils.paymentCurrency).toSet();
+      return currencies.length == 1 ? currencies.first : _monedaBase;
+    }
     final ids = _methodIdsCobrados;
     if (ids.isEmpty) return _monedaBase;
     final monedas = ids
@@ -566,6 +586,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   // Calculate payment breakdown from individual product payment methods
   Map<String, double> get paymentBreakdown {
     Map<String, double> breakdown = {};
+    if (_editedPaymentLines != null) {
+      for (final line in _editedPaymentLines!) {
+        final name = line['denominacion'].toString();
+        breakdown[name] = (breakdown[name] ?? 0) + PriceUtils.paymentCupEquivalent(line);
+      }
+      return breakdown;
+    }
 
     for (final item in widget.order.items) {
       if (item.paymentMethod != null) {
@@ -579,9 +606,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   List<Map<String, dynamic>> get _currencyPaymentLines {
+    if (_editedPaymentLines != null) {
+      return _editedPaymentLines!.map((line) => Map<String, dynamic>.from(line)).toList();
+    }
     // La clave es (método, moneda), no solo el método: así el MISMO método
     // puede cobrarse en dos divisas distintas en la misma venta (decisión D1).
     final grouped = <String, Map<String, dynamic>>{};
+    final orderSubtotal = subtotal;
+    final allocationFactor = orderSubtotal > 0 ? finalTotal / orderSubtotal : 1.0;
     for (final item in widget.order.items) {
       final method = item.paymentMethod;
       if (method == null || method.esPagoPendiente) continue;
@@ -593,7 +625,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       // validación avisa antes de cobrar.
       if (currency != _monedaBase && tasa <= 0) continue;
 
-      final cupAmount = _calculateItemPrice(item);
+      final cupAmount = _calculateItemPrice(item) * allocationFactor;
       final key = '$methodId|$currency';
       final line = grouped.putIfAbsent(
         key,
@@ -606,6 +638,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           // Compatibilidad con la RPC antigua (solo entiende `tasa_usd`).
           'tasa_usd': currency == 'USD' ? tasa : null,
           'tipo_pago': methodId == 1 ? 1 : 2,
+          'es_digital': method.esDigital,
+          'es_efectivo': method.esEfectivo,
+          'es_transferencia': method.esTransferencia,
         },
       );
       line['monto'] =
@@ -798,75 +833,101 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 
-  Widget _buildPaymentBreakdownSection() {
-    // El monto en "Pago Pendiente" no es un pago real: se excluye del
-    // desglose normal y se informa aparte como cuenta por cobrar, para no
-    // confundirlo con dinero efectivamente cobrado.
-    final pagoPendienteLabel = PaymentMethod.pagoPendiente().displayName;
-    final montoPendiente = paymentBreakdown[pagoPendienteLabel] ?? 0.0;
-    final breakdown = Map<String, double>.from(paymentBreakdown)
-      ..remove(pagoPendienteLabel);
+  bool get _esV1 => widget.order.versionMonetaria == 'producto-v1';
 
-    if (breakdown.isEmpty && montoPendiente > 0) {
-      // Toda la orden queda como cuenta por cobrar: solo mostramos el aviso.
-      return _buildPagoPendienteNotice(montoPendiente, onlyNotice: true);
-    }
-
-    return Column(
-      children: [
-        _buildPaymentBreakdownDetails(breakdown),
-        if (montoPendiente > 0) ...[
-          const SizedBox(height: 12),
-          _buildPagoPendienteNotice(montoPendiente),
-        ],
-      ],
+  List<GrupoCobro> get _gruposV1 {
+    return CheckoutV1.agrupar(
+      VentaV1Lineas.desdeMapas([
+        for (final item in widget.order.items)
+          if (item.seleccion != null) item.seleccion!.toJson(),
+      ]),
     );
   }
 
-  Widget _buildPagoPendienteNotice(double monto, {bool onlyNotice = false}) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: VentiqHomeTheme.warning.withOpacity(0.10),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: VentiqHomeTheme.warning.withOpacity(0.45)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.account_balance_wallet, color: VentiqHomeTheme.warning),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  onlyNotice
-                      ? 'Esta orden quedará registrada como Cuenta por Cobrar'
-                      : 'Parte de esta orden quedará como Cuenta por Cobrar',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: VentiqHomeTheme.warning,
-                  ),
+  Future<void> _editPaymentLines() async {
+    if (_esV1) {
+      _showErrorMessage('El cobro no se redistribuye. Vuelve al detalle.');
+      if (mounted) Navigator.of(context).pop();
+      return;
+    }
+    setState(() => _loadingPaymentEditor = true);
+    try {
+      final offline = widget.order.isOfflineOrder ||
+          await _userPreferencesService.shouldUseLocalData();
+      final loaded = await PaymentMethodService.getPaymentMethodsWithCache(
+        isOfflineModeEnabled: offline,
+      );
+      final methods = <int, PaymentMethod>{
+        for (final item in widget.order.items)
+          if (item.paymentMethod != null) item.paymentMethod!.id: item.paymentMethod!,
+        for (final method in loaded) method.id: method,
+      }.values.where((m) => m.esActivo && !m.esPagoPendiente).toList();
+      final currencies = _monedaForzada != null
+          ? [_monedaForzada!]
+          : _divisasDisponibles;
+      final rates = {for (final currency in currencies) currency: _tasaDe(currency)};
+      final initial = _currencyPaymentLines;
+      if (methods.isEmpty || rates.isEmpty || initial.any((line) =>
+          !rates.containsKey(PriceUtils.paymentCurrency(line)) ||
+          !methods.any((m) => m.id == line['id_medio_pago']))) {
+        _showErrorMessage('No se pueden editar los pagos. Sincroniza los medios y las tasas de la tienda.');
+        return;
+      }
+      if (!mounted) return;
+      final result = await showModalBottomSheet<List<Map<String, dynamic>>>(
+        context: context,
+        isScrollControlled: true,
+        builder: (context) => SafeArea(child: CheckoutPaymentLinesEditor(
+          initialPayments: initial,
+          methods: methods,
+          rates: rates,
+          totalCup: finalTotal,
+          onSave: (lines) => Navigator.pop(context, lines),
+        )),
+      );
+      if (result != null && mounted) {
+        setState(() {
+          _editedPaymentLines = result;
+          _confirmedPayment = null;
+        });
+      }
+    } catch (e) {
+      if (mounted) _showErrorMessage('No se pudo abrir el desglose: $e');
+    } finally {
+      if (mounted) setState(() => _loadingPaymentEditor = false);
+    }
+  }
+
+  Widget _buildPaymentBreakdownSection() {
+    if (_esV1) {
+      return CheckoutV1Grupos(grupos: _gruposV1, onCambiar: _editPaymentLines);
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (_editedPaymentLines == null)
+          _buildPaymentBreakdownDetails(paymentBreakdown)
+        else
+          Card(child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              const Text('Desglose de Pagos', style: VentiqHomeTheme.tituloSeccion),
+              if (_monedaForzada != null) _buildMonedaForzadaBadge(_monedaForzada!),
+              for (final line in _editedPaymentLines!)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Text('${line['denominacion']}: ${PriceUtils.formatPaymentAmount(line)}'),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  'Monto pendiente: '
-                  '${MonedaVentaService.formatearPrecio(monto, conSimbolo: true)}. '
-                  'No se cobra ahora; '
-                  'queda como saldo a favor de la tienda contra el cliente.',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: VentiqHomeTheme.textSecondary,
-                    height: 1.35,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+              Text('Equivalente: ${PriceUtils.paymentTotalCup(_editedPaymentLines!).toStringAsFixed(2)} CUP'),
+            ]),
+          )),
+        OutlinedButton.icon(
+          onPressed: _isProcessing || _isLoadingUsdRate || _loadingPaymentEditor
+              ? null : _editPaymentLines,
+          icon: const Icon(Icons.edit_outlined),
+          label: Text(_loadingPaymentEditor ? 'Cargando medios de pago…' : 'Distribuir pagos'),
+        ),
+      ],
     );
   }
 
@@ -1342,18 +1403,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
-  /// `true` si algún producto de la orden se paga con "Pago Pendiente"
-  /// (cuenta por cobrar).
-  bool get _tienePagoPendiente => widget.order.items.any(
-    (item) => item.paymentMethod?.esPagoPendiente ?? false,
-  );
-
   Widget _buildBuyerInfoSection() {
-    final tienePagoPendiente = _tienePagoPendiente;
-
-    // Si no se solicita cliente, ocultar esta sección — salvo que la venta
-    // tenga "Pago Pendiente": ahí el cliente es obligatorio sí o sí.
-    if (_noSolicitarCliente && !tienePagoPendiente) {
+    if (_noSolicitarCliente) {
       return const SizedBox.shrink();
     }
 
@@ -1362,120 +1413,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       decoration: BoxDecoration(
         color: VentiqHomeTheme.card,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color:
-              tienePagoPendiente
-                  ? VentiqHomeTheme.warning.withOpacity(0.5)
-                  : VentiqHomeTheme.border,
-          width: tienePagoPendiente ? 1.4 : 1,
-        ),
+        border: Border.all(color: VentiqHomeTheme.border),
         boxShadow: VentiqHomeTheme.shadowCard,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text('Datos del Comprador', style: VentiqHomeTheme.tituloSeccion),
-          if (tienePagoPendiente) ...[
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: VentiqHomeTheme.warning.withOpacity(0.10),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: VentiqHomeTheme.warning.withOpacity(0.4),
-                ),
-              ),
-              child: const Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(
-                    Icons.account_balance_wallet,
-                    color: VentiqHomeTheme.warning,
-                    size: 18,
-                  ),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Esta venta queda como cuenta por cobrar. Selecciona un '
-                      'cliente existente o crea uno nuevo.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: VentiqHomeTheme.textSecondary,
-                        height: 1.35,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            if (_selectedExistingClientId != null)
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: VentiqHomeTheme.success.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: VentiqHomeTheme.success.withOpacity(0.35),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.check_circle,
-                      color: VentiqHomeTheme.success,
-                      size: 18,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Cliente existente: ${_buyerNameController.text}',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: VentiqHomeTheme.textPrimary,
-                        ),
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: () {
-                        setState(() {
-                          _selectedExistingClientId = null;
-                          _buyerNameController.clear();
-                          _buyerPhoneController.clear();
-                        });
-                      },
-                      child: const Text('Cambiar'),
-                    ),
-                  ],
-                ),
-              )
-            else
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: _showClientPickerDialog,
-                  icon: const Icon(Icons.search),
-                  label: const Text('Buscar cliente con cuenta por cobrar'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: VentiqHomeTheme.warning,
-                    side: const BorderSide(color: VentiqHomeTheme.warning),
-                  ),
-                ),
-              ),
-            const SizedBox(height: 12),
-          ],
           const SizedBox(height: 12),
           TextFormField(
             controller: _buyerNameController,
-            enabled: _selectedExistingClientId == null,
-            decoration: InputDecoration(
-              labelText:
-                  _selectedExistingClientId != null
-                      ? 'Nombre completo (cliente seleccionado)'
-                      : tienePagoPendiente
-                      ? 'O escribe el nombre para crear un cliente nuevo *'
-                      : 'Nombre completo *',
+            decoration: const InputDecoration(
+              labelText: 'Nombre completo *',
             ),
             validator: (value) {
               if (value == null || value.trim().isEmpty) {
@@ -1487,7 +1436,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           const SizedBox(height: 12),
           TextFormField(
             controller: _buyerPhoneController,
-            enabled: _selectedExistingClientId == null,
             keyboardType: TextInputType.phone,
             decoration: const InputDecoration(
               labelText: 'Teléfono (opcional)',
@@ -1500,43 +1448,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         ],
       ),
     );
-  }
-
-  /// Abre un buscador de clientes existentes (pensado para elegir a quién
-  /// se le va a fiar la venta). Al seleccionar uno, rellena nombre/teléfono
-  /// y guarda su ID para usarlo directamente al crear la venta (sin pasar
-  /// por la creación/búsqueda por nombre).
-  Future<void> _showClientPickerDialog() async {
-    final selected = await showModalBottomSheet<Map<String, dynamic>>(
-      context: context,
-      isScrollControlled: true,
-      builder:
-          (context) => _ClientPickerSheet(
-            initialQuery: _buyerNameController.text.trim(),
-          ),
-    );
-    if (selected == null || !mounted) return;
-
-    if (selected['createNew'] == true) {
-      setState(() {
-        _selectedExistingClientId = null;
-      });
-      return;
-    }
-
-    final bloqueado = selected['bloqueado_cxc'] == true;
-    if (bloqueado) {
-      _showErrorMessage(
-        'Este cliente está bloqueado para nuevas cuentas por cobrar.',
-      );
-      return;
-    }
-
-    setState(() {
-      _selectedExistingClientId = selected['id'] as int?;
-      _buyerNameController.text = selected['nombre_completo']?.toString() ?? '';
-      _buyerPhoneController.text = selected['telefono']?.toString() ?? '';
-    });
   }
 
   Widget _buildExtraContactsSection() {
@@ -1911,104 +1822,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     return clientCode;
   }
 
-  /// Valida que una venta con ítems a "Pago Pendiente" (cuenta por cobrar)
-  /// pueda crearse: requiere nombre de cliente y que ese cliente (si ya
-  /// existe) no esté bloqueado para nuevas cuentas por cobrar.
-  ///
-  /// Retorna un mensaje de error si no se puede continuar, o `null` si todo
-  /// está en orden.
-  Future<String?> _validarPagoPendiente() async {
-    if (_modoRestaurante) {
-      return 'No se puede dejar pago pendiente en cuentas de mesa';
-    }
-
-    final buyerName = _buyerNameController.text.trim();
-    if (buyerName.isEmpty) {
-      return 'Debes ingresar el nombre del cliente para una venta a pago pendiente';
-    }
-
-    final isOffline =
-        widget.order.isOfflineOrder ||
-        await _userPreferencesService.shouldStayFullyOffline() ||
-        await _userPreferencesService.isOfflineModeEnabled();
-    if (isOffline) {
-      // Sin conexión no podemos verificar si el cliente está bloqueado para
-      // nuevas cuentas por cobrar; se prioriza la seguridad de la cartera y
-      // se pide crear la venta cuando haya conexión.
-      return 'La venta a pago pendiente requiere conexión (no disponible en modo offline)';
-    }
-
-    try {
-      Map<String, dynamic>? existing;
-      if (_selectedExistingClientId != null) {
-        existing =
-            await Supabase.instance.client
-                .from('app_dat_cliente_cxc')
-                .select('bloqueado_cxc')
-                .eq('id', _selectedExistingClientId!)
-                .maybeSingle();
-      } else {
-        final idTienda = await _userPreferencesService.getIdTienda();
-        final clientCode = _generateClientCode(buyerName);
-        if (idTienda != null) {
-          existing =
-              await Supabase.instance.client
-                  .from('app_dat_cliente_cxc')
-                  .select('bloqueado_cxc')
-                  .eq('id_tienda', idTienda)
-                  .eq('codigo_cliente', clientCode)
-                  .maybeSingle();
-        }
-      }
-      if (existing != null && existing['bloqueado_cxc'] == true) {
-        return 'Este cliente no puede generar más cuentas por cobrar. Consulta con administración.';
-      }
-    } catch (e) {
-      print('⚠️ No se pudo verificar bloqueo de CxC del cliente: $e');
-      // Best-effort: si la verificación falla, dejamos continuar la venta
-      // (el gerente puede bloquear al cliente después con la deuda visible).
-    }
-    return null;
-  }
-
-  /// Encuentra o crea el cliente de Cuentas por Cobrar en la tabla
-  /// INDEPENDIENTE `app_dat_cliente_cxc` (no en `app_dat_clientes`, que
-  /// acumula un registro por cada nombre distinto tipeado en ventas
-  /// normales). Retorna el ID del cliente CxC, o `null` si falla.
-  Future<int?> _resolveClienteCxc(String buyerName, String buyerPhone) async {
-    // Si el vendedor eligió un cliente existente en el buscador de CxC,
-    // usamos ese ID directamente.
-    if (_selectedExistingClientId != null) {
-      return _selectedExistingClientId;
-    }
-    try {
-      final idTienda = await _userPreferencesService.getIdTienda();
-      if (idTienda == null) {
-        print('⚠️ No se pudo resolver id_tienda para cliente CxC');
-        return null;
-      }
-      final clientCode = _generateClientCode(buyerName);
-      final response = await Supabase.instance.client.rpc(
-        'fn_insertar_cliente_cxc',
-        params: {
-          'p_id_tienda': idTienda,
-          'p_codigo_cliente': clientCode,
-          'p_nombre_completo': buyerName,
-          'p_telefono': buyerPhone.isNotEmpty ? buyerPhone : null,
-        },
-      );
-      print('✅ Respuesta fn_insertar_cliente_cxc: $response');
-      if (response != null && response['status'] == 'success') {
-        final id = response['id_cliente_cxc'];
-        return id is int ? id : (id as num?)?.toInt();
-      }
-      return null;
-    } catch (e) {
-      print('❌ Error registrando cliente CxC: $e');
-      return null;
-    }
-  }
-
   // Registrar cliente en Supabase y retornar el ID del cliente
   Future<int?> _registerClientInSupabase(
     String buyerName,
@@ -2082,6 +1895,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       return;
     }
 
+    if (_esV1 && _promoApplied) {
+      _showErrorMessage('El descuento de la venta nueva se hace en el detalle.');
+      return;
+    }
+
     // Validate that all products have payment methods assigned
     final breakdown = paymentBreakdown;
     if (breakdown.isEmpty) {
@@ -2093,7 +1911,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
     // Toda divisa distinta de la base necesita tasa para poder consolidar.
     // Antes solo se comprobaba USD; con más divisas hay que comprobarlas todas.
-    final sinTasa = _paymentCurrencyByMethodId.values
+    // La venta nueva ya trae su tasa en cada linea y no usa este desglose.
+    if (_esV1) {
+      if (widget.order.items.any((item) => item.seleccion == null)) {
+        _showErrorMessage('Falta la moneda de un producto. Vuelve al detalle.');
+        return;
+      }
+    }
+    final sinTasa = _esV1 ? <String>{} : _paymentCurrencyByMethodId.values
         .where((c) => c != _monedaBase && _tasaDe(c) <= 0)
         .toSet();
     if (sinTasa.isNotEmpty) {
@@ -2104,21 +1929,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       return;
     }
 
-    // Offline: solo CUP y USD tienen tasas cacheables. El resto exige conexión
-    // (decisión D2 hasta la Fase 4).
-    final fueraDeOffline = _paymentCurrencyByMethodId.values
-        .where((c) => c != _monedaBase && c != 'USD')
-        .toSet();
-    if (fueraDeOffline.isNotEmpty) {
-      final offline = await _userPreferencesService.isOfflineModeEnabled();
-      if (offline) {
-        _showErrorMessage(
-          'Sin conexión solo se puede cobrar en $_monedaBase o USD. '
-          'Conéctate para cobrar en ${fueraDeOffline.join(", ")}.',
-        );
-        return;
-      }
-    }
+    // Offline se cobra como online: las tasas de TODAS las monedas de la
+    // tienda viajan en el sync (tasas_tienda_cup), así que cualquier divisa
+    // con tasa cacheada es válida. Las que no tengan tasa ya quedaron
+    // bloqueadas por el chequeo `sinTasa` de arriba.
 
     // CxC ya no se crea desde el TPV (se gestiona en admin). Si quedó un
     // ítem con el sentinel 998 (cache viejo), abortamos en vez de abrir cartera.
@@ -2130,6 +1944,20 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'Cuentas por cobrar no están disponibles en el TPV. '
         'Cambia el método de pago de los productos o gestiona la deuda desde administración.',
       );
+      return;
+    }
+
+    final paymentLines = _esV1 ? <Map<String, dynamic>>[] : _currencyPaymentLines;
+    if (_isLoadingUsdRate || _loadingPaymentEditor) return;
+    if (!_esV1 && (paymentLines.any((line) {
+      final currency = PriceUtils.paymentCurrency(line);
+      final amount = PriceUtils.paymentAmount(line);
+      return !amount.isFinite || amount <= 0 ||
+          !_divisasDisponibles.contains(currency) ||
+          (_monedaForzada != null && currency != _monedaForzada);
+    }) || (finalTotal > 0 && (paymentLines.isEmpty ||
+        (PriceUtils.paymentTotalCup(paymentLines) - finalTotal).abs() > 0.01)))) {
+      _showErrorMessage('Revisa el desglose: las monedas deben estar habilitadas y los pagos deben coincidir con el total.');
       return;
     }
 
@@ -2355,8 +2183,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             };
           }),
         ),
-        'desglose_pagos': paymentBreakdown.values.toList(),
+        'desglose_pagos': _currencyPaymentLines,
+        'origen': {'tipo': widget.origenTipo},
       };
+      ContratoPendiente.aplicar(
+        pending: orderData,
+        version: widget.order.versionMonetaria,
+        origen: widget.origenTipo,
+        selecciones: [
+          for (final item in widget.order.items) item.seleccion?.toJson(),
+        ],
+      );
 
       // Persistir foto localmente para subirla al sincronizar
       if (_solicitarImagenOperacion && _fotoOperacionBytes != null) {
@@ -2504,23 +2341,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     try {
       // 1. Registrar el cliente en Supabase si tenemos datos.
       // En modo restaurante NO registramos cliente — la cuenta se asocia a una mesa.
-      // Las ventas a "Pago Pendiente" usan un registro de cliente INDEPENDIENTE
-      // (app_dat_cliente_cxc) en vez del genérico app_dat_clientes, que crece
-      // sin control con un registro por cada nombre distinto tipeado en ventas
-      // normales.
       int? idCliente;
-      int? idClienteCxc;
 
-      if (_tienePagoPendiente) {
-        idClienteCxc = await _resolveClienteCxc(buyerName, buyerPhone);
-        print('📝 ID Cliente CxC (independiente): $idClienteCxc');
-        if (idClienteCxc == null) {
-          throw Exception(
-            'No se pudo registrar el cliente de cuentas por cobrar. '
-            'Revisa el nombre o selecciónalo del listado.',
-          );
-        }
-      } else if (!_modoRestaurante && buyerName.isNotEmpty) {
+      if (!_modoRestaurante && buyerName.isNotEmpty) {
         idCliente = await _registerClientInSupabase(buyerName, buyerPhone);
         print('📝 ID Cliente capturado: $idCliente');
       } else if (_modoRestaurante) {
@@ -2541,11 +2364,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'finalTotal': finalTotal,
         'originalTotal': subtotal,
         'idCliente': idCliente, // Agregar ID del cliente al orderData
-        'idClienteCxc':
-            idClienteCxc, // Cliente de Cuentas por Cobrar (independiente)
         'idMesa': _mesaSeleccionada?.id, // ID de mesa en modo restaurante
         'paymentBreakdown': breakdown, // Add payment breakdown
         'fotoOperacionUrl': fotoOperacionUrl,
+        'id': widget.order.id,
+        'origen': {'tipo': widget.origenTipo},
       };
 
       // Update the order with final information
@@ -2559,7 +2382,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ? _extraContactsController.text.trim()
                 : null,
         paymentMethod: 'Múltiples métodos',
-        pagos: _currencyPaymentLines,
+        pagos: _esV1 ? null : _currencyPaymentLines,
         idMesa: _mesaSeleccionada?.id,
         mesaNumero: _mesaSeleccionada?.numero,
       );
@@ -2957,267 +2780,6 @@ class _MesaPickerSheetState extends State<_MesaPickerSheet> {
           ),
         );
       },
-    );
-  }
-}
-
-/// Buscador de clientes existentes para asociar una venta a "Pago Pendiente"
-/// (cuenta por cobrar). Devuelve el mapa del cliente elegido, o
-/// `{'createNew': true}` si el cajero prefiere crear uno nuevo escribiendo
-/// el nombre directamente en el formulario.
-class _ClientPickerSheet extends StatefulWidget {
-  final String initialQuery;
-  const _ClientPickerSheet({this.initialQuery = ''});
-
-  @override
-  State<_ClientPickerSheet> createState() => _ClientPickerSheetState();
-}
-
-class _ClientPickerSheetState extends State<_ClientPickerSheet> {
-  final _searchController = TextEditingController();
-  Timer? _debounce;
-  bool _isLoading = false;
-  List<Map<String, dynamic>> _results = [];
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    _searchController.text = widget.initialQuery;
-    _search(widget.initialQuery);
-  }
-
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  void _onQueryChanged(String query) {
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 350), () => _search(query));
-  }
-
-  Future<void> _search(String query) async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
-    try {
-      final idTienda = await UserPreferencesService().getIdTienda();
-      if (idTienda == null) {
-        setState(() {
-          _error = 'No se pudo identificar la tienda';
-          _isLoading = false;
-        });
-        return;
-      }
-
-      final q = query.trim().toLowerCase();
-
-      // 1) Clientes que YA tienen deuda (prioridad en el listado).
-      final deudoresById = <int, Map<String, dynamic>>{};
-      try {
-        final rpc = await Supabase.instance.client.rpc(
-          'fn_cxc_listar_clientes',
-          params: {'p_id_tienda': idTienda},
-        );
-        if (rpc is List) {
-          for (final raw in rpc) {
-            if (raw is! Map) continue;
-            final row = Map<String, dynamic>.from(raw);
-            final id = (row['id_cliente'] as num?)?.toInt();
-            if (id == null) continue;
-            final nombre = row['nombre_completo']?.toString() ?? '';
-            final telefono = row['telefono']?.toString() ?? '';
-            if (q.isNotEmpty &&
-                !nombre.toLowerCase().contains(q) &&
-                !telefono.toLowerCase().contains(q)) {
-              continue;
-            }
-            deudoresById[id] = {
-              'id': id,
-              'nombre_completo': row['nombre_completo'],
-              'telefono': row['telefono'],
-              'codigo_cliente': row['codigo_cliente'],
-              'bloqueado_cxc': row['bloqueado_cxc'] == true,
-              'saldo_pendiente': row['saldo_pendiente'],
-              'tiene_deuda': true,
-            };
-          }
-        }
-      } catch (e) {
-        print('⚠️ No se pudieron cargar deudores CxC: $e');
-      }
-
-      // 2) Resto de clientes CxC de la tienda (con o sin deuda).
-      var builder = Supabase.instance.client
-          .from('app_dat_cliente_cxc')
-          .select(
-            'id, nombre_completo, telefono, codigo_cliente, bloqueado_cxc',
-          )
-          .eq('id_tienda', idTienda);
-      if (q.isNotEmpty) {
-        builder = builder.or(
-          'nombre_completo.ilike.%${query.trim()}%,telefono.ilike.%${query.trim()}%',
-        );
-      }
-      final response = await builder
-          .order('nombre_completo', ascending: true)
-          .limit(50);
-
-      final merged = <Map<String, dynamic>>[...deudoresById.values];
-      for (final raw in response) {
-        final row = Map<String, dynamic>.from(raw as Map);
-        final id = (row['id'] as num?)?.toInt();
-        if (id == null) continue;
-        if (deudoresById.containsKey(id)) continue;
-        merged.add({...row, 'tiene_deuda': false});
-      }
-
-      if (!mounted) return;
-      setState(() {
-        _results = merged;
-        _isLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = 'Error buscando clientes: $e';
-        _isLoading = false;
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 16,
-        right: 16,
-        top: 16,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-      ),
-      child: SizedBox(
-        height: MediaQuery.of(context).size.height * 0.7,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Buscar cliente', style: VentiqHomeTheme.tituloSeccion),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _searchController,
-              autofocus: true,
-              onChanged: _onQueryChanged,
-              decoration: const InputDecoration(
-                hintText: 'Nombre o teléfono',
-                prefixIcon: Icon(Icons.search),
-              ),
-            ),
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () => Navigator.pop(context, {'createNew': true}),
-                icon: const Icon(Icons.person_add_alt_1),
-                label: const Text('Crear nuevo cliente con este nombre'),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Expanded(
-              child:
-                  _isLoading
-                      ? const Center(child: CircularProgressIndicator())
-                      : _error != null
-                      ? Center(
-                        child: Text(
-                          _error!,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: VentiqHomeTheme.danger,
-                          ),
-                        ),
-                      )
-                      : _results.isEmpty
-                      ? const Center(
-                        child: Text(
-                          'Sin resultados. Crea un cliente nuevo.',
-                          style: TextStyle(color: VentiqHomeTheme.textSecondary),
-                        ),
-                      )
-                      : ListView.builder(
-                        itemCount: _results.length,
-                        itemBuilder: (context, index) {
-                          final cliente = _results[index];
-                          final bloqueado = cliente['bloqueado_cxc'] == true;
-                          final tieneDeuda = cliente['tiene_deuda'] == true;
-                          final saldo =
-                              (cliente['saldo_pendiente'] as num?)?.toDouble();
-                          final telefono = cliente['telefono']?.toString();
-                          String subtitle;
-                          if (bloqueado) {
-                            subtitle = 'Bloqueado para cuentas por cobrar';
-                          } else if (tieneDeuda && saldo != null && saldo > 0) {
-                            subtitle =
-                                'Deuda: '
-                                '${MonedaVentaService.formatearPrecio(saldo, conSimbolo: true)}'
-                                '${telefono != null && telefono.isNotEmpty ? ' · $telefono' : ''}';
-                          } else {
-                            subtitle =
-                                telefono != null && telefono.isNotEmpty
-                                    ? telefono
-                                    : 'Sin teléfono';
-                          }
-                          return ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor:
-                                  bloqueado
-                                      ? VentiqHomeTheme.danger.withOpacity(0.12)
-                                      : tieneDeuda
-                                      ? VentiqHomeTheme.warning.withOpacity(0.15)
-                                      : VentiqHomeTheme.primary.withOpacity(
-                                        0.10,
-                                      ),
-                              child: Icon(
-                                tieneDeuda
-                                    ? Icons.account_balance_wallet
-                                    : Icons.person,
-                                color:
-                                    bloqueado
-                                        ? VentiqHomeTheme.danger
-                                        : tieneDeuda
-                                        ? VentiqHomeTheme.warning
-                                        : VentiqHomeTheme.primary,
-                              ),
-                            ),
-                            title: Text(
-                              cliente['nombre_completo']?.toString() ??
-                                  'Sin nombre',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                                color: VentiqHomeTheme.textPrimary,
-                              ),
-                            ),
-                            subtitle: Text(
-                              subtitle,
-                              style: TextStyle(
-                                color:
-                                    bloqueado
-                                        ? VentiqHomeTheme.danger
-                                        : tieneDeuda
-                                        ? VentiqHomeTheme.warning
-                                        : VentiqHomeTheme.textSecondary,
-                              ),
-                            ),
-                            onTap: () => Navigator.pop(context, cliente),
-                          );
-                        },
-                      ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/order.dart';
+import '../money/venta_v1_envio.dart';
+import '../money/ticket_v1.dart';
 import '../models/product.dart';
 import '../models/payment_method.dart' as pm;
 import '../services/order_service.dart';
@@ -466,6 +468,108 @@ class _PreorderScreenState extends State<PreorderScreen> {
     );
   }
 
+  // Una orden v1 mezcla líneas en CUP y USD: `order.total` las sumaría como
+  // si fueran la misma divisa. Se agrupa por `seleccion.monedaVenta` (las
+  // líneas legacy cuentan como CUP) y cada grupo se muestra con su código.
+  bool _esOrdenV1(Order order) => order.versionMonetaria == 'producto-v1';
+
+  String _monedaItem(OrderItem item) => item.seleccion?.monedaVenta ?? 'CUP';
+
+  Map<String, double> _totalesPorMoneda(Order order) =>
+      TicketV1.totalesNativos(order);
+
+  /// Texto del total de la orden: el escalar legacy o "123.00 CUP · 4.50 USD".
+  String _textoTotalOrden(Order order) {
+    if (!_esOrdenV1(order)) {
+      return MonedaVentaService.formatearPrecio(
+        PriceUtils.roundDiscountPrice(order.total),
+        conSimbolo: true,
+      );
+    }
+    final grupos = _totalesPorMoneda(order);
+    if (grupos.isEmpty) return '0.00 CUP';
+    return grupos.entries
+        .map((e) => '${PriceUtils.formatAmount(e.value)} ${e.key}')
+        .join(' · ');
+  }
+
+  /// Texto del importe de una línea. Para v1 el subtotal ya es nativo de su
+  /// moneda, así que se muestra con su código en vez de la moneda activa.
+  String _textoImporteItem(OrderItem item) {
+    if (item.seleccion == null) {
+      return MonedaVentaService.formatearPrecio(
+        PriceUtils.roundDiscountPrice(item.subtotal),
+        conSimbolo: true,
+      );
+    }
+    return '${PriceUtils.formatAmount(item.subtotal)} ${_monedaItem(item)}';
+  }
+
+  /// Equivalente CUP de la línea (arqueo, contar billetes, subtotal escalar).
+  double _equivalenteCupItem(OrderItem item) =>
+      TicketV1.equivalenteCupItem(item);
+
+  double _equivalenteCupOrden(Order order) => TicketV1.equivalenteCupOrden(order);
+
+  /// Total del footer: el encabezado en su fila y debajo una fila por moneda.
+  /// Juntar "200.00 CUP · 3.15 USD" en la misma fila que el rótulo desbordaba.
+  Widget _buildTotalOrden(Order order) {
+    const titulo = Text(
+      'Total de la Orden:',
+      style: TextStyle(
+        fontSize: 17,
+        fontWeight: FontWeight.w700,
+        color: VentiqHomeTheme.textPrimary,
+      ),
+    );
+    const estiloMonto = TextStyle(
+      fontSize: 22,
+      fontWeight: FontWeight.w800,
+      letterSpacing: -0.4,
+      color: VentiqHomeTheme.primary,
+    );
+    if (!_esOrdenV1(order)) {
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [titulo, Text(_textoTotalOrden(order), style: estiloMonto)],
+      );
+    }
+    final grupos = _totalesPorMoneda(order);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        titulo,
+        const SizedBox(height: 4),
+        if (grupos.isEmpty)
+          const Align(
+            alignment: Alignment.centerRight,
+            child: Text('0.00 CUP', style: estiloMonto),
+          ),
+        for (final entry in grupos.entries)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Total ${entry.key}',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: VentiqHomeTheme.textSecondary,
+                  ),
+                ),
+                Text(
+                  '${PriceUtils.formatAmount(entry.value)} ${entry.key}',
+                  style: estiloMonto,
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
   Widget _buildOrderContent(Order order) {
     return Column(
       children: [
@@ -511,7 +615,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                '${order.distinctItemCount} producto${order.distinctItemCount == 1 ? '' : 's'} • Total: ${MonedaVentaService.formatearPrecio(PriceUtils.roundDiscountPrice(order.total), conSimbolo: true)}',
+                '${order.distinctItemCount} producto${order.distinctItemCount == 1 ? '' : 's'} • Total: ${_textoTotalOrden(order)}',
                 style: const TextStyle(
                   fontSize: 13.5,
                   color: VentiqHomeTheme.textSecondary,
@@ -569,10 +673,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
                 ),
               ),
               Text(
-                MonedaVentaService.formatearPrecio(
-                  PriceUtils.roundDiscountPrice(item.subtotal),
-                  conSimbolo: true,
-                ),
+                _textoImporteItem(item),
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w800,
@@ -608,7 +709,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
               const SizedBox(width: 16),
               Expanded(
                 child: Text(
-                  'Precio: ${MonedaVentaService.formatearPrecio(PriceUtils.roundDiscountPrice(item.displayPrice), conSimbolo: true)}',
+                  'Precio: ${item.seleccion == null ? MonedaVentaService.formatearPrecio(PriceUtils.roundDiscountPrice(item.displayPrice), conSimbolo: true) : '${PriceUtils.formatAmount(item.displayPrice)} ${_monedaItem(item)}'}',
                   style: const TextStyle(
                     fontSize: 12.5,
                     color: VentiqHomeTheme.textSecondary,
@@ -698,31 +799,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
       ),
       child: Column(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Total de la Orden:',
-                style: TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                  color: VentiqHomeTheme.textPrimary,
-                ),
-              ),
-              Text(
-                MonedaVentaService.formatearPrecio(
-                  PriceUtils.roundDiscountPrice(order.total),
-                  conSimbolo: true,
-                ),
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.4,
-                  color: VentiqHomeTheme.primary,
-                ),
-              ),
-            ],
-          ),
+          _buildTotalOrden(order),
           const SizedBox(height: 14),
           if (hasEfectivo)
             SizedBox(
@@ -821,9 +898,11 @@ class _PreorderScreenState extends State<PreorderScreen> {
   }
 
   void _showBillCountDialog(Order order) {
+    // El arqueo cuenta billetes en CUP: las líneas en divisa entran por su
+    // equivalente contable (tasa del snapshot de la línea).
     final cashExpected = order.items
         .where((item) => item.paymentMethod?.esEfectivo ?? false)
-        .fold<double>(0.0, (sum, item) => sum + item.subtotal);
+        .fold<double>(0.0, (sum, item) => sum + _equivalenteCupItem(item));
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -832,7 +911,12 @@ class _PreorderScreenState extends State<PreorderScreen> {
               backgroundColor: VentiqHomeTheme.card,
               body: BillCountDialog(
                 order: order,
-                expectedAmount: cashExpected > 0 ? cashExpected : order.total,
+                expectedAmount:
+                    cashExpected > 0
+                        ? cashExpected
+                        : (_esOrdenV1(order)
+                            ? _equivalenteCupOrden(order)
+                            : order.total),
                 userPreferencesService: _userPreferencesService,
                 closeOnly: true,
                 confirmLabel: 'Cerrar',
@@ -1204,18 +1288,27 @@ class _PreorderScreenState extends State<PreorderScreen> {
       return;
     }
 
-    // Las ventas con "Pago Pendiente" (cuenta por cobrar) siempre deben pasar
-    // por el checkout: necesitan sí o sí un cliente asociado (buscado o
-    // creado ahí), sin importar que la tienda tenga activado
-    // "no_solicitar_cliente" para las ventas normales.
+    // CxC no se gestiona en el TPV (va en administración). Si un ítem quedó
+    // con el sentinel 998 (cache viejo), no dejar que la orden avance por
+    // ningún camino — ni directo ni offline.
     final tienePagoPendiente = currentOrder.items.any(
       (item) => item.paymentMethod?.esPagoPendiente ?? false,
     );
+    if (tienePagoPendiente) {
+      AppSnackBar.showPersistent(
+        context,
+        message:
+            'Cuentas por cobrar no están disponibles en el TPV. '
+            'Cambia el método de pago de los productos.',
+        backgroundColor: VentiqHomeTheme.danger,
+      );
+      return;
+    }
 
     if (useOfflinePath) {
       // MODO OFFLINE / FULL OFFLINE: sin servidor
       // En offline la foto de operación no se puede gestionar, se ignora el requisito.
-      if (noSolicitarCliente && !tienePagoPendiente) {
+      if (noSolicitarCliente) {
         print(
           '🔌 Modo offline + no_solicitar_cliente - Creando orden localmente',
         );
@@ -1233,15 +1326,13 @@ class _PreorderScreenState extends State<PreorderScreen> {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => CheckoutScreen(order: currentOrder),
+            builder: (context) => CheckoutScreen(order: currentOrder, origenTipo: 'preorden'),
           ),
         ).then((_) {
           setState(() {});
         });
       }
-    } else if (noSolicitarCliente &&
-        !solicitarImagenOperacion &&
-        !tienePagoPendiente) {
+    } else if (noSolicitarCliente && !solicitarImagenOperacion) {
       // MODO DIRECTO: No se requieren datos del cliente, crear orden inmediatamente
       print('⚡ No se solicita cliente - Creando orden directamente');
       await _processElaboratedProducts(
@@ -1263,7 +1354,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => CheckoutScreen(order: currentOrder),
+          builder: (context) => CheckoutScreen(order: currentOrder, origenTipo: 'preorden'),
         ),
       ).then((_) {
         setState(() {});
@@ -1542,6 +1633,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
     // Pozo compartido por producto: cada línea procesada reserva sus
     // unidades base, así "1 Caja + 5 Latas" compiten por el mismo stock
     // y no pasan sueltas si juntas sobreven-nden.
+    final reservadoIngredientesServicio = <int, double>{};
     final reservadoBasePorProducto = <int, double>{};
     final conteoPorProducto = <int, int>{};
     for (final i in items) {
@@ -1561,6 +1653,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
       final pendientes = <Future<Object?>>[];
       for (var idx = 0; idx < items.length; idx++) {
         final item = items[idx];
+        if (item.producto.esServicio) continue;
         if (item.producto.esElaborado || item.producto.esServicio) {
           final soloServicio =
               item.producto.esServicio && !item.producto.esElaborado;
@@ -1589,6 +1682,39 @@ class _PreorderScreenState extends State<PreorderScreen> {
       try {
         final isElaboradoOrServicio =
             item.producto.esElaborado || item.producto.esServicio;
+
+        if (item.producto.esServicio) {
+          final almacen = await _userPreferencesService.getIdAlmacen();
+          final ingredientes = await _productDetailService.getProductIngredients(
+            item.producto.id,
+            idAlmacen: almacen,
+            exigirAlmacen: true,
+          );
+          for (final ing in ingredientes) {
+            final id = (ing['producto_id'] as num?)?.toInt();
+            final necesaria = (ing['cantidad_necesaria'] as num?)?.toDouble();
+            if (id == null || necesaria == null || necesaria <= 0) {
+              throw StateError('Receta del servicio incompleta');
+            }
+            final pedida = necesaria * item.cantidad +
+                (reservadoIngredientesServicio[id] ?? 0);
+            reservadoIngredientesServicio[id] = pedida;
+            final disponible = (ing['cantidad_disponible'] as num?)?.toDouble() ?? 0;
+            if (disponible < pedida) {
+              problems.add({
+                'nombre': '${item.nombre} → ${ing['producto_nombre']}',
+                'cantidad_pedida': pedida,
+                'stock_disponible': disponible,
+                'diferencia': pedida - disponible,
+                'ubicacion': item.ubicacionAlmacen,
+                'id_almacen': almacen,
+                'alcance_stock': ing['alcance_stock'],
+                'presentacion': ' (ingrediente del servicio)',
+              });
+            }
+          }
+          continue;
+        }
 
         if (isElaboradoOrServicio) {
           print(
@@ -1923,6 +2049,16 @@ class _PreorderScreenState extends State<PreorderScreen> {
         }
       } catch (e) {
         print('⚠️ Error verificando stock para ${item.nombre}: $e');
+        if (item.producto.esServicio) {
+          problems.add({
+            'nombre': item.nombre,
+            'cantidad_pedida': item.cantidad,
+            'stock_disponible': 0.0,
+            'diferencia': item.cantidad,
+            'ubicacion': item.ubicacionAlmacen,
+            'presentacion': ' (no se pudo verificar ingredientes en el almacén: $e)',
+          });
+        }
         if (_isNetworkError(e)) {
           throw _StockCheckNetworkException(item.nombre, e);
         }
@@ -2353,10 +2489,20 @@ class _PreorderScreenState extends State<PreorderScreen> {
     });
 
     try {
+      // Una orden v1 puede tener el mismo medio en dos monedas: se separa por
+      // divisa para no sumar CUP y USD en una sola cifra. El escalar de la
+      // orden queda en equivalente CUP (contabilidad), igual que el arqueo.
+      final bool ordenV1 = _esOrdenV1(order);
+      final double totalEscalar =
+          ordenV1 ? _equivalenteCupOrden(order) : order.total;
       final Map<String, double> paymentBreakdownSimple = {};
       for (final item in order.items) {
         if (item.paymentMethod != null) {
-          final methodName = item.paymentMethod!.denominacion;
+          final moneda = _monedaItem(item);
+          final methodName =
+              moneda == 'CUP'
+                  ? item.paymentMethod!.denominacion
+                  : '${item.paymentMethod!.denominacion} ($moneda)';
           paymentBreakdownSimple[methodName] =
               (paymentBreakdownSimple[methodName] ?? 0.0) + item.subtotal;
         }
@@ -2369,14 +2515,16 @@ class _PreorderScreenState extends State<PreorderScreen> {
         'paymentMethod': 'Múltiples métodos',
         'promoCode': null,
         'promoDiscount': 0.0,
-        'finalTotal': order.total,
-        'originalTotal': order.total,
+        'finalTotal': totalEscalar,
+        'originalTotal': totalEscalar,
         'idCliente': null,
         'paymentBreakdown': paymentBreakdownSimple,
+        'id': order.id,
+        'origen': {'tipo': 'preorden'},
       };
 
       final updatedOrder = order.copyWith(
-        total: order.total,
+        total: totalEscalar,
         buyerName: 'Cliente',
         buyerPhone: '',
         paymentMethod: 'Múltiples métodos',
@@ -2462,18 +2610,29 @@ class _PreorderScreenState extends State<PreorderScreen> {
     final paymentBreakdown = <String, Map<String, dynamic>>{};
 
     for (final item in order.items) {
+      // El monto del desglose es nativo de la moneda de la línea; el subtotal
+      // escalar de la orden queda en equivalente CUP (contabilidad).
       final itemTotal = item.subtotal;
-      subtotal += itemTotal;
-      final paymentMethodId = item.paymentMethod?.id.toString() ?? 'sin_metodo';
+      subtotal += _equivalenteCupItem(item);
+      final moneda = _monedaItem(item);
+      final tasa =
+          moneda == 'CUP'
+              ? 1.0
+              : double.tryParse(
+                    '${item.seleccion?.snapshotTasa?['valor_publicado']}',
+                  ) ??
+                  0.0;
+      // Clave (método, moneda): el mismo medio puede cobrar en dos divisas.
+      final paymentMethodId =
+          '${item.paymentMethod?.id.toString() ?? 'sin_metodo'}|$moneda';
       if (!paymentBreakdown.containsKey(paymentMethodId)) {
         paymentBreakdown[paymentMethodId] = {
           'id_medio_pago': item.paymentMethod?.id,
           'denominacion': item.paymentMethod?.denominacion ?? 'Sin método',
           'monto': 0.0,
-          // Explícito a propósito: la preorden no ofrece selección de moneda,
-          // así que sus líneas son en CUP. Sin declararlo, el sincronizador
-          // tendría que adivinarlo y una divisa nueva se leería como CUP.
-          'moneda': 'CUP',
+          'moneda': moneda,
+          'tasa_cambio': tasa,
+          'tasa_usd': moneda == 'USD' && tasa > 0 ? tasa : null,
           'es_digital': item.paymentMethod?.esDigital ?? false,
           'es_efectivo': item.paymentMethod?.esEfectivo ?? false,
         };
@@ -2533,6 +2692,14 @@ class _PreorderScreenState extends State<PreorderScreen> {
       ),
       'desglose_pagos': paymentBreakdown.values.toList(),
     };
+    ContratoPendiente.aplicar(
+      pending: pending,
+      version: order.versionMonetaria,
+      origen: 'preorden',
+      selecciones: [
+        for (final item in order.items) item.seleccion?.toJson(),
+      ],
+    );
 
     final openTurno = await _userPreferencesService.getOfflineTurno();
     final localTurnoId =

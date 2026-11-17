@@ -196,6 +196,17 @@ class MonedaVentaService {
   /// Moneda de venta activa en este momento.
   static String actual = PriceUtils.baseCurrency;
 
+  /// Con moneda por producto, el catálogo se queda en CUP. La moneda de cada
+  /// línea se elige en el detalle y no se convierte aquí.
+  static bool porLinea = false;
+
+  static void usarSeleccionPorLinea(bool activa) {
+    porLinea = activa;
+    if (!activa) return;
+    actual = PriceUtils.baseCurrency;
+    _forzada = null;
+  }
+
   /// Tasas a moneda base de las divisas disponibles.
   static Map<String, double> tasas = const {};
 
@@ -256,6 +267,12 @@ class MonedaVentaService {
     int decimales = 2,
     bool conSimbolo = false,
   }) {
+    if (porLinea) {
+      final numero = PriceUtils.formatAmount(importeBase, decimals: decimales);
+      return conSimbolo
+          ? '\$$numero'
+          : '$numero ${PriceUtils.baseCurrency}';
+    }
     final moneda = actual;
     final factor = moneda == PriceUtils.baseCurrency
         ? 1.0
@@ -280,6 +297,7 @@ class MonedaVentaService {
   /// Importe convertido a la moneda de venta activa (sin formatear).
   /// Devuelve el mismo importe si la moneda activa es la base o no hay tasa.
   static double convertirPrecio(double importeBase) {
+    if (porLinea) return importeBase;
     final moneda = actual;
     if (moneda == PriceUtils.baseCurrency) return importeBase;
     final factor = tasas[moneda] ?? 0;

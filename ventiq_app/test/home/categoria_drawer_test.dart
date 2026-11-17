@@ -312,6 +312,11 @@ void main() {
         await _abrirDrawer(tester, controller: c);
 
         expect(find.byType(CategoriaDrawer), findsOneWidget);
+        final Rect cerrar = tester.getRect(find.byTooltip('Cerrar'));
+        final Rect migaja = tester.getRect(find.text('Tienda'));
+        expect(cerrar.top, greaterThanOrEqualTo(32));
+        expect(cerrar.right, lessThanOrEqualTo(384));
+        expect(migaja.left, greaterThanOrEqualTo(24));
         expect(find.byType(TarjetaExploracion), findsNWidgets(2));
         expect(find.text('Bebidas'), findsOneWidget);
         expect(find.text('Comida'), findsOneWidget);

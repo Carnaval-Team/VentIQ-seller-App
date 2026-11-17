@@ -7,6 +7,22 @@ import '../models/bank_sms_payment.dart';
 import '../models/order.dart';
 import '../services/bank_sms_service.dart';
 import '../utils/price_utils.dart';
+import '../utils/uuid_generator.dart';
+
+bool _rpcAusente(Object error, String functionName) {
+  final text = error.toString().toLowerCase();
+  if (text.contains('42501') ||
+      text.contains('insufficient_privilege') ||
+      text.contains('permission denied') ||
+      text.contains('acceso denegado')) {
+    return false;
+  }
+  final fn = functionName.toLowerCase();
+  return text.contains('pgrst202') ||
+      text.contains('could not find the function') ||
+      text.contains('schema cache') ||
+      (text.contains('does not exist') && text.contains(fn));
+}
 
 /// Helpers compartidos para conciliar SMS de transferencia (PAGOxMOVIL)
 /// entre checkout y el detalle de una orden pendiente.
@@ -92,10 +108,27 @@ class TransferSmsConfirmation {
   /// Limpia el SMS vinculado para reiniciar el revisor tras editar montos.
   static Future<void> clearFromOperation(int operationId) async {
     try {
-      await Supabase.instance.client
-          .from('app_dat_operacion_venta')
-          .update({'pago_sms_json': null})
-          .eq('id_operacion', operationId);
+      try {
+        final respuesta = await Supabase.instance.client.rpc(
+          'fn_m01_limpiar_pago_sms',
+          params: {
+            'p_client_uuid': UuidGenerator.v4(),
+            'p_id_operacion': operationId,
+          },
+        );
+        final mapa = respuesta is Map
+            ? Map<String, dynamic>.from(respuesta)
+            : null;
+        if (mapa == null || mapa['success'] != true) {
+          throw Exception(mapa?['message'] ?? 'No se limpió el SMS');
+        }
+      } catch (e) {
+        if (!_rpcAusente(e, 'fn_m01_limpiar_pago_sms')) rethrow;
+        await Supabase.instance.client
+            .from('app_dat_operacion_venta')
+            .update({'pago_sms_json': null})
+            .eq('id_operacion', operationId);
+      }
       debugPrint('🔄 pago_sms_json limpiado en op $operationId');
     } catch (e) {
       debugPrint('⚠️ No se pudo limpiar pago_sms_json de op $operationId: $e');

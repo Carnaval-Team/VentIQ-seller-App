@@ -1,3 +1,5 @@
+import '../money/mesa_v1.dart';
+
 /// Cuenta abierta de mesa: estado intermedio entre "mesa libre" y
 /// "venta registrada". Refleja la fila de `app_dat_mesa_cuenta_abierta`
 /// más los items relacionados.
@@ -20,6 +22,9 @@ class MesaCuenta {
   final DateTime createdAt;
   final DateTime updatedAt;
   final List<MesaCuentaItem> items;
+  final String? versionMonetaria;
+  final int? idRevisionPolitica;
+  final int? idConstanciaPolitica;
 
   const MesaCuenta({
     required this.id,
@@ -35,6 +40,9 @@ class MesaCuenta {
     required this.createdAt,
     required this.updatedAt,
     this.items = const [],
+    this.versionMonetaria,
+    this.idRevisionPolitica,
+    this.idConstanciaPolitica,
     this.itemsEnCocina = 0,
     this.itemsListos = 0,
   });
@@ -82,6 +90,7 @@ class MesaCuenta {
         }
       }
     }
+    MesaV1.validarCuenta(json);
     return MesaCuenta(
       id: (json['id'] as num).toInt(),
       idMesa: (json['id_mesa'] as num).toInt(),
@@ -101,6 +110,13 @@ class MesaCuenta {
       updatedAt:
           DateTime.tryParse(json['updated_at'] as String? ?? '') ?? DateTime.now(),
       items: items,
+      versionMonetaria: json['version_monetaria'] as String?,
+      idRevisionPolitica: json['id_revision_politica'] is num
+          ? (json['id_revision_politica'] as num).toInt()
+          : null,
+      idConstanciaPolitica: json['id_constancia_politica'] is num
+          ? (json['id_constancia_politica'] as num).toInt()
+          : null,
       itemsEnCocina: json['items_en_cocina'] is num
           ? (json['items_en_cocina'] as num).toInt()
           : 0,
@@ -157,6 +173,10 @@ class MesaCuentaItem {
   /// Estado actual de la comanda en cocina. Es el dato vivo: la cocina lo
   /// actualiza, mientras [estadoServicio] se queda como estaba al pedir.
   final int? comandaEstado;
+  final String? versionMonetaria;
+  final String? idLineaCliente;
+  final String? monedaVenta;
+  final String? importeNetoNativo;
 
   const MesaCuentaItem({
     required this.id,
@@ -191,6 +211,10 @@ class MesaCuentaItem {
     this.idComandaItem,
     this.comandaNumero,
     this.comandaEstado,
+    this.versionMonetaria,
+    this.idLineaCliente,
+    this.monedaVenta,
+    this.importeNetoNativo,
   });
 
   String get displayName {
@@ -247,6 +271,7 @@ class MesaCuentaItem {
   }
 
   factory MesaCuentaItem.fromJson(Map<String, dynamic> json) {
+    MesaV1.validarFila(json);
     return MesaCuentaItem(
       id: (json['id'] as num).toInt(),
       idProducto: (json['id_producto'] as num).toInt(),
@@ -307,7 +332,27 @@ class MesaCuentaItem {
       comandaEstado: json['comanda_estado'] is num
           ? (json['comanda_estado'] as num).toInt()
           : null,
+      versionMonetaria: json['version_monetaria'] as String?,
+      idLineaCliente: json['id_linea_cliente'] as String?,
+      monedaVenta: json['moneda_venta'] as String?,
+      importeNetoNativo: json['importe_neto_nativo']?.toString(),
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'id_producto': idProducto,
+      'cantidad': cantidad,
+      'precio_unitario': precioUnitario,
+      'subtotal': subtotal,
+      'created_at': createdAt.toIso8601String(),
+      'stock_movido': stockMovido,
+      if (versionMonetaria != null) 'version_monetaria': versionMonetaria,
+      if (idLineaCliente != null) 'id_linea_cliente': idLineaCliente,
+      if (monedaVenta != null) 'moneda_venta': monedaVenta,
+      if (importeNetoNativo != null) 'importe_neto_nativo': importeNetoNativo,
+    };
   }
 }
 

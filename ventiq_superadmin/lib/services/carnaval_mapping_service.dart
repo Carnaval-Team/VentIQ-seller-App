@@ -1,5 +1,20 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+bool _rpcAusente(Object error, String functionName) {
+  final text = error.toString().toLowerCase();
+  if (text.contains('42501') ||
+      text.contains('insufficient_privilege') ||
+      text.contains('permission denied') ||
+      text.contains('acceso denegado')) {
+    return false;
+  }
+  final fn = functionName.toLowerCase();
+  return text.contains('pgrst202') ||
+      text.contains('could not find the function') ||
+      text.contains('schema cache') ||
+      (text.contains('does not exist') && text.contains(fn));
+}
+
 class CarnavalMappingService {
   final supabase = Supabase.instance.client;
 
@@ -111,15 +126,32 @@ class CarnavalMappingService {
     int carnavalStoreId,
     String? imageUrl,
   ) async {
-    final updates = <String, dynamic>{
-      'admin_carnaval': true,
-      'id_tienda_carnaval': carnavalStoreId,
-    };
-
+    var vinculado = false;
+    try {
+      final respuesta = await supabase.rpc(
+        'fn_m01_vincular_tienda_carnaval',
+        params: {
+          'p_id_tienda': storeId,
+          'p_id_carnaval': carnavalStoreId,
+        },
+      );
+      final mapa = respuesta is Map
+          ? Map<String, dynamic>.from(respuesta)
+          : null;
+      vinculado = mapa != null && mapa['success'] == true;
+    } catch (e) {
+      if (!_rpcAusente(e, 'fn_m01_vincular_tienda_carnaval')) rethrow;
+    }
+    final updates = <String, dynamic>{};
+    if (!vinculado) {
+      updates['admin_carnaval'] = true;
+      updates['id_tienda_carnaval'] = carnavalStoreId;
+    }
     if (imageUrl != null && imageUrl.isNotEmpty) {
       updates['imagen_url'] = imageUrl;
     }
-
-    await supabase.from('app_dat_tienda').update(updates).eq('id', storeId);
+    if (updates.isNotEmpty) {
+      await supabase.from('app_dat_tienda').update(updates).eq('id', storeId);
+    }
   }
 }

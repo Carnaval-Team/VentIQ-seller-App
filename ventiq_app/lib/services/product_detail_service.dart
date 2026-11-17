@@ -134,9 +134,8 @@ class ProductDetailService {
       debugPrint('📦 Respuesta de detalles recibida');
 
       // Transform Supabase response to Product model
-      final Product producto = _transformToProduct(
-        response,
-        fallbackStock: fallbackStock,
+      final Product producto = await _unirPreciosVigentes(
+        _transformToProduct(response, fallbackStock: fallbackStock),
       );
       if (revision == _revisionDetalle) {
         _cacheDetalle.put(claveCache, producto);
@@ -155,6 +154,26 @@ class ProductDetailService {
   /// Busca `detalles_completos` del producto en el cache offline y lo
   /// transforma a Product. Devuelve null si no hay datos completos guardados.
   Future<Product?> _getProductDetailOffline(int productId) async {
+    final entrada = await _detalleCompletoOffline(productId);
+    if (entrada == null) return null;
+    final producto = _transformToProduct(
+      entrada.detalle,
+      fallbackStock: entrada.fallbackStock,
+    );
+    // Los precios vigentes (CUP/USD por variante) se cachearon en el sync:
+    // sin ellos el detalle offline salía sin precio en las divisas.
+    final filas = entrada.detalle['precios_vigentes'];
+    if (filas is List && filas.isNotEmpty) {
+      return aplicarPreciosVigentes(producto, filas);
+    }
+    return producto;
+  }
+
+  /// Devuelve el `detalles_completos` crudo del producto en el cache offline
+  /// (misma forma que la respuesta de `get_detalle_producto`) más la cantidad
+  /// a nivel fila, o null si no está cacheado.
+  Future<({Map<String, dynamic> detalle, double? fallbackStock})?>
+  _detalleCompletoOffline(int productId) async {
     final offlineData = await _userPrefs.getOfflineData();
     final products = offlineData?['products'];
     if (products is! Map) return null;
@@ -170,16 +189,43 @@ class ProductDetailService {
 
         final detalle = map['detalles_completos'];
         if (detalle is Map) {
-          final fallback = (map['cantidad'] as num?)?.toDouble();
-          return _transformToProduct(
-            Map<String, dynamic>.from(detalle),
-            fallbackStock: fallback,
+          return (
+            detalle: Map<String, dynamic>.from(detalle),
+            fallbackStock: (map['cantidad'] as num?)?.toDouble(),
           );
         }
         return null; // producto encontrado pero sin detalles completos
       }
     }
     return null;
+  }
+
+  /// Receta del elaborado leída del cache offline
+  /// (`detalles_completos['ingredientes']`, que el sync guarda con la misma
+  /// forma que devuelve esta función online). El stock no se puede medir sin
+  /// red: se etiqueta con [alcanceCacheOffline] y se conserva la
+  /// `cantidad_disponible` que traiga el cache (si la trae).
+  Future<List<Map<String, dynamic>>> _ingredientesDesdeCacheOffline(
+    int productId,
+  ) async {
+    final entrada = await _detalleCompletoOffline(productId);
+    final crudos = entrada?.detalle['ingredientes'];
+    if (crudos is! List) {
+      debugPrint('🔌 Producto $productId sin receta en cache offline');
+      return const <Map<String, dynamic>>[];
+    }
+    final ingredientes = <Map<String, dynamic>>[];
+    for (final raw in crudos) {
+      if (raw is! Map) continue;
+      final ing = Map<String, dynamic>.from(raw);
+      ing['alcance_stock'] ??= alcanceCacheOffline;
+      ingredientes.add(ing);
+    }
+    debugPrint(
+      '🔌 Receta de $productId desde cache offline: '
+      '${ingredientes.length} ingredientes',
+    );
+    return ingredientes;
   }
 
   /// Obtiene los detalles completos de MÚLTIPLES productos en UNA sola llamada
@@ -249,6 +295,139 @@ class ProductDetailService {
   /// Transform Supabase response to Product model.
   /// [fallbackStock] se usa cuando inventario viene vacío (p.ej. sync admin
   /// sin almacenes de vendedor) para alinear con el stock del listado offline.
+  Future<Product> _unirPreciosVigentes(Product producto) async {
+    try {
+      // Dynamic a propósito: mocks y clientes viejos pueden devolver un Map
+      // de error donde el SDK declara List.
+      final dynamic respuesta = await _supabase
+          .from('app_v_precio_venta_vigente')
+          .select('id_variante, precio_venta_cup, precio_venta_usd')
+          .eq('id_producto', producto.id);
+      if (respuesta is! List || respuesta.isEmpty) return producto;
+      return aplicarPreciosVigentes(producto, respuesta);
+    } catch (e) {
+      debugPrint('⚠️ Precios vigentes del producto ${producto.id}: $e');
+      return producto;
+    }
+  }
+
+  /// Deja las filas de `app_v_precio_venta_vigente` en mapas planos con
+  /// números. Así el JSON del cache offline no depende del tipo que devolvió
+  /// el cliente, y el USD no se pierde al reabrir la app.
+  static List<Map<String, dynamic>> normalizarFilasPrecioVigente(
+    List<dynamic> filas,
+  ) {
+    final salida = <Map<String, dynamic>>[];
+    for (final raw in filas) {
+      if (raw is! Map) continue;
+      final fila = Map<String, dynamic>.from(raw);
+      final idProducto = _entero(fila['id_producto']);
+      if (idProducto == null) continue;
+      final idVariante = _entero(fila['id_variante']);
+      salida.add({
+        'id_producto': idProducto,
+        'id_variante': idVariante == null || idVariante <= 0 ? null : idVariante,
+        'precio_venta_cup': _precioPositivo(fila['precio_venta_cup']),
+        'precio_venta_usd': _precioPositivo(fila['precio_venta_usd']),
+      });
+    }
+    return salida;
+  }
+
+  /// USD de la variante base dentro de las filas vigentes.
+  static double? precioUsdBase(List<dynamic> filas) {
+    for (final raw in filas) {
+      if (raw is! Map) continue;
+      final id = _entero(raw['id_variante']);
+      if (id != null && id > 0) continue;
+      final usd = _precioPositivo(raw['precio_venta_usd']);
+      if (usd != null) return usd;
+    }
+    return null;
+  }
+
+  /// Precio USD guardado en la fila de producto del cache offline.
+  /// Primero el campo propio; si un sync viejo solo dejó las filas vigentes
+  /// dentro del detalle, se leen de ahí.
+  static double? precioUsdDeProductoCache(Map<String, dynamic> producto) {
+    final directo = _precioPositivo(producto['precio_venta_usd']);
+    if (directo != null) return directo;
+    final detalles = producto['detalles_completos'];
+    if (detalles is! Map) return null;
+    final bloque = detalles['producto'];
+    if (bloque is Map) {
+      final anidado = _precioPositivo(bloque['precio_venta_usd']);
+      if (anidado != null) return anidado;
+    }
+    final filas = detalles['precios_vigentes'];
+    if (filas is List) return precioUsdBase(filas);
+    return null;
+  }
+
+  static int? _entero(Object? raw) {
+    if (raw == null) return null;
+    if (raw is num) return raw.toInt();
+    return int.tryParse(raw.toString());
+  }
+
+  /// Une las filas de `app_v_precio_venta_vigente` con el producto ya
+  /// transformado. Puramente local: el mismo merge se usa online (filas de
+  /// la vista) y offline (filas cacheadas en `detalles_completos`).
+  static Product aplicarPreciosVigentes(Product producto, List<dynamic> respuesta) {
+      Map<String, dynamic>? base;
+      final porVariante = <int, Map<String, dynamic>>{};
+      for (final raw in respuesta) {
+        if (raw is! Map) continue;
+        final fila = Map<String, dynamic>.from(raw);
+        final id = _entero(fila['id_variante']) ?? 0;
+        if (id <= 0) {
+          base = fila;
+        } else {
+          porVariante[id] = fila;
+        }
+      }
+
+      final variantes = producto.variantes.map((variante) {
+        final id = _entero(variante.inventoryMetadata?['id_variante']) ?? 0;
+        final fila = id > 0 ? porVariante[id] : null;
+        if (fila == null) return variante;
+        final cup = _precioPositivo(fila['precio_venta_cup']);
+        return ProductVariant(
+          id: variante.id,
+          nombre: variante.nombre,
+          precio: cup ?? variante.precio,
+          precioUsd: _precioPositivo(fila['precio_venta_usd']),
+          cantidad: variante.cantidad,
+          descripcion: variante.descripcion,
+          inventoryMetadata: variante.inventoryMetadata,
+          reservadoCarnaval: variante.reservadoCarnaval,
+          enOrdenesCarnaval: variante.enOrdenesCarnaval,
+        );
+      }).toList();
+
+      final cupBase = base == null
+          ? null
+          : _precioPositivo(base['precio_venta_cup']);
+      final usdBase = base == null
+          ? null
+          : _precioPositivo(base['precio_venta_usd']);
+      return producto.copiar(
+        precio: cupBase,
+        precioUsd: usdBase,
+        origenPrecioUsd: usdBase == null ? null : 'general',
+        reemplazarUsd: true,
+        variantes: variantes,
+      );
+  }
+
+  static double? _precioPositivo(Object? raw) {
+    final valor = raw is num ? raw.toDouble() : double.tryParse('$raw');
+    if (valor == null || valor <= 0 || valor.isNaN || valor.isInfinite) {
+      return null;
+    }
+    return valor;
+  }
+
   static Product _transformToProduct(
     Map<String, dynamic> response, {
     double? fallbackStock,
@@ -272,6 +451,7 @@ class ProductDetailService {
     final descripcion = productData['descripcion'] as String?;
     final precioActual =
         (productData['precio_actual'] as num?)?.toDouble() ?? 0.0;
+    final precioUsd = _precioPositivo(productData['precio_venta_usd']);
     final esRefrigerado = productData['es_refrigerado'] as bool? ?? false;
     final esFragil = productData['es_fragil'] as bool? ?? false;
     final esPeligroso = productData['es_peligroso'] as bool? ?? false;
@@ -378,6 +558,8 @@ class ProductDetailService {
       descripcion: descripcion,
       foto: imageUrl,
       precio: precioActual,
+      precioUsd: precioUsd,
+      origenPrecioUsd: precioUsd == null ? null : 'general',
       cantidad: totalStock,
       esRefrigerado: esRefrigerado,
       esFragil: esFragil,
@@ -664,7 +846,31 @@ class ProductDetailService {
   Future<List<Map<String, dynamic>>> getProductIngredients(
     int productId, {
     int? idAlmacen,
+    bool exigirAlmacen = false,
   }) async {
+    if (exigirAlmacen && idAlmacen == null) {
+      throw StateError('No se pudo resolver el almacén del vendedor');
+    }
+    // Offline-aware: sin este guard la descomposición de elaborados
+    // (_decomposeElaboratedProducts en preorder) llamaba a Supabase aun con el
+    // modo offline activo, fallaba por DNS y el elaborado se trataba como
+    // simple. La receta vive en `detalles_completos['ingredientes']`.
+    if (await _userPrefs.shouldUseLocalData()) {
+      if (exigirAlmacen) {
+        final entrada = await _detalleCompletoOffline(productId);
+        if (entrada == null || entrada.detalle['ingredientes'] is! List) {
+          throw StateError('No hay receta sincronizada para verificar el servicio');
+        }
+        final ingredientes = await _ingredientesDesdeCacheOffline(productId);
+        if (ingredientes.any((ing) => ing['id_almacen'] != idAlmacen ||
+            ing['alcance_stock'] != alcanceAlmacenTpv)) {
+          throw StateError('Sin stock de ingredientes verificado para este almacén');
+        }
+        return ingredientes;
+      }
+      return _ingredientesDesdeCacheOffline(productId);
+    }
+
     try {
       debugPrint(
         '🍽️ Obteniendo ingredientes para producto elaborado: $productId',
@@ -752,6 +958,9 @@ class ProductDetailService {
             }
           }
 
+          if (!disponibleResuelto && exigirAlmacen) {
+            throw StateError('No se pudo verificar el ingrediente ${producto['denominacion']} en el almacén $idAlmacen');
+          }
           if (!disponibleResuelto) {
             // FALLBACK: comportamiento anterior (una sola fila, la más
             // reciente). Se conserva para no empeorar si el ingrediente no
@@ -817,6 +1026,7 @@ class ProductDetailService {
       return ingredients;
     } catch (e) {
       debugPrint('❌ Error obteniendo ingredientes del producto $productId: $e');
+      if (exigirAlmacen) rethrow;
       return [];
     }
   }

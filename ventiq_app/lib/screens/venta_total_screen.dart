@@ -16,6 +16,7 @@ import '../theme/ventiq_home_theme.dart';
 import '../utils/platform_utils.dart';
 import '../utils/price_utils.dart';
 import '../utils/venta_ingredient_consumo.dart';
+import '../money/ticket_v1.dart';
 import '../services/product_recipe_cache_service.dart';
 import '../widgets/egresos_list_screen.dart';
 import '../widgets/filtered_orders_screen.dart';
@@ -303,6 +304,31 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           return '\$$importe $divisa';
         })
         .join('\n');
+  }
+
+  /// Totales nativos por moneda de UNA orden, para la columna Total del
+  /// listado: v1 lee las líneas, el resto usa su desglose de pagos y, sin
+  /// ninguno de los dos, cae al escalar en moneda base de siempre.
+  Map<String, double> _totalesOrdenPorMoneda(Order order) {
+    if (order.versionMonetaria == 'producto-v1') {
+      final totales = TicketV1.totalesNativos(order);
+      if (totales.isNotEmpty) return totales;
+    }
+    final pagos = order.pagos;
+    if (pagos != null && pagos.isNotEmpty) {
+      final grupos = <String, double>{};
+      for (final raw in pagos) {
+        final pago = PriceUtils.asPaymentMap(raw);
+        if (pago == null) continue;
+        _acumular(
+          grupos,
+          clave: PriceUtils.paymentCurrency(pago),
+          monto: PriceUtils.paymentAmount(pago),
+        );
+      }
+      if (grupos.isNotEmpty) return grupos;
+    }
+    return {PriceUtils.baseCurrency: order.total};
   }
 
   /// Código de divisa de una etiqueta «Medio (DIVISA)».
@@ -1292,13 +1318,28 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                     color: VentiqHomeTheme.textPrimary,
                   ),
                 ),
-                Text(
-                  '\$${_totalVentas.toMoneyString(0)}',
-                  style: const TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w800,
-                    color: VentiqHomeTheme.primary,
-                  ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    for (final divisa in _displayCurrencies(_ventasPorDivisa)
+                        .where((d) => (_ventasPorDivisa[d] ?? 0) != 0))
+                      Text(
+                        '\$${(_ventasPorDivisa[divisa] ?? 0).toMoneyString(_decimalsFor(divisa))} $divisa',
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: VentiqHomeTheme.primary,
+                        ),
+                      ),
+                    Text(
+                      'Equiv. ${PriceUtils.baseCurrency} \$${_totalVentas.toMoneyString(0)}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: VentiqHomeTheme.textSecondary,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -1360,20 +1401,29 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
             ),
           ),
 
-          // Total
+          // Total por moneda (una línea por divisa de la orden)
           Expanded(
-            child: Text(
-              MonedaVentaService.formatearPrecio(
-                order.total,
-                decimales: 0,
-                conSimbolo: true,
-              ),
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-                color: VentiqHomeTheme.primary,
-              ),
-              textAlign: TextAlign.center,
+            child: Builder(
+              builder: (context) {
+                final totales = _totalesOrdenPorMoneda(order);
+                final lineas =
+                    _displayCurrencies(totales)
+                        .where((d) => totales.containsKey(d))
+                        .map(
+                          (d) =>
+                              '\$${(totales[d] ?? 0).toMoneyString(_decimalsFor(d))} $d',
+                        )
+                        .toList();
+                return Text(
+                  lineas.join('\n'),
+                  style: TextStyle(
+                    fontSize: lineas.length > 1 ? 11 : 14,
+                    fontWeight: FontWeight.w700,
+                    color: VentiqHomeTheme.primary,
+                  ),
+                  textAlign: TextAlign.center,
+                );
+              },
             ),
           ),
 

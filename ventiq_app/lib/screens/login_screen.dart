@@ -18,6 +18,7 @@ import '../services/smart_offline_manager.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import '../services/comanda_service.dart';
+import '../services/currency_service.dart';
 import '../utils/navigation_helper.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -497,6 +498,23 @@ class _LoginScreenState extends State<LoginScreen> {
         return false;
       }
 
+      // Acceso a Caja solo para vendedor: un usuario cacheado con rol
+      // gerente/supervisor (sesión admin previa) no puede entrar.
+      final cachedEntryRole = offlineUser['entryRole']?.toString();
+      if (cachedEntryRole != null &&
+          cachedEntryRole.isNotEmpty &&
+          cachedEntryRole != 'vendedor') {
+        print('❌ Login offline rechazado: rol $cachedEntryRole no es vendedor');
+        if (mounted) {
+          setState(() {
+            _errorMessage =
+                'Usuario no autorizado: debe ser vendedor para acceder a Caja.';
+            _isLoading = false;
+          });
+        }
+        return false;
+      }
+
       print('✅ Credenciales offline válidas');
       print('  - Email: ${offlineUser['email']}');
       print('  - UserId: ${offlineUser['userId']}');
@@ -680,7 +698,7 @@ class _LoginScreenState extends State<LoginScreen> {
       final storeData =
           await Supabase.instance.client
               .from('app_dat_tienda')
-              .select('denominacion, imagen_url')
+              .select('denominacion, direccion, ubicacion, phone, imagen_url')
               .eq('id', storeId)
               .maybeSingle();
 
@@ -715,6 +733,9 @@ class _LoginScreenState extends State<LoginScreen> {
         storeName,
         storeLogoUrl,
         logoBytes,
+        address: storeData['direccion'] as String? ?? '',
+        location: storeData['ubicacion'] as String? ?? '',
+        phone: storeData['phone'] as String? ?? '',
       );
       print('💾 Datos de tienda cacheados para impresión offline');
     } catch (e) {
@@ -722,51 +743,12 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  /// Cargar denominaciones de moneda desde Supabase
+  /// Cargar denominaciones de moneda desde Supabase.
+  /// Delega en `CurrencyService.syncMonedasDenominacion`, que además corre en
+  /// el auto-sync y la prep offline. En error conserva el cache anterior.
   Future<void> _loadCurrencyDenominations() async {
-    try {
-      print('💰 Consultando denominaciones de moneda en Supabase...');
-
-      final response = await Supabase.instance.client
-          .from('app_dat_denominaciones_moneda')
-          .select('*')
-          .eq('active', true)
-          .order('codigo_moneda', ascending: true)
-          .order('denominacion', ascending: true);
-
-      if (response.isNotEmpty) {
-        print('💱 Denominaciones obtenidas: ${response.length}');
-
-        // Guardar en UserPreferencesService
-        await _userPreferencesService.saveMonedasDenominacion(
-          List<Map<String, dynamic>>.from(response),
-        );
-
-        // Log de monedas disponibles
-        final monedas =
-            response.map((d) => d['codigo_moneda']).toSet().toList();
-        print('💰 Monedas configuradas: ${monedas.join(', ')}');
-
-        // Log de denominaciones por moneda
-        for (final moneda in monedas) {
-          final denominacionesMoneda =
-              response
-                  .where((d) => d['codigo_moneda'] == moneda)
-                  .map((d) => d['denominacion'])
-                  .toList();
-          print('  - $moneda: ${denominacionesMoneda.join(', ')}');
-        }
-      } else {
-        print('⚠️ No se encontraron denominaciones de moneda activas');
-        // Guardar lista vacía para evitar errores
-        await _userPreferencesService.saveMonedasDenominacion([]);
-      }
-    } catch (e) {
-      print('❌ Error cargando denominaciones de moneda: $e');
-      // En caso de error, guardar lista vacía
-      await _userPreferencesService.saveMonedasDenominacion([]);
-      rethrow;
-    }
+    print('💰 Cargando denominaciones de moneda...');
+    await CurrencyService.syncMonedasDenominacion();
   }
 
   /// Verificar si la suscripción está próxima a vencer y mostrar diálogo de advertencia

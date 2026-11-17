@@ -816,8 +816,9 @@ class _EgresoScreenState extends State<EgresoScreen> {
         if (serverIdTurno == null) {
           throw Exception('No hay id de turno válido para registrar el egreso');
         }
+        final clientUuid = UuidGenerator.v4();
         try {
-          Map<String, dynamic> result;
+          final Map<String, dynamic> result;
           if (_contabilizarFondoCaja) {
             final storeId = await _userPrefs.getIdTienda();
             final userId = await _userPrefs.getUserId();
@@ -827,7 +828,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
             final response = await Supabase.instance.client.rpc(
               'fn_registrar_egreso_fondo_caja',
               params: {
-                'p_client_uuid': UuidGenerator.v4(),
+                'p_client_uuid': clientUuid,
                 'p_idtienda': storeId,
                 'p_id_turno': serverIdTurno,
                 'p_monto_entrega': monto,
@@ -840,14 +841,13 @@ class _EgresoScreenState extends State<EgresoScreen> {
             );
             result = Map<String, dynamic>.from(response as Map);
           } else {
-            result = await TurnoService.registrarEgresoParcial(
+            result = await _registrarEgresoConClave(
+              clientUuid: clientUuid,
               idTurno: serverIdTurno,
-              montoEntrega: monto,
-              motivoEntrega: motivo,
+              monto: monto,
+              motivo: motivo,
               nombreAutoriza: nombreAutoriza,
               nombreRecibe: nombreRecibe,
-              idMedioPago: _selectedPaymentMethod?.id,
-              moneda: _selectedDivisa,
             );
           }
 
@@ -857,14 +857,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
             _showErrorMessage(result['message'] ?? 'Error desconocido');
           }
         } catch (e) {
-          final msg = e.toString().toLowerCase();
-          final looksNetwork =
-              msg.contains('socket') ||
-              msg.contains('network') ||
-              msg.contains('connection') ||
-              msg.contains('timeout') ||
-              msg.contains('failed host lookup');
-          if (looksNetwork) {
+          if (_pareceErrorDeRed(e)) {
             print('📵 Error de red en egreso online → guardando offline');
             await _createOfflineEgreso(
               localTurnoId: localTurnoId,
@@ -874,6 +867,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
               nombreAutoriza: nombreAutoriza,
               nombreRecibe: nombreRecibe,
               contabilizarFondoCaja: _contabilizarFondoCaja,
+              clientUuid: clientUuid,
             );
           } else {
             rethrow;
@@ -938,7 +932,85 @@ class _EgresoScreenState extends State<EgresoScreen> {
     );
   }
 
-  /// Crear egreso offline
+  /// El egreso online usa la RPC con clave. Si no está desplegada, queda el
+  /// alta sin clave. Una denegación no abre esa alta.
+  Future<Map<String, dynamic>> _registrarEgresoConClave({
+    required String clientUuid,
+    required int idTurno,
+    required double monto,
+    required String motivo,
+    required String nombreAutoriza,
+    required String nombreRecibe,
+  }) async {
+    final userId = await _userPrefs.getUserId();
+    final params = <String, dynamic>{
+      'p_client_uuid': clientUuid,
+      'p_id_turno': idTurno,
+      'p_monto_entrega': monto,
+      'p_nombre_recibe': nombreRecibe,
+      'p_nombre_autoriza': nombreAutoriza,
+      'p_motivo_entrega': motivo,
+      'p_id_medio_pago': _selectedPaymentMethod?.id,
+      'p_uuid_usuario': userId,
+    };
+    dynamic response;
+    try {
+      response = await Supabase.instance.client.rpc(
+        'fn_registrar_egreso_offline_v2',
+        params: {...params, 'p_moneda': _selectedDivisa},
+      );
+    } catch (e) {
+      if (!_egresoRpcAusente(e, 'fn_registrar_egreso_offline_v2')) rethrow;
+      try {
+        response = await Supabase.instance.client.rpc(
+          'fn_registrar_egreso_offline',
+          params: params,
+        );
+      } catch (e2) {
+        if (!_egresoRpcAusente(e2, 'fn_registrar_egreso_offline')) rethrow;
+        return TurnoService.registrarEgresoParcial(
+          idTurno: idTurno,
+          montoEntrega: monto,
+          motivoEntrega: motivo,
+          nombreAutoriza: nombreAutoriza,
+          nombreRecibe: nombreRecibe,
+          idMedioPago: _selectedPaymentMethod?.id,
+          moneda: _selectedDivisa,
+        );
+      }
+    }
+    if (response is Map) return Map<String, dynamic>.from(response);
+    return {
+      'success': false,
+      'message': 'Respuesta inválida del servidor',
+      'egreso_id': null,
+    };
+  }
+
+  bool _pareceErrorDeRed(Object error) {
+    final msg = error.toString().toLowerCase();
+    return msg.contains('socket') ||
+        msg.contains('network') ||
+        msg.contains('connection') ||
+        msg.contains('timeout') ||
+        msg.contains('failed host lookup');
+  }
+
+  bool _egresoRpcAusente(Object error, String functionName) {
+    final text = error.toString().toLowerCase();
+    if (text.contains('42501') ||
+        text.contains('insufficient_privilege') ||
+        text.contains('permission denied') ||
+        text.contains('acceso denegado')) {
+      return false;
+    }
+    final fn = functionName.toLowerCase();
+    return text.contains('pgrst202') ||
+        text.contains('could not find the function') ||
+        text.contains('schema cache') ||
+        (text.contains('does not exist') && text.contains(fn));
+  }
+
   Future<void> _createOfflineEgreso({
     String? localTurnoId,
     int? serverIdTurno,
@@ -947,6 +1019,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
     required String nombreAutoriza,
     required String nombreRecibe,
     required bool contabilizarFondoCaja,
+    String? clientUuid,
   }) async {
     try {
       // Crear estructura de egreso offline
@@ -967,6 +1040,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
         'es_digital': _selectedPaymentMethod?.esDigital ?? false,
         'medio_pago': _selectedPaymentMethod?.denominacion ?? 'Efectivo',
         'contabilizar_fondo_caja': contabilizarFondoCaja,
+        if (clientUuid != null) 'client_uuid': clientUuid,
       };
 
       // Cola real de sync: egresos_offline (no pending_operations type=egreso).

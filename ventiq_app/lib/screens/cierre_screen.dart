@@ -3203,11 +3203,13 @@ class _CierreScreenState extends State<CierreScreen> {
                     ? serverTurnoIdRaw.toInt()
                     : int.tryParse('$serverTurnoIdRaw'));
 
+        final clientUuidCierre = UuidGenerator.v4();
         final result = await TurnoService.cerrarTurnoDetailed(
           efectivoRealPorDivisa: efectivoRealPorDivisa,
           productos: productCounts ?? [],
           observaciones:
               observacionesFinales.isEmpty ? null : observacionesFinales,
+          clientUuid: clientUuidCierre,
         );
         if (result.success) {
           await _snapshotTurnoResumenToCache(
@@ -3238,6 +3240,7 @@ class _CierreScreenState extends State<CierreScreen> {
             productos: productCounts ?? [],
             observaciones: observacionesFinales,
             allowImmediateServerSync: false,
+            clientUuid: result.clientUuid ?? clientUuidCierre,
           );
         } else {
           // Error de negocio: NO crear cierre offline. Mostrar mensaje real.
@@ -3478,6 +3481,7 @@ class _CierreScreenState extends State<CierreScreen> {
     required List<Map<String, dynamic>> productos,
     required String observaciones,
     bool allowImmediateServerSync = true,
+    String? clientUuid,
   }) async {
     try {
       final base = PriceUtils.baseCurrency;
@@ -3519,7 +3523,10 @@ class _CierreScreenState extends State<CierreScreen> {
 
       // Generar ID único para el cierre offline + client_uuid de idempotencia.
       final cierreId = '${DateTime.now().millisecondsSinceEpoch}';
-      final clientUuid = UuidGenerator.v4();
+      final claveCierre =
+          (clientUuid != null && clientUuid.isNotEmpty)
+              ? clientUuid
+              : UuidGenerator.v4();
       final localTurnoId =
           openTurno['local_id']?.toString() ??
           openTurno['local_turno_id']?.toString();
@@ -3536,7 +3543,7 @@ class _CierreScreenState extends State<CierreScreen> {
       // Crear estructura de cierre offline
       final cierreData = {
         'id': cierreId,
-        'client_uuid': clientUuid,
+        'client_uuid': claveCierre,
         'id_tpv': idTpv,
         'usuario': userUuid,
         'tipo_operacion': 'cierre',

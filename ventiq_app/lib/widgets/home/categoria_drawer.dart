@@ -228,7 +228,7 @@ class _CategoriaDrawerState extends State<CategoriaDrawer> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(6, 0, 8, 8),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
               child: Row(
                 children: <Widget>[
                   if (_c.puedeVolverAtras)

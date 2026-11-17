@@ -1,7 +1,23 @@
 import 'dart:async';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/notification_model.dart';
+import '../utils/uuid_generator.dart';
 import 'local_notification_service.dart';
+
+bool _rpcAusente(Object error, String functionName) {
+  final text = error.toString().toLowerCase();
+  if (text.contains('42501') ||
+      text.contains('insufficient_privilege') ||
+      text.contains('permission denied') ||
+      text.contains('acceso denegado')) {
+    return false;
+  }
+  final fn = functionName.toLowerCase();
+  return text.contains('pgrst202') ||
+      text.contains('could not find the function') ||
+      text.contains('schema cache') ||
+      (text.contains('does not exist') && text.contains(fn));
+}
 
 /// Servicio para gestionar notificaciones en tiempo real
 class NotificationService {
@@ -128,13 +144,30 @@ class NotificationService {
         return 0;
       }
 
-      final response = await _supabase
-          .from('app_dat_notificaciones')
-          .update({'leida': false, 'leida_at': null})
-          .eq('user_id', user.id)
-          .eq('tipo', 'venta')
-          .inFilter('data->>orden_id', ordenIds.toList())
-          .select('id');
+      List<dynamic> response;
+      try {
+        final rpc = await _supabase.rpc(
+          'fn_m01_reactivar_notificaciones_venta',
+          params: {
+            'p_client_uuid': UuidGenerator.v4(),
+            'p_orden_ids': ordenIds.toList(),
+          },
+        );
+        final mapa = rpc is Map ? Map<String, dynamic>.from(rpc) : null;
+        final count = (mapa?['count'] as num?)?.toInt() ?? 0;
+        response = List<dynamic>.filled(count, 0);
+      } catch (e) {
+        if (!_rpcAusente(e, 'fn_m01_reactivar_notificaciones_venta')) {
+          return 0;
+        }
+        response = await _supabase
+            .from('app_dat_notificaciones')
+            .update({'leida': false, 'leida_at': null})
+            .eq('user_id', user.id)
+            .eq('tipo', 'venta')
+            .inFilter('data->>orden_id', ordenIds.toList())
+            .select('id');
+      }
 
       final updatedCount = (response as List<dynamic>).length;
       if (updatedCount > 0) {
@@ -408,10 +441,23 @@ class NotificationService {
     try {
       print('🗑️ Eliminando notificación $notificationId...');
 
-      await _supabase
-          .from('app_dat_notificaciones')
-          .delete()
-          .eq('id', notificationId);
+      try {
+        final rpc = await _supabase.rpc(
+          'fn_m01_eliminar_notificacion',
+          params: {
+            'p_client_uuid': UuidGenerator.v4(),
+            'p_id_notificacion': notificationId,
+          },
+        );
+        final mapa = rpc is Map ? Map<String, dynamic>.from(rpc) : null;
+        if (mapa == null || mapa['success'] != true) return false;
+      } catch (e) {
+        if (!_rpcAusente(e, 'fn_m01_eliminar_notificacion')) return false;
+        await _supabase
+            .from('app_dat_notificaciones')
+            .delete()
+            .eq('id', notificationId);
+      }
 
       print('✅ Notificación eliminada');
       return true;

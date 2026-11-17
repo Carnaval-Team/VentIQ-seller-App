@@ -73,10 +73,12 @@ void main() {
       expect((await service.getProductDetail(2)).precio, 4250);
       price = 5100;
       expect((await service.getProductDetail(2)).precio, 4250);
-      expect(requests, 1);
+      // Cada detalle fresco hace 2 llamadas: el RPC de detalle y la vista de
+      // precios vigentes (CUP/USD) que une el servicio.
+      expect(requests, 2);
       service.invalidarDetalle(2);
       expect((await service.getProductDetail(2)).precio, 5100);
-      expect(requests, 2);
+      expect(requests, 4);
     },
   );
 
@@ -87,7 +89,7 @@ void main() {
     await prefs.setInt('id_tienda', 5);
     price = 600;
     expect((await service.getProductDetail(2)).precio, 600);
-    expect(requests, 2);
+    expect(requests, 4);
   });
 
   test(
@@ -99,7 +101,7 @@ void main() {
       await prefs.setString('user_id', 'usuario-b');
       price = 700;
       expect((await service.getProductDetail(2)).precio, 700);
-      expect(requests, 2);
+      expect(requests, 4);
     },
   );
 
@@ -111,7 +113,7 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('offline_mode_enabled', true);
       await expectLater(service.getProductDetail(2), throwsException);
-      expect(requests, 1);
+      expect(requests, 2);
     },
   );
 
@@ -130,7 +132,7 @@ void main() {
       waiting.complete();
       expect((await previous).precio, 4250);
       expect((await service.getProductDetail(2)).precio, 800);
-      expect(requests, 2);
+      expect(requests, 4);
     },
   );
 

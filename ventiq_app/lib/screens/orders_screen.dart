@@ -13,6 +13,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/order.dart';
+import '../money/ticket_v1.dart';
 import '../models/payment_method.dart';
 import '../services/order_service.dart';
 import '../utils/price_utils.dart';
@@ -46,10 +47,85 @@ import '../services/product_detail_service.dart';
 import '../services/promotion_service.dart';
 import '../utils/promotion_rules.dart';
 import '../theme/ventiq_home_theme.dart';
+import '../utils/uuid_generator.dart';
+
+bool _rpcAusente(Object error, String functionName) {
+  final text = error.toString().toLowerCase();
+  if (text.contains('42501') ||
+      text.contains('insufficient_privilege') ||
+      text.contains('permission denied') ||
+      text.contains('acceso denegado')) {
+    return false;
+  }
+  final fn = functionName.toLowerCase();
+  return text.contains('pgrst202') ||
+      text.contains('could not find the function') ||
+      text.contains('schema cache') ||
+      (text.contains('does not exist') && text.contains(fn));
+}
+
+class OrderCardNativeTotals extends StatelessWidget {
+  final Order order;
+
+  const OrderCardNativeTotals({super.key, required this.order});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        for (final entry in TicketV1.totalesNativos(order).entries)
+          Text(
+            '${entry.value.toMoneyString(2)} ${entry.key}',
+            textAlign: TextAlign.end,
+            style: const TextStyle(
+              fontSize: 16.5,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.2,
+              color: VentiqHomeTheme.primary,
+            ),
+          ),
+        Text(
+          'Equiv. CUP: ${TicketV1.equivalenteCupOrden(order).toMoneyString(2)} CUP',
+          textAlign: TextAlign.end,
+          style: const TextStyle(
+            fontSize: 11.5,
+            color: VentiqHomeTheme.textSecondary,
+          ),
+        ),
+      ],
+    );
+  }
+}
 
 class OrdersScreen extends StatefulWidget {
   final String? autoOpenOrderId;
   const OrdersScreen({Key? key, this.autoOpenOrderId}) : super(key: key);
+
+  static Future<({Uint8List bytes, String storeName})> buildCustomerInvoicePdf(
+    Order order,
+  ) async {
+    final store = await UserPreferencesService().getStorePrintInfo();
+    final storeName = store?['name'] as String? ?? 'Inventtia';
+    final discount = _OrdersScreenState._getDiscountData(order);
+    final items = order.items.where((item) => item.cantidad > 0).toList();
+    final pdf = _OrdersScreenState._buildInvoicePdf(
+      order: order,
+      storeName: storeName,
+      storeAddress: store?['address'] as String? ?? '',
+      storeLocation: store?['location'] as String? ?? '',
+      storePhone: store?['phone'] as String? ?? '',
+      logoBytes: store?['logoBytes'] as Uint8List?,
+      hasDiscount: discount['hasDiscount'] as bool,
+      originalTotal: (discount['originalTotal'] as num).toDouble(),
+      finalTotal: (discount['finalTotal'] as num).toDouble(),
+      saved: (discount['saved'] as num).toDouble(),
+      discountLabel: discount['label'] as String? ?? '',
+      items: items,
+      ingredientsByProduct: await _OrdersScreenState._loadIngredientsForProducts(items),
+    );
+    return (bytes: await pdf.save(), storeName: storeName);
+  }
 
   @override
   State<OrdersScreen> createState() => _OrdersScreenState();
@@ -1476,8 +1552,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
               // Información de productos y total
               Builder(
                 builder: (_) {
+                  final isNativeOrder = order.versionMonetaria == 'producto-v1';
                   final discountData = _getDiscountData(order);
-                  final hasDiscount = discountData['hasDiscount'] as bool;
+                  final hasDiscount = !isNativeOrder &&
+                      (discountData['hasDiscount'] as bool);
                   final displayTotal =
                       discountData['finalTotal'] as double? ?? order.total;
                   final originalTotal =
@@ -1498,7 +1576,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                     cardPayments,
                     fallbackRate: _orderFallbackRate(order),
                   );
-                  final showSecondary = cardRate > 0;
+                  final showSecondary = !isNativeOrder && cardRate > 0;
                   final secondaryLabel =
                       cardCurrency == 'USD' ? 'Equivalente CUP' : 'USD';
                   final secondaryTotal = cardCurrency == 'USD'
@@ -1521,18 +1599,21 @@ class _OrdersScreenState extends State<OrdersScreen> {
                               color: VentiqHomeTheme.textPrimary,
                             ),
                           ),
-                          Text(
-                            primaryTotalLabel,
-                            style: TextStyle(
-                              fontSize: 16.5,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: -0.2,
-                              color:
-                                  hasDiscount
-                                      ? VentiqHomeTheme.success
-                                      : VentiqHomeTheme.primary,
+                          if (isNativeOrder)
+                            Flexible(child: OrderCardNativeTotals(order: order))
+                          else
+                            Text(
+                              primaryTotalLabel,
+                              style: TextStyle(
+                                fontSize: 16.5,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.2,
+                                color:
+                                    hasDiscount
+                                        ? VentiqHomeTheme.success
+                                        : VentiqHomeTheme.primary,
+                              ),
                             ),
-                          ),
                         ],
                       ),
                       if (hasDiscount) ...[
@@ -1893,32 +1974,58 @@ class _OrdersScreenState extends State<OrdersScreen> {
                               'Productos',
                               '${order.distinctItemCount}',
                             ),
-                            _buildDetailRowNew(
-                              'Total',
-                              formatDetailAmount(displayTotal),
-                              valueStyle: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: -0.2,
-                                color: VentiqHomeTheme.primary,
-                              ),
-                            ),
-                            if (detailUsdRate > 0)
+                            // Orden v1: el total no es un escalar — se
+                            // desglosa una fila por moneda de venta más el
+                            // equivalente contable en CUP.
+                            if (order.versionMonetaria == 'producto-v1') ...[
+                              for (final entry
+                                  in TicketV1.totalesNativos(order).entries)
+                                _buildDetailRowNew(
+                                  'Total ${entry.key}',
+                                  '${entry.value.toMoneyString(2)} ${entry.key}',
+                                  valueStyle: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: -0.2,
+                                    color: VentiqHomeTheme.primary,
+                                  ),
+                                ),
                               _buildDetailRowNew(
-                                detailCurrency == 'USD'
-                                    ? 'Equiv. CUP'
-                                    : 'Equiv. USD',
-                                // displayTotal siempre es CUP (viene de order.total / descuento).
-                                // Cuando detailCurrency=='USD' el total ya se mostró
-                                // dividido por tasa, así que el equivalente CUP es displayTotal tal cual.
-                                detailCurrency == 'USD'
-                                    ? '${displayTotal.toMoneyString(2)} CUP'
-                                    : '${(displayTotal / detailUsdRate).toMoneyString(2)} USD',
+                                'Equiv. CUP',
+                                '${TicketV1.equivalenteCupOrden(order).toMoneyString(2)} CUP',
                                 valueStyle: const TextStyle(
                                   fontSize: 13,
                                   color: VentiqHomeTheme.textSecondary,
                                 ),
                               ),
+                            ] else ...[
+                              _buildDetailRowNew(
+                                'Total',
+                                formatDetailAmount(displayTotal),
+                                valueStyle: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: -0.2,
+                                  color: VentiqHomeTheme.primary,
+                                ),
+                              ),
+                              if (detailUsdRate > 0)
+                                _buildDetailRowNew(
+                                  detailCurrency == 'USD'
+                                      ? 'Equiv. CUP'
+                                      : 'Equiv. USD',
+                                  // displayTotal siempre es CUP (viene de order.total / descuento).
+                                  // Cuando detailCurrency=='USD' el total ya se mostró
+                                  // dividido por tasa, así que el equivalente CUP es displayTotal tal cual.
+                                  detailCurrency == 'USD'
+                                      ? '${displayTotal.toMoneyString(2)} CUP'
+                                      : '${(displayTotal / detailUsdRate).toMoneyString(2)} USD',
+                                  valueStyle: const TextStyle(
+                                    fontSize: 13,
+                                    color: VentiqHomeTheme.textSecondary,
+                                  ),
+                                ),
+                            ],
                             if (hasDiscount) ...[
                               _buildDetailRowNew(
                                 'Precio original',
@@ -2555,10 +2662,24 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         icon: Icons.summarize_outlined,
                         child: Column(
                           children: [
-                            _buildDetailRow(
-                              'Total:',
-                              formatDetailAmount(displayTotal),
-                            ),
+                            // Orden v1: el total no es un escalar — una fila
+                            // por moneda de venta y el equivalente contable.
+                            if (order.versionMonetaria == 'producto-v1') ...[
+                              for (final entry
+                                  in TicketV1.totalesNativos(order).entries)
+                                _buildDetailRow(
+                                  'Total ${entry.key}:',
+                                  '${entry.value.toMoneyString(2)} ${entry.key}',
+                                ),
+                              _buildDetailRow(
+                                'Equiv. CUP:',
+                                '${TicketV1.equivalenteCupOrden(order).toMoneyString(2)} CUP',
+                              ),
+                            ] else
+                              _buildDetailRow(
+                                'Total:',
+                                formatDetailAmount(displayTotal),
+                              ),
                             if (hasDiscount) ...[
                               const SizedBox(height: 4),
                               _buildDetailRow(
@@ -2782,10 +2903,28 @@ class _OrdersScreenState extends State<OrdersScreen> {
           .from('productos')
           .getPublicUrl(storagePath);
 
-      await Supabase.instance.client
-          .from('app_dat_operacion_venta')
-          .update({'foto_operacion_url': publicUrl})
-          .eq('id_operacion', operationId);
+      try {
+        final respuesta = await Supabase.instance.client.rpc(
+          'fn_m01_adjuntar_foto_operacion',
+          params: {
+            'p_client_uuid': UuidGenerator.v4(),
+            'p_id_operacion': operationId,
+            'p_url': publicUrl,
+          },
+        );
+        final mapa = respuesta is Map
+            ? Map<String, dynamic>.from(respuesta)
+            : null;
+        if (mapa == null || mapa['success'] != true) {
+          throw Exception(mapa?['message'] ?? 'No se adjuntó la foto');
+        }
+      } catch (e) {
+        if (!_rpcAusente(e, 'fn_m01_adjuntar_foto_operacion')) rethrow;
+        await Supabase.instance.client
+            .from('app_dat_operacion_venta')
+            .update({'foto_operacion_url': publicUrl})
+            .eq('id_operacion', operationId);
+      }
 
       onPhotoChanged?.call();
     } catch (e) {
@@ -2827,10 +2966,27 @@ class _OrdersScreenState extends State<OrdersScreen> {
     if (confirmed != true || !mounted) return;
 
     try {
-      await Supabase.instance.client
-          .from('app_dat_operacion_venta')
-          .update({'foto_operacion_url': null})
-          .eq('id_operacion', operationId);
+      try {
+        final respuesta = await Supabase.instance.client.rpc(
+          'fn_m01_quitar_foto_operacion',
+          params: {
+            'p_client_uuid': UuidGenerator.v4(),
+            'p_id_operacion': operationId,
+          },
+        );
+        final mapa = respuesta is Map
+            ? Map<String, dynamic>.from(respuesta)
+            : null;
+        if (mapa == null || mapa['success'] != true) {
+          throw Exception(mapa?['message'] ?? 'No se quitó la foto');
+        }
+      } catch (e) {
+        if (!_rpcAusente(e, 'fn_m01_quitar_foto_operacion')) rethrow;
+        await Supabase.instance.client
+            .from('app_dat_operacion_venta')
+            .update({'foto_operacion_url': null})
+            .eq('id_operacion', operationId);
+      }
 
       onPhotoChanged?.call();
     } catch (e) {
@@ -3363,17 +3519,17 @@ class _OrdersScreenState extends State<OrdersScreen> {
             builder: (context, snapshot) {
               final hasEfectivo = snapshot.data?[0] ?? false;
               // Órdenes con saldo a "Pago Pendiente" (cuenta por cobrar) no
-              // reciben dinero al confirmarlas, así que el botón dice
-              // "Confirmar Orden" en vez de "Confirmar Pago".
+              // se confirman desde el TPV: la cartera se gestiona en
+              // administración. El botón queda como aviso, sin acción.
               final esPagoPendiente = snapshot.data?[1] ?? false;
               final confirmLabel =
-                  esPagoPendiente ? 'Confirmar Orden' : 'Confirmar Pago';
-              final confirmMessage =
-                  esPagoPendiente
-                      ? '¿Confirmas esta orden? Queda registrada como cuenta por cobrar pendiente de cobro.'
-                      : '¿Confirmas que el pago de esta orden ha sido recibido?';
+                  esPagoPendiente ? 'Cuenta por Cobrar' : 'Confirmar Pago';
+              const confirmMessage =
+                  '¿Confirmas que el pago de esta orden ha sido recibido?';
               final confirmIcon =
-                  esPagoPendiente ? Icons.check_circle_outline : Icons.payment;
+                  esPagoPendiente
+                      ? Icons.account_balance_wallet_outlined
+                      : Icons.payment;
 
               final showDiscount =
                   _allowDiscountOnVendedor && _isPendingForDiscount(order);
@@ -3463,18 +3619,28 @@ class _OrdersScreenState extends State<OrdersScreen> {
                     width: double.infinity,
                     child: ElevatedButton.icon(
                       onPressed:
-                          () => _showConfirmationDialog(
-                            order,
-                            OrderStatus.completada,
-                            confirmLabel,
-                            confirmMessage,
-                            VentiqHomeTheme.success,
-                            detailContext: detailContext,
-                          ),
+                          esPagoPendiente
+                              ? () => ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Las cuentas por cobrar se gestionan desde administración.',
+                                      ),
+                                    ),
+                                  )
+                              : () => _showConfirmationDialog(
+                                    order,
+                                    OrderStatus.completada,
+                                    confirmLabel,
+                                    confirmMessage,
+                                    VentiqHomeTheme.success,
+                                    detailContext: detailContext,
+                                  ),
                       icon: Icon(confirmIcon),
                       label: Text(confirmLabel),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: VentiqHomeTheme.success,
+                        backgroundColor: esPagoPendiente
+                            ? VentiqHomeTheme.warning
+                            : VentiqHomeTheme.success,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(
@@ -4768,6 +4934,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                                         toPaymentMethodId:
                                                             selectedTarget!.id,
                                                         amount: amountToMove,
+                                                        sourceCurrencyCode:
+                                                            PriceUtils.paymentCurrency(selectedSource!),
+                                                        sourceExchangeRate:
+                                                            PriceUtils.paymentRate(selectedSource!),
                                                       );
                                                   if (!mounted) return;
                                                   if (!context.mounted) return;
@@ -5144,7 +5314,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   /// Calcula información de descuento para mostrar totales e info
-  Map<String, dynamic> _getDiscountData(Order order) {
+  static Map<String, dynamic> _getDiscountData(Order order) {
     final descuento = order.descuento;
     if (descuento == null) {
       return {
@@ -5199,53 +5369,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
       }
       setState(() => _isGeneratingCustomerInvoice = true);
       try {
-        final storeId = await _userPreferencesService.getIdTienda();
-        Map<String, dynamic>? storeData;
-        if (storeId != null) {
-          storeData =
-              await Supabase.instance.client
-                  .from('app_dat_tienda')
-                  .select(
-                    'denominacion, direccion, ubicacion, imagen_url, phone',
-                  )
-                  .eq('id', storeId)
-                  .maybeSingle();
-        }
-        final storeName = storeData?['denominacion'] as String? ?? 'Inventtia';
-        final storeAddress = storeData?['direccion'] as String? ?? '';
-        final storeLocation = storeData?['ubicacion'] as String? ?? '';
-        final storePhone = storeData?['phone'] as String? ?? '';
-        final storeLogoUrl = storeData?['imagen_url'] as String?;
-        final logoBytes = await _downloadImageBytes(storeLogoUrl);
-        final discountData = _getDiscountData(order);
-        final hasDiscount = discountData['hasDiscount'] as bool;
-        final double originalTotal =
-            (discountData['originalTotal'] as num?)?.toDouble() ?? order.total;
-        final double finalTotal =
-            (discountData['finalTotal'] as num?)?.toDouble() ?? order.total;
-        final double saved = (discountData['saved'] as num?)?.toDouble() ?? 0.0;
-        final String discountLabel = discountData['label'] as String? ?? '';
-        final items = order.items.where((item) => item.cantidad > 0).toList();
-        final ingredientsByProduct = await _loadIngredientsForProducts(
-          items.map((i) => i.producto.id).toSet(),
-        );
-        final pdf = _buildInvoicePdf(
-          order: order,
-          storeName: storeName,
-          storeAddress: storeAddress,
-          storeLocation: storeLocation,
-          storePhone: storePhone,
-          logoBytes: logoBytes,
-          hasDiscount: hasDiscount,
-          originalTotal: originalTotal,
-          finalTotal: finalTotal,
-          saved: saved,
-          discountLabel: discountLabel,
-          items: items,
-          ingredientsByProduct: ingredientsByProduct,
-        );
-        final bytes = await pdf.save();
-        downloadPdfWeb(bytes, 'factura_${order.id}.pdf');
+        final invoice = await OrdersScreen.buildCustomerInvoicePdf(order);
+        downloadPdfWeb(invoice.bytes, 'factura_${order.id}.pdf');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -5310,58 +5435,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
     });
 
     try {
-      final storeId = await _userPreferencesService.getIdTienda();
-      print('🏪 StoreId para factura: $storeId');
-      Map<String, dynamic>? storeData;
-
-      if (storeId != null) {
-        storeData =
-            await Supabase.instance.client
-                .from('app_dat_tienda')
-                .select('denominacion, direccion, ubicacion, imagen_url, phone')
-                .eq('id', storeId)
-                .maybeSingle();
-      }
-
-      final storeName = storeData?['denominacion'] as String? ?? 'Inventtia';
-      final storeAddress = storeData?['direccion'] as String? ?? '';
-      final storeLocation = storeData?['ubicacion'] as String? ?? '';
-      final storePhone = storeData?['phone'] as String? ?? '';
-      final storeLogoUrl = storeData?['imagen_url'] as String?;
+      final invoice = await OrdersScreen.buildCustomerInvoicePdf(order);
+      final storeName = invoice.storeName;
       print('🏪 Tienda: $storeName');
-      final logoBytes = await _downloadImageBytes(storeLogoUrl);
-
-      final discountData = _getDiscountData(order);
-      final hasDiscount = discountData['hasDiscount'] as bool;
-      final double originalTotal =
-          (discountData['originalTotal'] as num?)?.toDouble() ?? order.total;
-      final double finalTotal =
-          (discountData['finalTotal'] as num?)?.toDouble() ?? order.total;
-      final double saved = (discountData['saved'] as num?)?.toDouble() ?? 0.0;
-      final String discountLabel = discountData['label'] as String? ?? '';
-      final items = order.items.where((item) => item.cantidad > 0).toList();
-      final ingredientsByProduct = await _loadIngredientsForProducts(
-        items.map((i) => i.producto.id).toSet(),
-      );
-      final pdf = _buildInvoicePdf(
-        order: order,
-        storeName: storeName,
-        storeAddress: storeAddress,
-        storeLocation: storeLocation,
-        storePhone: storePhone,
-        logoBytes: logoBytes,
-        hasDiscount: hasDiscount,
-        originalTotal: originalTotal,
-        finalTotal: finalTotal,
-        saved: saved,
-        discountLabel: discountLabel,
-        items: items,
-        ingredientsByProduct: ingredientsByProduct,
-      );
 
       final output = await getTemporaryDirectory();
       final file = File('${output.path}/factura_${order.id}.pdf');
-      await file.writeAsBytes(await pdf.save());
+      await file.writeAsBytes(invoice.bytes);
 
       print('✅ PDF generado: ${file.path}');
 
@@ -5419,7 +5499,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     }
   }
 
-  pw.Document _buildInvoicePdf({
+  static pw.Document _buildInvoicePdf({
     required Order order,
     required String storeName,
     required String storeAddress,
@@ -5431,7 +5511,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     required double finalTotal,
     required double saved,
     required String discountLabel,
-    required List items,
+    required List<OrderItem> items,
     required Map<int, List<Map<String, dynamic>>> ingredientsByProduct,
   }) {
     final pdf = pw.Document();
@@ -5647,24 +5727,28 @@ class _OrdersScreenState extends State<OrdersScreen> {
                             PriceUtils.formatQuantity(item.cantidad),
                           ),
                           _pdfBodyCell(
-                            MonedaVentaService.formatearPrecio(
-                              item.displayPrice,
-                              conSimbolo: true,
-                            ),
+                            item.seleccion != null
+                                ? '${item.displayPrice.toMoneyString(2)} ${item.seleccion!.monedaVenta}'
+                                : MonedaVentaService.formatearPrecio(
+                                    item.displayPrice,
+                                    conSimbolo: true,
+                                  ),
                           ),
                           _pdfBodyCell(
-                            MonedaVentaService.formatearPrecio(
-                              item.subtotal,
-                              conSimbolo: true,
-                            ),
+                            item.seleccion != null
+                                ? '${item.subtotal.toMoneyString(2)} ${item.seleccion!.monedaVenta}'
+                                : MonedaVentaService.formatearPrecio(
+                                    item.subtotal,
+                                    conSimbolo: true,
+                                  ),
                             isBold: true,
                           ),
                         ],
                       ),
                     ];
                     final ingredientes =
-                        ingredientsByProduct[item.producto.id] ??
-                        item.ingredientes;
+                        item.ingredientes ??
+                        ingredientsByProduct[item.producto.id];
                     if (ingredientes != null && ingredientes.isNotEmpty) {
                       rows.add(
                         pw.TableRow(
@@ -5735,59 +5819,78 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 child: pw.Column(
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
-                    pw.Row(
-                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                      children: [
-                        _pdfSummaryLabel('Total sin descuento'),
-                        _pdfSummaryValue(
-                          MonedaVentaService.formatearPrecio(
-                            originalTotal,
-                            conSimbolo: true,
+                    if (order.versionMonetaria == 'producto-v1') ...[
+                      for (final entry in TicketV1.totalesNativos(order).entries)
+                        pw.Row(
+                          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                          children: [
+                            _pdfSummaryLabel('Total ${entry.key}', isBold: true),
+                            _pdfSummaryValue(
+                              '${entry.value.toMoneyString(2)} ${entry.key}',
+                              isBold: true,
+                            ),
+                          ],
+                        ),
+                      pw.SizedBox(height: 4),
+                      _pdfSummaryValue(
+                        'Equiv. CUP: ${TicketV1.equivalenteCupOrden(order).toMoneyString(2)} CUP',
+                        fontSize: 10,
+                      ),
+                    ] else ...[
+                      pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                        children: [
+                          _pdfSummaryLabel('Total sin descuento'),
+                          _pdfSummaryValue(
+                            MonedaVentaService.formatearPrecio(
+                              originalTotal,
+                              conSimbolo: true,
+                            ),
                           ),
+                        ],
+                      ),
+                      if (hasDiscount) ...[
+                        pw.SizedBox(height: 4),
+                        pw.Row(
+                          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                          children: [
+                            _pdfSummaryLabel(
+                              discountLabel.isNotEmpty
+                                  ? discountLabel
+                                  : 'Descuento aplicado',
+                            ),
+                            _pdfSummaryValue(
+                              '- ${MonedaVentaService.formatearPrecio(saved, conSimbolo: true)}',
+                              color: PdfColor.fromHex('#DC2626'),
+                            ),
+                          ],
                         ),
                       ],
-                    ),
-                    if (hasDiscount) ...[
-                      pw.SizedBox(height: 4),
+                      pw.Divider(
+                        color: PdfColors.grey400,
+                        height: 14,
+                        thickness: 0.6,
+                      ),
                       pw.Row(
                         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                         children: [
                           _pdfSummaryLabel(
-                            discountLabel.isNotEmpty
-                                ? discountLabel
-                                : 'Descuento aplicado',
+                            'Total a pagar',
+                            fontSize: 13,
+                            isBold: true,
                           ),
                           _pdfSummaryValue(
-                            '- ${MonedaVentaService.formatearPrecio(saved, conSimbolo: true)}',
-                            color: PdfColor.fromHex('#DC2626'),
+                            MonedaVentaService.formatearPrecio(
+                              finalTotal,
+                              conSimbolo: true,
+                            ),
+                            fontSize: 14,
+                            isBold: true,
+                            color: PdfColor.fromHex('#0F172A'),
                           ),
                         ],
                       ),
                     ],
-                    pw.Divider(
-                      color: PdfColors.grey400,
-                      height: 14,
-                      thickness: 0.6,
-                    ),
-                    pw.Row(
-                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                      children: [
-                        _pdfSummaryLabel(
-                          'Total a pagar',
-                          fontSize: 13,
-                          isBold: true,
-                        ),
-                        _pdfSummaryValue(
-                          MonedaVentaService.formatearPrecio(
-                            finalTotal,
-                            conSimbolo: true,
-                          ),
-                          fontSize: 14,
-                          isBold: true,
-                          color: PdfColor.fromHex('#0F172A'),
-                        ),
-                      ],
-                    ),
                   ],
                 ),
               ),
@@ -5805,7 +5908,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     return pdf;
   }
 
-  pw.Widget _pdfHeaderCell(String text) {
+  static pw.Widget _pdfHeaderCell(String text) {
     return pw.Container(
       padding: const pw.EdgeInsets.symmetric(vertical: 6),
       child: pw.Text(
@@ -5819,7 +5922,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     );
   }
 
-  pw.Widget _pdfBodyCell(
+  static pw.Widget _pdfBodyCell(
     String text, {
     bool isBold = false,
     bool isIngredient = false,
@@ -5845,7 +5948,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     );
   }
 
-  pw.Widget _pdfSummaryLabel(
+  static pw.Widget _pdfSummaryLabel(
     String text, {
     double fontSize = 12,
     bool isBold = false,
@@ -5861,56 +5964,20 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   /// Carga ingredientes de múltiples productos elaborados en una sola consulta
-  Future<Map<int, List<Map<String, dynamic>>>> _loadIngredientsForProducts(
-    Set<int> productIds,
+  static Future<Map<int, List<Map<String, dynamic>>>> _loadIngredientsForProducts(
+    List<OrderItem> items,
   ) async {
-    if (productIds.isEmpty) return {};
-
-    try {
-      final response = await Supabase.instance.client
-          .from('app_dat_producto_ingredientes')
-          .select('''
-            id_producto_elaborado,
-            id_ingrediente,
-            cantidad_necesaria,
-            unidad_medida,
-            app_dat_producto!app_dat_producto_ingredientes_ingrediente_fkey(
-              id,
-              denominacion,
-              sku
-            )
-          ''')
-          .filter('id_producto_elaborado', 'in', '(${productIds.join(',')})');
-
-      final Map<int, List<Map<String, dynamic>>> grouped = {};
-
-      for (final item in response) {
-        final int elaboradoId = item['id_producto_elaborado'] as int? ?? -1;
-        if (elaboradoId == -1) continue;
-
-        final producto =
-            item['app_dat_producto'] as Map<String, dynamic>? ?? {};
-
-        final mapped = {
-          'nombre_ingrediente':
-              producto['denominacion'] ?? 'Ingrediente desconocido',
-          'cantidad_necesaria': item['cantidad_necesaria'] ?? 0,
-          'unidad_medida': item['unidad_medida'] ?? 'unid',
-          'sku': producto['sku'],
-          'id_ingrediente': item['id_ingrediente'],
-        };
-
-        grouped.putIfAbsent(elaboradoId, () => []).add(mapped);
-      }
-
-      return grouped;
-    } catch (e) {
-      debugPrint('❌ Error cargando ingredientes para productos: $e');
-      return {};
-    }
+    return {
+      for (final item in items)
+        if (item.ingredientes != null)
+          item.producto.id: item.ingredientes!
+              .whereType<Map>()
+              .map((ingredient) => Map<String, dynamic>.from(ingredient))
+              .toList(),
+    };
   }
 
-  pw.Widget _pdfSummaryValue(
+  static pw.Widget _pdfSummaryValue(
     String text, {
     double fontSize = 12,
     bool isBold = false,
@@ -5926,7 +5993,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     );
   }
 
-  String _formatInvoiceDate(DateTime date) {
+  static String _formatInvoiceDate(DateTime date) {
     final local = date.toLocal();
     final two = (int v) => v.toString().padLeft(2, '0');
     return '${two(local.day)}/${two(local.month)}/${local.year} ${two(local.hour)}:${two(local.minute)}';
@@ -8028,10 +8095,12 @@ class _EditPendingOrderSheetState extends State<_EditPendingOrderSheet> {
                       style: TextStyle(fontSize: 11, color: Colors.grey[500]),
                     ),
                   Text(
-                    '${MonedaVentaService.formatearPrecio(item.precioUnitario, conSimbolo: true)} c/u · Total: ${MonedaVentaService.formatearPrecio(item.subtotal, conSimbolo: true)}',
+                    item.seleccion != null
+                        ? '${item.precioUnitario.toMoneyString(2)} ${item.seleccion!.monedaVenta} c/u · Total: ${item.subtotal.toMoneyString(2)} ${item.seleccion!.monedaVenta}'
+                        : '${MonedaVentaService.formatearPrecio(item.precioUnitario, conSimbolo: true)} c/u · Total: ${MonedaVentaService.formatearPrecio(item.subtotal, conSimbolo: true)}',
                     style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                   ),
-                  if (widget.usdRate > 0)
+                  if (widget.usdRate > 0 && item.seleccion == null)
                     Text(
                       'USD ${(item.subtotal / widget.usdRate).toMoneyString(2)} · ${(item.precioUnitario / widget.usdRate).toMoneyString(2)} c/u',
                       style: TextStyle(fontSize: 11, color: Colors.grey[400]),

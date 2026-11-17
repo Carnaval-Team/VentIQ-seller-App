@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:convert';
+import '../screens/tutorial_venta_screen.dart';
+import '../tutorial/tutorial_flujos.dart';
 import '../services/admin_access_service.dart';
 import '../services/auth_service.dart';
 import '../services/auto_sync_service.dart';
@@ -12,6 +15,7 @@ import '../services/comanda_service.dart';
 import '../services/sales_mode_service.dart';
 import '../theme/ventiq_home_theme.dart';
 import '../utils/global_navigator.dart';
+import 'usd_rate_chip.dart';
 
 class AppDrawer extends StatefulWidget {
   const AppDrawer({Key? key}) : super(key: key);
@@ -355,6 +359,37 @@ class _AppDrawerState extends State<AppDrawer> {
     }
   }
 
+  /// Relanza el tutorial guiado (overlay con foco) del modo actual.
+  ///
+  /// Vivía en los chips rápidos del Home; al retirarse esa sección pasó al
+  /// drawer. Usa el navigator raíz porque el context del drawer se desmonta
+  /// al cerrarlo y el overlay del tutorial necesita un contexto que siga
+  /// montado sobre el Home.
+  void _abrirTutorial() {
+    Navigator.pop(context);
+    final BuildContext ctx = globalNavigatorKey.currentContext ?? context;
+    final bool restaurante =
+        StoreConfigService.modoRestauranteSync ||
+        StoreConfigService.cocinaActivaSync;
+    final String uuid = Supabase.instance.client.auth.currentUser?.id ?? '';
+    if (uuid.isEmpty) {
+      // Sin sesión no hay tutorial que recordar: se abre el recorrido simple.
+      Navigator.push(
+        ctx,
+        MaterialPageRoute<void>(
+          builder: (_) => TutorialVentaScreen(modoRestaurante: restaurante),
+        ),
+      );
+      return;
+    }
+    TutorialAutoStart.reiniciarIntento();
+    TutorialFlujos.iniciarVenta(
+      ctx,
+      restaurante: restaurante,
+      uuidUsuario: uuid,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Drawer(
@@ -456,6 +491,18 @@ class _AppDrawerState extends State<AppDrawer> {
                               ),
                             ),
                           ],
+                          // Tasa del dólar del día. Vivía flotando sobre el
+                          // Home; se movió aquí, debajo de la info del
+                          // usuario, porque no es algo que el vendedor
+                          // necesite tener siempre a la vista. El chip se
+                          // oculta solo si no hay tasa configurada.
+                          const Padding(
+                            padding: EdgeInsets.only(top: 8),
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: UsdRateChip(),
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -707,6 +754,15 @@ class _AppDrawerState extends State<AppDrawer> {
                     ),
                     _kSoftDivider,
                   ],
+                  _buildDrawerItem(
+                    context,
+                    icon: Icons.school_rounded,
+                    title: 'Tutorial',
+                    subtitle: 'Repetir el recorrido guiado',
+                    onTap: _abrirTutorial,
+                  ),
+                  _kSoftDivider,
+
                   _buildDrawerItem(
                     context,
                     icon: Icons.settings,

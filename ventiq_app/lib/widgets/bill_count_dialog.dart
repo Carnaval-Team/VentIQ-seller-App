@@ -41,6 +41,41 @@ class BillCountDialog extends StatefulWidget {
 }
 
 class _BillCountDialogState extends State<BillCountDialog> {
+  final Map<String, Map<int, int>> _countsByCurrency = {};
+  final Map<String, double> _totalsByCurrency = {};
+
+  Map<String, double>? get _expectedByCurrency {
+    if (widget.order.versionMonetaria != 'producto-v1' &&
+        !widget.order.items.any((item) => item.seleccion != null)) {
+      return null;
+    }
+    final totals = <String, double>{};
+    for (final item in widget.order.items) {
+      if (item.paymentMethod?.esEfectivo == false ||
+          item.seleccion?.tipoCobro == 'pendiente') {
+        continue;
+      }
+      final currency = item.seleccion?.monedaVenta ?? PriceUtils.baseCurrency;
+      totals[currency] = (totals[currency] ?? 0) + item.subtotal;
+    }
+    return totals;
+  }
+
+  bool get _matchesExpected {
+    final expected = _expectedByCurrency;
+    if (expected == null) return _remainingAmount.abs() < 0.005;
+    return {...expected.keys, ..._totalsByCurrency.keys}.every(
+      (currency) =>
+          ((expected[currency] ?? 0) * 100).round() ==
+          ((_totalsByCurrency[currency] ?? 0) * 100).round(),
+    );
+  }
+
+  String get _summaryCurrency =>
+      _expectedByCurrency == null
+          ? PriceUtils.baseCurrency
+          : (_selectedCurrency ?? '');
+
   List<String> _availableCurrencies = [];
   String? _selectedCurrency;
   List<Map<String, dynamic>> _denominations = [];
@@ -61,9 +96,12 @@ class _BillCountDialogState extends State<BillCountDialog> {
 
   /// Objetivo del conteo: efectivo de la orden (o total si no se pasó override).
   double get _targetAmount =>
-      widget.expectedAmount ?? widget.order.total;
+      _expectedByCurrency != null
+          ? (_expectedByCurrency![_selectedCurrency] ?? 0)
+          : (widget.expectedAmount ?? widget.order.total);
 
   bool get _isCashPortionOnly =>
+      _expectedByCurrency == null &&
       widget.expectedAmount != null &&
       (widget.expectedAmount! - widget.order.total).abs() > 0.009;
 
@@ -78,6 +116,7 @@ class _BillCountDialogState extends State<BillCountDialog> {
     _hiddenDenominations =
         await widget.userPreferencesService.getHiddenDenominations();
     await _loadCurrencies();
+    if (_expectedByCurrency != null) return;
     await _loadRates();
     final inicial = _selectedCurrency;
     if (inicial != null) await _resolverTasaFaltante(inicial);
@@ -107,6 +146,7 @@ class _BillCountDialogState extends State<BillCountDialog> {
   /// Importe nativo contado, por divisa, para el llamador aditivo.
   Map<String, double> get _nativeTotals {
     final divisa = _selectedCurrency;
+    if (_expectedByCurrency != null) return Map.of(_totalsByCurrency);
     if (divisa == null) return const {};
     return {divisa: _nativeAmount};
   }
@@ -135,15 +175,20 @@ class _BillCountDialogState extends State<BillCountDialog> {
     try {
       final currencies =
           await widget.userPreferencesService.getMonedasDisponibles();
+      if (!mounted) return;
+      final expected = _expectedByCurrency;
       setState(() {
-        _availableCurrencies = currencies;
+        _availableCurrencies =
+            expected == null
+                ? currencies
+                : {...expected.keys, ...currencies}.toList();
         _isLoading = false;
 
         // Sin preferencia cableada por ninguna divisa: se arranca en la primera
         // de la tienda (ya viene ordenada desde preferencias).
-        if (currencies.isNotEmpty) {
-          _selectedCurrency = currencies.first;
-          _loadDenominations(currencies.first);
+        if (_availableCurrencies.isNotEmpty) {
+          _selectedCurrency = _availableCurrencies.first;
+          _loadDenominations(_selectedCurrency!);
         }
       });
     } catch (e) {
@@ -156,22 +201,17 @@ class _BillCountDialogState extends State<BillCountDialog> {
 
   Future<void> _loadDenominations(String currency) async {
     try {
-      _allDenominations =
-          await widget.userPreferencesService.getDenominacionesPorMoneda(
-            currency,
-          );
+      final denominations = await widget.userPreferencesService
+          .getDenominacionesPorMoneda(currency);
+      if (!mounted || currency != _selectedCurrency) return;
 
       setState(() {
+        _allDenominations = denominations;
         _denominations =
             _allDenominations
-                .where(
-                  (d) => !_hiddenDenominations.contains(d['id'] as int),
-                )
+                .where((d) => !_hiddenDenominations.contains(d['id'] as int))
                 .toList();
-        _billCounts.clear();
-        _totalAmount = 0.0;
-        _nativeAmount = 0.0;
-        _remainingAmount = _targetAmount;
+        _billCounts = Map.of(_countsByCurrency[currency] ?? {});
 
         for (final controller in _controllers.values) {
           controller.dispose();
@@ -180,9 +220,13 @@ class _BillCountDialogState extends State<BillCountDialog> {
 
         for (final denom in _denominations) {
           final denominationId = denom['id'] as int;
-          _billCounts[denominationId] = 0;
-          _controllers[denominationId] = TextEditingController(text: '');
+          final count = _billCounts[denominationId] ?? 0;
+          _controllers[denominationId] = TextEditingController(
+            text: count == 0 ? '' : '$count',
+          );
         }
+        _calculateTotals();
+        _isLoading = false;
       });
     } catch (e) {
       print('❌ Error cargando denominaciones: $e');
@@ -193,17 +237,12 @@ class _BillCountDialogState extends State<BillCountDialog> {
     setState(() {
       _denominations =
           _allDenominations
-              .where(
-                (d) => !_hiddenDenominations.contains(d['id'] as int),
-              )
+              .where((d) => !_hiddenDenominations.contains(d['id'] as int))
               .toList();
       for (final denom in _denominations) {
         final id = denom['id'] as int;
         _billCounts.putIfAbsent(id, () => 0);
-        _controllers.putIfAbsent(
-          id,
-          () => TextEditingController(text: ''),
-        );
+        _controllers.putIfAbsent(id, () => TextEditingController(text: ''));
       }
       _calculateTotals();
     });
@@ -241,8 +280,15 @@ class _BillCountDialogState extends State<BillCountDialog> {
     }
 
     _nativeAmount = nativo;
-    _totalAmount = nativo * _rateToBase(_selectedCurrency);
-    _remainingAmount = _targetAmount - _totalAmount;
+    _totalAmount =
+        _expectedByCurrency == null
+            ? nativo * _rateToBase(_selectedCurrency)
+            : nativo;
+    if (_selectedCurrency != null) {
+      _countsByCurrency[_selectedCurrency!] = Map.of(_billCounts);
+      _totalsByCurrency[_selectedCurrency!] = nativo;
+    }
+    _remainingAmount = ((_targetAmount - _totalAmount) * 100).round() / 100;
 
     print('💰 Cálculo de totales:');
     print('  - Moneda: $_selectedCurrency');
@@ -303,8 +349,9 @@ class _BillCountDialogState extends State<BillCountDialog> {
               TextButton(
                 onPressed: () async {
                   _hiddenDenominations = tempHidden;
-                  await widget.userPreferencesService
-                      .saveHiddenDenominations(_hiddenDenominations);
+                  await widget.userPreferencesService.saveHiddenDenominations(
+                    _hiddenDenominations,
+                  );
                   await _applyHiddenFilter();
                   if (mounted) Navigator.pop(context);
                 },
@@ -318,6 +365,7 @@ class _BillCountDialogState extends State<BillCountDialog> {
   /// Confirma el conteo. El mapa nativo se entrega **además** del callback de
   /// siempre, nunca en su lugar: los consumidores actuales no cambian.
   void _confirm() {
+    if (!_matchesExpected) return;
     Navigator.pop(context);
     widget.onConfirmWithTotals?.call(_nativeTotals);
     widget.onConfirmPayment();
@@ -376,482 +424,492 @@ class _BillCountDialogState extends State<BillCountDialog> {
     // conocida; así el aviso y el total hablan del mismo número.
     final tasaSeleccionada = _rateToBase(_selectedCurrency);
     final mostrarAvisoConversion =
+        _expectedByCurrency == null &&
         _selectedCurrency != null &&
         _selectedCurrency != PriceUtils.baseCurrency &&
         tasaSeleccionada > 0;
     return Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-          ),
-          child: Column(
-            children: [
-              // Header
-              Container(
-                padding: EdgeInsets.only(
-                  left: 16,
-                  right: 16,
-                  top: 8 + viewPadding.top,
-                  bottom: 8,
+      decoration: const BoxDecoration(color: Colors.white),
+      child: Column(
+        children: [
+          // Header
+          Container(
+            padding: EdgeInsets.only(
+              left: 16,
+              right: 16,
+              top: 8 + viewPadding.top,
+              bottom: 8,
+            ),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
                 ),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Expanded(
-                          child: Text(
-                            'Contar Billetes',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF1F2937),
-                            ),
-                          ),
+                    const Expanded(
+                      child: Text(
+                        'Contar Billetes',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1F2937),
                         ),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              onPressed: _showDenominationConfigDialog,
-                              icon: const Icon(Icons.settings),
-                            ),
-                            IconButton(
-                              onPressed: () => Navigator.pop(context),
-                              icon: const Icon(Icons.close),
-                            ),
-                          ],
+                      ),
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          onPressed: _showDenominationConfigDialog,
+                          icon: const Icon(Icons.settings),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.pop(context),
+                          icon: const Icon(Icons.close),
                         ),
                       ],
                     ),
-                    if (_availableCurrencies.length > 1) ...[
-                      const SizedBox(height: 4),
-                      DropdownButtonFormField<String>(
-                        value: _selectedCurrency,
-                        decoration: InputDecoration(
-                          labelText: 'Moneda',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 4,
-                          ),
-                        ),
-                        items: _availableCurrencies.map((currency) {
+                  ],
+                ),
+                if (_availableCurrencies.length > 1) ...[
+                  const SizedBox(height: 4),
+                  DropdownButtonFormField<String>(
+                    value: _selectedCurrency,
+                    decoration: InputDecoration(
+                      labelText: 'Moneda',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 4,
+                      ),
+                    ),
+                    items:
+                        _availableCurrencies.map((currency) {
                           return DropdownMenuItem(
                             value: currency,
                             child: Text(currency),
                           );
                         }).toList(),
-                        onChanged: (value) {
-                          if (value != null) {
-                            setState(() {
-                              _selectedCurrency = value;
-                            });
-                            _loadDenominations(value);
-                            _resolverTasaFaltante(value);
-                          }
-                        },
-                      ),
-                    ],
-                    // Aviso de conversión para cualquier divisa distinta de la
-                    // base con tasa conocida: en la base no aplica.
-                    if (mostrarAvisoConversion) ...[
-                      const SizedBox(height: 4),
-                      Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: Colors.amber[50],
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: Colors.amber[300]!),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.info_outline,
-                              size: 16,
-                              color: Colors.amber[700],
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                '1 $_selectedCurrency = '
-                                '${tasaSeleccionada.toMoneyString(2)} '
-                                '${PriceUtils.baseCurrency}',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.amber[700],
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-
-              // Denominaciones (SCROLLABLE)
-              Expanded(
-                child: ListView.builder(
-
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  itemCount: _denominations.length,
-                  itemBuilder: (context, index) {
-                    final denom = _denominations[index];
-                    final denominationValue =
-                        (denom['denominacion'] as num).toDouble();
-                    final denominationId = denom['id'] as int;
-                    final count = _billCounts[denominationId] ?? 0;
-
-                    // Nativo del renglón y su consolidado, que es lo que se
-                    // compara contra el objetivo (siempre en moneda base).
-                    final nativo = denominationValue * count;
-                    final subtotal = nativo * _rateToBase(_selectedCurrency);
-
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 3),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[50],
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: Colors.grey[300]!),
-                      ),
-                      child: Row(
-                        children: [
-                          SizedBox(
-                            width: 48,
-                            child: Text(
-                              '\$${denominationValue.toMoneyString(0)}',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              SizedBox(
-                                width: 28,
-                                height: 28,
-                                child: IconButton(
-                                  padding: EdgeInsets.zero,
-                                  onPressed: count > 0
-                                      ? () => _setCount(
-                                            denominationId,
-                                            count - 1,
-                                          )
-                                      : null,
-                                  icon: const Icon(
-                                    Icons.remove_circle_outline,
-                                    size: 18,
-                                  ),
-                                  color: const Color(0xFF4A90E2),
-                                ),
-                              ),
-                              SizedBox(
-                                width: 46,
-                                height: 28,
-                                child: TextField(
-                                  textAlign: TextAlign.center,
-                                  keyboardType: TextInputType.number,
-                                  inputFormatters: [
-                                    FilteringTextInputFormatter.digitsOnly,
-                                  ],
-                                  controller: _controllers[denominationId]!,
-                                  onChanged: (value) {
-                                    _updateCountFromInput(
-                                      denominationId,
-                                      value,
-                                    );
-                                  },
-                                  style: const TextStyle(fontSize: 13),
-                                  decoration: const InputDecoration(
-                                    border: OutlineInputBorder(),
-                                    contentPadding: EdgeInsets.symmetric(
-                                      horizontal: 4,
-                                      vertical: 4,
-                                    ),
-                                    isDense: true,
-                                  ),
-                                ),
-                              ),
-                              SizedBox(
-                                width: 28,
-                                height: 28,
-                                child: IconButton(
-                                  padding: EdgeInsets.zero,
-                                  onPressed: () => _setCount(
-                                    denominationId,
-                                    count + 1,
-                                  ),
-                                  icon: const Icon(
-                                    Icons.add_circle_outline,
-                                    size: 18,
-                                  ),
-                                  color: const Color(0xFF4A90E2),
-                                ),
-                              ),
-                            ],
-                          ),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  '\$${subtotal.toMoneyString(2)}',
-                                  textAlign: TextAlign.right,
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                                if (_selectedCurrency != null &&
-                                    _selectedCurrency !=
-                                        PriceUtils.baseCurrency &&
-                                    count > 0)
-                                  Text(
-                                    '(${nativo.toMoneyString(2)} '
-                                    '$_selectedCurrency)',
-                                    textAlign: TextAlign.right,
-                                    style: TextStyle(
-                                      fontSize: 9,
-                                      color: Colors.grey[600],
-                                      fontStyle: FontStyle.italic,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              ),
-
-              // Footer fijo
-              Container(
-                padding: EdgeInsets.fromLTRB(
-                  16,
-                  8,
-                  16,
-                  8 + bottomPadding,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
-                      blurRadius: 8,
-                      offset: const Offset(0, -2),
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() {
+                          _selectedCurrency = value;
+                          _isLoading = true;
+                        });
+                        _loadDenominations(value);
+                        if (_expectedByCurrency == null) {
+                          _resolverTasaFaltante(value);
+                        }
+                      }
+                    },
+                  ),
+                ],
+                // Aviso de conversión para cualquier divisa distinta de la
+                // base con tasa conocida: en la base no aplica.
+                if (mostrarAvisoConversion) ...[
+                  const SizedBox(height: 4),
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.amber[50],
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.amber[300]!),
                     ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Resumen de totales
-                    Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        color: _remainingAmount > 0
-                            ? Colors.orange[50]
-                            : _remainingAmount < 0
-                                ? Colors.green[50]
-                                : Colors.blue[50],
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: _remainingAmount > 0
-                              ? Colors.orange[300]!
-                              : _remainingAmount < 0
-                                  ? Colors.green[300]!
-                                  : Colors.blue[300]!,
-                        ),
-                      ),
-                      child: Column(
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                _isCashPortionOnly
-                                    ? 'Efectivo a contar:'
-                                    : 'Total a pagar:',
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              Text(
-                                '\$${_targetAmount.toMoneyString(2)} '
-                                '${PriceUtils.baseCurrency}',
-                                style: const TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF1F2937),
-                                ),
-                              ),
-                            ],
-                          ),
-                          if (_isCashPortionOnly) ...[
-                            const SizedBox(height: 2),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  'Total orden:',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey[600],
-                                  ),
-                                ),
-                                Text(
-                                  '\$${widget.order.total.toMoneyString(2)} '
-                                  '${PriceUtils.baseCurrency}',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey[600],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                          const SizedBox(height: 4),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text(
-                                'Total contado:',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              Text(
-                                '\$${_totalAmount.toMoneyString(2)} '
-                                '${PriceUtils.baseCurrency}',
-                                style: const TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                          // El nativo es el dato que se persiste; el consolidado
-                          // es solo para comparar contra el objetivo.
-                          if (_selectedCurrency != null &&
-                              _selectedCurrency != PriceUtils.baseCurrency &&
-                              _nativeAmount > 0)
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: Text(
-                                '(${_nativeAmount.toMoneyString(2)} '
-                                '$_selectedCurrency)',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: Colors.grey[600],
-                                  fontStyle: FontStyle.italic,
-                                ),
-                              ),
-                            ),
-                          const Divider(height: 12),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                _remainingAmount > 0
-                                    ? 'Falta:'
-                                    : _remainingAmount < 0
-                                        ? 'Sobra:'
-                                        : 'Exacto:',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                  color: _remainingAmount > 0
-                                      ? Colors.orange[700]
-                                      : _remainingAmount < 0
-                                          ? Colors.green[700]
-                                          : Colors.blue[700],
-                                ),
-                              ),
-                              Text(
-                                '\$${_remainingAmount.abs().toMoneyString(2)}',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: _remainingAmount > 0
-                                      ? Colors.orange[700]
-                                      : _remainingAmount < 0
-                                          ? Colors.green[700]
-                                          : Colors.blue[700],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: 8),
-
-                    // Botones
-                    Row(
+                    child: Row(
                       children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: () => Navigator.pop(context),
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 12,
-                              ),
-                            ),
-                            child: Text(widget.cancelLabel),
-                          ),
+                        Icon(
+                          Icons.info_outline,
+                          size: 16,
+                          color: Colors.amber[700],
                         ),
-                        const SizedBox(width: 16),
+                        const SizedBox(width: 8),
                         Expanded(
-                          child: ElevatedButton(
-                            onPressed: widget.closeOnly
-                                ? () => Navigator.pop(context)
-                                : _remainingAmount <= 0
-                                    ? _confirm
-                                    : null,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF10B981),
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 12,
-                              ),
+                          child: Text(
+                            '1 $_selectedCurrency = '
+                            '${tasaSeleccionada.toMoneyString(2)} '
+                            '${PriceUtils.baseCurrency}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.amber[700],
+                              fontWeight: FontWeight.w500,
                             ),
-                            child: Text(widget.confirmLabel),
                           ),
                         ),
                       ],
                     ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+
+          // Denominaciones (SCROLLABLE)
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              itemCount: _denominations.length,
+              itemBuilder: (context, index) {
+                final denom = _denominations[index];
+                final denominationValue =
+                    (denom['denominacion'] as num).toDouble();
+                final denominationId = denom['id'] as int;
+                final count = _billCounts[denominationId] ?? 0;
+
+                // Nativo del renglón y su consolidado, que es lo que se
+                // compara contra el objetivo (siempre en moneda base).
+                final nativo = denominationValue * count;
+                final subtotal =
+                    _expectedByCurrency == null
+                        ? nativo * _rateToBase(_selectedCurrency)
+                        : nativo;
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[50],
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 48,
+                        child: Text(
+                          '\$${denominationValue.toMoneyString(0)}',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 28,
+                            height: 28,
+                            child: IconButton(
+                              padding: EdgeInsets.zero,
+                              onPressed:
+                                  count > 0
+                                      ? () =>
+                                          _setCount(denominationId, count - 1)
+                                      : null,
+                              icon: const Icon(
+                                Icons.remove_circle_outline,
+                                size: 18,
+                              ),
+                              color: const Color(0xFF4A90E2),
+                            ),
+                          ),
+                          SizedBox(
+                            width: 46,
+                            height: 28,
+                            child: TextField(
+                              textAlign: TextAlign.center,
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                              ],
+                              controller: _controllers[denominationId]!,
+                              onChanged: (value) {
+                                _updateCountFromInput(denominationId, value);
+                              },
+                              style: const TextStyle(fontSize: 13),
+                              decoration: const InputDecoration(
+                                border: OutlineInputBorder(),
+                                contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                  vertical: 4,
+                                ),
+                                isDense: true,
+                              ),
+                            ),
+                          ),
+                          SizedBox(
+                            width: 28,
+                            height: 28,
+                            child: IconButton(
+                              padding: EdgeInsets.zero,
+                              onPressed:
+                                  () => _setCount(denominationId, count + 1),
+                              icon: const Icon(
+                                Icons.add_circle_outline,
+                                size: 18,
+                              ),
+                              color: const Color(0xFF4A90E2),
+                            ),
+                          ),
+                        ],
+                      ),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '\$${subtotal.toMoneyString(2)}',
+                              textAlign: TextAlign.right,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            if (_selectedCurrency != null &&
+                                _selectedCurrency != PriceUtils.baseCurrency &&
+                                count > 0)
+                              Text(
+                                '(${nativo.toMoneyString(2)} '
+                                '$_selectedCurrency)',
+                                textAlign: TextAlign.right,
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  color: Colors.grey[600],
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+
+          // Footer fijo
+          Container(
+            padding: EdgeInsets.fromLTRB(16, 8, 16, 8 + bottomPadding),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 8,
+                  offset: const Offset(0, -2),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Resumen de totales
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color:
+                        _remainingAmount > 0
+                            ? Colors.orange[50]
+                            : _remainingAmount < 0
+                            ? Colors.green[50]
+                            : Colors.blue[50],
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color:
+                          _remainingAmount > 0
+                              ? Colors.orange[300]!
+                              : _remainingAmount < 0
+                              ? Colors.green[300]!
+                              : Colors.blue[300]!,
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            _isCashPortionOnly
+                                ? 'Efectivo a contar:'
+                                : 'Total a pagar:',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Text(
+                            '\$${_targetAmount.toMoneyString(2)} '
+                            '$_summaryCurrency',
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF1F2937),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (_isCashPortionOnly) ...[
+                        const SizedBox(height: 2),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Total orden:',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                            Text(
+                              '\$${widget.order.total.toMoneyString(2)} '
+                              '${PriceUtils.baseCurrency}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Total contado:',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Text(
+                            '\$${_totalAmount.toMoneyString(2)} '
+                            '$_summaryCurrency',
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                      // El nativo es el dato que se persiste; el consolidado
+                      // es solo para comparar contra el objetivo.
+                      if (_expectedByCurrency == null &&
+                          _selectedCurrency != null &&
+                          _selectedCurrency != PriceUtils.baseCurrency &&
+                          _nativeAmount > 0)
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            '(${_nativeAmount.toMoneyString(2)} '
+                            '$_selectedCurrency)',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey[600],
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ),
+                      const Divider(height: 12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            _remainingAmount > 0
+                                ? 'Falta:'
+                                : _remainingAmount < 0
+                                ? 'Sobra:'
+                                : 'Exacto:',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color:
+                                  _remainingAmount > 0
+                                      ? Colors.orange[700]
+                                      : _remainingAmount < 0
+                                      ? Colors.green[700]
+                                      : Colors.blue[700],
+                            ),
+                          ),
+                          Text(
+                            '\$${_remainingAmount.abs().toMoneyString(2)}',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color:
+                                  _remainingAmount > 0
+                                      ? Colors.orange[700]
+                                      : _remainingAmount < 0
+                                      ? Colors.green[700]
+                                      : Colors.blue[700],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 8),
+
+                if (_expectedByCurrency != null)
+                  ..._expectedByCurrency!.entries.map((entry) {
+                    final counted = _totalsByCurrency[entry.key] ?? 0;
+                    final difference =
+                        ((entry.value - counted) * 100).round() / 100;
+                    return Text(
+                      '${entry.key}: ${counted.toMoneyString(2)} / '
+                      '${entry.value.toMoneyString(2)} · '
+                      '${difference == 0
+                          ? 'Exacto'
+                          : difference > 0
+                          ? 'Falta ${difference.toMoneyString(2)}'
+                          : 'Sobra ${(-difference).toMoneyString(2)}'}',
+                    );
+                  }),
+                // Botones
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        child: Text(widget.cancelLabel),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed:
+                            widget.closeOnly
+                                ? () => Navigator.pop(context)
+                                : _matchesExpected
+                                ? _confirm
+                                : null,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF10B981),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        child: Text(widget.confirmLabel),
+                      ),
+                    ),
                   ],
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        );
+        ],
+      ),
+    );
   }
 }

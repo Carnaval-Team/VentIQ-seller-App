@@ -19,13 +19,14 @@ import 'offline_license_service.dart';
 import 'admin_inventory_service.dart';
 import 'inventory_service.dart';
 import 'offline_database_service.dart';
-import 'order_service.dart';
 import 'connectivity_service.dart';
 import 'currency_service.dart';
 import 'product_recipe_cache_service.dart';
-import '../models/order.dart';
 import '../utils/price_utils.dart';
 import '../utils/uuid_generator.dart';
+import '../money/politica_moneda_store.dart';
+import '../money/venta_v1_envio.dart';
+import 'venta_v1_cliente.dart';
 
 /// Servicio para sincronización automática periódica de datos
 /// Se ejecuta cuando el modo offline NO está activado para mantener datos actualizados
@@ -512,6 +513,53 @@ class AutoSyncService {
           print(
             '    ✅ Detalles batch (categoría): ${detallesPorId.length}/${productIds.length}',
           );
+
+          // Precios vigentes CUP/USD por variante: el detalle online los une
+          // con app_v_precio_venta_vigente; sin cachearlos aquí el detalle
+          // offline sale sin precio en las divisas. Una sola consulta por
+          // categoría, mismo pipeline que el resto del catálogo.
+          if (detallesPorId.isNotEmpty) {
+            try {
+              final filasPrecio = <Map<String, dynamic>>[];
+              const lote = 80;
+              for (var i = 0; i < productIds.length; i += lote) {
+                final fin = i + lote > productIds.length
+                    ? productIds.length
+                    : i + lote;
+                final parte = await Supabase.instance.client
+                    .from('app_v_precio_venta_vigente')
+                    .select(
+                      'id_producto, id_variante, precio_venta_cup, precio_venta_usd',
+                    )
+                    .inFilter('id_producto', productIds.sublist(i, fin));
+                filasPrecio.addAll(
+                  ProductDetailService.normalizarFilasPrecioVigente(parte),
+                );
+              }
+              final porProducto = <int, List<Map<String, dynamic>>>{};
+              for (final fila in filasPrecio) {
+                final id = fila['id_producto'];
+                if (id is! int) continue;
+                (porProducto[id] ??= []).add(fila);
+              }
+              for (final entry in detallesPorId.entries) {
+                final filas = porProducto[entry.key];
+                final detalle = entry.value;
+                if (filas == null || detalle is! Map) continue;
+                detalle['precios_vigentes'] = filas;
+                final bloque = detalle['producto'];
+                final usd = ProductDetailService.precioUsdBase(filas);
+                if (bloque is Map && usd != null) {
+                  bloque['precio_venta_usd'] = usd;
+                }
+              }
+              print(
+                '    💱 Precios vigentes: ${porProducto.length}/${productIds.length} productos',
+              );
+            } catch (e) {
+              print('    ⚠️ Error obteniendo precios vigentes: $e');
+            }
+          }
         } catch (e) {
           print('    ⚠️ Error obteniendo detalles batch de categoría: $e');
         }
@@ -522,6 +570,8 @@ class AutoSyncService {
           final detalle = detallesPorId[product['id'] as int];
           if (detalle != null) {
             product['detalles_completos'] = detalle;
+            final usd = ProductDetailService.precioUsdDeProductoCache(product);
+            if (usd != null) product['precio_venta_usd'] = usd;
             _normalizeInventarioUbicaciones(product);
             _alignProductCantidadWithInventario(product);
           }
@@ -1572,16 +1622,6 @@ class AutoSyncService {
         idVendedor: idVendedor,
       );
       serverId = _parseTurnoId(online?['id']);
-      if (online != null && fechaApertura != null && serverId != null) {
-        try {
-          await Supabase.instance.client
-              .from('app_dat_caja_turno')
-              .update({'fecha_apertura': fechaApertura})
-              .eq('id', serverId!);
-        } catch (e) {
-          print('  ⚠️ No se pudo alinear fecha_apertura: $e');
-        }
-      }
     }
 
     if (serverId == null) {
@@ -1643,10 +1683,24 @@ class AutoSyncService {
           '(fecha_cierre=${row['fecha_cierre']}, '
           'cierre_solicitado_at=${row['cierre_solicitado_at']}); limpiando',
         );
-        await Supabase.instance.client
-            .from('app_dat_caja_turno')
-            .update({'fecha_cierre': null, 'cierre_solicitado_at': null})
-            .eq('id', serverId);
+        try {
+          await Supabase.instance.client.rpc(
+            'fn_m01_limpiar_marcador_cierre',
+            params: {
+              'p_client_uuid': UuidGenerator.v4(),
+              'p_id_turno': serverId,
+            },
+          );
+        } catch (e) {
+          if (!_isRpcUnavailable(e, functionName: 'fn_m01_limpiar_marcador_cierre')) {
+            rethrow;
+          }
+          await Supabase.instance.client
+              .from('app_dat_caja_turno')
+              .update({'fecha_cierre': null, 'cierre_solicitado_at': null})
+              .eq('id', serverId)
+              .eq('estado', 1);
+        }
       }
       // La fila está confirmada abierta: el marcador local de cierre no debe
       // taparla (cubre filas reutilizadas al reabrir).
@@ -2107,6 +2161,35 @@ class AutoSyncService {
     return null;
   }
 
+  /// Cierra un turno abierto que no es el que se conserva. La RPC exige actor
+  /// y huella, y no mueve inventario. Si no existe, el turno queda abierto.
+  Future<void> _cerrarTurnoResidual(int idTurno) async {
+    try {
+      final resp = await Supabase.instance.client.rpc(
+        'fn_m01_cerrar_turno_residual',
+        params: {
+          'p_client_uuid': UuidGenerator.v4(),
+          'p_id_turno': idTurno,
+          'p_observaciones': 'Cierre de turno duplicado (sync offline)',
+        },
+      );
+      final map = _asRpcMap(resp);
+      if (map != null && map['status'] == 'error') {
+        print(
+          '[TURNO_SYNC] turno $idTurno no se cierra como residual: '
+          '${map['message']}',
+        );
+        return;
+      }
+      print('[TURNO_SYNC] turno residual $idTurno cerrado por RPC');
+    } catch (e) {
+      print(
+        '[TURNO_SYNC] turno $idTurno sigue abierto. '
+        'No se cierra por UPDATE directo ($e)',
+      );
+    }
+  }
+
   /// Cierra TODOS los turnos abiertos de un TPV/usuario (post-cierre limpio).
   Future<void> _closeAllRemainingOpenTurnos({
     required int idTpv,
@@ -2122,17 +2205,7 @@ class AutoSyncService {
       for (final row in rows as List) {
         final id = _parseTurnoId((row as Map)['id']);
         if (id == null) continue;
-        await Supabase.instance.client
-            .from('app_dat_caja_turno')
-            .update({
-              'estado': 2,
-              'fecha_cierre': DateTime.now().toUtc().toIso8601String(),
-              'observaciones': 'Cierre automático residual (sync offline)',
-              'cerrado_por': usuario,
-            })
-            .eq('id', id)
-            .eq('estado', 1);
-        print('[TURNO_SYNC] 🧹 residual abierto $id cerrado');
+        await _cerrarTurnoResidual(id);
       }
     } catch (e) {
       print('[TURNO_SYNC] ⚠️ closeAllRemaining falló: $e');
@@ -2140,8 +2213,8 @@ class AutoSyncService {
   }
 
   /// Si hay varios turnos abiertos del mismo TPV/usuario (sync duplicado),
-  /// deja solo [keepServerId] (o el más reciente) y cierra el resto con
-  /// update directo. Así `fn_cerrar_turno_tpv` no falla por multi-row.
+  /// deja solo [keepServerId] (o el más reciente). El resto se cierra con
+  /// la RPC residual, no con un UPDATE directo.
   Future<int?> _collapseDuplicateOpenTurnos({
     required int idTpv,
     required String usuario,
@@ -2177,22 +2250,8 @@ class AutoSyncService {
       for (final row in opens) {
         final id = _parseTurnoId(row['id']);
         if (id == null || id == keep) continue;
-        try {
-          await Supabase.instance.client
-              .from('app_dat_caja_turno')
-              .update({
-                'estado': 2,
-                'fecha_cierre': DateTime.now().toUtc().toIso8601String(),
-                'observaciones':
-                    'Cierre automático de duplicado (sync offline)',
-                'cerrado_por': usuario,
-              })
-              .eq('id', id)
-              .eq('estado', 1);
-          print('[TURNO_SYNC] 🧹 duplicado $id cerrado; se conserva $keep');
-        } catch (e) {
-          print('[TURNO_SYNC] ⚠️ no se pudo cerrar duplicado $id: $e');
-        }
+        await _cerrarTurnoResidual(id);
+        print('[TURNO_SYNC] duplicado $id enviado a cierre residual; se conserva $keep');
       }
       return keep;
     } catch (e) {
@@ -2462,7 +2521,7 @@ class AutoSyncService {
 
     try {
       try {
-        await tryCierreRpc(withFecha: false);
+        await tryCierreRpc(withFecha: true);
       } catch (e) {
         // Prefijo de la familia (`fn_cerrar_turno_offline` / `_usd` /
         // `_monedas`): `_isRpcUnavailable` compara por subcadena.
@@ -2471,9 +2530,9 @@ class AutoSyncService {
           functionName: 'fn_cerrar_turno_offline',
         )) {
           print(
-            '[TURNO_SYNC] ⚠️ firma sin fecha no encontrada; reintento con fecha',
+            '[TURNO_SYNC] ⚠️ firma con fecha no encontrada; reintento sin fecha',
           );
-          await tryCierreRpc(withFecha: true);
+          await tryCierreRpc(withFecha: false);
         } else {
           print(
             '[TURNO_SYNC] ⚠️ RPC cierre error: $e — reintento tras colapsar',
@@ -2484,43 +2543,28 @@ class AutoSyncService {
             keepServerId: serverId,
           );
           try {
-            await tryCierreRpc(withFecha: false);
+            await tryCierreRpc(withFecha: true);
           } catch (e2) {
-            print('[TURNO_SYNC] ❌ RPC cierre rechazado: $e2');
-            cerrado = await tryFallbackCierre();
-          }
-        }
-      }
-
-      if (cerrado) {
-        final fecha = cierreData['fecha_cierre'] ?? latest['fecha_cierre'];
-        final sid = serverId ?? _parseTurnoId(latest['server_id_turno']);
-        if (fecha != null && sid != null) {
-          try {
-            await Supabase.instance.client
-                .from('app_dat_caja_turno')
-                .update({'fecha_cierre': fecha})
-                .eq('id', sid);
             print(
-              '[TURNO_SYNC] fecha_cierre alineada en servidor id=$sid → $fecha',
+              '[TURNO_SYNC] ❌ RPC cierre rechazado: $e2. '
+              'No se cierra sin clave.',
             );
-          } catch (e) {
-            print('[TURNO_SYNC] ⚠️ no se pudo alinear fecha_cierre: $e');
           }
         }
       }
     } catch (e) {
-      if (!_isRpcUnavailable(
+      if (_isRpcUnavailable(
         e,
         functionName: 'fn_cerrar_turno_offline',
       )) {
-        print('[TURNO_SYNC] ❌ _syncCierre falló: $e');
-        cerrado = await tryFallbackCierre();
-      } else {
         print(
           '[TURNO_SYNC] ⚠️ fn_cerrar_turno_offline no disponible → fallback',
         );
         cerrado = await tryFallbackCierre();
+      } else {
+        print(
+          '[TURNO_SYNC] ❌ _syncCierre falló ($e). No se cierra sin clave.',
+        );
       }
     }
 
@@ -2542,47 +2586,32 @@ class AutoSyncService {
           keepServerId: sidCheck,
         );
         try {
-          await tryCierreRpc(withFecha: false);
-        } catch (_) {
-          cerrado = await tryFallbackCierre();
+          await tryCierreRpc(withFecha: true);
+        } catch (e) {
+          print(
+            '[TURNO_SYNC] reintento de cierre rechazado: $e. '
+            'No se cierra sin clave.',
+          );
         }
         if (await _isServerTurnoOpen(sidCheck)) {
-          // Último recurso: cerrar la fila concreta.
-          try {
-            await Supabase.instance.client
-                .from('app_dat_caja_turno')
-                .update({
-                  'estado': 2,
-                  'efectivo_real': efectivoFinal,
-                  if (efectivoFinalUsd != null)
-                    'efectivo_real_usd': efectivoFinalUsd,
-                  'fecha_cierre':
-                      cierreData['fecha_cierre'] ??
-                      DateTime.now().toUtc().toIso8601String(),
-                  'observaciones':
-                      observaciones ?? 'Cierre sync offline (forzado por id)',
-                  'cerrado_por': usuario,
-                })
-                .eq('id', sidCheck)
-                .eq('estado', 1);
-            cerrado = !await _isServerTurnoOpen(sidCheck);
-            print('[TURNO_SYNC] forzado por id $sidCheck → cerrado=$cerrado');
-          } catch (e) {
-            print('[TURNO_SYNC] ❌ forzado por id falló: $e');
-            cerrado = false;
-          }
+          // La fila sigue abierta: no se marca sincronizada ni se cierra
+          // con un UPDATE directo. El próximo sync reintenta la RPC con clave.
+          cerrado = false;
+          print(
+            '[TURNO_SYNC] turno $sidCheck sigue abierto. '
+            'No se cierra por UPDATE directo.',
+          );
         }
       }
     }
 
     if (!cerrado) {
-      // Aún puede quedar abierto: un último intento de colapso + fallback.
-      await _collapseDuplicateOpenTurnos(
-        idTpv: idTpv,
-        usuario: usuario,
-        keepServerId: sidCheck,
+      // El cierre sin clave solo cubre la RPC ausente. Un rechazo o una
+      // denegación dejan el turno en cola.
+      print(
+        '[TURNO_SYNC] ❌ _syncCierre sin cierre confirmado '
+        'msg=$cierreMessage resp=$cierreRespMap',
       );
-      cerrado = await tryFallbackCierre();
       if (!cerrado && sidCheck != null && await _isServerTurnoOpen(sidCheck)) {
         print(
           '[TURNO_SYNC] ❌ _syncCierre: servidor NO cerró '
@@ -3641,6 +3670,7 @@ class AutoSyncService {
 
     for (final orderData in pendingOrders) {
       if (orderData['synced'] != true) continue;
+      if (orderData['version_monetaria'] == 'producto-v1') continue;
       if (orderData['pagos_registrados'] == true) continue;
       if (forTurno != null && !_orderBelongsToTurno(orderData, forTurno)) {
         continue;
@@ -3685,6 +3715,9 @@ class AutoSyncService {
     }
   }
 
+  /// Sube la cola `order_status_change` con la RPC que lleva clave.
+  Future<int> syncPendingOrderStatusChanges() => _syncOrderStatusChanges();
+
   /// Sube cambios de estado hechos offline sobre órdenes ya existentes en el
   /// servidor (creadas en modo online).
   Future<int> _syncOrderStatusChanges() async {
@@ -3694,6 +3727,8 @@ class AutoSyncService {
     if (statusOps.isEmpty) return 0;
 
     print('  🔄 Sincronizando ${statusOps.length} cambios de estado...');
+    final userData = await _userPreferencesService.getUserData();
+    final userId = userData['userId'];
     final pendingOrders = await _userPreferencesService.getPendingOrders();
     final remaining =
         ops
@@ -3751,23 +3786,24 @@ class AutoSyncService {
         }
 
         final statusStr = op['new_status']?.toString() ?? 'completada';
-        final status = _orderStatusFromString(statusStr);
-        if (status == null) {
+        final nuevoEstado = _estadoOperacionNumero(statusStr);
+        if (nuevoEstado == null) {
           remaining.add(Map<String, dynamic>.from(op));
           continue;
         }
-
-        final result = await OrderService().updateOrderStatusInSupabase(
-          operationId,
-          status,
-        );
-        if (result['success'] == true) {
-          synced++;
-          print('    ✅ Estado sync $orderId (op $operationId) -> $statusStr');
-        } else {
-          remaining.add(Map<String, dynamic>.from(op));
-          print('    ⚠️ Estado no sync $orderId: ${result['error']}');
+        if (userId == null) {
+          throw Exception('Usuario no encontrado para actualización de estado');
         }
+
+        final carrier = matchedPending ?? op;
+        await _registerCambioEstadoIdempotente(
+          operationId: operationId,
+          nuevoEstado: nuevoEstado,
+          userId: userId,
+          orderData: carrier,
+        );
+        synced++;
+        print('    ✅ Estado sync $orderId (op $operationId) -> $statusStr');
       } catch (e) {
         remaining.add(Map<String, dynamic>.from(op));
         print('    ❌ Error sync cambio de estado: $e');
@@ -3778,21 +3814,20 @@ class AutoSyncService {
     return synced;
   }
 
-  OrderStatus? _orderStatusFromString(String status) {
+  int? _estadoOperacionNumero(String status) {
     switch (status.toLowerCase()) {
       case 'enviada':
       case 'pendiente':
       case 'procesando':
-        return OrderStatus.enviada;
+        return 1;
       case 'pago_confirmado':
       case 'pagoconfirmado':
-        return OrderStatus.pagoConfirmado;
       case 'completada':
-        return OrderStatus.completada;
-      case 'cancelada':
-        return OrderStatus.cancelada;
+        return 2;
       case 'devuelta':
-        return OrderStatus.devuelta;
+        return 3;
+      case 'cancelada':
+        return 4;
       default:
         return null;
     }
@@ -3901,6 +3936,14 @@ class AutoSyncService {
 
   bool _isRpcUnavailable(Object error, {String? functionName}) {
     final text = error.toString().toLowerCase();
+    // 42501 y el resto de denegaciones no son una función ausente. Si el
+    // mensaje menciona "schema cache", igual no se abre otra vía de escritura.
+    if (text.contains('42501') ||
+        text.contains('insufficient_privilege') ||
+        text.contains('permission denied') ||
+        text.contains('acceso denegado')) {
+      return false;
+    }
     final fn = (functionName ?? 'fn_registrar_venta_offline').toLowerCase();
     return text.contains('pgrst202') ||
         text.contains('could not find the function') ||
@@ -4163,6 +4206,90 @@ class AutoSyncService {
       throw Exception('Datos de usuario incompletos para sincronización');
     }
 
+    final idTienda = await _userPreferencesService.getIdTienda();
+    final version = orderData['version_monetaria']?.toString();
+    final items = orderData['items'];
+    final selecciones = <Map<String, dynamic>?>[
+      if (items is List)
+        for (final item in items)
+          item is Map && item['seleccion'] is Map
+              ? Map<String, dynamic>.from(item['seleccion'] as Map)
+              : null,
+    ];
+    final politica = await PoliticaMonedaStore.leer();
+    final origen = EnvioV1.origenDe(
+      orderData,
+      mesa: orderData['id_mesa'] != null,
+    );
+    final completas = version != 'producto-v1' ||
+        (selecciones.isNotEmpty && selecciones.every((s) => s != null));
+    final decision = EnvioV1.decidir(
+      version: version,
+      modoActivo: politica.modoActivo,
+      bloqueaOrdenNueva: politica.bloqueaOrdenNueva,
+      tieneTasa: !completas
+          ? true
+          : VentaV1Lineas.todasConTasa(selecciones.whereType<Map<String, dynamic>>().toList()),
+      lineasCompletas: completas,
+      origen: origen,
+    );
+    if (decision.ruta == RutaEnvio.productoV1) {
+      if (idTienda == null) {
+        throw Exception('Falta la tienda. La orden se conserva.');
+      }
+      final idVendedor = await _userPreferencesService.getIdSeller();
+      if (idVendedor == null) {
+        throw Exception('Falta el vendedor. La orden se conserva.');
+      }
+      final resultado = await VentaV1Cliente.enviar(
+        orderId: orderData['id'].toString(),
+        orderData: orderData,
+        lineas: selecciones.whereType<Map<String, dynamic>>().toList(),
+        idTienda: idTienda,
+        idTpv: idTpv,
+        idVendedor: idVendedor,
+        origen: origen,
+        prefs: _userPreferencesService,
+      );
+      if (resultado['success'] != true) {
+        throw Exception(resultado['error'] ?? 'La venta v1 no se envio');
+      }
+      // La copia local que queda en la cola hasta el cierre de turno debe
+      // reflejar el cobro que realmente se registró: sin esto, un detalle
+      // abierto con datos locales muestra el desglose viejo.
+      final gruposSync = CheckoutV1.agrupar(
+        VentaV1Lineas.desdeMapas(
+          selecciones.whereType<Map<String, dynamic>>().toList(),
+        ),
+      );
+      if (gruposSync.isNotEmpty) {
+        final nombresMedios = <int, String>{
+          for (final m in await _userPreferencesService
+              .getPaymentMethodsOffline())
+            if (m['id'] is num)
+              (m['id'] as num).toInt(): m['denominacion']?.toString() ?? '',
+        };
+        orderData['pagos'] = [
+          for (final g in gruposSync)
+            <String, dynamic>{
+              'id_medio_pago': g.medio,
+              if (nombresMedios[g.medio] != null)
+                'denominacion': nombresMedios[g.medio],
+              'moneda': g.moneda,
+              'monto': double.tryParse(g.neto) ?? 0.0,
+              'monto_cup_equivalente': double.tryParse(g.cup) ?? 0.0,
+            },
+        ];
+        await _userPreferencesService.patchPendingOrder(orderData['id'].toString(), {
+          'pagos': orderData['pagos'],
+        });
+      }
+      return;
+    }
+    if (decision.ruta != RutaEnvio.legacy) {
+      throw Exception(decision.motivo);
+    }
+
     // Preparar productos desde los datos offline
     final productos = <Map<String, dynamic>>[];
     final itemsData = orderData['items'] as List<dynamic>? ?? [];
@@ -4270,11 +4397,9 @@ class AutoSyncService {
     dynamic response;
     var usedAtomicPagos = false;
     try {
-      // Fase 3 (decisión 1B): preferir v4, que registra los pagos con
-        // fn_registrar_pago_venta_v2 (idempotente) sobre la cadena de
-        // presentaciones corregida. Cadena: v4 → v3 → viva → fn_registrar_venta.
-        // GATE: si las RPC nuevas no están aplicadas, el fallback mantiene la
-        // app, pero el bug SQL de consumo por equivalente base sigue vivo.
+      // Preferir v4. Si PostgREST confirma que no existe, v3 y después la
+        // sobrecarga offline que todavía lleva client_uuid. No se llama
+        // fn_registrar_venta: no tiene clave de idempotencia.
         try {
           response = await Supabase.instance.client.rpc(
             'fn_registrar_venta_offline_v4',
@@ -4335,24 +4460,9 @@ class AutoSyncService {
           );
         } catch (e3) {
           if (!_isRpcUnavailable(e3)) rethrow;
-          print(
-            '⚠️ fn_registrar_venta_offline no disponible ($e3). Usando fn_registrar_venta.',
-          );
-          response = await Supabase.instance.client.rpc(
-            'fn_registrar_venta',
-            params: {
-              'p_codigo_promocion':
-                  orderData['promo_code'] ?? orderData['promoCode'],
-              'p_denominacion': 'Venta Auto Sync - ${orderData['id']}',
-              'p_estado_inicial': 1,
-              'p_id_tpv': idTpv,
-              'p_observaciones':
-                  orderData['notas'] ??
-                  'Sincronización automática de venta offline',
-              'p_productos': productos,
-              'p_uuid': userId,
-              'p_id_cliente': orderData['idCliente'],
-            },
+          throw Exception(
+            'fn_registrar_venta_offline no está disponible ($e3). '
+            'La orden se conserva con su client_uuid para reintento.',
           );
         }
       }
@@ -4362,15 +4472,20 @@ class AutoSyncService {
       // Obtener el ID de operación de la respuesta
       final operationId = response['id_operacion'] as int?;
       final bool yaExistia = response['idempotent'] == true;
+      if (operationId == null) {
+        throw Exception(
+          'La venta no devolvió id_operacion. '
+          'La orden se conserva para revisión.',
+        );
+      }
 
-      if (operationId != null) {
-        // Guardar el ID de operación para usarlo en la actualización de estado
-        orderData['_operation_id'] = operationId;
+      // Guardar el ID de operación para usarlo en la actualización de estado
+      orderData['_operation_id'] = operationId;
         await _persistPendingOrderSyncKeys(orderData);
 
         if (yaExistia) {
           print(
-            '    ♻️ Operación $operationId ya existía (idempotente); se reintentan pagos/estado de forma idempotente',
+            '    ♻️ Operación $operationId ya existía (idempotente); no se reescriben los pagos',
           );
         }
 
@@ -4379,13 +4494,25 @@ class AutoSyncService {
             final idClienteCxcRaw =
                 orderData['id_cliente_cxc'] ?? orderData['idClienteCxc'];
             final idClienteCxc = _asInt(idClienteCxcRaw);
-            await Supabase.instance.client
-                .from('app_dat_operacion_venta')
-                .update({
-                  'es_pagada': false,
-                  if (idClienteCxc != null) 'id_cliente_cxc': idClienteCxc,
-                })
-                .eq('id_operacion', operationId);
+            try {
+              await Supabase.instance.client.rpc(
+                'fn_m01_marcar_venta_cxc',
+                params: {
+                  'p_client_uuid': UuidGenerator.v4(),
+                  'p_id_operacion': operationId,
+                  'p_id_cliente_cxc': idClienteCxc,
+                },
+              );
+            } catch (e) {
+              if (!_isRpcUnavailable(e, functionName: 'fn_m01_marcar_venta_cxc')) rethrow;
+              await Supabase.instance.client
+                  .from('app_dat_operacion_venta')
+                  .update({
+                    'es_pagada': false,
+                    if (idClienteCxc != null) 'id_cliente_cxc': idClienteCxc,
+                  })
+                  .eq('id_operacion', operationId);
+            }
             if (idClienteCxc == null) {
               print(
                 '    ⚠️ CxC sync sin id_cliente_cxc en orden local '
@@ -4402,6 +4529,12 @@ class AutoSyncService {
         if (pagos.isNotEmpty) {
           // Siempre verificar el desglose completo (no basta "hay alguna fila").
           var pagosOk = await _pagosCoincidenConEsperado(operationId, pagos);
+          if (!pagosOk && yaExistia) {
+            throw Exception(
+              'La operación $operationId ya estaba registrada y el desglose '
+              'no coincide. Se conserva para revisión, sin reescribir pagos.',
+            );
+          }
           if (!pagosOk) {
             await _registerPaymentBreakdownFromOfflineData(
               operationId,
@@ -4417,7 +4550,14 @@ class AutoSyncService {
             );
           }
           orderData['pagos_registrados'] = true;
+          // La copia local que queda en la cola hasta el cierre de turno debe
+          // mostrar el desglose que quedó registrado en el servidor.
+          orderData['pagos'] = pagos;
           await _persistPendingOrderSyncKeys(orderData);
+          await _userPreferencesService.patchPendingOrder(
+            orderData['id'].toString(),
+            {'pagos': pagos},
+          );
         }
 
         // Cambio de estado final según el estado de NEGOCIO de la orden.
@@ -4449,7 +4589,6 @@ class AutoSyncService {
 
         // Subir foto de operación pendiente (si se capturó offline)
         await _uploadPendingOperationPhoto(operationId, orderData);
-      }
     } else {
       throw Exception(response?['message'] ?? 'Error en el registro de venta');
     }
@@ -4491,10 +4630,22 @@ class AutoSyncService {
           .from('productos')
           .getPublicUrl(path);
 
-      await Supabase.instance.client
-          .from('app_dat_operacion_venta')
-          .update({'foto_operacion_url': url})
-          .eq('id_operacion', operationId);
+      try {
+        await Supabase.instance.client.rpc(
+          'fn_m01_adjuntar_foto_operacion',
+          params: {
+            'p_client_uuid': UuidGenerator.v4(),
+            'p_id_operacion': operationId,
+            'p_url': url,
+          },
+        );
+      } catch (e) {
+        if (!_isRpcUnavailable(e, functionName: 'fn_m01_adjuntar_foto_operacion')) rethrow;
+        await Supabase.instance.client
+            .from('app_dat_operacion_venta')
+            .update({'foto_operacion_url': url})
+            .eq('id_operacion', operationId);
+      }
 
       // Limpiar archivo local
       if (localPath != null) {
@@ -4515,8 +4666,8 @@ class AutoSyncService {
 
   /// Aplica un cambio de estado de operación de forma idempotente.
   /// Usa un client_uuid propio por (orden, estado) persistido en orderData para
-  /// que un reintento no duplique el registro de auditoría. Fallback al RPC
-  /// original si el wrapper offline no está desplegado.
+  /// que un reintento no duplique el registro de auditoría. Si la RPC con clave
+  /// no está disponible, la orden se conserva y no se llama la función original.
   Future<void> _registerCambioEstadoIdempotente({
     required int operationId,
     required int nuevoEstado,
@@ -4546,18 +4697,15 @@ class AutoSyncService {
         '    ✅ Estado $nuevoEstado aplicado (idempotente) a op $operationId',
       );
     } catch (e) {
-      // Fallback: wrapper no disponible. NOTA: sin idempotencia del servidor,
-      // un reintento podría duplicar el registro de auditoría del cambio.
-      print(
-        '    ⚠️ fn_registrar_cambio_estado_offline no disponible ($e). Usando RPC original.',
-      );
-      await Supabase.instance.client.rpc(
-        'fn_registrar_cambio_estado_operacion',
-        params: {
-          'p_id_operacion': operationId,
-          'p_nuevo_estado': nuevoEstado,
-          'p_uuid_usuario': userId,
-        },
+      if (!_isRpcUnavailable(
+        e,
+        functionName: 'fn_registrar_cambio_estado_offline',
+      )) {
+        rethrow;
+      }
+      throw Exception(
+        'fn_registrar_cambio_estado_offline no está disponible ($e). '
+        'El cambio de estado se conserva con su client_uuid para reintento.',
       );
     }
   }
@@ -4666,7 +4814,7 @@ class AutoSyncService {
         rethrow;
       }
       print(
-        '    ⚠️ fn_registrar_pago_venta_v2 no disponible ($e). Intentando offline/original.',
+        '    ⚠️ fn_registrar_pago_venta_v2 no disponible ($e). Intentando offline.',
       );
       try {
         final resp = await Supabase.instance.client.rpc(
@@ -4686,27 +4834,10 @@ class AutoSyncService {
         )) {
           rethrow;
         }
-        // Último recurso: solo si aún no hay NINGÚN pago (evita duplicar).
-        // Si hay desglose parcial, fallamos para reintentar cuando exista v2.
-        if (await _pagosCoincidenConEsperado(operationId, pagos)) {
-          return;
-        }
-        final existingAny = await Supabase.instance.client
-            .from('app_dat_pago_venta')
-            .select('id')
-            .eq('id_operacion_venta', operationId)
-            .limit(1);
-        if (existingAny is List && existingAny.isNotEmpty) {
-          throw Exception(
-            'Desglose parcial en op $operationId y fn_registrar_pago_venta_v2 '
-            'no disponible; no se puede reparar sin riesgo de duplicar',
-          );
-        }
-        final response = await Supabase.instance.client.rpc(
-          'fn_registrar_pago_venta',
-          params: {'p_id_operacion_venta': operationId, 'p_pagos': pagos},
+        throw Exception(
+          'fn_registrar_pago_venta_offline no está disponible ($e2). '
+          'El cobro se conserva con su client_uuid para reintento.',
         );
-        ok = response == true;
       }
     }
 
@@ -5146,16 +5277,21 @@ class AutoSyncService {
           print('⚠️ Sync combustibles servicentro (no bloqueante): $e');
         }
 
-        // Renovar licencia firmada junto con la config (obligatorio para offline)
+        // Renovar licencia firmada junto con la config: solo si la tienda
+        // tiene modo offline completo (sin él no se usa).
         try {
-          print('🔐 Renovando licencia firmada...');
-          final fetched = await OfflineLicenseService()
-              .fetchAndStoreSignedLicense(idTienda);
-          print(
-            fetched
-                ? '✅ Licencia firmada renovada'
-                : '⚠️ No se pudo renovar licencia firmada',
-          );
+          final licenseRequired = await StoreConfigService
+              .getPermitirModoOfflineCompleto(idTienda);
+          if (licenseRequired) {
+            print('🔐 Renovando licencia firmada...');
+            final fetched = await OfflineLicenseService()
+                .fetchAndStoreSignedLicense(idTienda);
+            print(
+              fetched
+                  ? '✅ Licencia firmada renovada'
+                  : '⚠️ No se pudo renovar licencia firmada',
+            );
+          }
         } catch (e) {
           print('⚠️ Error renovando licencia firmada: $e');
         }
@@ -5213,11 +5349,22 @@ class AutoSyncService {
       tookLock = true;
     }
 
-    // Licencia siempre si hay módulos de descarga
+    // Licencia siempre si hay módulos de descarga — pero solo cuando la
+    // tienda tiene modo offline completo; sin él la licencia firmada no se
+    // usa y un fallo del servidor no debe marcar el sync como parcial.
     final hasDownload = modules.any((m) => m.isDownload);
     final effective = Set<SyncModule>.from(modules);
     if (hasDownload) {
-      effective.add(SyncModule.license);
+      final syncStoreId = await _userPreferencesService.getIdTienda();
+      final licenseRequired = syncStoreId != null &&
+          await StoreConfigService.getPermitirModoOfflineCompleto(
+            syncStoreId,
+          );
+      if (licenseRequired) {
+        effective.add(SyncModule.license);
+      } else {
+        effective.remove(SyncModule.license);
+      }
     }
 
     try {

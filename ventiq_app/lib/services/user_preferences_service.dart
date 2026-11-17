@@ -4,6 +4,9 @@ import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/promotion_rules.dart';
 import '../utils/price_utils.dart';
+import '../money/product_currency_order.dart';
+import '../money/ticket_v1.dart';
+import '../money/venta_v1_envio.dart';
 import '../utils/uuid_generator.dart';
 import 'admin_access_service.dart';
 import 'order_service.dart';
@@ -104,11 +107,13 @@ class UserPreferencesService {
       'egresos_cache'; // Cache de egresos para modo offline
   static const String _storeConfigKey =
       'store_config'; // Configuración de la tienda
+  static const String _politicaMonedaKey = 'politica_moneda_v1';
   static const String _servicentroProductosKey = 'servicentro_productos';
   static const String _tpvServicentroFlagsKey = 'tpv_servicentro_flags';
   static const String _storePrintNameKey = 'store_print_name';
   static const String _storePrintLogoUrlKey = 'store_print_logo_url';
   static const String _storePrintLogoBytesKey = 'store_print_logo_bytes';
+  static const String _storePrintContactKey = 'store_print_contact';
   // Inventario/catálogo offline compartido por tienda (vendedor + admin
   // en el mismo teléfono usan el mismo stock local).
   static const String _offlineInventoryStoreKey = 'offline_inventory_store_id';
@@ -1079,6 +1084,10 @@ class UserPreferencesService {
   /// Historial de tasas USD→CUP (tienda + global) para conversión offline
   /// por fecha de creación de la orden.
   static const String _usdCupRateTimelinesKey = 'usd_cup_rate_timelines';
+  /// Monedas aceptadas por la tienda (app_dat_tienda_moneda + catálogo) y sus
+  /// tasas a la moneda base, cacheadas por el sync para cobro offline.
+  static const String _monedasTiendaKey = 'monedas_tienda_cache';
+  static const String _tasasTiendaCupKey = 'tasas_tienda_cup_cache';
   /// Recetas de elaborados (ingredientes) para gasto offline en resumen/cierre.
   static const String _productIngredientRecipesKey =
       'product_ingredient_recipes';
@@ -1580,6 +1589,7 @@ class UserPreferencesService {
     if (existingUuid == null || existingUuid.isEmpty) {
       orderData['client_uuid'] = UuidGenerator.v4();
     }
+    PendingSaleCodec.preparar(orderData);
     pendingOrders.add(orderData);
 
     await prefs.setString(_pendingOrdersKey, jsonEncode(pendingOrders));
@@ -1598,6 +1608,9 @@ class UserPreferencesService {
 
     for (final order in pendingOrders) {
       if (order['id']?.toString() != orderId) continue;
+      if (order['version_monetaria'] == ProductCurrencySeleccion.version) {
+        return false;
+      }
       order['desglose_pagos'] = payments;
       order['last_modified'] = DateTime.now().toIso8601String();
       changed = true;
@@ -2835,15 +2848,81 @@ class UserPreferencesService {
     double totalTransferencias = 0;
     int productos = 0;
     int operaciones = 0;
+    final cobradoPorMoneda = <String, String>{};
+
+    // Desglose por divisa con el mismo formato que `desglose_monedas` del
+    // resumen v4 del servidor, para que el panel de «Mis ventas» pinte el
+    // bloque POR MONEDA también sin conexión.
+    final monedas = <String, Map<String, double>>{};
+    final opsPorMoneda = <String, int>{};
+    Map<String, double> filaMoneda(String moneda) => monedas.putIfAbsent(
+      moneda,
+      () => {'nativo': 0, 'base': 0, 'efectivo': 0, 'digital': 0},
+    );
+
+    // Flags efectivo/digital por medio: el medio v1 solo guarda su id.
+    final mediosFlags = <int, Map<String, bool>>{};
+    try {
+      for (final m in await getPaymentMethodsOffline()) {
+        final id = (m['id'] as num?)?.toInt();
+        if (id == null) continue;
+        mediosFlags[id] = {
+          'efectivo': m['es_efectivo'] == true,
+          'digital': m['es_digital'] == true,
+        };
+      }
+    } catch (_) {}
 
     for (final o in turnoOrders) {
       final estado = (o['estado'] ?? '').toString().toLowerCase();
       if (estado == 'cancelada' || estado == 'devuelta') continue;
+      final items = o['items'] as List<dynamic>? ?? [];
+      if (o['version_monetaria'] == 'producto-v1') {
+        operaciones++;
+        final partes = CajaV1.porMoneda(o);
+        for (final entrada in partes.entries) {
+          cobradoPorMoneda[entrada.key] =
+              CajaV1.sumar(cobradoPorMoneda[entrada.key], entrada.value);
+        }
+        // El mismo contrato que la rama legacy: ventas/efectivo en equivalente
+        // base, importes nativos y operaciones en el desglose por moneda.
+        final monedasOrden = <String>{};
+        for (final item in items) {
+          if (item is! Map) continue;
+          productos += ((item['cantidad'] as num?)?.toDouble() ?? 0).round();
+          final sel = item['seleccion'];
+          if (sel is! Map) continue;
+          final cobro = VentaV1Lineas.desdeMapa(
+            Map<String, dynamic>.from(sel),
+          );
+          if (cobro == null) continue;
+          final neto = double.tryParse(cobro.neto) ?? 0;
+          final cup = double.tryParse(cobro.cup) ?? 0;
+          ventas += cup;
+          monedasOrden.add(cobro.moneda);
+          final fila = filaMoneda(cobro.moneda);
+          fila['nativo'] = fila['nativo']! + neto;
+          fila['base'] = fila['base']! + cup;
+          final flags = mediosFlags[cobro.medio] ?? const {};
+          final esDigital = flags['digital'] == true;
+          final esEfectivo = flags['efectivo'] == true;
+          if (esEfectivo || !esDigital) {
+            totalEfectivo += cup;
+            fila['efectivo'] = fila['efectivo']! + neto;
+          } else {
+            totalTransferencias += cup;
+            fila['digital'] = fila['digital']! + neto;
+          }
+        }
+        for (final m in monedasOrden) {
+          opsPorMoneda[m] = (opsPorMoneda[m] ?? 0) + 1;
+        }
+        continue;
+      }
       operaciones++;
       final total = (o['total'] as num?)?.toDouble() ?? 0.0;
       ventas += total;
 
-      final items = o['items'] as List<dynamic>? ?? [];
       for (final item in items) {
         if (item is Map) {
           productos += ((item['cantidad'] as num?)?.toDouble() ?? 0).round();
@@ -2851,21 +2930,38 @@ class UserPreferencesService {
       }
 
       final desglose = o['desglose_pagos'] as List<dynamic>? ?? [];
+      final monedasOrden = <String>{};
       if (desglose.isEmpty) {
         totalEfectivo += total;
+        final fila = filaMoneda(PriceUtils.baseCurrency);
+        fila['nativo'] = fila['nativo']! + total;
+        fila['base'] = fila['base']! + total;
+        fila['efectivo'] = fila['efectivo']! + total;
+        monedasOrden.add(PriceUtils.baseCurrency);
       } else {
         for (final p in desglose) {
           if (p is! Map) continue;
           final payment = Map<String, dynamic>.from(p);
           final monto = PriceUtils.paymentCupEquivalent(payment);
+          final moneda = PriceUtils.paymentCurrency(payment);
+          final nativo = PriceUtils.paymentAmount(payment);
           final esEfectivo = p['es_efectivo'] == true;
           final esDigital = p['es_digital'] == true;
+          final fila = filaMoneda(moneda);
+          fila['nativo'] = fila['nativo']! + nativo;
+          fila['base'] = fila['base']! + monto;
+          monedasOrden.add(moneda);
           if (esEfectivo || (!esDigital && !esEfectivo)) {
             totalEfectivo += monto;
+            fila['efectivo'] = fila['efectivo']! + nativo;
           } else {
             totalTransferencias += monto;
+            fila['digital'] = fila['digital']! + nativo;
           }
         }
+      }
+      for (final m in monedasOrden) {
+        opsPorMoneda[m] = (opsPorMoneda[m] ?? 0) + 1;
       }
     }
 
@@ -2893,6 +2989,7 @@ class UserPreferencesService {
     return {
       'efectivo_inicial': efectivoInicial,
       'ventas_totales': ventas,
+      'cobrado_por_moneda': cobradoPorMoneda,
       'total_efectivo': totalEfectivo,
       'total_transferencias': totalTransferencias,
       'productos_vendidos': productos,
@@ -2912,6 +3009,18 @@ class UserPreferencesService {
       'fecha_apertura': turnoEntry['fecha_apertura'],
       'fecha_cierre': turnoEntry['fecha_cierre'] ?? cierre['fecha_cierre'],
       'ordenes_locales': turnoOrders.length,
+      'total_base': ventas,
+      'desglose_monedas': [
+        for (final entrada in monedas.entries)
+          {
+            'moneda': entrada.key,
+            'operaciones': opsPorMoneda[entrada.key] ?? 0,
+            'importe_nativo': entrada.value['nativo'],
+            'importe_base': entrada.value['base'],
+            'efectivo_nativo': entrada.value['efectivo'],
+            'digital_nativo': entrada.value['digital'],
+          },
+      ],
       'reconstruido': true,
     };
   }
@@ -4160,14 +4269,57 @@ class UserPreferencesService {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_storeConfigKey);
+      await prefs.remove(_politicaMonedaKey);
       await prefs.remove(_servicentroProductosKey);
       await prefs.remove(_tpvServicentroFlagsKey);
       await prefs.remove(_storePrintNameKey);
       await prefs.remove(_storePrintLogoUrlKey);
       await prefs.remove(_storePrintLogoBytesKey);
+      await prefs.remove(_storePrintContactKey);
       print('🗑️ Configuración de tienda eliminada del cache');
     } catch (e) {
       print('❌ Error limpiando configuración de tienda: $e');
+    }
+  }
+
+  Future<void> savePoliticaMoneda(Map<String, dynamic> data) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_politicaMonedaKey, jsonEncode(data));
+  }
+
+  Future<Map<String, dynamic>?> getPoliticaMoneda() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_politicaMonedaKey);
+      if (raw == null) return null;
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) return decoded;
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> guardarIntentoVentaV1(
+    String orderId,
+    Map<String, dynamic> data,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('venta_v1_intento_$orderId', jsonEncode(data));
+  }
+
+  Future<Map<String, dynamic>?> leerIntentoVentaV1(String orderId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('venta_v1_intento_$orderId');
+      if (raw == null) return null;
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) return decoded;
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+      return null;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -4293,11 +4445,21 @@ class UserPreferencesService {
   Future<void> saveStorePrintInfo(
     String name,
     String? logoUrl,
-    Uint8List? logoBytes,
-  ) async {
+    Uint8List? logoBytes, {
+    String? address,
+    String? location,
+    String? phone,
+  }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_storePrintNameKey, name);
+      final contact = <String, dynamic>{
+        ...jsonDecode(prefs.getString(_storePrintContactKey) ?? '{}') as Map<String, dynamic>,
+        if (address != null) 'address': address,
+        if (location != null) 'location': location,
+        if (phone != null) 'phone': phone,
+      };
+      await prefs.setString(_storePrintContactKey, jsonEncode(contact));
       if (logoUrl != null && logoUrl.isNotEmpty) {
         await prefs.setString(_storePrintLogoUrlKey, logoUrl);
       } else {
@@ -4328,7 +4490,12 @@ class UserPreferencesService {
       if (logoBytesBase64 != null && logoBytesBase64.isNotEmpty) {
         logoBytes = base64Decode(logoBytesBase64);
       }
-      return {'name': name, 'logoUrl': logoUrl, 'logoBytes': logoBytes};
+      return {
+        ...jsonDecode(prefs.getString(_storePrintContactKey) ?? '{}') as Map<String, dynamic>,
+        'name': name,
+        'logoUrl': logoUrl,
+        'logoBytes': logoBytes,
+      };
     } catch (e) {
       print('❌ Error obteniendo info de tienda para impresión: $e');
       return null;
@@ -4965,6 +5132,65 @@ class UserPreferencesService {
       print('🗑️ Cache de tipo de cambio CUP-USD eliminado');
     } catch (e) {
       print('❌ Error limpiando cache de tipo de cambio: $e');
+    }
+  }
+
+  // ============ MONEDAS Y TASAS DE LA TIENDA (multimoneda offline) ============
+
+  /// Guarda las monedas que acepta la tienda (salida de
+  /// `CurrencyService.getMonedasTienda`).
+  Future<void> saveMonedasTienda(List<Map<String, dynamic>> monedas) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_monedasTiendaKey, jsonEncode(monedas));
+      print('💱 Monedas de tienda guardadas en cache: ${monedas.length}');
+    } catch (e) {
+      print('❌ Error guardando monedas de tienda: $e');
+    }
+  }
+
+  /// Monedas de tienda cacheadas (vacío si nunca se sincronizaron).
+  Future<List<Map<String, dynamic>>> getMonedasTiendaCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_monedasTiendaKey);
+      if (raw == null || raw.isEmpty) return const [];
+      return (jsonDecode(raw) as List)
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    } catch (e) {
+      print('❌ Error leyendo monedas de tienda cache: $e');
+      return const [];
+    }
+  }
+
+  /// Guarda las tasas a moneda base de las monedas de la tienda
+  /// (salida de `CurrencyService.getRatesForStore`, p. ej. {'CUP':1,'USD':900}).
+  Future<void> saveTasasTienda(Map<String, double> tasas) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_tasasTiendaCupKey, jsonEncode(tasas));
+      print('💱 Tasas de tienda guardadas en cache: ${tasas.keys.join(', ')}');
+    } catch (e) {
+      print('❌ Error guardando tasas de tienda: $e');
+    }
+  }
+
+  /// Tasas de tienda cacheadas (vacío si nunca se sincronizaron).
+  Future<Map<String, double>> getTasasTiendaCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_tasasTiendaCupKey);
+      if (raw == null || raw.isEmpty) return const {};
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return const {};
+      return decoded.map(
+        (k, v) => MapEntry(k.toString(), (v as num?)?.toDouble() ?? 0.0),
+      );
+    } catch (e) {
+      print('❌ Error leyendo tasas de tienda cache: $e');
+      return const {};
     }
   }
 

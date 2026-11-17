@@ -1,6 +1,24 @@
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../money/politica_moneda.dart';
+import '../utils/uuid_generator.dart';
 import 'user_preferences_service.dart';
 import 'connectivity_service.dart';
+
+bool _rpcAusente(Object error, String functionName) {
+  final text = error.toString().toLowerCase();
+  if (text.contains('42501') ||
+      text.contains('insufficient_privilege') ||
+      text.contains('permission denied') ||
+      text.contains('acceso denegado')) {
+    return false;
+  }
+  final fn = functionName.toLowerCase();
+  return text.contains('pgrst202') ||
+      text.contains('could not find the function') ||
+      text.contains('schema cache') ||
+      (text.contains('does not exist') && text.contains(fn));
+}
 
 class StoreConfigService {
   static final _supabase = Supabase.instance.client;
@@ -179,6 +197,7 @@ class StoreConfigService {
       if (config != null) {
         await saveStoreConfigToCache(config);
         print('✅ Configuración de tienda sincronizada exitosamente');
+        await syncPoliticaMoneda(storeId, config);
         return true;
       } else {
         print('⚠️ No se pudo sincronizar configuración de tienda');
@@ -188,6 +207,87 @@ class StoreConfigService {
       print('❌ Error al sincronizar configuración de tienda: $e');
       return false;
     }
+  }
+
+  /// Revisión y constancia, aparte del select de la configuración.
+  static Future<void> syncPoliticaMoneda(
+    int storeId,
+    Map<String, dynamic> config,
+  ) async {
+    final sesion = await _userPreferencesService.getIdTienda();
+    if (!PoliticaMonedaEstado.puedeReemplazar(
+      tiendaRespuesta: storeId,
+      tiendaSesion: sesion,
+    )) {
+      return;
+    }
+    final usuario = _supabase.auth.currentUser?.id;
+    Map<String, dynamic>? revision;
+    Map<String, dynamic>? constancia;
+    var denegada = false;
+    if (usuario != null) {
+      try {
+        await _supabase.rpc(
+          'fn_m01_emitir_constancia_politica',
+          params: {
+            'p_id_tienda': storeId,
+            'p_dispositivo': await _dispositivoPolitica(),
+          },
+        );
+      } catch (e) {
+        if (!_rpcAusente(e, 'fn_m01_emitir_constancia_politica')) {
+          denegada = true;
+        }
+      }
+    }
+    try {
+      final row =
+          await _supabase
+              .from('app_dat_politica_moneda_revision')
+              .select(
+                'id, id_tienda, permitir_moneda_por_producto, forzar_moneda_venta, moneda_venta_forzada, monedas_habilitadas',
+              )
+              .eq('id_tienda', storeId)
+              .order('id', ascending: false)
+              .limit(1)
+              .maybeSingle();
+      if (row != null) revision = Map<String, dynamic>.from(row);
+    } catch (e) {
+      if (!_rpcAusente(e, 'app_dat_politica_moneda_revision')) denegada = true;
+    }
+    try {
+      if (usuario != null) {
+        final row =
+            await _supabase
+                .from('app_dat_politica_moneda_constancia')
+                .select('id, id_tienda, id_revision, uuid_sujeto, dispositivo, huella')
+                .eq('id_tienda', storeId)
+                .eq('uuid_sujeto', usuario)
+                .order('id', ascending: false)
+                .limit(1)
+                .maybeSingle();
+        if (row != null) constancia = Map<String, dynamic>.from(row);
+      }
+    } catch (e) {
+      if (!_rpcAusente(e, 'app_dat_politica_moneda_constancia')) denegada = true;
+    }
+    await _userPreferencesService.savePoliticaMoneda({
+      'id_tienda': storeId,
+      'flag': config['permitir_moneda_por_producto'] == true,
+      'denegada': denegada,
+      'revision': revision,
+      'constancia': constancia,
+    });
+  }
+
+  static Future<String> _dispositivoPolitica() async {
+    final prefs = await SharedPreferences.getInstance();
+    final guardado = prefs.getString('m01_dispositivo');
+    final valido = RegExp(r'^[A-Za-z0-9_.:-]{1,120}$');
+    if (guardado != null && valido.hasMatch(guardado)) return guardado;
+    final nuevo = 'tpv-${UuidGenerator.v4().replaceAll('-', '').substring(0, 20)}';
+    await prefs.setString('m01_dispositivo', nuevo);
+    return nuevo;
   }
 
   /// Obtiene solo el valor de need_master_password_to_cancel
@@ -280,12 +380,7 @@ class StoreConfigService {
     try {
       print('🔧 Actualizando modo_restaurante=$enabled para tienda $storeId');
 
-      // Upsert para crear el registro si no existe
-      await _supabase.from('app_dat_configuracion_tienda').upsert({
-        'id_tienda': storeId,
-        'modo_restaurante': enabled,
-        'updated_at': DateTime.now().toIso8601String(),
-      }, onConflict: 'id_tienda');
+      await _escribirConfig(storeId, 'modo_restaurante', enabled);
 
       // Refrescar cache
       final config = await getStoreConfigFromSupabase(storeId);
@@ -316,20 +411,6 @@ class StoreConfigService {
       return value;
     } catch (e) {
       print('❌ Error al obtener allow_discount_on_vendedor: $e');
-      return false;
-    }
-  }
-
-  /// Obtiene si los vendedores pueden crear ventas a pago pendiente (cuentas
-  /// por cobrar) libremente desde el checkout.
-  static Future<bool> getVendedoresPuedenCrearCxc(int storeId) async {
-    try {
-      final config = await getStoreConfig(storeId);
-      final value = config?['vendedores_pueden_crear_cxc'] ?? false;
-      print('✅ vendedores_pueden_crear_cxc: $value para tienda $storeId');
-      return value;
-    } catch (e) {
-      print('❌ Error al obtener vendedores_pueden_crear_cxc: $e');
       return false;
     }
   }
@@ -540,11 +621,7 @@ class StoreConfigService {
   ) async {
     try {
       print('🔧 Actualizando tickets_a_imprimir=$tickets para tienda $storeId');
-      await _supabase.from('app_dat_configuracion_tienda').upsert({
-        'id_tienda': storeId,
-        'tickets_a_imprimir': tickets,
-        'updated_at': DateTime.now().toIso8601String(),
-      }, onConflict: 'id_tienda');
+      await _escribirConfig(storeId, 'tickets_a_imprimir', tickets);
       await _refreshStoreConfigCache(storeId);
       print('✅ tickets_a_imprimir actualizado correctamente');
       return true;
@@ -578,11 +655,7 @@ class StoreConfigService {
   ) async {
     try {
       print('🔧 Actualizando copias_por_ticket=$copias para tienda $storeId');
-      await _supabase.from('app_dat_configuracion_tienda').upsert({
-        'id_tienda': storeId,
-        'copias_por_ticket': copias,
-        'updated_at': DateTime.now().toIso8601String(),
-      }, onConflict: 'id_tienda');
+      await _escribirConfig(storeId, 'copias_por_ticket', copias);
       await _refreshStoreConfigCache(storeId);
       print('✅ copias_por_ticket actualizado correctamente');
       return true;
@@ -623,17 +696,48 @@ class StoreConfigService {
   ) async {
     try {
       print('🔧 Actualizando $column=$value para tienda $storeId');
-      await _supabase.from('app_dat_configuracion_tienda').upsert({
-        'id_tienda': storeId,
-        column: value,
-        'updated_at': DateTime.now().toIso8601String(),
-      }, onConflict: 'id_tienda');
+      await _escribirConfig(storeId, column, value);
       await _refreshStoreConfigCache(storeId);
       print('✅ $column actualizado correctamente');
       return true;
     } catch (e) {
       print('❌ Error al actualizar $column: $e');
       return false;
+    }
+  }
+
+  /// Escribe un campo permitido. Si la función no existe, conserva el upsert.
+  /// Una denegación no abre la tabla.
+  static Future<void> _escribirConfig(
+    int storeId,
+    String campo,
+    Object valor,
+  ) async {
+    try {
+      final respuesta = await _supabase.rpc(
+        'fn_m01_actualizar_config_tienda',
+        params: {
+          'p_client_uuid': UuidGenerator.v4(),
+          'p_id_tienda': storeId,
+          'p_campo': campo,
+          'p_valor': valor,
+        },
+      );
+      final mapa = respuesta is Map
+          ? Map<String, dynamic>.from(respuesta)
+          : null;
+      if (mapa == null || mapa['success'] != true) {
+        throw Exception(
+          mapa?['message'] ?? 'No se actualizó la configuración',
+        );
+      }
+    } catch (e) {
+      if (!_rpcAusente(e, 'fn_m01_actualizar_config_tienda')) rethrow;
+      await _supabase.from('app_dat_configuracion_tienda').upsert({
+        'id_tienda': storeId,
+        campo: valor,
+        'updated_at': DateTime.now().toIso8601String(),
+      }, onConflict: 'id_tienda');
     }
   }
 

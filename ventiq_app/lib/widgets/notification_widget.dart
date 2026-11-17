@@ -5,6 +5,22 @@ import '../models/notification_model.dart';
 import '../services/notification_service.dart';
 import '../services/turno_service.dart';
 import '../theme/ventiq_home_theme.dart';
+import '../utils/uuid_generator.dart';
+
+bool _rpcAusente(Object error, String functionName) {
+  final text = error.toString().toLowerCase();
+  if (text.contains('42501') ||
+      text.contains('insufficient_privilege') ||
+      text.contains('permission denied') ||
+      text.contains('acceso denegado')) {
+    return false;
+  }
+  final fn = functionName.toLowerCase();
+  return text.contains('pgrst202') ||
+      text.contains('could not find the function') ||
+      text.contains('schema cache') ||
+      (text.contains('does not exist') && text.contains(fn));
+}
 
 /// Widget de notificaciones que se muestra en la parte superior
 class NotificationWidget extends StatefulWidget {
@@ -943,11 +959,27 @@ class _NotificationItemState extends State<NotificationItem> {
           'La operación fue creada después del turno actual. No se puede recibir.',
         );
       } else {
-        // 4. Actualizar la fecha de creación de la operación a now()
-        await supabase
-            .from('app_dat_operaciones')
-            .update({'created_at': DateTime.now().toIso8601String()})
-            .eq('id', operacionId);
+        try {
+          final respuesta = await supabase.rpc(
+            'fn_m01_recibir_operacion_turno',
+            params: {
+              'p_client_uuid': UuidGenerator.v4(),
+              'p_id_operacion': operacionId,
+            },
+          );
+          final mapa = respuesta is Map
+              ? Map<String, dynamic>.from(respuesta)
+              : null;
+          if (mapa == null || mapa['success'] != true) {
+            throw Exception(mapa?['message'] ?? 'No se recibió la orden');
+          }
+        } catch (e) {
+          if (!_rpcAusente(e, 'fn_m01_recibir_operacion_turno')) rethrow;
+          await supabase
+              .from('app_dat_operaciones')
+              .update({'created_at': DateTime.now().toIso8601String()})
+              .eq('id', operacionId);
+        }
       }
       // 5. Marcar la notificación como leída
       await widget.notificationService.markAsRead(widget.notification.id);

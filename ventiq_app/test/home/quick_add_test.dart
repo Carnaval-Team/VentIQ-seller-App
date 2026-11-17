@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:ventiq_app/models/product.dart';
+import 'package:ventiq_app/money/product_currency_order.dart';
 import 'package:ventiq_app/services/quick_add_service.dart';
 import 'package:ventiq_app/widgets/home/quick_add_sheet.dart';
 
@@ -115,6 +116,7 @@ Future<void> _nada({
   required double precioUnitario,
   required double precioBase,
   Map<String, dynamic>? promotionData,
+  ProductCurrencySeleccion? seleccion,
 }) async {}
 
 void main() {
@@ -369,6 +371,7 @@ void main() {
         required double precioUnitario,
         required double precioBase,
         Map<String, dynamic>? promotionData,
+        ProductCurrencySeleccion? seleccion,
       })
       agregarItem,
       Future<Map<String, dynamic>?> Function()? storeConfig,
@@ -393,6 +396,7 @@ void main() {
             required double precioUnitario,
             required double precioBase,
             Map<String, dynamic>? promotionData,
+            ProductCurrencySeleccion? seleccion,
           }) async {
             llamadas.add(<String, dynamic>{
               'cantidad': cantidad,
@@ -469,6 +473,7 @@ void main() {
             required double precioUnitario,
             required double precioBase,
             Map<String, dynamic>? promotionData,
+            ProductCurrencySeleccion? seleccion,
           }) async {
             agregados++;
           },

@@ -1,0 +1,94 @@
+{
+  "contract_version": "producto-v1",
+  "fictional_only": true,
+  "money_cases": [
+    {"id":"manual_cup_unit","currency":"CUP","quantity":"3","unit_price":"100","automatic_type":"none","automatic_value":"0","manual_unit_discount":"10","rate_cup":"1","expected":{"unit_net":"90","line_gross":"300.00","subtotal_before_manual":"300.00","manual_nominal":"30","line_net":"270.00","cup_net":"270.00","rounding_delta":"0"}},
+    {"id":"percent_usd_line_rounding","currency":"USD","quantity":"3","unit_price":"1.05","automatic_type":"discount_percent","automatic_value":"10","manual_unit_discount":"0","rate_cup":"400","expected":{"unit_net":"0.945","line_gross":"3.15","subtotal_before_manual":"2.84","manual_nominal":"0","line_net":"2.84","cup_net":"1136.00","rounding_delta":"0.005"}},
+    {"id":"percent_cup","currency":"CUP","quantity":"3","unit_price":"100","automatic_type":"discount_percent","automatic_value":"10","manual_unit_discount":"0","rate_cup":"1","expected":{"unit_net":"90","line_gross":"300.00","subtotal_before_manual":"270.00","manual_nominal":"0","line_net":"270.00","cup_net":"270.00","rounding_delta":"0"}},
+    {"id":"usd_native_independent","currency":"USD","quantity":"2","unit_price":"5","automatic_type":"none","automatic_value":"0","manual_unit_discount":"0","rate_cup":"400","expected":{"unit_net":"5","line_gross":"10.00","subtotal_before_manual":"10.00","manual_nominal":"0","line_net":"10.00","cup_net":"4000.00","rounding_delta":"0"}},
+    {"id":"manual_usd_unit","currency":"USD","quantity":"3","unit_price":"2.5","automatic_type":"none","automatic_value":"0","manual_unit_discount":"0.1","rate_cup":"420","expected":{"unit_net":"2.4","line_gross":"7.50","subtotal_before_manual":"7.50","manual_nominal":"0.3","line_net":"7.20","cup_net":"3024.00","rounding_delta":"0"}},
+    {"id":"half_cent_up","currency":"USD","quantity":"1","unit_price":"0.105","automatic_type":"none","automatic_value":"0","manual_unit_discount":"0","rate_cup":"400","expected":{"unit_net":"0.105","line_gross":"0.11","subtotal_before_manual":"0.11","manual_nominal":"0","line_net":"0.11","cup_net":"44.00","rounding_delta":"0.005"}},
+    {"id":"fractional_quantity","currency":"CUP","quantity":"0.125","unit_price":"10","automatic_type":"none","automatic_value":"0","manual_unit_discount":"0","rate_cup":"1","expected":{"unit_net":"10","line_gross":"1.25","subtotal_before_manual":"1.25","manual_nominal":"0","line_net":"1.25","cup_net":"1.25","rounding_delta":"0"}},
+    {"id":"fixed_auto_cup_then_manual","currency":"CUP","quantity":"2","unit_price":"100","automatic_type":"discount_unit","automatic_value":"5","manual_unit_discount":"10","rate_cup":"1","expected":{"unit_net":"85","line_gross":"200.00","subtotal_before_manual":"190.00","manual_nominal":"20","line_net":"170.00","cup_net":"170.00","rounding_delta":"0"}},
+    {"id":"fixed_auto_usd_then_manual","currency":"USD","quantity":"2","unit_price":"5","automatic_type":"discount_unit","automatic_value":"0.25","manual_unit_discount":"0.1","rate_cup":"400","expected":{"unit_net":"4.65","line_gross":"10.00","subtotal_before_manual":"9.50","manual_nominal":"0.2","line_net":"9.30","cup_net":"3720.00","rounding_delta":"0"}},
+    {"id":"percent_surcharge_usd","currency":"USD","quantity":"3","unit_price":"1.05","automatic_type":"surcharge_percent","automatic_value":"10","manual_unit_discount":"0","rate_cup":"400","expected":{"unit_net":"1.155","line_gross":"3.15","subtotal_before_manual":"3.47","manual_nominal":"0","line_net":"3.47","cup_net":"1388.00","rounding_delta":"0.005"}},
+    {"id":"fixed_surcharge_then_manual","currency":"CUP","quantity":"3","unit_price":"100","automatic_type":"surcharge_unit","automatic_value":"5","manual_unit_discount":"10","rate_cup":"1","expected":{"unit_net":"95","line_gross":"300.00","subtotal_before_manual":"315.00","manual_nominal":"30","line_net":"285.00","cup_net":"285.00","rounding_delta":"0"}},
+    {"id":"authorized_zero_net","currency":"CUP","quantity":"3","unit_price":"100","automatic_type":"none","automatic_value":"0","manual_unit_discount":"100","rate_cup":"1","expected":{"unit_net":"0","line_gross":"300.00","subtotal_before_manual":"300.00","manual_nominal":"300","line_net":"0.00","cup_net":"0.00","rounding_delta":"0"}},
+    {"id":"tiny_usd_line","currency":"USD","quantity":"1","unit_price":"0.005","automatic_type":"none","automatic_value":"0","manual_unit_discount":"0","rate_cup":"400","expected":{"unit_net":"0.005","line_gross":"0.01","subtotal_before_manual":"0.01","manual_nominal":"0","line_net":"0.01","cup_net":"4.00","rounding_delta":"0.005"}},
+    {"id":"rounding_delta_negative","currency":"USD","quantity":"1","unit_price":"0.104","automatic_type":"none","automatic_value":"0","manual_unit_discount":"0","rate_cup":"400","expected":{"unit_net":"0.104","line_gross":"0.10","subtotal_before_manual":"0.10","manual_nominal":"0","line_net":"0.10","cup_net":"40.00","rounding_delta":"-0.004"}}
+  ],
+  "group_cases": [
+    {
+      "id": "same_currency_method_different_rates",
+      "lines": [
+        {"line_id":"1","product_id":"101","currency":"USD","method_id":1,"net":"5.00","rate_cup":"400","cup_net":"2000.00"},
+        {"line_id":"2","product_id":"101","currency":"USD","method_id":1,"net":"5.00","rate_cup":"420","cup_net":"2100.00"},
+        {"line_id":"3","product_id":"101","currency":"USD","method_id":4,"net":"1.00","rate_cup":"400","cup_net":"400.00"},
+        {"line_id":"4","product_id":"101","currency":"CUP","method_id":1,"net":"100.00","rate_cup":"1","cup_net":"100.00"}
+      ],
+      "expected": {"CUP|1":{"net":"100.00","cup_net":"100.00"},"USD|1":{"net":"10.00","cup_net":"4100.00"},"USD|4":{"net":"1.00","cup_net":"400.00"}}
+    },
+    {
+      "id": "sum_fixed_lines_not_ideal_group",
+      "line_case_ids": ["tiny_usd_line","tiny_usd_line","tiny_usd_line"],
+      "expected_native": "0.03",
+      "expected_cup": "12.00",
+      "incorrect_rounding_of_ideal_group": "0.02"
+    }
+  ],
+  "price_cases": [
+    {"id":"cup_override_inherits_usd","general":{"CUP":"1000","USD":"3"},"overrides_latest_first":[{"id":"51","CUP":"900","USD":null}],"expected":{"CUP":"900","USD":"3"}},
+    {"id":"usd_only_inherits_cup","general":{"CUP":"1000","USD":"3"},"overrides_latest_first":[{"id":"51","CUP":null,"USD":"2.5"}],"expected":{"CUP":"1000","USD":"2.5"}},
+    {"id":"null_does_not_rescue_old_override","general":{"CUP":"1000","USD":"3"},"overrides_latest_first":[{"id":"51","CUP":"900","USD":null},{"id":"50","CUP":"950","USD":"2"}],"expected":{"CUP":"900","USD":"3"}},
+    {"id":"forced_usd_missing_price","forced":"USD","general":{"CUP":"1000","USD":null},"overrides_latest_first":[{"id":"51","CUP":"900","USD":null}],"expected_error":"NATIVE_PRICE_UNAVAILABLE"}
+  ],
+  "invalid_cases": [
+    {"id":"numeric_money","path":"lineas[0].precio_unitario_nativo","value":0.1,"expected_error":"DECIMAL_STRING_REQUIRED"},
+    {"id":"non_finite_money","path":"lineas[0].precio_unitario_nativo","value":"NaN","expected_error":"INVALID_DECIMAL"},
+    {"id":"unsupported_currency","path":"lineas[0].moneda_venta","value":"EUR","expected_error":"UNSUPPORTED_CURRENCY"},
+    {"id":"unknown_version","path":"version_monetaria","value":"producto-v999","expected_error":"CONTRACT_VERSION_UNSUPPORTED"},
+    {"id":"missing_rate_evidence","path":"lineas[0].snapshot_tasa.evidencia_publicacion","value":null,"expected_error":"SNAPSHOT_EVIDENCE_REQUIRED"},
+    {"id":"pending_is_not_cash","path":"lineas[0].seleccion_cobro","value":{"tipo":"pendiente","id_medio_pago":1},"expected_error":"PAYMENT_SELECTION_MISMATCH"},
+    {"id":"negative_quantity","path":"lineas[0].cantidad","value":"-1","expected_error":"INVALID_QUANTITY"}
+  ],
+  "request_example": {
+    "version_monetaria": "producto-v1",
+    "client_uuid": "11111111-1111-4111-8111-111111111111",
+    "id_tienda": "10",
+    "id_tpv": "20",
+    "id_vendedor": "30",
+    "id_dispositivo": "fixture-device-001",
+    "creada_en": "2030-01-15T10:00:00Z",
+    "origen": {"tipo":"mostrador","id_cuenta":null},
+    "politica": {
+      "id_revision": "22222222-2222-4222-8222-222222222222",
+      "id_constancia": "33333333-3333-4333-8333-333333333333",
+      "permitir_moneda_por_producto": true,
+      "moneda_forzada": null,
+      "monedas_habilitadas": ["CUP","USD"]
+    },
+    "lineas": [
+      {
+        "id_linea_cliente": "44444444-4444-4444-8444-444444444444",
+        "id_producto": "101",
+        "id_variante": null,
+        "id_opcion_variante": null,
+        "id_ubicacion": "40",
+        "id_presentacion": "50",
+        "factor_presentacion": "1",
+        "cantidad": "3",
+        "moneda_venta": "USD",
+        "seleccion_cobro": {"tipo":"medio_pago","id_medio_pago":1},
+        "precio_unitario_nativo": "1.05",
+        "descuento_manual_unitario_nativo": "0",
+        "motivo_descuento": null,
+        "snapshot_precio": {"tipo":"general","id_registro":"501","moneda":"USD","valor_publicado":"1.05","fecha_desde":"2030-01-01","fecha_hasta":null,"publicado_en":"2030-01-15T09:00:00Z","evidencia_publicacion":"fixture-only:price-501"},
+        "snapshot_tasa": {"tipo":"global","id_registro":"601","moneda_origen":"USD","moneda_destino":"CUP","valor_publicado":"400","publicado_en":"2030-01-15T09:00:00Z","evidencia_publicacion":"fixture-only:rate-601"},
+        "snapshot_ajustes_automaticos": [{"tipo":"discount_percent","valor":"10","id_promocion":"701","evidencia_publicacion":"fixture-only:promotion-701"}]
+      }
+    ],
+    "pagos": [
+      {"id_pago_cliente":"55555555-5555-4555-8555-555555555555","moneda":"USD","id_medio_pago":1,"monto_nativo":"2.84","aplicaciones":[{"id_linea_cliente":"44444444-4444-4444-8444-444444444444","monto_nativo":"2.84"}]}
+    ]
+  }
+}

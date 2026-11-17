@@ -1041,7 +1041,9 @@ EUR en una tienda desde el admin — y antes arreglar el `HTTP 403` de la tasa a
 
 **Límites conocidos al cerrar la fase (conscientes):**
 
-1. **Partir una línea en dos monedas desde la UI no está implementado.** El modelo lo soporta en las tres capas (clave `(método, moneda)` en checkout, `order_service` y la RPC `_v3`), pero el checkout asigna **una moneda por método**. Falta el control «+» para dividir una línea en tiendas con ≥2 divisas. Sin él, «Efectivo CUP 1.000 + Efectivo USD 20» en el mismo ticket no se puede componer desde la pantalla.
+1. **Estado histórico de la fase: partir una línea en dos monedas desde la UI no estaba implementado.** El modelo ya soportaba `(método, moneda)`, pero el checkout asignaba una moneda por método.
+
+   **Actualización 2026-11-11 — implementado en el cliente, pendiente de validación manual en dispositivo:** «Distribuir pagos» abre un editor de líneas independientes con medio, moneda e importe; permite repetir un medio en distintas monedas, añadir/eliminar líneas y exige cuadrar el equivalente CUP contra el total final. Respeta la moneda forzada y solo ofrece monedas habilitadas con tasa disponible. No recalcula los precios de los productos al redistribuir el cobro. El desglose editado alimenta `Order.pagos` online y `desglose_pagos` offline, sin reconstruirlo desde los medios de los productos. Los tickets existentes consumen esas líneas por medio y moneda. Pruebas en `ventiq_app/test/checkout_payment_lines_test.dart`: partición CUP/USD, varios medios con CUP/USD/EUR, persistencia offline, eliminación sin mutar el original y rechazo de importes inválidos/descuadres. No implica despliegue ni prueba contra Supabase o impresora real.
 2. **El arqueo por divisa es Fase 4.** El cierre consolida correctamente en CUP (equivalente), pero no cuenta billetes por moneda.
 3. **No hay click-through en runtime.** Todo está verificado por `dart analyze` y 31 tests, no ejecutando la app.
 
@@ -1493,7 +1495,7 @@ El de `newa` estaba caído por un token caducado; corregido el 2026-11-04. **El 
 
 1. **End-to-end en la app** (el trozo que el servidor no puede probar): `flutter run`, habilitar EUR en una tienda, vender en EUR y comprobar `moneda`, `tasa_cambio`, `monto_cup_equivalente` y `es_pagada` desde la UI, más el ticket y el cierre.
 2. **Arreglar el `HTTP 403` de la tasa automática** (§4.8) o darle a EUR una tasa manual. Sin esto, habilitar EUR cobra con una tasa de hace 7 días.
-3. **Decidir sobre la partición de línea** (límite 1): el modelo soporta dos monedas en el mismo método y el servidor lo acepta (caso 9 del checkpoint), pero el checkout no tiene el control «+». Si es requisito de negocio, va antes de la Fase 4.
+3. **Partición de líneas confirmada e implementada en el cliente (2026-11-11)**: «Distribuir pagos» permite varios medios y monedas en una orden, incluido repetir un medio en distintas monedas. Ver actualización del límite 1. Pendiente la comprobación end-to-end en dispositivo, sincronización remota e impresión real.
 
 **Recordatorio de §3.2/§6.3 que la Fase 4 arrastra:** `turno_service` sigue eligiendo RPC por la presencia de un argumento USD; el arqueo por divisa necesita las RPC `*_monedas` y la tabla `app_dat_caja_turno_moneda` (§4.6).
 

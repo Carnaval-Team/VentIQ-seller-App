@@ -2,8 +2,40 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/store.dart';
 
+bool _rpcAusente(Object error, String functionName) {
+  final text = error.toString().toLowerCase();
+  if (text.contains('42501') ||
+      text.contains('insufficient_privilege') ||
+      text.contains('permission denied') ||
+      text.contains('acceso denegado')) {
+    return false;
+  }
+  final fn = functionName.toLowerCase();
+  return text.contains('pgrst202') ||
+      text.contains('could not find the function') ||
+      text.contains('schema cache') ||
+      (text.contains('does not exist') && text.contains(fn));
+}
+
 class StoreService {
   static final _supabase = Supabase.instance.client;
+
+  static Future<bool> _viaRpc(
+    String functionName,
+    Map<String, dynamic> params,
+  ) async {
+    try {
+      final respuesta = await _supabase.rpc(functionName, params: params);
+      final mapa = respuesta is Map
+          ? Map<String, dynamic>.from(respuesta)
+          : null;
+      if (mapa == null || mapa['success'] != true) return false;
+      return true;
+    } catch (e) {
+      if (!_rpcAusente(e, functionName)) rethrow;
+      return false;
+    }
+  }
 
   // Obtener todas las tiendas con estadísticas
   static Future<List<Store>> getAllStores() async {
@@ -213,9 +245,25 @@ class StoreService {
   // Actualizar información de una tienda
   static Future<bool> updateStore(int storeId, Map<String, dynamic> updates) async {
     try {
+      final direct = Map<String, dynamic>.from(updates);
+      if (direct.containsKey('es_prueba')) {
+        final ok = await _viaRpc('fn_m01_marcar_tienda_prueba', {
+          'p_id_tienda': storeId,
+          'p_es_prueba': direct['es_prueba'],
+        });
+        if (ok) direct.remove('es_prueba');
+      }
+      if (direct.containsKey('validada')) {
+        final ok = await _viaRpc('fn_m01_validar_tienda_catalogo', {
+          'p_id_tienda': storeId,
+          'p_validada': direct['validada'],
+        });
+        if (ok) direct.remove('validada');
+      }
+      if (direct.isEmpty) return true;
       await _supabase
           .from('app_dat_tienda')
-          .update(updates)
+          .update(direct)
           .eq('id', storeId);
       
       debugPrint('✅ Tienda actualizada exitosamente');

@@ -124,6 +124,19 @@ class HomeCatalogService implements HomeCatalogoGateway {
       }
     }
 
+    // Modo offline / full-offline: igual que `subcategorias` y `productos`,
+    // el cache local manda y no se toca la red. Sin snapshot se sigue al
+    // intento de RPC de siempre (si no hay internet cae al catch y reintenta
+    // el snapshot, que ya sabemos vacío, y termina en error como antes).
+    if (await _debeUsarCacheLocal()) {
+      final List<HomeCategoria>? enDisco = await _leerSnapshot(contexto);
+      if (enDisco != null && enDisco.isNotEmpty) {
+        debugPrint('🔌 Catálogo offline (snapshot): ${enDisco.length}');
+        _memoria[clave] = _EntradaCatalogo(enDisco);
+        return enDisco;
+      }
+    }
+
     try {
       final List<dynamic> filas = await withNetworkRetry(
         () => _supabase.rpc(

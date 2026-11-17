@@ -165,6 +165,7 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
       final msg = await _service.cambiarEstadoComanda(
         idComanda: comanda.id,
         nuevoEstado: estado,
+        idsItems: [for (final item in comanda.items) item.id],
       );
       await _cargar(silencioso: true);
       _aviso(msg);

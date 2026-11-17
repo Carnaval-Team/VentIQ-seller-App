@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/order.dart';
+import '../money/ticket_v1.dart';
 import '../services/currency_service.dart';
 import '../services/servicentro_service.dart';
 import '../services/store_config_service.dart';
@@ -935,9 +936,15 @@ class WiFiPrinterService {
       fallbackRate: usdRate,
     );
 
+    if (order.versionMonetaria == 'producto-v1') {
+      for (final linea in TicketV1.lineas(order)) {
+        bytes += generator.text(linea, styles: const PosStyles(align: PosAlign.left));
+      }
+    }
     double subtotal = 0;
     final servicentroTicket = ServicentroService.modoServicentroSync &&
         order.items.length == 1;
+    if (order.versionMonetaria != 'producto-v1')
     for (var item in order.items) {
       double itemTotal = item.cantidad * item.precioUnitario;
       subtotal += itemTotal;
@@ -989,7 +996,7 @@ class WiFiPrinterService {
     );
 
     // Mostrar descuento si existe
-    if (order.descuento != null) {
+    if (order.versionMonetaria != 'producto-v1' && order.descuento != null) {
       final double montoReal = ((order.descuento!['monto_real'] ?? order.total) as num).toDouble();
       final double montoDescontado = ((order.descuento!['monto_descontado'] ?? 0) as num).toDouble();
       if (montoDescontado > 0) {
@@ -1004,10 +1011,19 @@ class WiFiPrinterService {
       }
     }
 
-    bytes += generator.text(
-      'TOTAL: ${ticketMoney(order.total)}',
-      styles: PosStyles(align: PosAlign.right, bold: true),
-    );
+    if (order.versionMonetaria == 'producto-v1') {
+      for (final total in TicketV1.totales(order)) {
+        bytes += generator.text(
+          total,
+          styles: PosStyles(align: PosAlign.right, bold: true),
+        );
+      }
+    } else {
+      bytes += generator.text(
+        'TOTAL: ${ticketMoney(order.total)}',
+        styles: PosStyles(align: PosAlign.right, bold: true),
+      );
+    }
 
     // Forma de pago
     if (showPaymentMethod && receiptOptions.showPaymentMethod) {

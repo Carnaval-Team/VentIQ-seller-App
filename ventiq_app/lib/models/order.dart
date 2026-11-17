@@ -1,5 +1,6 @@
 import 'product.dart';
 import 'payment_method.dart';
+import '../money/product_currency_order.dart';
 import '../utils/presentacion_cadena_local.dart';
 import '../utils/promotion_rules.dart';
 
@@ -26,6 +27,10 @@ class Order {
   final String? mesaNumero;
   bool isOfflineOrder; // Campo para marcar órdenes offline
 
+  /// Ausente en una orden vieja. producto-v1 no se degrada a legacy.
+  final String? versionMonetaria;
+  final String? clientUuid;
+
   Order({
     required this.id,
     required this.fechaCreacion,
@@ -46,6 +51,8 @@ class Order {
     this.idMesa,
     this.mesaNumero,
     this.isOfflineOrder = false, // Por defecto false
+    this.versionMonetaria,
+    this.clientUuid,
   });
 
   double get subtotal {
@@ -78,6 +85,8 @@ class Order {
     int? idMesa,
     String? mesaNumero,
     bool? isOfflineOrder,
+    String? versionMonetaria,
+    String? clientUuid,
   }) {
     return Order(
       id: id ?? this.id,
@@ -99,6 +108,8 @@ class Order {
       idMesa: idMesa ?? this.idMesa,
       mesaNumero: mesaNumero ?? this.mesaNumero,
       isOfflineOrder: isOfflineOrder ?? this.isOfflineOrder,
+      versionMonetaria: versionMonetaria ?? this.versionMonetaria,
+      clientUuid: clientUuid ?? this.clientUuid,
     );
   }
 
@@ -124,6 +135,8 @@ class Order {
       'idMesa': idMesa,
       'mesaNumero': mesaNumero,
       'isOfflineOrder': isOfflineOrder,
+      if (versionMonetaria != null) 'version_monetaria': versionMonetaria,
+      if (clientUuid != null) 'client_uuid': clientUuid,
     };
   }
 
@@ -155,7 +168,31 @@ class Order {
       idMesa: json['idMesa'] is num ? (json['idMesa'] as num).toInt() : null,
       mesaNumero: json['mesaNumero'] as String?,
       isOfflineOrder: json['isOfflineOrder'] as bool? ?? false,
+      versionMonetaria: _versionMonetaria(json),
+      clientUuid: json['client_uuid'] as String?,
     );
+  }
+
+  static String? _versionMonetaria(Map<String, dynamic> json) {
+    if (!json.containsKey('version_monetaria') || json['version_monetaria'] == null) {
+      return null;
+    }
+    if (json['version_monetaria'] != ProductCurrencySeleccion.version) {
+      throw ProductCurrencyException('CONTRACT_VERSION_UNSUPPORTED');
+    }
+    final uuid = json['client_uuid']?.toString() ?? '';
+    if (uuid.isEmpty) {
+      throw ProductCurrencyException('CONTRACT_VERSION_UNSUPPORTED');
+    }
+    final items = json['items'];
+    if (items is List) {
+      for (final item in items) {
+        if (item is! Map || item['seleccion'] is! Map) {
+          throw ProductCurrencyException('SNAPSHOT_INVALID');
+        }
+      }
+    }
+    return ProductCurrencySeleccion.version;
   }
 }
 
@@ -198,6 +235,9 @@ class OrderItem {
   /// debe cambiar. Es la misma razón por la que existe el trigger del `12`.
   final double? presentacionFactor;
 
+  /// Contrato producto-v1 de esta línea. Null en una línea legacy.
+  final ProductCurrencySeleccion? seleccion;
+
   OrderItem({
     required this.id,
     required this.producto,
@@ -216,6 +256,7 @@ class OrderItem {
     this.idPresentacion,
     this.presentacionNombre,
     this.presentacionFactor,
+    this.seleccion,
   });
 
   /// Equivalente en unidades base de la línea. Es lo único sumable entre líneas
@@ -316,6 +357,7 @@ class OrderItem {
     int? idPresentacion,
     String? presentacionNombre,
     double? presentacionFactor,
+    ProductCurrencySeleccion? seleccion,
   }) {
     return OrderItem(
       id: id ?? this.id,
@@ -338,6 +380,7 @@ class OrderItem {
       idPresentacion: idPresentacion ?? this.idPresentacion,
       presentacionNombre: presentacionNombre ?? this.presentacionNombre,
       presentacionFactor: presentacionFactor ?? this.presentacionFactor,
+      seleccion: seleccion ?? this.seleccion,
     );
   }
 
@@ -363,6 +406,7 @@ class OrderItem {
       'idPresentacion': idPresentacion,
       'presentacionNombre': presentacionNombre,
       'presentacionFactor': presentacionFactor,
+      if (seleccion != null) 'seleccion': seleccion!.toJson(),
     };
   }
 
@@ -410,6 +454,12 @@ class OrderItem {
       idPresentacion: (json['idPresentacion'] as num?)?.toInt(),
       presentacionNombre: json['presentacionNombre'] as String?,
       presentacionFactor: (json['presentacionFactor'] as num?)?.toDouble(),
+      seleccion:
+          json['seleccion'] is Map
+              ? ProductCurrencySeleccion.fromJson(
+                Map<String, dynamic>.from(json['seleccion'] as Map),
+              )
+              : null,
     );
   }
 }

@@ -1,5 +1,11 @@
 import 'package:flutter/foundation.dart';
 
+import '../money/detalle_moneda.dart';
+import '../money/politica_moneda_store.dart';
+import '../money/product_currency_order.dart';
+import 'currency_service.dart';
+import 'payment_method_service.dart';
+
 import '../models/product.dart';
 import '../utils/promotion_rules.dart';
 import 'elaborated_availability_service.dart';
@@ -467,8 +473,9 @@ class QuickAddService {
   /// promoción "3x2" no aplica con 1 unidad, pero sí con 3.
   Future<QuickAddResultado> agregar(
     QuickAddPreparado preparado,
-    double cantidad,
-  ) async {
+    double cantidad, {
+    String moneda = 'CUP',
+  }) async {
     if (cantidad <= 0) {
       throw QuickAddException('La cantidad debe ser mayor que cero.');
     }
@@ -489,15 +496,25 @@ class QuickAddService {
 
     await _verificarConfiguracion();
 
+    final ProductCurrencySeleccion? seleccion = await _seleccion(
+      preparado,
+      cantidad,
+      moneda,
+    );
+    final double precio = seleccion == null
+        ? preparado.precioUnitario
+        : double.parse(seleccion.precioUnitarioNativo);
+
     await _agregarItem(
       producto: preparado.producto,
       variante: preparado.variante,
       cantidad: cantidad,
       ubicacionAlmacen: preparado.ubicacion,
       inventoryData: preparado.inventoryData,
-      precioUnitario: preparado.precioUnitario,
-      precioBase: preparado.precioUnitario,
+      precioUnitario: precio,
+      precioBase: precio,
       promotionData: null,
+      seleccion: seleccion,
     );
 
     // El stock acaba de cambiar: la próxima hoja del mismo producto debe releer
@@ -624,6 +641,62 @@ class QuickAddService {
     return QuickAddPromociones(producto: producto, global: global);
   }
 
+  Future<ProductCurrencySeleccion?> _seleccion(
+    QuickAddPreparado preparado,
+    double cantidad,
+    String moneda,
+  ) async {
+    bool activa = false;
+    try {
+      activa = (await PoliticaMonedaStore.leer()).modoActivo;
+    } catch (_) {
+      activa = false;
+    }
+    if (!activa) return null;
+
+    final Product producto = preparado.producto;
+    final ProductVariant? variante = preparado.variante;
+    final idVariante = preparado.inventoryData['id_variante'];
+    final bool esVariante = idVariante is num && idVariante > 0;
+    final String? precio = DetalleMoneda.precioConfigurado(
+      moneda: moneda,
+      precioCup: esVariante ? (variante?.precio ?? producto.precio) : producto.precio,
+      precioUsd: esVariante ? variante?.precioUsd : producto.precioUsd,
+      origenUsd: esVariante
+          ? (variante?.precioUsd == null ? null : 'general')
+          : producto.origenPrecioUsd,
+      factor: preparado.factorPresentacion <= 0 ? 1 : preparado.factorPresentacion,
+      esVariante: esVariante,
+    );
+    if (precio == null) {
+      throw QuickAddException(
+        'No hay precio configurado en $moneda para este producto',
+      );
+    }
+    final double tasa = moneda == 'CUP'
+        ? 1
+        : await CurrencyService.getRate('USD', 'CUP');
+    if (moneda == 'USD' && tasa <= 0) {
+      throw QuickAddException('Falta la tasa configurada de USD');
+    }
+    final bool offline = await UserPreferencesService().shouldUseLocalData();
+    final medios = await PaymentMethodService.getPaymentMethodsWithCache(
+      isOfflineModeEnabled: offline,
+    );
+    final medio = DetalleMoneda.medioReal(medios);
+    if (medio == null) {
+      throw QuickAddException('No hay un medio de pago activo para esta linea');
+    }
+    return DetalleMoneda.seleccion(
+      idProducto: producto.id,
+      cantidad: cantidad,
+      moneda: moneda,
+      precio: precio,
+      tasa: tasa.toStringAsFixed(2),
+      idMedioPago: medio.id,
+    );
+  }
+
   static Future<void> _agregarReal({
     required Product producto,
     required ProductVariant? variante,
@@ -633,6 +706,7 @@ class QuickAddService {
     required double precioUnitario,
     required double precioBase,
     Map<String, dynamic>? promotionData,
+    ProductCurrencySeleccion? seleccion,
   }) {
     return OrderService()
         .addItemToCurrentOrder(
@@ -644,6 +718,7 @@ class QuickAddService {
           precioUnitario: precioUnitario,
           precioBase: precioBase,
           promotionData: promotionData,
+          seleccion: seleccion,
         )
         .then((_) {
           // El stock cambió: que el próximo detalle no salga de la caché de 60 s.
@@ -673,6 +748,7 @@ typedef AgregarItemOrden =
       required double precioUnitario,
       required double precioBase,
       Map<String, dynamic>? promotionData,
+      ProductCurrencySeleccion? seleccion,
     });
 
 class _DetalleCache {

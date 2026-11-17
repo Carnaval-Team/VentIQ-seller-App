@@ -97,6 +97,24 @@ void main() {
       );
     });
 
+    test('con moneda por linea el catalogo no se convierte', () {
+      MonedaVentaService.configurar(
+        moneda: 'USD',
+        tasasDisponibles: tasas,
+      );
+      MonedaVentaService.usarSeleccionPorLinea(true);
+      expect(MonedaVentaService.convertirPrecio(8500), 8500);
+      expect(
+        MonedaVentaService.formatearPrecio(8500, conSimbolo: true),
+        isNot(contains('USD')),
+      );
+      MonedaVentaService.usarSeleccionPorLinea(false);
+      MonedaVentaService.configurar(
+        moneda: 'CUP',
+        tasasDisponibles: const {},
+      );
+    });
+
     test('sin tasa devuelve null: no se inventa una conversión', () {
       expect(
         MonedaVentaService.convertirDesdeBase(45000, codigo: 'GBP', tasas: tasas),

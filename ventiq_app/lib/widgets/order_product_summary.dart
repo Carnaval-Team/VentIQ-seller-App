@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/order.dart';
+import '../money/ticket_v1.dart';
 import '../services/moneda_venta_service.dart';
 import '../utils/price_utils.dart';
 
@@ -29,18 +30,49 @@ class OrderProductSummary extends StatelessWidget {
     final presentation = item.presentacionNombre?.trim();
     final unit =
         presentation == null || presentation.isEmpty ? 'unid.' : presentation;
-    final alternateTotal =
-        currency == 'USD'
-            ? MonedaVentaService.formatearPrecio(item.subtotal)
-            : usdRate > 0
-            ? '${(item.subtotal / usdRate).toMoneyString(2)} USD'
-            : null;
-    final alternateUnit =
-        currency == 'USD'
-            ? '${MonedaVentaService.formatearPrecio(item.precioUnitario)} / $unit'
-            : usdRate > 0
-            ? '${(item.precioUnitario / usdRate).toMoneyString(2)} USD / $unit aprox.'
-            : null;
+    // Linea v1: `subtotal`/`precioUnitario` ya son nativos de su moneda; el
+    // "aprox." es el equivalente CUP de la linea, con la tasa de su snapshot.
+    final monedaLinea = item.seleccion?.monedaVenta;
+    final String? alternateTotal;
+    final String? alternateUnit;
+    if (monedaLinea != null && monedaLinea != 'CUP') {
+      final cupLinea = TicketV1.equivalenteCupItem(item);
+      alternateTotal = '${cupLinea.toMoneyString(2)} CUP';
+      alternateUnit =
+          item.cantidad > 0
+              ? '${(cupLinea / item.cantidad).toMoneyString(2)} CUP / $unit aprox.'
+              : null;
+    } else if (monedaLinea == 'CUP') {
+      alternateTotal =
+          usdRate > 0
+              ? '${(item.subtotal / usdRate).toMoneyString(2)} USD'
+              : null;
+      alternateUnit =
+          usdRate > 0
+              ? '${(item.precioUnitario / usdRate).toMoneyString(2)} USD / $unit aprox.'
+              : null;
+    } else {
+      alternateTotal =
+          currency == 'USD'
+              ? MonedaVentaService.formatearPrecio(item.subtotal)
+              : usdRate > 0
+              ? '${(item.subtotal / usdRate).toMoneyString(2)} USD'
+              : null;
+      alternateUnit =
+          currency == 'USD'
+              ? '${MonedaVentaService.formatearPrecio(item.precioUnitario)} / $unit'
+              : usdRate > 0
+              ? '${(item.precioUnitario / usdRate).toMoneyString(2)} USD / $unit aprox.'
+              : null;
+    }
+    final totalLabel =
+        monedaLinea != null
+            ? '${item.subtotal.toMoneyString(2)} $monedaLinea'
+            : formatAmount(item.subtotal);
+    final unitLabel =
+        monedaLinea != null
+            ? '${item.precioUnitario.toMoneyString(2)} $monedaLinea c/u'
+            : '${formatAmount(item.precioUnitario)} c/u';
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -51,7 +83,7 @@ class OrderProductSummary extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             Text(
-              formatAmount(item.subtotal),
+              totalLabel,
               textAlign: TextAlign.end,
               style: const TextStyle(
                 fontSize: 16,
@@ -60,7 +92,7 @@ class OrderProductSummary extends StatelessWidget {
                 height: 1.25,
               ),
             ),
-            if (usdRate > 0 && alternateTotal != null) ...[
+            if (alternateTotal != null) ...[
               const SizedBox(height: 4),
               Text(
                 '≈ $alternateTotal',
@@ -183,7 +215,7 @@ class OrderProductSummary extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    '${formatAmount(item.precioUnitario)} c/u',
+                    unitLabel,
                     style: const TextStyle(fontSize: 12, color: _accent),
                   ),
                   if (showSku && (item.producto.sku?.isNotEmpty ?? false)) ...[
@@ -206,7 +238,7 @@ class OrderProductSummary extends StatelessWidget {
                 ],
               ),
             ),
-            if (usdRate > 0 && alternateUnit != null) ...[
+            if (alternateUnit != null) ...[
               const Divider(height: 24, color: Color(0xFFE2E8F0)),
               Text(
                 alternateUnit,

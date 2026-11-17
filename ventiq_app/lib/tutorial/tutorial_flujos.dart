@@ -26,11 +26,11 @@ class TutorialFlujos {
       destino: TutorialDestino.home,
     ),
     TutorialPaso(
-      id: 'home_chips',
-      titulo: 'Filtros rápidos',
+      id: 'home_pleca',
+      titulo: 'El menú lateral',
       mensaje:
-          '«Solo con stock» te deja ver únicamente lo que puedes vender ahora '
-          'mismo. El chip «Tutorial» vuelve a abrir este recorrido.',
+          'Desde esta pestaña abres el menú: ahí están la tasa del día, las '
+          'opciones de caja y «Tutorial», que vuelve a abrir este recorrido.',
     ),
     TutorialPaso(
       id: 'home_categorias',

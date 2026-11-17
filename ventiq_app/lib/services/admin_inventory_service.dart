@@ -27,10 +27,19 @@ class AdminInventoryService {
   static final AdminInventoryService _instance =
       AdminInventoryService._internal();
   factory AdminInventoryService() => _instance;
-  AdminInventoryService._internal();
+  AdminInventoryService._internal()
+    : _supabase = Supabase.instance.client,
+      _db = OfflineDatabaseService();
 
-  final SupabaseClient _supabase = Supabase.instance.client;
-  final OfflineDatabaseService _db = OfflineDatabaseService();
+  @visibleForTesting
+  AdminInventoryService.forTesting({
+    required SupabaseClient client,
+    required OfflineDatabaseService database,
+  }) : _supabase = client,
+       _db = database;
+
+  final SupabaseClient _supabase;
+  final OfflineDatabaseService _db;
   final UserPreferencesService _prefs = UserPreferencesService();
   final ConnectivityService _connectivity = ConnectivityService();
 
@@ -1982,47 +1991,39 @@ class AdminInventoryService {
     String clientUuid,
     Map<String, dynamic> payload,
   ) async {
-    try {
-      await _supabase.rpc(
-        'fn_admin_caja_vendor_assign_tpv_offline',
-        params: {
-          'p_client_uuid': clientUuid,
-          'p_id_vendedor': payload['id_vendedor'],
-          'p_id_tpv': payload['id_tpv'],
-        },
-      );
-    } catch (e) {
-      print('⚠️ fn_admin_caja_vendor_assign_tpv_offline: $e — fallback');
-      await _supabase
-          .from('app_dat_vendedor')
-          .update({'id_tpv': payload['id_tpv']})
-          .eq('id', payload['id_vendedor']);
-    }
+    final response = await _supabase.rpc(
+      'fn_admin_caja_vendor_assign_tpv_offline',
+      params: {
+        'p_client_uuid': clientUuid,
+        'p_id_vendedor': payload['id_vendedor'],
+        'p_id_tpv': payload['id_tpv'],
+      },
+    );
+    _requireVendorSyncSuccess(response, payload['id_vendedor']);
   }
 
   Future<void> _syncVendorUpdateFlags(
     String clientUuid,
     Map<String, dynamic> payload,
   ) async {
-    try {
-      await _supabase.rpc(
-        'fn_admin_caja_vendor_flags_offline',
-        params: {
-          'p_client_uuid': clientUuid,
-          'p_id_vendedor': payload['id_vendedor'],
-          'p_permitir_customizar_precio_venta':
-              payload['permitir_customizar_precio_venta'] == true,
-        },
-      );
-    } catch (e) {
-      print('⚠️ fn_admin_caja_vendor_flags_offline: $e — fallback');
-      await _supabase
-          .from('app_dat_vendedor')
-          .update({
-            'permitir_customizar_precio_venta':
-                payload['permitir_customizar_precio_venta'] == true,
-          })
-          .eq('id', payload['id_vendedor']);
+    final response = await _supabase.rpc(
+      'fn_admin_caja_vendor_flags_offline',
+      params: {
+        'p_client_uuid': clientUuid,
+        'p_id_vendedor': payload['id_vendedor'],
+        'p_permitir_customizar_precio_venta':
+            payload['permitir_customizar_precio_venta'] == true,
+      },
+    );
+    _requireVendorSyncSuccess(response, payload['id_vendedor']);
+  }
+
+  void _requireVendorSyncSuccess(dynamic response, Object? vendorId) {
+    if (response is! Map ||
+        response['success'] != true ||
+        response['idempotent'] is! bool ||
+        response['id_vendedor'] != vendorId) {
+      throw StateError('Respuesta de sincronizacion de vendedor invalida');
     }
   }
 }
