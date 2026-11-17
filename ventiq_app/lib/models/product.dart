@@ -297,6 +297,16 @@ class ProductVariant {
       precio: json['precio']?.toDouble() ?? 0.0,
       cantidad: json['cantidad'] ?? 0,
       descripcion: json['descripcion'],
+      // `toJson` SÍ lo persiste, pero aquí no se leía: toda variante
+      // reconstruida desde JSON (carrito persistido, cache offline, órdenes
+      // abiertas) perdía su almacén/ubicación. El detalle lo leía como null y
+      // se inventaba una ubicación («Almacén B-…»). Serialización asimétrica.
+      inventoryMetadata:
+          json['inventoryMetadata'] is Map
+              ? Map<String, dynamic>.from(
+                json['inventoryMetadata'] as Map,
+              )
+              : null,
       reservadoCarnaval: json['reservado_carnaval'] ?? 0,
       enOrdenesCarnaval: json['en_ordenes_carnaval'] ?? 0,
     );

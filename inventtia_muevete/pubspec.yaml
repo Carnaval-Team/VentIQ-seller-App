@@ -49,6 +49,9 @@ dependencies:
   shared_preferences: ^2.3.5
   path_provider: ^2.1.0
 
+  # Importar archivos .mbtiles desde el almacenamiento del teléfono
+  file_picker: ^8.3.7
+
   # URL Launcher (WhatsApp, phone calls)
   url_launcher: ^6.3.1
 
