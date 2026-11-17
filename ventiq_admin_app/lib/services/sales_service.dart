@@ -875,22 +875,40 @@ class SalesService {
       print('- p_fecha_inicio: $fechaInicio');
       print('- p_fecha_fin: $fechaFin');
       print('- p_uuid_usuario: $uuidUsuario');
+      print('- p_id_turno: $turnoId');
 
-      // Prepare parameters
       final Map<String, dynamic> params = {
-        'p_fecha_inicio': fechaInicio.toIso8601String(),
-        'p_fecha_fin': fechaFin.toIso8601String(),
+        'p_fecha_inicio': instanteEntregaParaRpc(fechaInicio),
+        'p_fecha_fin': instanteEntregaParaRpc(fechaFin),
       };
 
       if (uuidUsuario != null) {
         params['p_uuid_usuario'] = uuidUsuario;
       }
+      if (turnoId != null) {
+        params['p_id_turno'] = turnoId;
+      }
 
-      // Call the RPC function
-      final response = await _supabase.rpc(
-        'fn_listar_entregas_por_fechas_usuario',
-        params: params,
-      );
+      // Hasta que el SQL de main tenga p_id_turno, PostgREST no encuentra
+      // esa firma. Se reintenta sin el parámetro y el corte queda aquí.
+      dynamic response;
+      try {
+        response = await _supabase.rpc(
+          'fn_listar_entregas_por_fechas_usuario',
+          params: params,
+        );
+      } catch (e) {
+        if (turnoId == null || !_isRpcUnavailable(e)) rethrow;
+        params.remove('p_id_turno');
+        print(
+          '⚠️ fn_listar_entregas_por_fechas_usuario sin p_id_turno ($e). '
+          'Se filtra el turno en el cliente.',
+        );
+        response = await _supabase.rpc(
+          'fn_listar_entregas_por_fechas_usuario',
+          params: params,
+        );
+      }
 
       print('Response received: ${response?.length ?? 0} cash deliveries');
 
@@ -914,10 +932,7 @@ class SalesService {
         }
       }
 
-      if (turnoId != null) {
-        return deliveries.where((d) => d.idTurno == turnoId).toList();
-      }
-      return deliveries;
+      return filtrarEntregasPorTurno(deliveries, turnoId);
     } catch (e) {
       print('Error in getCashDeliveries: $e');
       return [];
