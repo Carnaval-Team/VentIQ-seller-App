@@ -1,3 +1,5 @@
+import 'report_envelope.dart';
+
 /// Una divisa del reporte `fn_reporte_ventas_por_moneda`.
 ///
 /// `importeNativo` es la suma **exacta** de lo cobrado en esa divisa, pero no es
@@ -76,6 +78,140 @@ class VentasPorMoneda {
           .trim()
           .toUpperCase(),
       importeConsolidado: asDouble(json['importe_consolidado']),
+    );
+  }
+}
+
+/// Importe de un medio de pago en una sola divisa.
+///
+/// No es consolidable con otra fila: 132 USD y 90.200 CUP no son 90.332.
+class ImporteEnDivisa {
+  final String moneda;
+  final double importe;
+
+  const ImporteEnDivisa({required this.moneda, required this.importe});
+}
+
+/// Efectivo cobrado, una fila por divisa.
+///
+/// [egresos] no trae divisa (la entrega de caja es un solo monto) y se resta
+/// solo del efectivo en [monedaBase]. Restarlo del total nativo cruzado
+/// volvería a mezclar divisas.
+List<ImporteEnDivisa> efectivoCobradoPorDivisa(
+  List<VentasPorMoneda> filas, {
+  required double egresos,
+  required String monedaBase,
+}) {
+  final base = monedaBase.trim().toUpperCase();
+  final lineas = <ImporteEnDivisa>[];
+  var descontoEgresos = false;
+  for (final fila in filas) {
+    final moneda = fila.moneda.trim().toUpperCase();
+    if (moneda.isEmpty) continue;
+    final esBase = moneda == base;
+    final importe = esBase ? fila.efectivoNativo - egresos : fila.efectivoNativo;
+    if (esBase) descontoEgresos = true;
+    if (importe == 0) continue;
+    lineas.add(ImporteEnDivisa(moneda: moneda, importe: importe));
+  }
+  if (!descontoEgresos && egresos != 0) {
+    lineas.add(ImporteEnDivisa(moneda: base, importe: -egresos));
+  }
+  return lineas;
+}
+
+/// Cobros que no son efectivo, una fila por divisa. Los ceros no se muestran:
+/// una divisa que solo se cobró en efectivo no es una transferencia en cero.
+List<ImporteEnDivisa> digitalCobradoPorDivisa(List<VentasPorMoneda> filas) {
+  return [
+    for (final fila in filas)
+      if (fila.moneda.trim().isNotEmpty && fila.digitalNativo != 0)
+        ImporteEnDivisa(
+          moneda: fila.moneda.trim().toUpperCase(),
+          importe: fila.digitalNativo,
+        ),
+  ];
+}
+
+/// Resultado de `fn_reporte_ventas_por_moneda` o de su `_v2`.
+///
+/// La v1 es una lista de filas, sin envelope: [contrato] queda null y la
+/// pantalla conserva la presentación de siempre. La v2 es cohorte de
+/// ventas (`cobrado`, no caja del período) y declara si el consolidado
+/// cubre todos los cobros.
+class ConsultaVentasPorMoneda {
+  final List<VentasPorMoneda> filas;
+  final ReporteEnvelope? contrato;
+
+  const ConsultaVentasPorMoneda({required this.filas, this.contrato});
+
+  /// `true` cuando el pie consolidado puede presentarse como total del
+  /// corte. La v1 no declara completitud: se conserva su presentación.
+  bool get totalConfiable => contrato == null || contrato!.esTotalConfiable;
+
+  /// Texto extra para pantalla y exportación. Vacío en la respuesta v1,
+  /// para que esa vista no cambie.
+  String get aclaracion {
+    final c = contrato;
+    if (c == null) return '';
+    final partes = <String>[
+      'Cohorte de ventas completadas: el cobro se atribuye a la fecha de '
+          'la venta, no a la del pago.',
+    ];
+    if (!c.esTotalConfiable) {
+      final motivos = c.motivos.join(', ');
+      partes.add(
+        'Consolidado incompleto'
+        '${motivos.isEmpty ? '' : ' ($motivos)'}: no es el total del corte.',
+      );
+    }
+    return partes.join(' ');
+  }
+
+  factory ConsultaVentasPorMoneda.desdeV1(List<dynamic> filas) {
+    return ConsultaVentasPorMoneda(
+      filas: filas
+          .map(
+            (fila) => VentasPorMoneda.fromJson(
+              Map<String, dynamic>.from(fila as Map),
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+
+  /// Envelope v2. Rechaza otra magnitud o otra base temporal: no se
+  /// reetiqueta un cobrado de cohorte como caja del período.
+  factory ConsultaVentasPorMoneda.desdeV2(Map<String, dynamic> json) {
+    final contrato = ReporteEnvelope.parse(json);
+    if (contrato.magnitud != MagnitudReporte.cobrado) {
+      throw ReporteContratoException(
+        'magnitud',
+        'se esperaba cobrado y llegó ${contrato.magnitud.codigo}',
+      );
+    }
+    if (contrato.baseTemporal != BaseTemporal.cohorteVentas) {
+      throw ReporteContratoException(
+        'base_temporal',
+        'se esperaba cohorte_ventas y llegó ${contrato.baseTemporal.codigo}',
+      );
+    }
+    final crudo = json['filas'];
+    if (crudo is! List) {
+      throw const ReporteContratoException(
+        'filas',
+        'el reporte v2 debe traer la lista de divisas',
+      );
+    }
+    return ConsultaVentasPorMoneda(
+      contrato: contrato,
+      filas: crudo
+          .map(
+            (fila) => VentasPorMoneda.fromJson(
+              Map<String, dynamic>.from(fila as Map),
+            ),
+          )
+          .toList(growable: false),
     );
   }
 }
@@ -261,6 +397,38 @@ class CashDelivery {
   }
 }
 
+/// Egresos de un solo turno.
+///
+/// En un mismo día un vendedor puede cerrar un turno y abrir otro. El rango
+/// de fechas no alcanza para separarlos: un turno que quedó abierto se cruza
+/// con todos los posteriores y se llevaría sus egresos. Con [idTurno] solo
+/// quedan las entregas de ese turno.
+List<CashDelivery> filtrarEntregasPorTurno(
+  List<CashDelivery> entregas,
+  int? idTurno,
+) {
+  if (idTurno == null) return entregas;
+  return entregas.where((entrega) => entrega.idTurno == idTurno).toList();
+}
+
+/// Instante para `fn_listar_entregas_por_fechas_usuario`.
+///
+/// La función que está en main hoy es `timestamp without time zone` y descarta
+/// la zona. Un valor terminado en `Z` se guarda con la hora UTC y después se
+/// compara como hora de Cuba, cinco horas más tarde, y el rango alcanza el
+/// turno siguiente del mismo día. Se envía la hora local con su desplazamiento:
+/// esa función conserva el reloj, y la versión con `timestamptz` respeta el
+/// desplazamiento.
+String instanteEntregaParaRpc(DateTime value) {
+  final local = value.toLocal();
+  final reloj = local.toIso8601String();
+  final offset = local.timeZoneOffset;
+  final signo = offset.isNegative ? '-' : '+';
+  final horas = offset.inHours.abs().toString().padLeft(2, '0');
+  final minutos = (offset.inMinutes.abs() % 60).toString().padLeft(2, '0');
+  return '$reloj$signo$horas:$minutos';
+}
+
 class SalesVendorReport {
   final String uuidUsuario;
   final String nombres;
@@ -323,7 +491,13 @@ class SalesVendorReport {
 
   /// Ventana del turno (o primera/última venta si no hay turno).
   DateTime get periodoInicio => fechaApertura ?? primeraVenta;
-  DateTime get periodoFin => fechaCierre ?? ultimaVenta;
+
+  /// Con el turno abierto no hay `fechaCierre`: usar `ultimaVenta` dejaría
+  /// fuera todo lo posterior a la última venta (egresos, pendientes y pagos
+  /// recientes), y sin ventas la ventana colapsaría a la apertura. El fin del
+  /// período en ese caso es «ahora».
+  DateTime get periodoFin =>
+      fechaCierre ?? (turnoAbierto ? DateTime.now() : ultimaVenta);
 
   bool get turnoAbierto => estadoTurno == 1;
 

@@ -25,10 +25,16 @@ class FinancialDashboardService {
         'include_comparison': includeComparison,
       });
 
-      return response ?? {};
+      // `fn_profit_and_loss` no existe en este entorno: se declara no
+      // disponible, nunca un estado de resultados fabricado.
+      return response ??
+          {
+            'disponible': false,
+            'motivo': 'fn_profit_and_loss no disponible en este entorno',
+          };
     } catch (e) {
       print('Error getting P&L: $e');
-      return _getMockProfitAndLoss(storeId, startDate, endDate);
+      return {'disponible': false, 'motivo': '$e'};
     }
   }
 
@@ -48,7 +54,20 @@ class FinancialDashboardService {
       
       // Obtener métricas de inventario
       final inventoryData = await _getInventoryMetrics(storeId);
-      
+
+      // Si una fuente no está disponible, sus ceros no son dato: el KPI que
+      // los derivaría sería fabricado. Se declara el bloque no disponible.
+      if (salesData['disponible'] == false ||
+          expensesData['disponible'] == false ||
+          inventoryData['disponible'] == false) {
+        return {
+          'period': period,
+          'store_id': storeId,
+          'disponible': false,
+          'motivo': 'fuentes de métricas no disponibles en este entorno',
+        };
+      }
+
       // Calcular KPIs
       final revenue = salesData['total_revenue'] ?? 0.0;
       final expenses = expensesData['total_expenses'] ?? 0.0;
@@ -73,7 +92,7 @@ class FinancialDashboardService {
       };
     } catch (e) {
       print('Error getting key metrics: $e');
-      return _getMockKeyMetrics(storeId, period);
+      return {'period': period, 'disponible': false, 'motivo': '$e'};
     }
   }
 
@@ -86,10 +105,12 @@ class FinancialDashboardService {
         'end_date': endDate,
       });
 
-      return response ?? {'total_revenue': 0.0, 'growth_rate': 0.0};
+      // `fn_sales_metrics` no existe en este entorno: ausencia declarada,
+      // no ingresos de cero.
+      return response ?? {'disponible': false};
     } catch (e) {
       print('Error getting sales metrics: $e');
-      return {'total_revenue': 0.0, 'growth_rate': 0.0};
+      return {'disponible': false};
     }
   }
 
@@ -136,13 +157,7 @@ class FinancialDashboardService {
       };
     } catch (e) {
       print('Error getting expenses metrics: $e');
-      return {
-        'total_expenses': 0.0,
-        'cost_of_goods_sold': 0.0,
-        'operational_expenses': 0.0,
-        'administrative_expenses': 0.0,
-        'depreciation': 0.0,
-      };
+      return {'disponible': false};
     }
   }
 
@@ -153,10 +168,11 @@ class FinancialDashboardService {
         'store_id': storeId,
       });
 
-      return response ?? {'turnover_ratio': 0.0, 'average_inventory': 0.0};
+      // `fn_inventory_metrics` no existe en este entorno.
+      return response ?? {'disponible': false};
     } catch (e) {
       print('Error getting inventory metrics: $e');
-      return {'turnover_ratio': 0.0, 'average_inventory': 0.0};
+      return {'disponible': false};
     }
   }
 
@@ -347,41 +363,4 @@ class FinancialDashboardService {
     }
   }
 
-  // ==================== DATOS MOCK PARA DESARROLLO ====================
-
-  Map<String, dynamic> _getMockProfitAndLoss(int storeId, String startDate, String endDate) {
-    return {
-      'store_id': storeId,
-      'period': '$startDate to $endDate',
-      'revenue': 150000.0,
-      'cost_of_goods_sold': 90000.0,
-      'gross_profit': 60000.0,
-      'operational_expenses': 25000.0,
-      'administrative_expenses': 15000.0,
-      'financial_expenses': 2000.0,
-      'total_expenses': 42000.0,
-      'net_profit': 18000.0,
-      'gross_margin': 40.0,
-      'net_margin': 12.0,
-    };
-  }
-
-  Map<String, dynamic> _getMockKeyMetrics(int storeId, String period) {
-    return {
-      'period': period,
-      'store_id': storeId,
-      'revenue': 150000.0,
-      'expenses': 132000.0,
-      'gross_profit': 60000.0,
-      'net_profit': 18000.0,
-      'gross_margin': 40.0,
-      'net_margin': 12.0,
-      'roi': 13.6,
-      'inventory_turnover': 6.2,
-      'cash_flow': 20000.0,
-      'sales_growth': 8.5,
-      'expense_ratio': 88.0,
-      'updated_at': DateTime.now().toIso8601String(),
-    };
-  }
 }

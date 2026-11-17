@@ -1,5 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'user_preferences_service.dart';
+import '../models/report_envelope.dart';
+import '../models/reporte_ordenes.dart';
 import '../models/sales.dart';
 
 class VendorOrder {
@@ -107,6 +109,16 @@ class ProductSalesReport {
   /// promedio ponderado.
   final int nPreciosDistintos;
 
+  /// La fila se calculó con los precios VIGENTES del catálogo, no con los
+  /// precios fijados en cada venta (`useCurrentPrices` de
+  /// [SalesService.getProductSalesReport]).
+  ///
+  /// Son dos magnitudes distintas que el reporte no puede mezclar ni
+  /// reetiquetar: `true` = proyección/análisis con catálogo actual (los
+  /// importes cambian si el precio cambia hoy); `false` = histórico, que es
+  /// la única rama comparable con la contabilidad de la venta.
+  final bool usaPreciosActuales;
+
   /// La fila trae desglose por presentacion (v5) o no (v4).
   bool get tieneDesglose => desglosePresentaciones.isNotEmpty;
 
@@ -141,10 +153,14 @@ class ProductSalesReport {
     String? cantidadFormateada,
     this.nPresentaciones = 0,
     this.nPreciosDistintos = 1,
+    this.usaPreciosActuales = false,
   }) : equivUnidadesBase = equivUnidadesBase ?? totalVendido,
        cantidadFormateada = cantidadFormateada ?? '';
 
-  factory ProductSalesReport.fromJson(Map<String, dynamic> json) {
+  factory ProductSalesReport.fromJson(
+    Map<String, dynamic> json, {
+    bool usaPreciosActuales = false,
+  }) {
     // El jsonb llega como List<dynamic> de Map; con la v4 la clave no viene.
     final desglose = <Map<String, dynamic>>[];
     final rawDesglose = json['cantidades_por_presentacion'];
@@ -181,6 +197,7 @@ class ProductSalesReport {
       cantidadFormateada: json['cantidad_formateada'] as String?,
       nPresentaciones: (json['n_presentaciones'] as num?)?.toInt() ?? 0,
       nPreciosDistintos: (json['n_precios_distintos'] as num?)?.toInt() ?? 1,
+      usaPreciosActuales: usaPreciosActuales,
     );
   }
 }
@@ -473,8 +490,11 @@ class SalesService {
       try {
         response = await _supabase.rpc(rpcName, params: params);
       } catch (e) {
-        // newa/prod sin el archivo 48 todavía: cae a la v1 de turnos.
-        if (porTurnos) {
+        // Solo se degrada a la v1 de turnos cuando el backend declara no
+        // tener la v2 (función inexistente). Un error de red o de permisos
+        // no es ausencia de capacidad: propagarlo evita presentar una
+        // respuesta de otro contrato como si fuera la pedida.
+        if (porTurnos && _esFuncionInexistente(e)) {
           print(
             '⚠️ [getProductSalesReport] $rpcName no disponible ($e). '
             'Fallback a fn_reporte_ventas_con_proveedor_por_turno',
@@ -501,7 +521,12 @@ class SalesService {
           '❌ [getProductSalesReport] Tipo inesperado: ${response.runtimeType}',
         );
         print('   Datos: $response');
-        return [];
+        // Un payload de otra forma es una violación del contrato: visible,
+        // no una lista vacía disfrazada de «sin ventas».
+        throw const ReporteContratoException(
+          'fn_reporte_ventas',
+          'la RPC no devolvió una lista de filas',
+        );
       }
 
       print('   Filas recibidas: ${response.length}');
@@ -512,6 +537,7 @@ class SalesService {
         try {
           final r = ProductSalesReport.fromJson(
             Map<String, dynamic>.from(item as Map),
+            usaPreciosActuales: useCurrentPrices,
           );
           reports.add(r);
           print(
@@ -546,8 +572,24 @@ class SalesService {
       print('   Tipo      : ${e.runtimeType}');
       print('   Stack     :\n$stack');
       print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      return [];
+      // Los errores se propagan: un fallo de red o de permisos no puede
+      // convertirse en «0 productos vendidos» sin que el consumidor lo sepa.
+      rethrow;
     }
+  }
+
+  /// ¿El error indica que la RPC no existe en el backend desplegado?
+  ///
+  /// PostgREST devuelve PGRST202/404 cuando la función o su firma no está en
+  /// el schema cache. Solo esa condición autoriza degradar a una RPC vieja;
+  /// permisos denegados, timeouts o payloads corruptos no son ausencia de
+  /// capacidad y deben verse como error.
+  static bool _esFuncionInexistente(Object e) {
+    final texto = e.toString();
+    return texto.contains('PGRST202') ||
+        texto.contains('404') ||
+        texto.contains('does not exist') ||
+        texto.contains('Could not find');
   }
 
   static Future<List<Map<String, dynamic>>> getProductChronologicalReport({
@@ -875,22 +917,40 @@ class SalesService {
       print('- p_fecha_inicio: $fechaInicio');
       print('- p_fecha_fin: $fechaFin');
       print('- p_uuid_usuario: $uuidUsuario');
+      print('- p_id_turno: $turnoId');
 
-      // Prepare parameters
       final Map<String, dynamic> params = {
-        'p_fecha_inicio': fechaInicio.toIso8601String(),
-        'p_fecha_fin': fechaFin.toIso8601String(),
+        'p_fecha_inicio': instanteEntregaParaRpc(fechaInicio),
+        'p_fecha_fin': instanteEntregaParaRpc(fechaFin),
       };
 
       if (uuidUsuario != null) {
         params['p_uuid_usuario'] = uuidUsuario;
       }
+      if (turnoId != null) {
+        params['p_id_turno'] = turnoId;
+      }
 
-      // Call the RPC function
-      final response = await _supabase.rpc(
-        'fn_listar_entregas_por_fechas_usuario',
-        params: params,
-      );
+      // Un backend anterior no tiene p_id_turno. En ese caso se repite la
+      // llamada sin el parámetro y el corte por turno queda en el cliente.
+      dynamic response;
+      try {
+        response = await _supabase.rpc(
+          'fn_listar_entregas_por_fechas_usuario',
+          params: params,
+        );
+      } catch (e) {
+        if (turnoId == null || !_isRpcUnavailable(e)) rethrow;
+        params.remove('p_id_turno');
+        print(
+          '⚠️ fn_listar_entregas_por_fechas_usuario sin p_id_turno ($e). '
+          'Se filtra el turno en el cliente.',
+        );
+        response = await _supabase.rpc(
+          'fn_listar_entregas_por_fechas_usuario',
+          params: params,
+        );
+      }
 
       print('Response received: ${response?.length ?? 0} cash deliveries');
 
@@ -914,10 +974,7 @@ class SalesService {
         }
       }
 
-      if (turnoId != null) {
-        return deliveries.where((d) => d.idTurno == turnoId).toList();
-      }
-      return deliveries;
+      return filtrarEntregasPorTurno(deliveries, turnoId);
     } catch (e) {
       print('Error in getCashDeliveries: $e');
       return [];
@@ -1090,27 +1147,25 @@ class SalesService {
         error.message.contains('Could not find the function');
   }
 
-  /// Contabilización por divisa (`fn_reporte_ventas_por_moneda`): cuántas
-  /// operaciones se pagaron en cada moneda, cuánto se cobró realmente en ella
-  /// (nativo, exacto), su equivalente contable en CUP y su importe consolidado en
-  /// la divisa de consolidación de la tienda.
+  /// Contabilización por divisa. Prefiere `fn_reporte_ventas_por_moneda_v2`
+  /// (cohorte de ventas completadas: el pago se atribuye a la venta, no a
+  /// la fecha del cobro) y cae a la v1 solo cuando esa función no existe.
+  /// Un error de red, de permisos o de contrato no se reinterpreta con la
+  /// lista vieja.
   ///
-  /// El reporte no filtra por estado de la operación a propósito: su criterio de
-  /// aceptación es cuadrar contra `app_dat_pago_venta` en crudo. La moneda base
-  /// viene como una fila más del resultado, no como un total aparte.
+  /// La v2 declara `magnitud = cobrado` y `base_temporal = cohorte_ventas`,
+  /// y marca incompleto un cobro sin equivalente CUP. La v1 no trae ese
+  /// envelope: las filas se leen igual y la pantalla no añade la aclaración.
   ///
-  /// La RPC devuelve además `moneda_consolidacion` e `importe_consolidado` al
-  /// final de cada fila. Viajan en el mismo mapa que ya se le pasa a
-  /// `VentasPorMoneda.fromJson`, así que el modelo las recoge sin tocar nada
-  /// aquí: `importe_consolidado` es el importe que la UI debe sumar y
-  /// `moneda_consolidacion` la divisa en la que está.
+  /// `importe_consolidado` es presentación con la tasa de consolidación
+  /// actual. `importe_base` es el equivalente CUP histórico. No se suman
+  /// los nativos entre divisas.
   ///
   /// `idTpv` es opcional: omitido agrega todos los TPVs de la tienda.
   ///
-  /// A diferencia de otros reportes de este servicio, aquí el error se propaga:
-  /// la pestaña «Por moneda» tiene estado de error propio y necesita distinguir
-  /// «no hubo ventas» (lista vacía) de «la consulta falló».
-  static Future<List<VentasPorMoneda>> getVentasPorMoneda({
+  /// El error se propaga: la pestaña «Por moneda» distingue «no hubo
+  /// ventas» (lista vacía) de «la consulta falló».
+  static Future<ConsultaVentasPorMoneda> getVentasPorMoneda({
     required int idTienda,
     required DateTime desde,
     required DateTime hasta,
@@ -1125,17 +1180,83 @@ class SalesService {
       params['p_id_tpv'] = idTpv;
     }
 
+    try {
+      print('Calling fn_reporte_ventas_por_moneda_v2 with: $params');
+      final response = await _supabase.rpc(
+        'fn_reporte_ventas_por_moneda_v2',
+        params: params,
+      );
+      if (response is! Map) {
+        throw const ReporteContratoException(
+          'fn_reporte_ventas_por_moneda_v2',
+          'se esperaba el envelope del reporte',
+        );
+      }
+      return ConsultaVentasPorMoneda.desdeV2(
+        Map<String, dynamic>.from(response),
+      );
+    } catch (e) {
+      if (e is ReporteContratoException || !rpcAusente(e)) rethrow;
+      print('⚠️ fn_reporte_ventas_por_moneda_v2 no disponible ($e). Fallback v1');
+    }
+
     print('Calling fn_reporte_ventas_por_moneda with: $params');
     final response = await _supabase.rpc(
       'fn_reporte_ventas_por_moneda',
       params: params,
     );
-    if (response == null) return [];
-
-    return List<Map<String, dynamic>>.from(
-      response as List,
-    ).map(VentasPorMoneda.fromJson).toList();
+    if (response == null) {
+      return const ConsultaVentasPorMoneda(filas: []);
+    }
+    if (response is! List) {
+      throw const ReporteContratoException(
+        'fn_reporte_ventas_por_moneda',
+        'se esperaba la lista de divisas',
+      );
+    }
+    return ConsultaVentasPorMoneda.desdeV1(response);
   }
+
+  /// Auditoría de órdenes del período. Prefiere `reporte_ordenes_json_v2`
+  /// y cae a `reporte_ordenes_json` solo si la v2 no está desplegada.
+  ///
+  /// La v2 conserva `ordenes_completas` / `ordenes_incompletas` y añade el
+  /// neto nativo por línea. Un payload que no sea objeto es error de
+  /// contrato, no una auditoría vacía.
+  static Future<Map<String, dynamic>> getReporteOrdenesJson({
+    required int idTienda,
+    required DateTime desde,
+    required DateTime hasta,
+    int? idTpv,
+  }) async {
+    final params = <String, dynamic>{
+      'p_id_tienda': idTienda,
+      'p_fecha_desde': desde.toIso8601String(),
+      'p_fecha_hasta': hasta.toIso8601String(),
+      'p_id_tpv': idTpv,
+    };
+
+    dynamic response;
+    try {
+      print('Calling reporte_ordenes_json_v2 with: $params');
+      response = await _supabase.rpc('reporte_ordenes_json_v2', params: params);
+    } catch (e) {
+      if (!rpcAusente(e)) rethrow;
+      print('⚠️ reporte_ordenes_json_v2 no disponible ($e). Fallback v1');
+      response = await _supabase.rpc('reporte_ordenes_json', params: params);
+    }
+    if (response is! Map) {
+      throw const ReporteContratoException(
+        'reporte_ordenes_json',
+        'se esperaba el documento de órdenes',
+      );
+    }
+    return ReporteOrdenes.adaptar(Map<String, dynamic>.from(response));
+  }
+
+  /// Solo la ausencia de la función autoriza leer la versión anterior.
+  /// Permisos, red y contrato no entran aquí.
+  static bool rpcAusente(Object error) => _esFuncionInexistente(error);
 
   static Future<List<VendorOrder>> getVendorOrders({
     required DateTime fechaDesde,

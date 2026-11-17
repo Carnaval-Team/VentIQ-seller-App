@@ -186,11 +186,15 @@ class ProductsAnalyticsService {
           'cantidad': cantidad,
           'porcentaje': porcentaje,
           'valorInventario': valorInventario,
+          // Valuación de inventario a precio vigente CUP: proyección de
+          // catálogo, no venta ni utilidad realizada.
+          'valor_moneda': 'CUP',
+          'valor_base': 'precio_venta_vigente',
         };
       }).toList();
     } catch (e) {
       print('❌ Error obteniendo distribución por categorías: $e');
-      return _getDefaultCategoryDistribution();
+      return [];
     }
   }
 
@@ -254,11 +258,14 @@ class ProductsAnalyticsService {
               'sku': item['sku'] ?? '',
               'categoria': item['app_dat_categoria']?['denominacion'] ?? '',
               'stockActual': stockTotal.round(),
-              'movimientos':
-                  stockTotal.toInt(), // Usar stock como proxy de movimientos
-              'rotacion': stockTotal > 0 ? 1.0 : 0.0,
-              'valorMovido': stockTotal * 10.0, // Estimación
-              'ultimoMovimiento': DateTime.now().toIso8601String(),
+              // Este listado ordena por stock, no por rendimiento de ventas:
+              // no existen datos de movimientos/valor aquí y fabricarlos
+              // (stock×N) presentaba una magnitud que no existe.
+              'magnitud': 'stock_actual',
+              'movimientos': null,
+              'rotacion': null,
+              'valorMovido': null,
+              'ultimoMovimiento': null,
             };
           }).toList();
 
@@ -270,7 +277,7 @@ class ProductsAnalyticsService {
       return productosConStock.take(limit).toList();
     } catch (e) {
       print('❌ Error obteniendo productos top: $e');
-      return _getDefaultTopProducts();
+      return [];
     }
   }
 
@@ -334,10 +341,12 @@ class ProductsAnalyticsService {
         }
       }
 
-      return alerts.isEmpty ? _getDefaultAlerts() : alerts;
+      return alerts;
     } catch (e) {
       print('❌ Error obteniendo alertas de productos: $e');
-      return _getDefaultAlerts();
+      // Antes devolvía una fila "Sin alertas": enmascaraba el error como
+      // estado saludable. Vacío es la respuesta honesta.
+      return [];
     }
   }
 
@@ -400,55 +409,14 @@ class ProductsAnalyticsService {
         throw Exception('No se encontró ID de tienda');
       }
 
-      // Obtener stock actual total como base para simulación
-      final inventarioResponse = await _supabase
-          .from('app_dat_inventario_productos')
-          .select('''
-            cantidad_final,
-            cantidad_inicial,
-            app_dat_producto!inner(id_tienda)
-          ''')
-          .eq('app_dat_producto.id_tienda', idTienda);
-
-      final stockActualTotal = inventarioResponse.fold<int>(0, (sum, item) {
-        final cantidadFinal = item['cantidad_final'] ?? 0;
-        final cantidadInicial = item['cantidad_inicial'] ?? 0;
-        final cantidad =
-            cantidadFinal != null && cantidadFinal > 0
-                ? cantidadFinal
-                : cantidadInicial;
-        final cantidadInt =
-            cantidad is int ? cantidad : (cantidad as double).round();
-        return sum + cantidadInt;
-      });
-
-      // Generar datos simulados para los últimos 7 días basados en stock real
-      final now = DateTime.now();
-      final trends = <Map<String, dynamic>>[];
-
-      for (int i = 6; i >= 0; i--) {
-        final date = now.subtract(Duration(days: i));
-
-        // Simular variación diaria basada en stock real
-        final variation =
-            (i * 0.05 - 0.15) * stockActualTotal; // Variación del ±15%
-        final stockDelDia = (stockActualTotal + variation).round();
-        final stockFinal = stockDelDia > 0 ? stockDelDia : 0;
-
-        trends.add({
-          'fecha': date.toIso8601String().split('T')[0],
-          'stockTotal': stockFinal,
-          'valorTotal': stockFinal * 15.0, // Precio promedio estimado
-          'movimientos': (stockFinal * 0.1).round(),
-          'entradas': (stockFinal * 0.05).round(),
-          'salidas': (stockFinal * 0.05).round(),
-        });
-      }
-
-      return trends;
+      // No existe fuente histórica de stock por día en este entorno. Antes
+      // se devolvía una serie SIMULADA (variación ±15% sobre el stock
+      // actual): dibujaba una tendencia que nunca ocurrió. Vacío es la
+      // respuesta honesta hasta que exista historial real.
+      return const <Map<String, dynamic>>[];
     } catch (e) {
       print('❌ Error obteniendo tendencias de stock: $e');
-      return _getDefaultStockTrends();
+      return [];
     }
   }
 
@@ -559,7 +527,9 @@ class ProductsAnalyticsService {
           : recommendations;
     } catch (e) {
       print('❌ Error obteniendo recomendaciones: $e');
-      return _getDefaultRecommendations();
+      // "Sistema en funcionamiento" enmascararía el fallo como estado
+      // saludable; vacío es honesto.
+      return [];
     }
   }
 
@@ -804,6 +774,7 @@ class ProductsAnalyticsService {
 
   static Map<String, dynamic> _getDefaultKPIs() {
     return {
+      'disponible': false,
       'totalProductos': 0,
       'productosActivos': 0,
       'productosConStock': 0,
@@ -815,49 +786,6 @@ class ProductsAnalyticsService {
       'productosSinMovimiento': 0,
       'valorPromedioPorProducto': 0.0,
     };
-  }
-
-  static List<Map<String, dynamic>> _getDefaultCategoryDistribution() {
-    return [
-      {
-        'categoria': 'Sin datos',
-        'cantidad': 0,
-        'porcentaje': 0.0,
-        'valorInventario': 0.0,
-      },
-    ];
-  }
-
-  static List<Map<String, dynamic>> _getDefaultTopProducts() {
-    return [
-      {
-        'id': '0',
-        'denominacion': 'Sin datos disponibles',
-        'sku': '',
-        'categoria': '',
-        'stockActual': 0,
-        'movimientos': 0,
-        'rotacion': 0.0,
-        'valorMovido': 0.0,
-        'ultimoMovimiento': null,
-      },
-    ];
-  }
-
-  static List<Map<String, dynamic>> _getDefaultAlerts() {
-    return [
-      {
-        'id': '0',
-        'denominacion': 'Sin alertas',
-        'sku': '',
-        'tipoAlerta': 'info',
-        'descripcionAlerta': 'No hay alertas pendientes',
-        'stockActual': 0,
-        'stockMinimo': 0,
-        'diasSinMovimiento': 0,
-        'prioridad': 'baja',
-      },
-    ];
   }
 
   static Map<String, dynamic> _getDefaultABCAnalysis() {
@@ -879,22 +807,8 @@ class ProductsAnalyticsService {
       },
       'totalAnalizado': 0,
       'fechaAnalisis': DateTime.now().toIso8601String(),
+      'disponible': false,
     };
-  }
-
-  static List<Map<String, dynamic>> _getDefaultStockTrends() {
-    final now = DateTime.now();
-    return List.generate(7, (index) {
-      final date = now.subtract(Duration(days: 6 - index));
-      return {
-        'fecha': date.toIso8601String().split('T')[0],
-        'stockTotal': 0,
-        'valorTotal': 0.0,
-        'movimientos': 0,
-        'entradas': 0,
-        'salidas': 0,
-      };
-    });
   }
 
   static List<Map<String, dynamic>> _getDefaultRecommendations() {
@@ -975,6 +889,7 @@ class ProductsAnalyticsService {
         'perros': 0,
         'ventas_totales': 0.0,
       },
+      'disponible': false,
     };
   }
 }

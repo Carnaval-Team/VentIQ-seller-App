@@ -36,7 +36,9 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
   bool _allowDiscountOnVendedor = false;
   bool _vendedoresPuedenCrearCxc = false;
   bool _mostrarMetodoPagoTicket = true;
-  bool _mostrarSelectorMoneda = false;
+  // `mostrar_selector_moneda` quedó retirado de la UI: el selector del
+  // checkout se gobierna por monedas aceptadas/forzada/moneda por producto.
+  // La columna sigue existiendo para compatibilidad con builds anteriores.
   bool _allowPrintPending = false;
   bool _allowSellerMakeOrderModifications = false;
   bool _precioVentaRegidoPorUsd = false;
@@ -502,8 +504,8 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
             config['vendedores_pueden_crear_cxc'] ?? false;
         _mostrarMetodoPagoTicket =
             config['mostrar_metodo_pago_ticket'] ?? true;
-        _mostrarSelectorMoneda =
-            config['mostrar_selector_moneda'] ?? false;
+        // `mostrar_selector_moneda` ya no se lee: el selector del checkout
+        // lo gobiernan las monedas aceptadas/forzada/moneda por producto.
         _allowPrintPending = config['permitir_imprimir_pendientes'] ?? false;
         _allowSellerMakeOrderModifications =
             config['allow_seller_make_order_modifications'] ?? false;
@@ -757,43 +759,6 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
     }
   }
 
-  Future<void> _updateMostrarSelectorMonedaSetting(bool value) async {
-    if (_storeId == null) return;
-
-    try {
-      await StoreConfigService.updateStoreConfig(
-        _storeId!,
-        mostrarSelectorMoneda: value,
-      );
-      setState(() {
-        _mostrarSelectorMoneda = value;
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              value
-                  ? 'El cajero puede seleccionar la moneda (CUP/USD) en cada venta'
-                  : 'Selector de moneda desactivado — todas las ventas serán en CUP',
-            ),
-            backgroundColor: AppColors.success,
-          ),
-        );
-      }
-    } catch (e) {
-      setState(() {
-        _mostrarSelectorMoneda = !value;
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al actualizar configuración: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
 
   Future<void> _updateMasterPasswordSetting(bool value) async {
     if (_storeId == null) return;
@@ -1889,7 +1854,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
           const SizedBox(height: 16),
 
           // Configuración de Modo Offline Completo
-          _buildModoOfflineCompletoCard(),
+          // _buildModoOfflineCompletoCard(),
 
           const SizedBox(height: 16),
 
@@ -1898,22 +1863,10 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
 
           const SizedBox(height: 16),
 
-          // Selector de moneda (CUP/USD) en el checkout
-          _buildConfigCard(
-            icon: Icons.currency_exchange,
-            iconColor: Colors.amber[700]!,
-            title: 'Selector de moneda en ventas',
-            subtitle:
-                _mostrarSelectorMoneda
-                    ? '✅ El cajero puede elegir CUP o USD por método de pago en cada venta'
-                    : '🔒 Todas las ventas se registran en CUP',
-            value: _mostrarSelectorMoneda,
-            onChanged: _updateMostrarSelectorMonedaSetting,
-          ),
-
-          const SizedBox(height: 16),
-
           // Fase 2 del plan multimoneda: qué monedas acepta ESTA tienda.
+          // El antiguo "selector de moneda en ventas" (mostrar_selector_moneda)
+          // sobra: con mas de una moneda aceptada el checkout ya ofrece la
+          // eleccion, y forzar/moneda por producto la gobiernan.
           if (_storeId != null) MonedasTiendaCard(storeId: _storeId!),
 
           const SizedBox(height: 24),

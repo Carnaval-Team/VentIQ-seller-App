@@ -21,7 +21,12 @@ class FinancialReportsService {
   }) async {
     try {
       print('⚠️ generateProfitabilityReport temporalmente deshabilitado - función RPC no existe');
-      return {'data': [], 'summary': {}};
+      return {
+        'data': [],
+        'summary': {},
+        'disponible': false,
+        'motivo': 'fn_profitability_report no disponible en este entorno',
+      };
       
       /* CÓDIGO ORIGINAL COMENTADO:
       final response = await _supabase.rpc('fn_profitability_report', params: {
@@ -37,7 +42,12 @@ class FinancialReportsService {
       */
     } catch (e) {
       print('Error generating profitability report: $e');
-      return _getMockProfitabilityReport(storeId, startDate, endDate);
+      return {
+        'data': [],
+        'summary': {},
+        'disponible': false,
+        'motivo': '$e',
+      };
     }
   }
 
@@ -62,7 +72,7 @@ class FinancialReportsService {
       */
     } catch (e) {
       print('Error getting category profitability: $e');
-      return _getMockCategoryAnalysis();
+      return [];
     }
   }
 
@@ -102,7 +112,20 @@ class FinancialReportsService {
     try {
       // Obtener datos históricos para proyección
       final historicalData = await _getHistoricalCashFlowData(storeId, 12);
-      
+
+      // Sin historial no hay proyección: la fuente (fn_historical_cash_flow)
+      // no existe en este entorno, así que se declara no disponible en vez
+      // de fabricar meses proyectados sobre un promedio vacío.
+      if (historicalData.isEmpty) {
+        return {
+          'data': [],
+          'summary': {},
+          'projections': <Map<String, dynamic>>[],
+          'disponible': false,
+          'motivo': 'fn_historical_cash_flow no disponible en este entorno',
+        };
+      }
+
       // Calcular tendencias y estacionalidad
       final projections = _calculateCashFlowProjections(
         historicalData, 
@@ -120,7 +143,13 @@ class FinancialReportsService {
       };
     } catch (e) {
       print('Error generating cash flow projections: $e');
-      return _getMockCashFlowProjections(storeId, monthsAhead);
+      return {
+        'data': [],
+        'summary': {},
+        'projections': <Map<String, dynamic>>[],
+        'disponible': false,
+        'motivo': '$e',
+      };
     }
   }
 
@@ -248,7 +277,12 @@ class FinancialReportsService {
   }) async {
     try {
       print('⚠️ generateHistoricalComparison temporalmente deshabilitado - función RPC no existe');
-      return {'data': [], 'summary': {}};
+      return {
+        'data': [],
+        'summary': {},
+        'disponible': false,
+        'motivo': 'fn_historical_comparison no disponible en este entorno',
+      };
       
       /* CÓDIGO ORIGINAL COMENTADO:
       final response = await _supabase.rpc('fn_historical_comparison', params: {
@@ -262,7 +296,7 @@ class FinancialReportsService {
       */
     } catch (e) {
       print('Error generating historical comparison: $e');
-      return _getMockHistoricalComparison(storeId);
+      return {'data': [], 'summary': {}, 'disponible': false, 'motivo': '$e'};
     }
   }
 
@@ -274,7 +308,12 @@ class FinancialReportsService {
   }) async {
     try {
       print('⚠️ getTrendAnalysis temporalmente deshabilitado - función RPC no existe');
-      return {'data': [], 'summary': {}};
+      return {
+        'data': [],
+        'summary': {},
+        'disponible': false,
+        'motivo': 'fn_trend_analysis no disponible en este entorno',
+      };
       
       /* CÓDIGO ORIGINAL COMENTADO:
       final response = await _supabase.rpc('fn_trend_analysis', params: {
@@ -287,7 +326,7 @@ class FinancialReportsService {
       */
     } catch (e) {
       print('Error getting trend analysis: $e');
-      return _getMockTrendAnalysis(kpi);
+      return {'data': [], 'summary': {}, 'disponible': false, 'motivo': '$e'};
     }
   }
 
@@ -322,7 +361,12 @@ class FinancialReportsService {
   }) async {
     try {
       print('⚠️ getBudgetVarianceAnalysis temporalmente deshabilitado - función RPC no existe');
-      return {'data': [], 'summary': {}};
+      return {
+        'data': [],
+        'summary': {},
+        'disponible': false,
+        'motivo': 'fn_budget_variance_analysis no disponible en este entorno',
+      };
       
       /* CÓDIGO ORIGINAL COMENTADO:
       final response = await _supabase.rpc('fn_budget_variance_analysis', params: {
@@ -334,7 +378,7 @@ class FinancialReportsService {
       */
     } catch (e) {
       print('Error getting budget variance: $e');
-      return _getMockBudgetVariance(storeId, period);
+      return {'data': [], 'summary': {}, 'disponible': false, 'motivo': '$e'};
     }
   }
 
@@ -391,91 +435,6 @@ class FinancialReportsService {
       print('Error getting pending approvals: $e');
       return [];
     }
-  }
-
-  // ==================== DATOS MOCK PARA DESARROLLO ====================
-
-  Map<String, dynamic> _getMockProfitabilityReport(int storeId, String startDate, String endDate) {
-    return {
-      'store_id': storeId,
-      'period': '$startDate to $endDate',
-      'total_products': 150,
-      'profitable_products': 120,
-      'loss_making_products': 30,
-      'average_margin': 28.5,
-      'top_performers': [
-        {'product_name': 'Producto A', 'margin': 45.2, 'profit': 15000},
-        {'product_name': 'Producto B', 'margin': 38.7, 'profit': 12500},
-        {'product_name': 'Producto C', 'margin': 35.1, 'profit': 11200},
-      ],
-      'bottom_performers': [
-        {'product_name': 'Producto X', 'margin': 5.2, 'profit': 800},
-        {'product_name': 'Producto Y', 'margin': 8.1, 'profit': 1200},
-      ],
-    };
-  }
-
-  List<Map<String, dynamic>> _getMockCategoryAnalysis() {
-    return [
-      {'category': 'Electrónicos', 'margin': 32.5, 'revenue': 85000, 'profit': 27625},
-      {'category': 'Ropa', 'margin': 45.2, 'revenue': 65000, 'profit': 29380},
-      {'category': 'Hogar', 'margin': 28.1, 'revenue': 45000, 'profit': 12645},
-    ];
-  }
-
-  Map<String, dynamic> _getMockCashFlowProjections(int storeId, int monthsAhead) {
-    final projections = <Map<String, dynamic>>[];
-    final now = DateTime.now();
-    
-    for (int i = 1; i <= monthsAhead; i++) {
-      final month = DateTime(now.year, now.month + i, 1);
-      projections.add({
-        'month': month.toIso8601String().split('T')[0].substring(0, 7),
-        'projected_revenue': 150000 + (i * 5000),
-        'projected_expenses': 120000 + (i * 3000),
-        'projected_cash_flow': 30000 + (i * 2000),
-      });
-    }
-
-    return {
-      'store_id': storeId,
-      'projection_months': monthsAhead,
-      'projections': projections,
-      'confidence_level': 0.8,
-    };
-  }
-
-  Map<String, dynamic> _getMockHistoricalComparison(int storeId) {
-    return {
-      'store_id': storeId,
-      'current_period': {'revenue': 150000, 'profit': 18000, 'margin': 12.0},
-      'comparison_period': {'revenue': 140000, 'profit': 16000, 'margin': 11.4},
-      'variance': {'revenue': 7.1, 'profit': 12.5, 'margin': 0.6},
-    };
-  }
-
-  Map<String, dynamic> _getMockTrendAnalysis(String kpi) {
-    return {
-      'kpi': kpi,
-      'trend': 'upward',
-      'growth_rate': 8.5,
-      'volatility': 'medium',
-      'seasonal_pattern': true,
-    };
-  }
-
-  Map<String, dynamic> _getMockBudgetVariance(int storeId, String period) {
-    return {
-      'store_id': storeId,
-      'period': period,
-      'total_budget': 120000,
-      'total_actual': 125000,
-      'variance_percent': 4.2,
-      'category_variances': [
-        {'category': 'Operativos', 'budget': 50000, 'actual': 52000, 'variance': 4.0},
-        {'category': 'Administrativos', 'budget': 30000, 'actual': 31000, 'variance': 3.3},
-      ],
-    };
   }
 
   // ==================== UTILIDADES PRIVADAS ====================

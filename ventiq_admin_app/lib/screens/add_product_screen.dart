@@ -5874,21 +5874,32 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
       try {
 
-        await ProductService.insertProductIngredients(
+        final ingredientesGuardados = await ProductService.insertProductIngredients(
 
           productId: productId,
 
           ingredientes: ingredientesData,
 
           esServicio: _esServicio,
+          guardarAtomico: true,
 
         );
+
+        if (!ingredientesGuardados) {
+          throw StateError('No se pudo guardar la receta del producto');
+        }
 
         print('✅ Ingredientes insertados exitosamente');
 
       } catch (e) {
 
         print('❌ ERROR insertando ingredientes: $e');
+        if (_esServicio || _esElaborado) {
+          _showErrorSnackBar('Producto creado sin habilitar inventario: falló el guardado de sus ingredientes. $e');
+          widget.onProductSaved?.call();
+          if (mounted) Navigator.of(context).pop();
+          return;
+        }
 
       }
 
@@ -5932,7 +5943,26 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
     // Si es paquete: pedir ubicación y precio de costo, luego registrar inventario
 
-    if (_esPaquete) {
+    if (_esServicio || _esElaborado) {
+      try {
+        await ProductService.crearInventarioInicialProducto(
+          productId: productId,
+          idTienda: idTienda,
+          sku: _skuController.text,
+          esServicio: _esServicio,
+          esElaborado: _esElaborado,
+        );
+      } catch (e) {
+        _showErrorSnackBar(
+          'Producto creado, pero no se pudo habilitar en todos los almacenes: $e',
+        );
+        widget.onProductSaved?.call();
+        if (mounted) Navigator.of(context).pop();
+        return;
+      }
+    }
+
+    if (_esPaquete && !_esServicio && !_esElaborado) {
 
       try {
 
@@ -7410,6 +7440,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
     final subcategoriaDescController = TextEditingController();
 
+    bool categoriaEspecial = false;
     bool isLoading = false;
 
 
@@ -7546,6 +7577,20 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
 
 
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Categoría especial'),
+                          subtitle: Text(
+                            categoriaEspecial
+                                ? 'Se mostrará como tarjeta destacada en el Home del TPV'
+                                : 'Se agrupará bajo “Tienda” en el Home del TPV',
+                          ),
+                          value: categoriaEspecial,
+                          onChanged: isLoading
+                              ? null
+                              : (value) => setDialogState(() => categoriaEspecial = value),
+                        ),
+                        const SizedBox(height: 12),
                         // Subcategoría
 
                         const Text(
@@ -7675,6 +7720,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                   final categoriaResult =
 
                                       await ProductService.createCategoria(
+                                        especial: categoriaEspecial,
 
                                         denominacion:
 

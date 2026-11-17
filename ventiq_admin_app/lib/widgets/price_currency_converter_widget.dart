@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import '../config/app_colors.dart';
 import '../services/currency_display_service.dart';
 import '../services/currency_service.dart';
 
-/// Widget especializado para conversión de precios en diálogos de inventario.
+/// Campo de precio con selector de moneda integrado y conversión a USD.
 /// IMPORTANTE: El precio_unitario siempre se guarda en USD.
 /// Si el usuario escribe en CUP, se convierte a USD antes de guardar.
 /// Si escribe en USD, no se convierte.
@@ -12,11 +13,22 @@ class PriceCurrencyConverterWidget extends StatefulWidget {
   final Function(double, String)?
   onPriceConverted; // Callback: (precioEnUSD, 'USD')
 
+  /// Etiqueta y decoración del campo (lo inyecta el diálogo para mantener el
+  /// mismo estilo que el resto del formulario).
+  final String? label;
+  final String? hintText;
+  final Widget? prefixIcon;
+  final String? Function(String?)? validator;
+
   const PriceCurrencyConverterWidget({
     Key? key,
     required this.invoiceCurrency,
     required this.priceController,
     this.onPriceConverted,
+    this.label,
+    this.hintText,
+    this.prefixIcon,
+    this.validator,
   }) : super(key: key);
 
   @override
@@ -112,168 +124,134 @@ class _PriceCurrencyConverterWidgetState
     _onPriceChanged();
   }
 
+  /// Selector de moneda dentro del propio campo: una píldora compacta en el
+  /// `suffix` del input, para que monto y moneda se lean como un solo dato.
+  Widget _selectorMoneda() {
+    if (_isLoading) {
+      return const SizedBox(
+        width: 16,
+        height: 16,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.withOpacity(0.3)),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: _inputCurrency,
+          isDense: true,
+          items: _currencies.map((curr) {
+            return DropdownMenuItem<String>(
+              value: curr['codigo'],
+              child: Text(
+                '${curr['simbolo']} ${curr['codigo']}',
+                style: const TextStyle(fontSize: 12),
+              ),
+            );
+          }).toList(),
+          onChanged: (value) {
+            if (value != null) {
+              _onCurrencyChanged(value);
+            }
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Card(
-      elevation: 1,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header
-            Row(
-              children: [
-                Icon(Icons.currency_exchange, color: Colors.blue, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  'Conversión de Precio',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.blue[700],
-                  ),
-                ),
-                const Spacer(),
-                if (_isLoading)
-                  SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-              ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextFormField(
+          controller: widget.priceController,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          validator: widget.validator,
+          decoration: InputDecoration(
+            labelText: widget.label ?? 'Precio',
+            hintText: widget.hintText,
+            border: OutlineInputBorder(
+              borderSide: BorderSide(color: AppColors.border),
             ),
-
-            const SizedBox(height: 12),
-
-            // Selector de moneda de entrada
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Escribir precio en:',
-                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey.withOpacity(0.3)),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: _inputCurrency,
-                      isDense: true,
-                      items:
-                          _currencies.map((curr) {
-                            return DropdownMenuItem<String>(
-                              value: curr['codigo'],
-                              child: Text(
-                                '${curr['simbolo']} ${curr['codigo']}',
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                            );
-                          }).toList(),
-                      onChanged: (value) {
-                        if (value != null) {
-                          _onCurrencyChanged(value);
-                        }
-                      },
-                    ),
-                  ),
-                ),
-              ],
+            enabledBorder: OutlineInputBorder(
+              borderSide: BorderSide(color: AppColors.border),
             ),
+            focusedBorder: OutlineInputBorder(
+              borderSide: BorderSide(color: AppColors.primary, width: 2),
+            ),
+            prefixIcon:
+                widget.prefixIcon ??
+                Icon(Icons.attach_money, color: AppColors.primary),
+            suffixIconConstraints: const BoxConstraints(
+              minWidth: 0,
+              minHeight: 0,
+            ),
+            suffixIcon: Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: _selectorMoneda(),
+            ),
+          ),
+        ),
 
-            const SizedBox(height: 12),
-
-            // Información de conversión (siempre a USD)
-            if (_convertedAmount != null &&
-                _inputCurrency != 'USD') ...[
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.green.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.green.withOpacity(0.3)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+        // Información de conversión (siempre a USD): solo aparece cuando el
+        // precio se escribió en otra moneda y hay tasa para convertir.
+        if (_convertedAmount != null && _inputCurrency != 'USD') ...[
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.green.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.green.withOpacity(0.3)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.info_outline,
-                          size: 16,
-                          color: Colors.green[700],
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Precio convertido a USD:',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.green[700],
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      ],
+                    Icon(
+                      Icons.info_outline,
+                      size: 16,
+                      color: Colors.green[700],
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '\$${_convertedAmount!.toStringAsFixed(4)} USD',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.green[700],
-                      ),
-                    ),
-                    if (_usdToCupRate != null)
-                      Text(
-                        'Tasa: 1 USD = ${_usdToCupRate!.toStringAsFixed(2)} CUP',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: Colors.green[600],
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ] else if (_inputCurrency == 'USD') ...[
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.check_circle, size: 16, color: Colors.blue[700]),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Precio en USD (se guarda directamente)',
+                        'Precio convertido a USD:',
                         style: TextStyle(
                           fontSize: 12,
-                          color: Colors.blue[700],
+                          color: Colors.green[700],
                           fontWeight: FontWeight.w500,
                         ),
                       ),
                     ),
                   ],
                 ),
-              ),
-            ],
-          ],
-        ),
-      ),
+                const SizedBox(height: 4),
+                Text(
+                  '\$${_convertedAmount!.toStringAsFixed(4)} USD',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.green[700],
+                  ),
+                ),
+                if (_usdToCupRate != null)
+                  Text(
+                    'Tasa: 1 USD = ${_usdToCupRate!.toStringAsFixed(2)} CUP',
+                    style: TextStyle(fontSize: 10, color: Colors.green[600]),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ],
     );
   }
-
 }

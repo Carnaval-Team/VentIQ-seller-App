@@ -1,9 +1,18 @@
+import 'tpv_price_money.dart';
+
+const _sinCambio = _SinCambio();
+
+class _SinCambio {
+  const _SinCambio();
+}
+
 /// Modelo para precios diferenciados por TPV
 class TpvPrice {
   final int id;
   final int idProducto;
   final int idTpv;
   final double precioVentaCup;
+  final double? precioVentaUsd;
   final DateTime fechaDesde;
   final DateTime? fechaHasta;
   final bool esActivo;
@@ -22,6 +31,7 @@ class TpvPrice {
     required this.idProducto,
     required this.idTpv,
     required this.precioVentaCup,
+    this.precioVentaUsd,
     required this.fechaDesde,
     this.fechaHasta,
     required this.esActivo,
@@ -41,6 +51,7 @@ class TpvPrice {
       idProducto: json['id_producto'] as int,
       idTpv: json['id_tpv'] as int,
       precioVentaCup: (json['precio_venta_cup'] as num).toDouble(),
+      precioVentaUsd: TpvPriceMoney.opcional(json['precio_venta_usd']),
       fechaDesde: DateTime.parse(json['fecha_desde']),
       fechaHasta: json['fecha_hasta'] != null 
           ? DateTime.parse(json['fecha_hasta']) 
@@ -72,6 +83,16 @@ class TpvPrice {
     };
   }
 
+  Map<String, dynamic> toExportRow() {
+    return {
+      'id_producto': idProducto,
+      'id_tpv': idTpv,
+      'precio_venta_cup': precioVentaCup,
+      'precio_venta_usd': precioVentaUsd,
+      'fecha_desde': fechaDesde.toIso8601String().split('T')[0],
+    };
+  }
+
   /// Convierte a JSON para actualización (sin campos auto-generados)
   Map<String, dynamic> toUpdateJson() {
     final data = <String, dynamic>{
@@ -93,6 +114,7 @@ class TpvPrice {
     int? idProducto,
     int? idTpv,
     double? precioVentaCup,
+    Object? precioVentaUsd = _sinCambio,
     DateTime? fechaDesde,
     DateTime? fechaHasta,
     bool? esActivo,
@@ -109,6 +131,9 @@ class TpvPrice {
       idProducto: idProducto ?? this.idProducto,
       idTpv: idTpv ?? this.idTpv,
       precioVentaCup: precioVentaCup ?? this.precioVentaCup,
+      precioVentaUsd: identical(precioVentaUsd, _sinCambio)
+          ? this.precioVentaUsd
+          : precioVentaUsd as double?,
       fechaDesde: fechaDesde ?? this.fechaDesde,
       fechaHasta: fechaHasta ?? this.fechaHasta,
       esActivo: esActivo ?? this.esActivo,
@@ -183,6 +208,8 @@ class TpvPriceImportData {
   final int idProducto;
   final int idTpv;
   final double precioVentaCup;
+  final double? precioVentaUsd;
+  final bool heredarUsd;
   final DateTime? fechaDesde;
   final DateTime? fechaHasta;
   final bool esActivo;
@@ -191,6 +218,8 @@ class TpvPriceImportData {
     required this.idProducto,
     required this.idTpv,
     required this.precioVentaCup,
+    this.precioVentaUsd,
+    this.heredarUsd = true,
     this.fechaDesde,
     this.fechaHasta,
     this.esActivo = true,
@@ -198,14 +227,17 @@ class TpvPriceImportData {
 
   /// Crea desde datos de Excel/CSV
   factory TpvPriceImportData.fromExcel(Map<String, dynamic> row) {
+    final usd = TpvPriceMoney.leerCelda(row, 'precio_venta_usd');
     return TpvPriceImportData(
       idProducto: int.parse(row['id_producto'].toString()),
       idTpv: int.parse(row['id_tpv'].toString()),
-      precioVentaCup: double.parse(row['precio_venta_cup'].toString()),
-      fechaDesde: row['fecha_desde'] != null 
+      precioVentaCup: TpvPriceMoney.opcional(row['precio_venta_cup'])!,
+      precioVentaUsd: usd.valor,
+      heredarUsd: usd.heredar,
+      fechaDesde: row['fecha_desde'] != null
           ? DateTime.parse(row['fecha_desde'].toString())
           : null,
-      fechaHasta: row['fecha_hasta'] != null 
+      fechaHasta: row['fecha_hasta'] != null
           ? DateTime.parse(row['fecha_hasta'].toString())
           : null,
       esActivo: row['es_activo']?.toString().toLowerCase() != 'false',

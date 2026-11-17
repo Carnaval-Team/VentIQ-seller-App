@@ -111,6 +111,68 @@ class FdiSaldo {
   );
 }
 
+class FdiFuenteRecepcion {
+  final FdiSaldo saldo;
+  final double monto;
+  final double tasaARef;
+
+  const FdiFuenteRecepcion({
+    required this.saldo,
+    required this.monto,
+    this.tasaARef = 1,
+  });
+
+  double get equivalente => (monto * tasaARef * 100).isFinite
+      ? (monto * tasaARef * 100).round() / 100
+      : 0;
+  String get clave => '${saldo.idCuenta}:${saldo.idMedioPago}:${saldo.moneda}';
+
+  Map<String, dynamic> toJson() => {
+    'id_cuenta': saldo.idCuenta,
+    'id_medio_pago': saldo.idMedioPago,
+    'moneda': saldo.moneda,
+    'monto': monto.toStringAsFixed(2),
+    'tasa_a_ref': tasaARef.toStringAsFixed(12),
+  };
+
+  static String? validar(
+    List<FdiFuenteRecepcion> fuentes,
+    double total,
+    String moneda,
+  ) {
+    if (!total.isFinite || !(total * 100).isFinite || total <= 0) {
+      return 'El monto de recepción debe ser mayor que cero';
+    }
+    if (fuentes.isEmpty) return 'Seleccione al menos una cuenta del fondo';
+    final claves = <String>{};
+    var cubierto = 0;
+    for (final fuente in fuentes) {
+      if (!claves.add(fuente.clave)) {
+        return 'No repita la misma fuente del fondo';
+      }
+      if (fuente.saldo.idMedioPago == null ||
+          !fuente.monto.isFinite ||
+          !(fuente.monto * 100).isFinite ||
+          fuente.monto <= 0 ||
+          !fuente.tasaARef.isFinite ||
+          fuente.tasaARef <= 0 ||
+          !(fuente.monto * fuente.tasaARef * 100).isFinite ||
+          fuente.monto != double.parse(fuente.monto.toStringAsFixed(2)) ||
+          (fuente.saldo.moneda == moneda && fuente.tasaARef != 1)) {
+        return 'Indique importes y tasas válidos para cada cuenta';
+      }
+      if ((fuente.monto * 100).round() > (fuente.saldo.saldo * 100).round()) {
+        return 'Saldo insuficiente en ${fuente.saldo.cuenta} (${fuente.saldo.moneda})';
+      }
+      cubierto += (fuente.equivalente * 100).round();
+    }
+    if (cubierto != (total * 100).round()) {
+      return 'La suma de las fuentes debe coincidir con el monto de recepción';
+    }
+    return null;
+  }
+}
+
 /// Respuesta de fn_fdi_saldos: filas + totales por moneda.
 class FdiSaldosResult {
   final List<FdiSaldo> saldos;

@@ -18,6 +18,8 @@ import '../widgets/admin_drawer.dart';
 import '../widgets/admin_bottom_navigation.dart';
 import '../widgets/admin_ai_assistant_sheet.dart';
 import '../widgets/paqueteria_tab.dart';
+import '../models/reporte_ordenes.dart';
+import 'estudio_inversion_producto_dialog.dart';
 import '../models/sales.dart';
 import '../models/sales_analyst_models.dart';
 import '../services/sales_service.dart';
@@ -68,6 +70,9 @@ class _SalesScreenState extends State<SalesScreen>
   String _productDateFilterMode = 'turnos_abiertos';
   bool _useCurrentProductPrices = false;
   bool _missingExchangeRate = false;
+  // `null` = última carga correcta. Un error deja el reporte en «no
+  // disponible»: nunca se presenta una lista vacía como si fueran cero ventas.
+  String? _productSalesError;
   bool _filtersExpanded = false;
   double _totalSales = 0.0;
   int _totalProductsSold = 0;
@@ -476,10 +481,55 @@ class _SalesScreenState extends State<SalesScreen>
     }).toList();
   }
 
+  /// Whether an order counts in the shift's money totals.
+  ///
+  /// Must mirror `fn_reporte_ventas_por_turno`, which sums only the latest
+  /// `app_dat_estado_operacion` estado = 2 (Completada). Orders Facturada /
+  /// Por Despachar / Despachada / En Preparación (10-13) keep their real
+  /// label via `_estadoNombreOrden` but do not enter these totals, matching
+  /// the shift header.
   bool _isVendorOrderCompleted(VendorOrder order) {
     if (order.estado == 2) return true;
-    final estado = order.estadoNombre.toLowerCase();
+    final estado = _estadoNombreOrden(order).toLowerCase();
     return estado.contains('completad');
+  }
+
+  /// Nombre de estado mostrable de una orden.
+  ///
+  /// `listar_ordenes` devuelve `estado_nombre` desde
+  /// `app_dat_estado_operacion` (MAX(id)) unido a `app_nom_estado_operacion`;
+  /// una orden sin fila de estado llega como 'Desconocido'/vacío aunque
+  /// `estado` traiga el código. En ese caso se deriva del código antes de
+  /// rendirse.
+  String _estadoNombreOrden(VendorOrder order) {
+    final nombre = order.estadoNombre.trim();
+    if (nombre.isNotEmpty &&
+        nombre.toLowerCase() != 'desconocido' &&
+        nombre.toLowerCase() != 'unknown') {
+      return nombre;
+    }
+    switch (order.estado) {
+      case 1:
+        return 'Pendiente';
+      case 2:
+        return 'Completada';
+      case 3:
+        return 'Cancelada';
+      case 4:
+        return 'En Proceso';
+      case 5:
+        return 'Anulada';
+      case 10:
+        return 'Facturada';
+      case 11:
+        return 'Por Despachar';
+      case 12:
+        return 'Despachada';
+      case 13:
+        return 'En Preparación';
+      default:
+        return 'Desconocido';
+    }
   }
 
   /// Totales de pago de las órdenes de un vendedor.
@@ -1892,6 +1942,8 @@ class _SalesScreenState extends State<SalesScreen>
   }
 
   List<VentasPorMoneda> _ventasPorMoneda = [];
+  ConsultaVentasPorMoneda? _consultaMonedas;
+  ConsultaVentasPorMoneda? _consultaMonedasCompartida;
   bool _isLoadingMonedas = false;
   String? _monedasError;
   bool _isExportingPorMoneda = false;
@@ -2029,6 +2081,7 @@ class _SalesScreenState extends State<SalesScreen>
       // el refresco debe descartar lo cacheado. Lo vuelve a pedir el propio
       // bloque al repintarse, así que aquí no se dispara ninguna RPC extra.
       _monedasCompartidasFuture = null;
+      _consultaMonedasCompartida = null;
     });
 
     // Si estamos en la pestaña de desglose, recargar inmediatamente
@@ -2089,6 +2142,7 @@ class _SalesScreenState extends State<SalesScreen>
     setState(() {
       _isLoadingProducts = true;
       _isLoadingMetrics = true;
+      _productSalesError = null;
     });
 
     try {
@@ -2136,6 +2190,12 @@ class _SalesScreenState extends State<SalesScreen>
       setState(() {
         _isLoadingProducts = false;
         _isLoadingMetrics = false;
+        // El fallo deja el reporte como «no disponible»: se limpian las filas
+        // y los KPIs para que ningún total viejo se lea como dato del período.
+        _productSalesError = '$e';
+        _productSalesReports = [];
+        _totalSales = 0.0;
+        _totalProductsSold = 0;
       });
       print('Error loading sales data: $e');
     }
@@ -2158,6 +2218,7 @@ class _SalesScreenState extends State<SalesScreen>
           fechaInicio: report.periodoInicio,
           fechaFin: report.periodoFin,
           uuidUsuario: report.uuidUsuario,
+          turnoId: report.idTurno,
         );
 
         reportsWithEgresos.add(report.copyWith(totalEgresos: totalEgresos));
@@ -2209,7 +2270,7 @@ class _SalesScreenState extends State<SalesScreen>
         throw Exception('No se pudo obtener la tienda actual');
       }
 
-      final filas = await SalesService.getVentasPorMoneda(
+      final consulta = await SalesService.getVentasPorMoneda(
         idTienda: idTienda,
         desde: _startDate,
         hasta: _endDate,
@@ -2217,13 +2278,16 @@ class _SalesScreenState extends State<SalesScreen>
 
       if (!mounted) return;
       setState(() {
-        _ventasPorMoneda = filas;
+        _consultaMonedas = consulta;
+        _ventasPorMoneda = consulta.filas;
         _isLoadingMonedas = false;
       });
     } catch (e) {
       print('Error al cargar ventas por moneda: $e');
       if (!mounted) return;
       setState(() {
+        _consultaMonedas = null;
+        _ventasPorMoneda = [];
         _isLoadingMonedas = false;
         _monedasError = e.toString();
       });
@@ -2242,11 +2306,13 @@ class _SalesScreenState extends State<SalesScreen>
     try {
       final idTienda = await UserPreferencesService().getIdTienda();
       if (idTienda == null) return null;
-      return await SalesService.getVentasPorMoneda(
+      final consulta = await SalesService.getVentasPorMoneda(
         idTienda: idTienda,
         desde: _startDate,
         hasta: _endDate,
       );
+      _consultaMonedasCompartida = consulta;
+      return consulta.filas;
     } catch (e) {
       print('Error al cargar el bloque por moneda compartido: $e');
       return null;
@@ -2327,9 +2393,20 @@ class _SalesScreenState extends State<SalesScreen>
                   ],
                 ),
               ),
+              if ((_consultaMonedasCompartida?.aclaracion ?? '').isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: Text(
+                    _consultaMonedasCompartida!.aclaracion,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
               const Divider(height: 1),
               _buildPorMonedaTable(filas),
-              _buildPorMonedaConsolidado(filas),
+              _buildPorMonedaConsolidado(filas, _consultaMonedasCompartida),
             ],
           ),
         );
@@ -2739,12 +2816,12 @@ class _SalesScreenState extends State<SalesScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Padding(
-            padding: EdgeInsets.all(16),
+          Padding(
+            padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
+                const Row(
                   children: [
                     Icon(Icons.currency_exchange, color: AppColors.primary),
                     SizedBox(width: 8),
@@ -2757,11 +2834,11 @@ class _SalesScreenState extends State<SalesScreen>
                     ),
                   ],
                 ),
-                SizedBox(height: 6),
+                const SizedBox(height: 6),
                 // El porqué de las dos columnas de importe: son dos naturalezas
                 // distintas de dinero y confundirlas es el error que este
                 // reporte existe para evitar.
-                Text(
+                const Text(
                   'El importe nativo es lo que realmente entró en esa divisa: es '
                   'exacto, pero no se puede sumar con el de otra fila. Solo el '
                   'equivalente en moneda base es dinero homogéneo y consolidable.',
@@ -2770,6 +2847,16 @@ class _SalesScreenState extends State<SalesScreen>
                     color: AppColors.textSecondary,
                   ),
                 ),
+                if ((_consultaMonedas?.aclaracion ?? '').isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    _consultaMonedas!.aclaracion,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -2804,7 +2891,7 @@ class _SalesScreenState extends State<SalesScreen>
           else ...[
             const Divider(height: 1),
             _buildPorMonedaTable(),
-            _buildPorMonedaConsolidado(),
+            _buildPorMonedaConsolidado(null, _consultaMonedas),
           ],
         ],
       ),
@@ -2944,13 +3031,17 @@ class _SalesScreenState extends State<SalesScreen>
   ///
   /// [filas] existe por el bloque compartido, que tiene sus propias filas: sin
   /// él, el pie consolidaría la lista de la pestaña «Por moneda» (otro período).
-  Widget _buildPorMonedaConsolidado([List<VentasPorMoneda>? filas]) {
+  Widget _buildPorMonedaConsolidado([
+    List<VentasPorMoneda>? filas,
+    ConsultaVentasPorMoneda? consulta,
+  ]) {
     final datos = filas ?? _ventasPorMoneda;
     final totalConsolidado = _totalConsolidadoEn(datos);
     // La etiqueta sale de las filas, no del estado del servicio: si la RPC no
     // mandó consolidación, el importe del pie es el equivalente en la base y
     // llamarlo de otra forma sería mentir sobre su divisa.
     final moneda = _monedaConsolidacionDe(datos);
+    final confiable = consulta == null || consulta.totalConfiable;
 
     return Column(
       children: [
@@ -2962,7 +3053,9 @@ class _SalesScreenState extends State<SalesScreen>
             children: [
               Expanded(
                 child: Text(
-                  'Consolidado en $moneda',
+                  confiable
+                      ? 'Consolidado en $moneda'
+                      : 'Consolidado incompleto en $moneda',
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
               ),
@@ -3095,12 +3188,26 @@ class _SalesScreenState extends State<SalesScreen>
   /// importes nativos, que no son homogéneos.
   double get _totalConsolidado => _totalConsolidadoEn(_ventasPorMoneda);
 
+  /// Aclaración de la v2 (cohorte e incompletitud). Vacía en la v1.
+  String _sufijoContratoMonedas(ConsultaVentasPorMoneda? consulta) {
+    final texto = consulta?.aclaracion ?? '';
+    if (texto.isEmpty) return '';
+    return ' $texto';
+  }
+
   /// Fila de total: solo la columna del consolidado lleva importe. Las demás
   /// quedan con guion porque no son sumables (ver [_totalConsolidado]).
-  List<String> _porMonedaTotalRow([List<VentasPorMoneda>? filas]) {
+  List<String> _porMonedaTotalRow([
+    List<VentasPorMoneda>? filas,
+    ConsultaVentasPorMoneda? consulta,
+  ]) {
     final datos = filas ?? _ventasPorMoneda;
     final celdas = List<String>.filled(_porMonedaColumnCount, '-');
-    celdas[0] = 'Consolidado en ${_monedaConsolidacionDe(datos)}';
+    final confiable = consulta == null || consulta.totalConfiable;
+    final moneda = _monedaConsolidacionDe(datos);
+    celdas[0] = confiable
+        ? 'Consolidado en $moneda'
+        : 'Consolidado incompleto en $moneda';
     celdas[_porMonedaConsolidadoColumnIndex] = _formatCurrency(
       _totalConsolidadoEn(datos),
     );
@@ -3135,7 +3242,8 @@ class _SalesScreenState extends State<SalesScreen>
       'Lo cobrado por divisa según los pagos. No es lo facturado y no se '
       'compara con el total de ventas: los importes nativos llevan su divisa y '
       'no se suman entre filas; solo el equivalente en '
-      '${_monedaConsolidacionDe(filas)} es consolidable.';
+      '${_monedaConsolidacionDe(filas)} es consolidable.'
+      '${_sufijoContratoMonedas(_consultaMonedasCompartida)}';
 
   /// Bloque «Por moneda (cobrado)» en PDF, con las mismas columnas, los mismos
   /// importes y el mismo pie consolidado que la tabla en pantalla.
@@ -3149,7 +3257,7 @@ class _SalesScreenState extends State<SalesScreen>
 
     final headers = _porMonedaExportHeadersPara(filas);
     final rows = _porMonedaExportRows(filas);
-    final total = _porMonedaTotalRow(filas);
+    final total = _porMonedaTotalRow(filas, _consultaMonedasCompartida);
 
     return [
       pw.SizedBox(height: 18),
@@ -3225,7 +3333,10 @@ class _SalesScreenState extends State<SalesScreen>
       );
     }
     sheet.appendRow(
-      _porMonedaExcelRow(_porMonedaTotalRow(filas), _totalConsolidadoEn(filas)),
+      _porMonedaExcelRow(
+        _porMonedaTotalRow(filas, _consultaMonedasCompartida),
+        _totalConsolidadoEn(filas),
+      ),
     );
   }
 
@@ -3302,7 +3413,8 @@ class _SalesScreenState extends State<SalesScreen>
             pw.Text(
               'Los importes nativos llevan su divisa y no se suman entre filas: '
               'solo el equivalente en '
-              '${_monedaConsolidacionDe(_ventasPorMoneda)} es consolidable.',
+              '${_monedaConsolidacionDe(_ventasPorMoneda)} es consolidable.'
+              '${_sufijoContratoMonedas(_consultaMonedas)}',
               style: pw.TextStyle(
                 fontSize: 9,
                 color: PdfColor.fromHex('#475569'),
@@ -3349,7 +3461,7 @@ class _SalesScreenState extends State<SalesScreen>
                   decoration: pw.BoxDecoration(
                     color: PdfColor.fromHex('#E2E8F0'),
                   ),
-                  children: _porMonedaTotalRow()
+                  children: _porMonedaTotalRow(null, _consultaMonedas)
                       .map(
                         (celda) => _pdfBodyCell(
                           _porMonedaPdfSafe(celda),
@@ -3435,6 +3547,10 @@ class _SalesScreenState extends State<SalesScreen>
         excel.TextCellValue('Período'),
         excel.TextCellValue(_formatDateRangeLabel()),
       ]);
+      final aclaracion = _consultaMonedas?.aclaracion ?? '';
+      if (aclaracion.isNotEmpty) {
+        sheet.appendRow([excel.TextCellValue(aclaracion)]);
+      }
       if (_selectedWarehouseId != null) {
         sheet.appendRow([
           excel.TextCellValue('Almacén'),
@@ -3457,7 +3573,10 @@ class _SalesScreenState extends State<SalesScreen>
         );
       }
       sheet.appendRow(
-        _porMonedaExcelRow(_porMonedaTotalRow(), totalConsolidado),
+        _porMonedaExcelRow(
+          _porMonedaTotalRow(null, _consultaMonedas),
+          totalConsolidado,
+        ),
       );
 
       final bytes = workbook.encode();
@@ -3921,16 +4040,11 @@ class _SalesScreenState extends State<SalesScreen>
     final idTienda = await UserPreferencesService().getIdTienda();
     if (idTienda == null) throw Exception('No hay tienda seleccionada');
 
-    final response = await Supabase.instance.client.rpc(
-      'reporte_ordenes_json',
-      params: {
-        'p_id_tienda': idTienda,
-        'p_fecha_desde': _startDate.toIso8601String(),
-        'p_fecha_hasta': _endDate.toIso8601String(),
-        'p_id_tpv': null,
-      },
+    return SalesService.getReporteOrdenesJson(
+      idTienda: idTienda,
+      desde: _startDate,
+      hasta: _endDate,
     );
-    return response as Map<String, dynamic>;
   }
 
   Widget _buildBreakdownSummaryCard(List completas, List incompletas) {
@@ -4108,9 +4222,7 @@ class _SalesScreenState extends State<SalesScreen>
                   ],
                 ),
                 trailing: Text(
-                  // `total_operacion` es el importe de la operación: CUP por
-                  // construcción.
-                  MonedaConsolidacionService.formatear(_toDoubleSafe(total)),
+                  _etiquetaTotalOrden(orden, total),
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 14,
@@ -4189,9 +4301,7 @@ class _SalesScreenState extends State<SalesScreen>
                   style: const TextStyle(fontSize: 12),
                 ),
                 trailing: Text(
-                  // `total_operacion` es el importe de la operación: CUP por
-                  // construcción.
-                  MonedaConsolidacionService.formatear(_toDoubleSafe(total)),
+                  _etiquetaTotalOrden(orden, total),
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     color: AppColors.success,
@@ -4408,17 +4518,13 @@ class _SalesScreenState extends State<SalesScreen>
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
                             Text(
-                              // Importe y precio unitario de la línea: CUP por
-                              // construcción.
-                              MonedaConsolidacionService.formatear(
-                                _toDoubleSafe(item['importe']),
-                              ),
+                              _etiquetaImporteLinea(item),
                               style: const TextStyle(
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
                             Text(
-                              '${MonedaConsolidacionService.formatear(_toDoubleSafe(item['precio_unitario']))} c/u',
+                              '${_etiquetaPrecioLinea(item)} c/u',
                               style: const TextStyle(
                                 color: AppColors.textSecondary,
                                 fontSize: 10,
@@ -6678,6 +6784,16 @@ class _SalesScreenState extends State<SalesScreen>
                           ],
                         ),
                       ),
+                      if (_canViewGanancias)
+                        IconButton(
+                          tooltip: 'Estudio de inversión',
+                          onPressed: () => showEstudioInversionProducto(
+                            context,
+                            idProducto: product.idProducto,
+                            nombreProducto: product.nombreProducto,
+                          ),
+                          icon: const Icon(Icons.savings_outlined),
+                        ),
                       PopupMenuButton<String>(
                         tooltip: 'Exportar historial',
                         icon: const Icon(Icons.download),
@@ -7017,6 +7133,42 @@ class _SalesScreenState extends State<SalesScreen>
               padding: EdgeInsets.all(32),
               child: Center(
                 child: CircularProgressIndicator(color: AppColors.primary),
+              ),
+            )
+          else if (_productSalesError != null)
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Row(
+                children: [
+                  const Icon(Icons.cloud_off, color: AppColors.error),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Reporte de ventas no disponible',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'No se pudo cargar para el período seleccionado. '
+                          'Los importes anteriores se ocultaron para no '
+                          'confundirlos con el período actual.',
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: _loadProductSalesData,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Reintentar'),
+                  ),
+                ],
               ),
             )
           else if (_productSalesReports.isEmpty)
@@ -7562,15 +7714,13 @@ class _SalesScreenState extends State<SalesScreen>
               '${vendor.fechaCierre != null ? _formatDateTime(vendor.fechaCierre!) : 'en curso'}'
         : null;
 
-    // Consolidado del turno. `totalDineroGeneral` es una suma de importes
-    // nativos de divisas distintas (2 USD + 500 CUP no son 502 de nada), así que
-    // solo se enseña cuando el informe trae `totalBase` **y** el desglose tiene
-    // más de una divisa. `null` significa «exactamente lo de hoy»: el total
-    // nativo del subtítulo y ni una fila de desglose de más.
-    final double? totalBaseConsolidado =
-        vendor.totalBase != null &&
-            _hayVariasMonedasEnFilas(vendor.desgloseMonedas)
-        ? vendor.totalBase
+    // Con más de una divisa el subtítulo y el efectivo/transferencia salen del
+    // desglose. `totalDineroEfectivo` suma montos nativos (90.200 CUP + 132 USD
+    // = 90.332) y el `$` de esa cifra se lee como CUP. El pie de la tabla es
+    // el único total: suma `importeConsolidado`, que ya está en una divisa.
+    final variasMonedas = _hayVariasMonedasEnFilas(vendor.desgloseMonedas);
+    final monedaPie = variasMonedas
+        ? _monedaConsolidacionDe(vendor.desgloseMonedas)
         : null;
 
     return Container(
@@ -7613,17 +7763,13 @@ class _SalesScreenState extends State<SalesScreen>
                 ),
               ),
             Text(
-              totalBaseConsolidado != null
-                  // `total_base` de la RPC v2 es el equivalente en moneda base:
-                  // CUP por construcción, así que se lleva a la divisa de
-                  // consolidación y la etiqueta dice cuál es. Sin código en el
-                  // importe porque el paréntesis ya lo dice (y así el texto en
-                  // CUP es el de siempre).
+              variasMonedas
+                  // El mismo número que el pie «Consolidado» de la tabla. No
+                  // pasa por `formatear`: `importeConsolidado` ya está en
+                  // [monedaPie] y volver a multiplicar por la tasa lo cambiaría.
                   ? '${vendor.totalVentas} ventas • '
-                        '${MonedaConsolidacionService.formatear(totalBaseConsolidado, conCodigo: false)} '
-                        '(consolidado en $_monedaConsolidacion)'
-                  // `totalDineroGeneral` suma importes **nativos** de divisas
-                  // distintas: se queda sin consolidar, como en la pantalla.
+                        '${_formatCurrency(_totalConsolidadoEn(vendor.desgloseMonedas))} '
+                        '(consolidado en $monedaPie)'
                   : '${vendor.totalVentas} ventas • \$${vendor.totalDineroGeneral.toStringAsFixed(2)}',
             ),
             Text(
@@ -7667,16 +7813,7 @@ class _SalesScreenState extends State<SalesScreen>
                     AppColors.textSecondary,
                   ),
                 ],
-                _buildVendorDetailRow(
-                  'Efectivo en Caja',
-                  '\$${(vendor.totalDineroEfectivo - vendor.totalEgresos).toStringAsFixed(2)}',
-                  AppColors.success,
-                ),
-                _buildVendorDetailRow(
-                  'Transferencia',
-                  '\$${vendor.totalDineroTransferencia.toStringAsFixed(2)}',
-                  AppColors.info,
-                ),
+                ..._filasMedioTurno(vendor, variasMonedas),
                 _buildVendorDetailRow(
                   'Productos diferentes',
                   '${vendor.productosDiferentesVendidos}',
@@ -7697,7 +7834,9 @@ class _SalesScreenState extends State<SalesScreen>
                   AppColors.textSecondary,
                 ),
                 _buildVendorDetailRow(
-                  'Total Egresos',
+                  variasMonedas
+                      ? 'Total egresos ($_monedaBase)'
+                      : 'Total Egresos',
                   '\$${vendor.totalEgresos.toStringAsFixed(2)}',
                   AppColors.error,
                 ),
@@ -7705,7 +7844,7 @@ class _SalesScreenState extends State<SalesScreen>
                 // mismo pie consolidado que la pestaña «Por moneda», pero con
                 // las filas del informe del turno. Solo se pinta con más de una
                 // divisa: con una sola la tarjeta queda como estaba.
-                if (totalBaseConsolidado != null) ...[
+                if (variasMonedas) ...[
                   const SizedBox(height: 12),
                   Container(
                     width: double.infinity,
@@ -7814,6 +7953,61 @@ class _SalesScreenState extends State<SalesScreen>
         ],
       ),
     );
+  }
+
+  /// Efectivo y transferencia de la tarjeta.
+  ///
+  /// Con una sola divisa se conservan las dos cifras de siempre (el efectivo
+  /// ya neto de egresos). Con varias, cada divisa va en su fila: el total
+  /// nativo cruzado no es el consolidado de la tabla.
+  List<Widget> _filasMedioTurno(SalesVendorReport vendor, bool variasMonedas) {
+    if (!variasMonedas) {
+      return [
+        _buildVendorDetailRow(
+          'Efectivo en Caja',
+          '\$${(vendor.totalDineroEfectivo - vendor.totalEgresos).toStringAsFixed(2)}',
+          AppColors.success,
+        ),
+        _buildVendorDetailRow(
+          'Transferencia',
+          '\$${vendor.totalDineroTransferencia.toStringAsFixed(2)}',
+          AppColors.info,
+        ),
+      ];
+    }
+
+    final efectivos = efectivoCobradoPorDivisa(
+      vendor.desgloseMonedas,
+      egresos: vendor.totalEgresos,
+      monedaBase: _monedaBase,
+    );
+    final digitales = digitalCobradoPorDivisa(vendor.desgloseMonedas);
+    return [
+      for (final linea in efectivos)
+        _buildVendorDetailRow(
+          'Efectivo en caja (${linea.moneda})',
+          _formatMontoNativo(linea.importe, linea.moneda),
+          AppColors.success,
+        ),
+      if (efectivos.isEmpty)
+        _buildVendorDetailRow(
+          'Efectivo en caja',
+          _formatMontoNativo(-vendor.totalEgresos, _monedaBase),
+          AppColors.success,
+        ),
+      for (final linea in digitales)
+        _buildVendorDetailRow(
+          'Transferencia (${linea.moneda})',
+          _formatMontoNativo(linea.importe, linea.moneda),
+          AppColors.info,
+        ),
+      if (digitales.isEmpty)
+        _buildVendorDetailRow(
+          'Transferencia',
+          _formatMontoNativo(0, _monedaBase),
+          AppColors.info,
+        ),
+    ];
   }
 
   Widget _buildVendorDetailRow(String label, String value, Color color) {
@@ -8208,6 +8402,7 @@ class _SalesScreenState extends State<SalesScreen>
       // la vuelve a pedir el propio bloque en cuanto la pestaña se repinta.
       setState(() {
         _monedasCompartidasFuture = null;
+        _consultaMonedasCompartida = null;
       });
       // Solo se recarga si el usuario está mirando la pestaña: si no, se pide al
       // abrirla (_onTabChanged) y no se paga una RPC que nadie va a mirar.
@@ -8223,6 +8418,7 @@ class _SalesScreenState extends State<SalesScreen>
         fechaInicio: vendor.periodoInicio,
         fechaFin: vendor.periodoFin,
         uuidUsuario: vendor.uuidUsuario,
+        turnoId: vendor.idTurno,
       );
 
       if (!mounted) return;
@@ -8643,23 +8839,29 @@ class _SalesScreenState extends State<SalesScreen>
                                         ],
                                       ),
                                     ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 4,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: _getStatusColor(
-                                          order.estadoNombre,
+                                    Flexible(
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 4,
                                         ),
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Text(
-                                        order.estadoNombre,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w500,
+                                        decoration: BoxDecoration(
+                                          color: _getStatusColor(
+                                            _estadoNombreOrden(order),
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          _estadoNombreOrden(order),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w500,
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -8683,28 +8885,39 @@ class _SalesScreenState extends State<SalesScreen>
                                                   color: AppColors.success,
                                                 ),
                                                 const SizedBox(width: 4),
-                                                Text(
-                                                  // Importe de la operación:
-                                                  // CUP por construcción.
-                                                  MonedaConsolidacionService.formatear(
-                                                    order.totalOperacion,
-                                                  ),
-                                                  style: const TextStyle(
-                                                    fontWeight: FontWeight.w600,
-                                                    fontSize: 15,
+                                                Flexible(
+                                                  child: Text(
+                                                    // Importe de la operación:
+                                                    // CUP por construcción.
+                                                    MonedaConsolidacionService.formatear(
+                                                      order.totalOperacion,
+                                                    ),
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: const TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      fontSize: 15,
+                                                    ),
                                                   ),
                                                 ),
-                                                const SizedBox(width: 16),
+                                                const SizedBox(width: 8),
                                                 Icon(
                                                   Icons.shopping_bag,
                                                   size: 16,
                                                   color: AppColors.info,
                                                 ),
                                                 const SizedBox(width: 4),
-                                                Text(
-                                                  '${order.cantidadItems} prod.',
-                                                  style: const TextStyle(
-                                                    fontSize: 14,
+                                                Flexible(
+                                                  child: Text(
+                                                    '${order.cantidadItems} prod.',
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: const TextStyle(
+                                                      fontSize: 14,
+                                                    ),
                                                   ),
                                                 ),
                                               ],
@@ -9220,9 +9433,17 @@ class _SalesScreenState extends State<SalesScreen>
         return AppColors.warning;
       case 'Completado':
       case 'Completada':
+      case 'Facturada':
+      case 'Despachada':
         return AppColors.success;
       case 'Cancelado':
+      case 'Cancelada':
+      case 'Anulada':
         return AppColors.error;
+      case 'En Proceso':
+      case 'Por Despachar':
+      case 'En Preparación':
+        return AppColors.info;
       default:
         return AppColors.textSecondary;
     }
@@ -9538,6 +9759,31 @@ class _SalesScreenState extends State<SalesScreen>
     );
   }
 
+  /// Total de la orden en la auditoría. Con desglose v1 muestra el neto
+  /// nativo por moneda; si no, el `total_operacion` legacy en CUP.
+  String _etiquetaTotalOrden(Map orden, dynamic totalLegacy) {
+    return ReporteOrdenes.totalesNativos(orden) ??
+        MonedaConsolidacionService.formatear(_toDoubleSafe(totalLegacy));
+  }
+
+  String _etiquetaImporteLinea(dynamic item) {
+    if (item is Map) {
+      final nativo = ReporteOrdenes.importeLineaNativo(item);
+      if (nativo != null) return nativo;
+    }
+    return MonedaConsolidacionService.formatear(_toDoubleSafe(item['importe']));
+  }
+
+  String _etiquetaPrecioLinea(dynamic item) {
+    if (item is Map) {
+      final nativo = ReporteOrdenes.precioUnitarioNativo(item);
+      if (nativo != null) return nativo;
+    }
+    return MonedaConsolidacionService.formatear(
+      _toDoubleSafe(item['precio_unitario']),
+    );
+  }
+
   double _toDoubleSafe(dynamic value) {
     if (value == null) return 0.0;
     if (value is num) return value.toDouble();
@@ -9592,7 +9838,7 @@ class _SalesScreenState extends State<SalesScreen>
 
       if (!mounted) return;
 
-      final List<VendorOrder> pendingOrders = [];
+      final List<VendorOrder> pendingOrdersRaw = [];
       if (response != null) {
         for (final item in response) {
           try {
@@ -9601,13 +9847,20 @@ class _SalesScreenState extends State<SalesScreen>
             // Filtrar solo órdenes que contengan "Venta" en tipo_operacion
             final tipoOperacion = item['tipo_operacion']?.toString() ?? '';
             if (tipoOperacion.toLowerCase().contains('venta')) {
-              pendingOrders.add(order);
+              pendingOrdersRaw.add(order);
             }
           } catch (e) {
             print('Error parsing pending order: $e');
           }
         }
       }
+
+      // La RPC solo acota por fecha + TPV + usuario: sin este filtro entrarían
+      // pendientes de otros turnos del mismo vendedor dentro del rango.
+      final pendingOrders = _filterOrdersForVendorTurno(
+        pendingOrdersRaw,
+        vendor,
+      );
 
       // Calcular totales separados por tipo de pago
       double totalEfectivoOferta = 0.0; // tipo_pago = 1
@@ -9620,7 +9873,7 @@ class _SalesScreenState extends State<SalesScreen>
       // una sola divisa el mapa tiene una fila y el chip se pinta como siempre.
       final Map<String, double> transferenciasPorMoneda = <String, double>{};
 
-      for (final order in pendingOrders) {
+      for (final order in pendingOrders.where(_isVendorOrderCompleted)) {
         if (order.detalles['pagos'] != null) {
           final pagos = order.detalles['pagos'] as List;
           for (final pago in pagos) {
@@ -9945,29 +10198,32 @@ class _SalesScreenState extends State<SalesScreen>
                                           ],
                                         ),
                                       ),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 4,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: AppColors.warning.withOpacity(
-                                            0.1,
+                                      Flexible(
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
                                           ),
-                                          borderRadius: BorderRadius.circular(
-                                            6,
-                                          ),
-                                          border: Border.all(
+                                          decoration: BoxDecoration(
                                             color: AppColors.warning
-                                                .withOpacity(0.3),
+                                                .withOpacity(0.1),
+                                            borderRadius: BorderRadius.circular(
+                                              6,
+                                            ),
+                                            border: Border.all(
+                                              color: AppColors.warning
+                                                  .withOpacity(0.3),
+                                            ),
                                           ),
-                                        ),
-                                        child: Text(
-                                          order.estadoNombre,
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w500,
-                                            color: AppColors.warning,
+                                          child: Text(
+                                            _estadoNombreOrden(order),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w500,
+                                              color: AppColors.warning,
+                                            ),
                                           ),
                                         ),
                                       ),
@@ -9983,11 +10239,15 @@ class _SalesScreenState extends State<SalesScreen>
                                         color: Colors.grey[600],
                                       ),
                                       const SizedBox(width: 4),
-                                      Text(
-                                        _formatDateTime(order.fechaOperacion),
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          color: Colors.grey[600],
+                                      Flexible(
+                                        child: Text(
+                                          _formatDateTime(order.fechaOperacion),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            color: Colors.grey[600],
+                                          ),
                                         ),
                                       ),
                                       const SizedBox(width: 16),
@@ -9997,11 +10257,15 @@ class _SalesScreenState extends State<SalesScreen>
                                         color: Colors.grey[600],
                                       ),
                                       const SizedBox(width: 4),
-                                      Text(
-                                        '${order.cantidadItems} items',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          color: Colors.grey[600],
+                                      Flexible(
+                                        child: Text(
+                                          '${order.cantidadItems} items',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            color: Colors.grey[600],
+                                          ),
                                         ),
                                       ),
                                     ],
@@ -10011,17 +10275,24 @@ class _SalesScreenState extends State<SalesScreen>
                                     mainAxisAlignment:
                                         MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Text(
-                                        'TPV: ${order.tpvNombre}',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          color: Colors.grey[700],
+                                      Expanded(
+                                        child: Text(
+                                          'TPV: ${order.tpvNombre}',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            color: Colors.grey[700],
+                                          ),
                                         ),
                                       ),
+                                      const SizedBox(width: 8),
                                       Text(
                                         MonedaConsolidacionService.formatear(
                                           order.totalOperacion,
                                         ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(
                                           fontSize: 16,
                                           fontWeight: FontWeight.w600,
@@ -10572,7 +10843,10 @@ class _SalesScreenState extends State<SalesScreen>
 
       if (!mounted) return;
 
-      // Filtrar solo órdenes que tengan transferencias como método de pago
+      // La lista muestra cualquier orden con pago por transferencia, incluidas
+      // las canceladas/otros estados; el filtro de completadas solo aplica a
+      // los totales (un pago de una orden no completada no entra en
+      // `totalDineroTransferencia` del resumen del turno).
       final transferOrders = orders.where((order) {
         if (order.detalles['pagos'] == null) return false;
         final pagos = order.detalles['pagos'] as List;
@@ -10587,7 +10861,7 @@ class _SalesScreenState extends State<SalesScreen>
       // el gran total solo es fiel con una divisa y el desglose lo acompaña.
       double totalTransferencias = 0.0;
       final Map<String, double> transferenciasPorMoneda = <String, double>{};
-      for (final order in transferOrders) {
+      for (final order in transferOrders.where(_isVendorOrderCompleted)) {
         if (order.detalles['pagos'] != null) {
           final pagos = order.detalles['pagos'] as List;
           for (final pago in pagos) {
@@ -10803,12 +11077,32 @@ class _SalesScreenState extends State<SalesScreen>
                                   (a, b) => a + b,
                                 );
 
+                            // Las órdenes que no suman se distinguen por un
+                            // tinte casi blanco + borde del color del estado.
+                            final estadoLow =
+                                _estadoNombreOrden(order).toLowerCase();
+                            final esCancelada =
+                                estadoLow.contains('cancelad') ||
+                                estadoLow.contains('anulad') ||
+                                estadoLow.contains('devuel');
+                            final esPendiente = estadoLow.contains('pendient');
+                            final cardColor = esCancelada
+                                ? const Color(0xFFFEF2F2)
+                                : esPendiente
+                                ? const Color(0xFFFFF7ED)
+                                : Colors.white;
+                            final cardBorder = esCancelada
+                                ? const Color(0xFFFECACA)
+                                : esPendiente
+                                ? const Color(0xFFFED7AA)
+                                : Colors.grey[200]!;
+
                             return Container(
                               margin: const EdgeInsets.only(bottom: 12),
                               decoration: BoxDecoration(
-                                color: Colors.white,
+                                color: cardColor,
                                 borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: Colors.grey[200]!),
+                                border: Border.all(color: cardBorder),
                                 boxShadow: [
                                   BoxShadow(
                                     color: Colors.black.withOpacity(0.05),
@@ -10847,39 +11141,47 @@ class _SalesScreenState extends State<SalesScreen>
                                         ],
                                       ),
                                     ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 4,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.success,
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          const Icon(
-                                            Icons.account_balance,
-                                            size: 12,
-                                            color: Colors.white,
+                                    Flexible(
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.success,
+                                          borderRadius: BorderRadius.circular(
+                                            12,
                                           ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            _hayVariasMonedas(
-                                                  orderTransferPorMoneda,
-                                                )
-                                                ? _formatDesglosePorMoneda(
-                                                    orderTransferPorMoneda,
-                                                  )
-                                                : '\$${orderTransferTotal.toStringAsFixed(2)}',
-                                            style: const TextStyle(
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const Icon(
+                                              Icons.account_balance,
+                                              size: 12,
                                               color: Colors.white,
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w500,
                                             ),
-                                          ),
-                                        ],
+                                            const SizedBox(width: 4),
+                                            Flexible(
+                                              child: Text(
+                                                _hayVariasMonedas(
+                                                      orderTransferPorMoneda,
+                                                    )
+                                                    ? _formatDesglosePorMoneda(
+                                                        orderTransferPorMoneda,
+                                                      )
+                                                    : '\$${orderTransferTotal.toStringAsFixed(2)}',
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ),
                                   ],
@@ -10899,24 +11201,32 @@ class _SalesScreenState extends State<SalesScreen>
                                             color: AppColors.textSecondary,
                                           ),
                                           const SizedBox(width: 4),
-                                          Text(
-                                            'Total: ${MonedaConsolidacionService.formatear(order.totalOperacion)}',
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w600,
-                                              fontSize: 15,
+                                          Flexible(
+                                            child: Text(
+                                              'Total: ${MonedaConsolidacionService.formatear(order.totalOperacion)}',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 15,
+                                              ),
                                             ),
                                           ),
-                                          const SizedBox(width: 16),
+                                          const SizedBox(width: 8),
                                           Icon(
                                             Icons.shopping_bag,
                                             size: 16,
                                             color: AppColors.info,
                                           ),
                                           const SizedBox(width: 4),
-                                          Text(
-                                            '${order.cantidadItems} prod.',
-                                            style: const TextStyle(
-                                              fontSize: 14,
+                                          Flexible(
+                                            child: Text(
+                                              '${order.cantidadItems} prod.',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontSize: 14,
+                                              ),
                                             ),
                                           ),
                                         ],
@@ -10942,6 +11252,19 @@ class _SalesScreenState extends State<SalesScreen>
                                           ),
                                         ],
                                       ),
+                                      // Órdenes no completadas: se listan pero
+                                      // no entran en el total del turno.
+                                      if (!_isVendorOrderCompleted(order)) ...[
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          'No suma en el total · ${_estadoNombreOrden(order)}',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontStyle: FontStyle.italic,
+                                            color: Colors.grey[600],
+                                          ),
+                                        ),
+                                      ],
                                       // Solo mostrar chips de transferencias
                                       if (order.detalles['pagos'] != null) ...[
                                         const SizedBox(height: 8),
@@ -10971,7 +11294,7 @@ class _SalesScreenState extends State<SalesScreen>
                                           CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          'Estado: ${order.estadoNombre}',
+                                          'Estado: ${_estadoNombreOrden(order)}',
                                           style: const TextStyle(
                                             fontSize: 14,
                                             fontWeight: FontWeight.w500,

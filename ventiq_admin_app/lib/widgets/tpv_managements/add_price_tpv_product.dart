@@ -5,6 +5,7 @@ import '../../config/app_colors.dart';
 import '../../services/tpv_price_service.dart';
 import '../../services/product_service.dart';
 import '../../models/tpv_price.dart';
+import '../../models/tpv_price_money.dart';
 import 'package:intl/intl.dart';
 
 /// Widget para agregar o editar precios específicos de productos por TPV
@@ -29,6 +30,7 @@ class AddPriceTpvProductDialog extends StatefulWidget {
 class _AddPriceTpvProductDialogState extends State<AddPriceTpvProductDialog> {
   final _formKey = GlobalKey<FormState>();
   final _precioController = TextEditingController();
+  final _precioUsdController = TextEditingController();
   final _descuentoController = TextEditingController(text: '0');
   final _observacionesController = TextEditingController();
   
@@ -60,6 +62,7 @@ class _AddPriceTpvProductDialogState extends State<AddPriceTpvProductDialog> {
   @override
   void dispose() {
     _precioController.dispose();
+    _precioUsdController.dispose();
     super.dispose();
   }
 
@@ -111,6 +114,9 @@ class _AddPriceTpvProductDialogState extends State<AddPriceTpvProductDialog> {
   void _loadExistingPrice() {
     final price = widget.existingPrice!;
     _precioController.text = price.precioVentaCup.toString();
+    if (price.precioVentaUsd != null) {
+      _precioUsdController.text = price.precioVentaUsd.toString();
+    }
     _fechaDesde = price.fechaDesde;
     _fechaHasta = price.fechaHasta;
     _esActivo = price.esActivo;
@@ -146,24 +152,28 @@ class _AddPriceTpvProductDialogState extends State<AddPriceTpvProductDialog> {
     try {
       final productId = widget.productId ?? int.parse(_selectedProduct!.id);
       final precio = double.parse(_precioController.text);
+      final usdTexto = _precioUsdController.text.trim();
+      final usd = usdTexto.isEmpty ? null : double.parse(usdTexto);
 
       bool success = false;
 
       if (widget.existingPrice != null) {
-        // Actualizar precio existente
         success = await TpvPriceService.updateTpvPrice(
           priceId: widget.existingPrice!.id!,
           price: precio,
+          precioUsd: usd,
+          heredarUsd: usdTexto.isEmpty,
           fechaDesde: _fechaDesde,
           fechaHasta: _fechaHasta,
           esActivo: _esActivo,
         );
       } else {
-        // Crear nuevo precio
         final result = await TpvPriceService.createTpvPrice(
           productId: productId,
           tpvId: _selectedTpvId!,
           price: precio,
+          precioUsd: usd,
+          heredarUsd: false,
           fechaDesde: _fechaDesde,
           fechaHasta: _fechaHasta,
         );
@@ -417,6 +427,54 @@ class _AddPriceTpvProductDialogState extends State<AddPriceTpvProductDialog> {
                                 }
                                 return null;
                               },
+                            ),
+                            const SizedBox(height: 20),
+                            const Text(
+                              'Precio USD',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            TextFormField(
+                              controller: _precioUsdController,
+                              decoration: InputDecoration(
+                                hintText: 'Opcional',
+                                prefixIcon: const Icon(Icons.attach_money),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                filled: true,
+                                fillColor: Colors.grey[50],
+                              ),
+                              keyboardType: const TextInputType.numberWithOptions(
+                                decimal: true,
+                              ),
+                              inputFormatters: [
+                                FilteringTextInputFormatter.allow(
+                                  RegExp(r'^\d*\.?\d{0,2}'),
+                                ),
+                              ],
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
+                                  return null;
+                                }
+                                final parsed = double.tryParse(value);
+                                if (parsed == null || parsed <= 0) {
+                                  return 'El USD tiene que ser mayor a 0';
+                                }
+                                return null;
+                              },
+                              onChanged: (_) => setState(() {}),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              TpvPricePreview.texto(
+                                editando: widget.existingPrice != null,
+                                usdVacio: _precioUsdController.text.trim().isEmpty,
+                              ),
+                              style: TextStyle(color: Colors.grey[700]),
                             ),
                             const SizedBox(height: 20),
 

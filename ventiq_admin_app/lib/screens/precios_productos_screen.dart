@@ -51,7 +51,15 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
   }
 
   Future<void> _loadProfitPermission() async {
-    final allowed = await PermissionsService().canViewGanancias();
+    final perms = PermissionsService();
+    var allowed = await perms.canViewGanancias();
+    if (!allowed) {
+      // En esta pantalla el gerente también ve el % de ganancia.
+      final storeId = await _userPrefs.getIdTienda();
+      if (storeId != null) {
+        allowed = await perms.getUserRoleForStore(storeId) == UserRole.gerente;
+      }
+    }
     if (!mounted) return;
     setState(() => _canViewGanancias = allowed);
   }

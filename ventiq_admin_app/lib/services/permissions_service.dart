@@ -126,8 +126,8 @@ class PermissionsService {
       // Si hay tienda actual, usar ese rol; de lo contrario, usar el rol de mayor jerarquía
       final role =
           currentStoreId != null && rolesByStore.containsKey(currentStoreId)
-              ? rolesByStore[currentStoreId]!
-              : _getHighestRole(rolesByStore);
+          ? rolesByStore[currentStoreId]!
+          : _getHighestRole(rolesByStore);
 
       print('✅ ROL DETECTADO Y GUARDADO EN CACHÉ: ${getRoleName(role)}');
       _cachedRole = role;
@@ -159,7 +159,9 @@ class PermissionsService {
 
   /// El Dueño también está en app_dat_gerente. Si la sesión guardó Gerente,
   /// se vuelve a leer app_dat_dueno para no ocultarle las ganancias.
-  Future<Map<int, UserRole>> _withDuenoOverride(Map<int, UserRole> roles) async {
+  Future<Map<int, UserRole>> _withDuenoOverride(
+    Map<int, UserRole> roles,
+  ) async {
     final user = _supabase.auth.currentUser;
     if (user == null) return roles;
 
@@ -381,12 +383,11 @@ class PermissionsService {
       final user = _supabase.auth.currentUser;
       if (user == null) return null;
 
-      final almaceneroData =
-          await _supabase
-              .from('app_dat_almacenero')
-              .select('id_almacen')
-              .eq('uuid', user.id)
-              .maybeSingle();
+      final almaceneroData = await _supabase
+          .from('app_dat_almacenero')
+          .select('id_almacen')
+          .eq('uuid', user.id)
+          .maybeSingle();
 
       if (almaceneroData != null) {
         _cachedWarehouseId = almaceneroData['id_almacen'] as int?;
@@ -775,6 +776,7 @@ class PermissionsService {
     ],
     'inventory.create_adjustment': [UserRole.gerente],
     'inventory.approve_adjustment': [UserRole.gerente, UserRole.supervisor],
+
     /// Etiquetar stock sin lote (código + fecha) en productos es_por_lotes.
     'inventory.assign_lote': [UserRole.gerente, UserRole.supervisor],
     'inventory.view': [
@@ -796,21 +798,9 @@ class PermissionsService {
     ],
 
     // Trabajadores
-    'worker.create': [
-      UserRole.gerente,
-      UserRole.supervisor,
-      UserRole.recursosHumanos,
-    ],
-    'worker.edit': [
-      UserRole.gerente,
-      UserRole.supervisor,
-      UserRole.recursosHumanos,
-    ],
-    'worker.delete': [
-      UserRole.gerente,
-      UserRole.supervisor,
-      UserRole.recursosHumanos,
-    ],
+    'worker.create': [UserRole.gerente],
+    'worker.edit': [UserRole.gerente],
+    'worker.delete': [UserRole.gerente],
     'worker.view': [
       UserRole.gerente,
       UserRole.supervisor,
@@ -836,26 +826,26 @@ class PermissionsService {
 
     // Configuración
     'settings.view': [UserRole.gerente, UserRole.supervisor],
-    'settings.edit': [UserRole.gerente, UserRole.supervisor],
+    'settings.edit': [UserRole.gerente],
 
     // TPVs
-    'tpv.create': [UserRole.gerente, UserRole.supervisor],
-    'tpv.edit': [UserRole.gerente, UserRole.supervisor],
-    'tpv.delete': [UserRole.gerente, UserRole.supervisor],
+    'tpv.create': [UserRole.gerente],
+    'tpv.edit': [UserRole.gerente],
+    'tpv.delete': [UserRole.gerente],
 
     // Precios por TPV
-    'tpv_price.create': [UserRole.gerente, UserRole.supervisor],
-    'tpv_price.edit': [UserRole.gerente, UserRole.supervisor],
-    'tpv_price.delete': [UserRole.gerente, UserRole.supervisor],
-    'tpv_price.restore': [UserRole.gerente, UserRole.supervisor],
-    'tpv_price.import': [UserRole.gerente, UserRole.supervisor],
+    'tpv_price.create': [UserRole.gerente],
+    'tpv_price.edit': [UserRole.gerente],
+    'tpv_price.delete': [UserRole.gerente],
+    'tpv_price.restore': [UserRole.gerente],
+    'tpv_price.import': [UserRole.gerente],
 
     // Vendedores / asignación TPV
-    'vendor.assign_tpv': [UserRole.gerente, UserRole.supervisor],
-    'vendor.unassign_tpv': [UserRole.gerente, UserRole.supervisor],
-    'vendor.create': [UserRole.gerente, UserRole.supervisor],
-    'vendor.delete': [UserRole.gerente, UserRole.supervisor],
-    'vendor.edit_price_permission': [UserRole.gerente, UserRole.supervisor],
+    'vendor.assign_tpv': [UserRole.gerente],
+    'vendor.unassign_tpv': [UserRole.gerente],
+    'vendor.create': [UserRole.gerente],
+    'vendor.delete': [UserRole.gerente],
+    'vendor.edit_price_permission': [UserRole.gerente],
 
     // Clientes (CRM)
     'customer.create': [UserRole.gerente],

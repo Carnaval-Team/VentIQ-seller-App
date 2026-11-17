@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/tpv_price.dart';
+import '../models/tpv_price_money.dart';
 
 /// Servicio para gestión de precios diferenciados por TPV
 class TpvPriceService {
@@ -91,6 +92,8 @@ class TpvPriceService {
     required int productId,
     required int tpvId,
     required double price,
+    double? precioUsd,
+    bool heredarUsd = false,
     DateTime? fechaDesde,
     DateTime? fechaHasta,
   }) async {
@@ -99,10 +102,34 @@ class TpvPriceService {
         '💰 Creando precio TPV: Producto $productId, TPV $tpvId, Precio \$${price.toStringAsFixed(2)}',
       );
 
+      final usd = heredarUsd
+          ? await _usdVigente(productId, tpvId)
+          : precioUsd;
+      try {
+        final saved = await _supabase.rpc(
+          'fn_m01_guardar_precio_tpv',
+          params: {
+            'p_id_tpv': tpvId,
+            'p_id_producto': productId,
+            'p_precio_cup': price,
+            'p_precio_usd': usd,
+          },
+        );
+        final map = saved is Map ? Map<String, dynamic>.from(saved) : null;
+        if (map?['success'] == true) {
+          final id = map?['id_precio_tpv'];
+          if (id is num) return getTpvPriceById(id.toInt());
+          return null;
+        }
+      } catch (e) {
+        if (!_rpcAusente(e)) rethrow;
+      }
+
       final data = {
         'id_producto': productId,
         'id_tpv': tpvId,
         'precio_venta_cup': price,
+        if (!heredarUsd) 'precio_venta_usd': precioUsd,
         'fecha_desde':
             (fechaDesde ?? DateTime.now()).toIso8601String().split('T')[0],
         'fecha_hasta': fechaHasta?.toIso8601String().split('T')[0],
@@ -161,6 +188,8 @@ class TpvPriceService {
   static Future<bool> updateTpvPrice({
     required int priceId,
     required double price,
+    double? precioUsd,
+    bool heredarUsd = true,
     DateTime? fechaDesde,
     DateTime? fechaHasta,
     bool? esActivo,
@@ -168,8 +197,34 @@ class TpvPriceService {
     try {
       print('🔄 Actualizando precio TPV ID: $priceId');
 
+      final actual =
+          await _supabase
+              .from('app_dat_precio_tpv')
+              .select('id_producto, id_tpv, precio_venta_usd')
+              .eq('id', priceId)
+              .maybeSingle();
+      if (actual == null) return false;
+      final usd = heredarUsd
+          ? TpvPriceMoney.opcional(actual['precio_venta_usd'])
+          : precioUsd;
+      try {
+        await _supabase.rpc(
+          'fn_m01_guardar_precio_tpv',
+          params: {
+            'p_id_tpv': actual['id_tpv'],
+            'p_id_producto': actual['id_producto'],
+            'p_precio_cup': price,
+            'p_precio_usd': usd,
+          },
+        );
+        return true;
+      } catch (e) {
+        if (!_rpcAusente(e)) rethrow;
+      }
+
       final data = <String, dynamic>{
         'precio_venta_cup': price,
+        if (!heredarUsd) 'precio_venta_usd': precioUsd,
         'updated_at': DateTime.now().toIso8601String(),
       };
 
@@ -383,6 +438,8 @@ class TpvPriceService {
             productId: priceData.idProducto,
             tpvId: priceData.idTpv,
             price: priceData.precioVentaCup,
+            precioUsd: priceData.precioVentaUsd,
+            heredarUsd: priceData.heredarUsd,
             fechaDesde: priceData.fechaDesde,
             fechaHasta: priceData.fechaHasta,
           );
@@ -543,5 +600,36 @@ class TpvPriceService {
         'products_with_prices': 0,
       };
     }
+  }
+
+  static Future<double?> _usdVigente(int productId, int tpvId) async {
+    final today = DateTime.now().toIso8601String().split('T')[0];
+    final response =
+        await _supabase
+            .from('app_dat_precio_tpv')
+            .select('precio_venta_usd')
+            .eq('id_producto', productId)
+            .eq('id_tpv', tpvId)
+            .eq('es_activo', true)
+            .isFilter('deleted_at', null)
+            .lte('fecha_desde', today)
+            .or('fecha_hasta.is.null,fecha_hasta.gte.$today')
+            .order('id', ascending: false)
+            .limit(1)
+            .maybeSingle();
+    if (response == null) return null;
+    return TpvPriceMoney.opcional(response['precio_venta_usd']);
+  }
+
+  static bool _rpcAusente(Object error) {
+    final text = error.toString().toLowerCase();
+    if (text.contains('42501') ||
+        text.contains('permission denied') ||
+        text.contains('acceso denegado') ||
+        text.contains('insufficient_privilege')) {
+      return false;
+    }
+    return text.contains('pgrst202') ||
+        text.contains('could not find the function');
   }
 }

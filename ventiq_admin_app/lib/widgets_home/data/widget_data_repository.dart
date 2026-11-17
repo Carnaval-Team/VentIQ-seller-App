@@ -65,6 +65,7 @@ class WidgetDataRepository {
       // `ganancia_total` del reporte de ventas con proveedor.
       final range = _rangeForPeriodo(periodo);
       double gananciaBruta = 0.0;
+      var gananciaDisponible = true;
       try {
         final reports = await SalesService.getProductSalesReport(
           fechaDesde: range.desde,
@@ -75,10 +76,11 @@ class WidgetDataRepository {
           gananciaBruta += report.gananciaTotal;
         }
       } catch (error) {
-        // Si el reporte de ganancias falla, se degrada a ventas − gastos en
-        // lugar de dejar el widget vacío.
+        // Si el reporte de ganancias falla, el campo queda no-disponible:
+        // sustituirlo por `ventas − gastos` inventaría una ganancia neta
+        // que no es la magnitud pedida.
         debugPrint('⚠️ Widget: ganancia por producto no disponible: $error');
-        gananciaBruta = _toDouble(analysis['totalSales']);
+        gananciaDisponible = false;
       }
 
       final gananciaNeta = gananciaBruta - gastos;
@@ -88,7 +90,9 @@ class WidgetDataRepository {
           WidgetKeys.fieldPeriodo: periodo,
           WidgetKeys.fieldVentas: _money(_toDouble(analysis['totalSales'])),
           WidgetKeys.fieldGastos: _money(gastos),
-          WidgetKeys.fieldGananciaNeta: _money(gananciaNeta),
+          WidgetKeys.fieldGananciaNeta: gananciaDisponible
+              ? _money(gananciaNeta)
+              : 'N/D',
           WidgetKeys.fieldOrdenes: ordenes.toString(),
           WidgetKeys.fieldDeltaPct: _money(deltaPct),
           WidgetKeys.fieldTrend: trend

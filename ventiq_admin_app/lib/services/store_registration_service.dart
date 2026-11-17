@@ -257,11 +257,45 @@ class StoreRegistrationService {
         }
       });
 
-      // Llamar a la función RPC para crear la estructura completa
-      final response = await _supabase.rpc(
-        'crear_estructura_tienda',
-        params: params,
-      );
+      // El creador de la RPC nueva es auth.uid(). La firma anterior sigue
+      // mientras esa función no exista. Una denegación no reintenta.
+      dynamic response;
+      try {
+        response = await _supabase.rpc(
+          'fn_m01_crear_estructura_tienda',
+          params: {
+            'p_denominacion_tienda': denominacionTienda,
+            'p_direccion_tienda': direccionTienda,
+            'p_ubicacion_tienda': ubicacionTienda,
+            'p_pais': pais,
+            'p_estado': estado,
+            'p_nombre_pais': nombrePais,
+            'p_nombre_estado': nombreEstado,
+            'p_latitude': latitude,
+            'p_longitude': longitude,
+            'p_almacenes_data': almacenesData,
+            'p_tpv_data': tpvData,
+            'p_personal_data': personalData,
+            'p_layouts_data': layoutsData,
+          },
+        );
+      } catch (e) {
+        final text = e.toString().toLowerCase();
+        final denied = text.contains('42501') ||
+            text.contains('insufficient_privilege') ||
+            text.contains('permission denied') ||
+            text.contains('acceso denegado');
+        final missing = !denied &&
+            (text.contains('pgrst202') ||
+                text.contains('could not find the function') ||
+                (text.contains('does not exist') &&
+                    text.contains('fn_m01_crear_estructura_tienda')));
+        if (!missing) rethrow;
+        response = await _supabase.rpc(
+          'crear_estructura_tienda',
+          params: params,
+        );
+      }
 
       print('📦 Respuesta de RPC: $response');
 

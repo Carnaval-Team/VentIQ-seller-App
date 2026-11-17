@@ -9,6 +9,7 @@ import '../widgets/admin_bottom_navigation.dart';
 import '../widgets/admin_drawer.dart';
 import '../utils/number_formatter.dart';
 import '../utils/navigation_guard.dart';
+import 'productos_con_existencia_screen.dart';
 
 class ProductsDashboardScreen extends StatefulWidget {
   const ProductsDashboardScreen({super.key});
@@ -30,6 +31,7 @@ class _ProductsDashboardScreenState extends State<ProductsDashboardScreen>
   // Permisos
   final PermissionsService _permissionsService = PermissionsService();
   bool _canCreateProduct = false;
+  bool _canViewGanancias = false;
 
   // Datos del dashboard
   Map<String, dynamic> _kpis = {};
@@ -105,8 +107,11 @@ class _ProductsDashboardScreenState extends State<ProductsDashboardScreen>
     final canCreate = await _permissionsService.canPerformAction(
       'product.create',
     );
+    final canViewGanancias = await _permissionsService.canViewGanancias();
+    if (!mounted) return;
     setState(() {
       _canCreateProduct = canCreate;
+      _canViewGanancias = canViewGanancias;
     });
   }
 
@@ -369,6 +374,10 @@ class _ProductsDashboardScreenState extends State<ProductsDashboardScreen>
                   () => _tabController.animateTo(2), // Cambiar de 2 a 3
               onViewReports: () => _tabController.animateTo(1), // Mantener en 1
             ),
+            if (_canViewGanancias) ...[
+              const SizedBox(height: 12),
+              const _EstudioInversionCard(),
+            ],
             const SizedBox(height: 12),
             ProductsKPICards(kpis: _kpis, isLoading: _isLoadingKPIs),
             const SizedBox(height: 12),
@@ -729,7 +738,7 @@ class _ProductsDashboardScreenState extends State<ProductsDashboardScreen>
               Icon(Icons.star, color: AppColors.warning, size: 20),
               const SizedBox(width: 8),
               const Text(
-                'Top 5 Productos',
+                'Top 5 por stock',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
@@ -817,7 +826,7 @@ class _ProductsDashboardScreenState extends State<ProductsDashboardScreen>
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
                               Text(
-                                '${product['movimientos'] ?? 0} mov.',
+                                '${product['stockActual'] ?? 0} uds.',
                                 style: TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w600,
@@ -825,7 +834,7 @@ class _ProductsDashboardScreenState extends State<ProductsDashboardScreen>
                                 ),
                               ),
                               Text(
-                                'Stock: ${product['stockActual'] ?? 0}',
+                                'en stock',
                                 style: TextStyle(
                                   fontSize: 11,
                                   color: Colors.grey[600],
@@ -1629,6 +1638,53 @@ class ProductsAdditionalInfo extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EstudioInversionCard extends StatelessWidget {
+  const _EstudioInversionCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 2,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => const ProductosConExistenciaScreen(),
+            ),
+          );
+        },
+        child: const Padding(
+          padding: EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Icon(Icons.savings_outlined, color: AppColors.primary),
+              SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Estudio de inversión',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Productos con existencia ahora. El mismo cálculo, con precio teórico.',
+                      style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right),
+            ],
+          ),
         ),
       ),
     );

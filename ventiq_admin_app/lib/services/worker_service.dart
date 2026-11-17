@@ -253,21 +253,46 @@ class WorkerService {
         '  - Maneja Apertura Control: ${manejaAperturaControl ?? "sin cambios"}',
       ); // 📋 NUEVO
 
-      // 1. Editar datos básicos con RPC existente
-      final response = await _supabase.rpc(
-        'fn_editar_trabajador_basico',
-        params: {
-          'p_trabajador_id': workerId,
-          'p_nombres': nombres,
-          'p_apellidos': apellidos,
-          'p_uuid': usuarioUuid,
-        },
-      );
+      // La identidad no viaja en la edición. Si la RPC nueva no existe,
+      // la anterior sigue recibiendo el uuid.
+      dynamic response;
+      var identidadEnEdicion = false;
+      try {
+        response = await _supabase.rpc(
+          'fn_m01_editar_trabajador_basico',
+          params: {
+            'p_trabajador_id': workerId,
+            'p_nombres': nombres,
+            'p_apellidos': apellidos,
+            'p_uuid': null,
+          },
+        );
+      } catch (e) {
+        if (!_m01RpcUnavailable(e, 'fn_m01_editar_trabajador_basico')) {
+          rethrow;
+        }
+        identidadEnEdicion = true;
+        response = await _supabase.rpc(
+          'fn_editar_trabajador_basico',
+          params: {
+            'p_trabajador_id': workerId,
+            'p_nombres': nombres,
+            'p_apellidos': apellidos,
+            'p_uuid': usuarioUuid,
+          },
+        );
+      }
 
       print('📋 Respuesta de edición: $response');
 
       if (response['success'] != true) {
         throw Exception(response['message'] ?? 'Error al editar trabajador');
+      }
+
+      if (!identidadEnEdicion &&
+          usuarioUuid != null &&
+          usuarioUuid.isNotEmpty) {
+        await _vincularUsuario(workerId, storeId, usuarioUuid);
       }
 
       // 2. Actualizar campos adicionales directamente si se proporcionaron
@@ -324,16 +349,9 @@ class WorkerService {
     try {
       print('🔄 Actualizando UUID del trabajador: $workerId');
 
-      final response =
-          await _supabase
-              .from('app_dat_trabajadores')
-              .update({'uuid': uuid})
-              .eq('id', workerId)
-              .eq('id_tienda', storeId)
-              .select();
-
-      print('📋 Respuesta de actualización de UUID: $response');
-      return response.isNotEmpty;
+      final vinculado = await _vincularUsuario(workerId, storeId, uuid);
+      print('📋 UUID del trabajador actualizado: $vinculado');
+      return vinculado;
     } catch (e) {
       print('❌ Error en updateWorkerUUID: $e');
       throw Exception('Error al actualizar UUID del trabajador: $e');
@@ -350,9 +368,10 @@ class WorkerService {
     try {
       print('🔗 Desvinculando usuario del trabajador: $workerId');
 
-      final response = await _supabase.rpc(
+      final response = await _rpcM01(
+        'fn_m01_personal_desvincular_usuario_trabajador',
         'fn_desvincular_usuario_trabajador',
-        params: {'p_trabajador_id': workerId, 'p_id_tienda': storeId},
+        {'p_trabajador_id': workerId, 'p_id_tienda': storeId},
       );
 
       print('📋 Respuesta de desvinculación: $response');
@@ -647,9 +666,10 @@ class WorkerService {
     try {
       print('➡️ Agregando rol $tipoRol al trabajador $trabajadorId');
 
-      final response = await _supabase.rpc(
+      final response = await _rpcM01(
+        'fn_m01_agregar_rol_trabajador',
         'fn_agregar_rol_trabajador',
-        params: {
+        {
           'p_trabajador_id': trabajadorId,
           'p_id_tienda': storeId,
           'p_tipo_rol': tipoRol,
@@ -684,9 +704,10 @@ class WorkerService {
     try {
       print('❌ Eliminando rol $tipoRol del trabajador $trabajadorId');
 
-      final response = await _supabase.rpc(
+      final response = await _rpcM01(
+        'fn_m01_eliminar_rol_trabajador',
         'fn_eliminar_rol_trabajador',
-        params: {
+        {
           'p_trabajador_id': trabajadorId,
           'p_tipo_rol': tipoRol,
           'p_id_cocina': idCocina,
@@ -721,9 +742,10 @@ class WorkerService {
         '✏️ Actualizando datos específicos del rol $tipoRol para trabajador $trabajadorId',
       );
 
-      final response = await _supabase.rpc(
+      final response = await _rpcM01(
+        'fn_m01_actualizar_datos_rol_trabajador',
         'fn_actualizar_datos_rol_trabajador',
-        params: {
+        {
           'p_trabajador_id': trabajadorId,
           'p_tipo_rol': tipoRol,
           'p_tpv_id': tpvId,
@@ -950,5 +972,60 @@ class WorkerService {
       print('❌ Error en assignUUIDFromRoles: $e');
       throw Exception('Error al asignar UUID desde roles: $e');
     }
+  }
+
+  static Future<bool> _vincularUsuario(
+    int workerId,
+    int storeId,
+    String uuid,
+  ) async {
+    try {
+      final ok = await _supabase.rpc(
+        'fn_m01_personal_vincular_usuario_trabajador',
+        params: {'p_id_trabajador': workerId, 'p_uuid': uuid},
+      );
+      return ok == true;
+    } catch (e) {
+      if (!_m01RpcUnavailable(
+        e,
+        'fn_m01_personal_vincular_usuario_trabajador',
+      )) {
+        rethrow;
+      }
+    }
+    final response = await _supabase
+        .from('app_dat_trabajadores')
+        .update({'uuid': uuid})
+        .eq('id', workerId)
+        .eq('id_tienda', storeId)
+        .select('id');
+    return response.isNotEmpty;
+  }
+
+  static Future<dynamic> _rpcM01(
+    String m01Name,
+    String legacyName,
+    Map<String, dynamic> params,
+  ) async {
+    try {
+      return await _supabase.rpc(m01Name, params: params);
+    } catch (e) {
+      if (!_m01RpcUnavailable(e, m01Name)) rethrow;
+      return _supabase.rpc(legacyName, params: params);
+    }
+  }
+
+  static bool _m01RpcUnavailable(Object error, String functionName) {
+    final text = error.toString().toLowerCase();
+    if (text.contains('42501') ||
+        text.contains('insufficient_privilege') ||
+        text.contains('permission denied') ||
+        text.contains('acceso denegado')) {
+      return false;
+    }
+    final fn = functionName.toLowerCase();
+    return text.contains('pgrst202') ||
+        text.contains('could not find the function') ||
+        (text.contains('does not exist') && text.contains(fn));
   }
 }

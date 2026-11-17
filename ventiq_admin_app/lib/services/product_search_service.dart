@@ -486,6 +486,10 @@ class ProductSearchService {
 
   static List<Map<String, dynamic>> _filterByProductType(List<Map<String, dynamic>> products, ProductSearchType? searchType) {
 
+    if (searchType == ProductSearchType.reception) {
+      return products.where((product) => product['es_servicio'] != true).toList();
+    }
+
     if (searchType == null || searchType == ProductSearchType.all || searchType == ProductSearchType.withStock) {
 
       return products;
@@ -679,6 +683,8 @@ class ProductSearchService {
 /// Tipos de búsqueda de productos
 
 enum ProductSearchType {
+
+  reception,
 
   all,        // Todos los productos
 

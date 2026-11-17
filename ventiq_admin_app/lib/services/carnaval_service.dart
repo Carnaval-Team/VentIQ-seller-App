@@ -3,6 +3,21 @@ import 'dart:typed_data';
 import 'store_service.dart';
 import 'user_preferences_service.dart';
 
+bool _rpcAusente(Object error, String functionName) {
+  final text = error.toString().toLowerCase();
+  if (text.contains('42501') ||
+      text.contains('insufficient_privilege') ||
+      text.contains('permission denied') ||
+      text.contains('acceso denegado')) {
+    return false;
+  }
+  final fn = functionName.toLowerCase();
+  return text.contains('pgrst202') ||
+      text.contains('could not find the function') ||
+      text.contains('schema cache') ||
+      (text.contains('does not exist') && text.contains(fn));
+}
+
 class CarnavalService {
   static final _supabase = Supabase.instance.client;
 
@@ -442,10 +457,24 @@ class CarnavalService {
       }
 
       // 7. Actualizar la tienda
-      await _supabase
-          .from('app_dat_tienda')
-          .update({'admin_carnaval': false, 'id_tienda_carnaval': null})
-          .eq('id', storeId);
+      try {
+        final respuesta = await _supabase.rpc(
+          'fn_m01_desvincular_tienda_carnaval',
+          params: {'p_id_tienda': storeId},
+        );
+        final mapa = respuesta is Map
+            ? Map<String, dynamic>.from(respuesta)
+            : null;
+        if (mapa == null || mapa['success'] != true) {
+          throw Exception('No se desvinculó la tienda');
+        }
+      } catch (e) {
+        if (!_rpcAusente(e, 'fn_m01_desvincular_tienda_carnaval')) rethrow;
+        await _supabase
+            .from('app_dat_tienda')
+            .update({'admin_carnaval': false, 'id_tienda_carnaval': null})
+            .eq('id', storeId);
+      }
 
       print('✅ Tienda desincronizada de Carnaval');
     } catch (e) {

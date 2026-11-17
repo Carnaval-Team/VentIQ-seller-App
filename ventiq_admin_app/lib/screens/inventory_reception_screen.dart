@@ -17,6 +17,7 @@ import '../widgets/ai_reception_sheet.dart';
 import '../models/ai_reception_models.dart';
 import '../models/fondo_inversion.dart';
 import '../services/fondo_inversion_service.dart';
+import '../widgets/fdi_recepcion_fuentes.dart';
 
 class InventoryReceptionScreen extends StatefulWidget {
   const InventoryReceptionScreen({super.key});
@@ -57,6 +58,32 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   List<FdiInversion> _inversionesAbiertas = [];
   FdiInversion? _selectedInversion;
   final _tasaInversionController = TextEditingController();
+  List<FdiSaldo> _saldosFondo = [];
+  List<FdiFuenteRecepcion> _fuentesFondo = [];
+  bool _usarFondo = false;
+  bool _cargandoFondo = true;
+  String? _errorFondo;
+  late final String _claveFondo = FondoInversionService().newIdempotencyKey();
+
+  double get _montoRecepcion => _montoTotalController.text.trim().isEmpty
+      ? _totalAmount
+      : (double.tryParse(_montoTotalController.text.replaceAll(',', '.')) ?? double.nan);
+
+  Future<void> _loadSaldosFondo() async {
+    setState(() { _cargandoFondo = true; _errorFondo = null; });
+    try {
+      final tienda = await UserPreferencesService().getIdTienda();
+      if (tienda == null) throw StateError('No se encontró la tienda');
+      final resultado = await FondoInversionService().saldos(tienda);
+      if (!mounted) return;
+      setState(() => _saldosFondo = resultado.saldos
+          .where((s) => s.saldo > 0 && s.idMedioPago != null).toList());
+    } catch (e) {
+      if (mounted) setState(() => _errorFondo = 'No se pudo cargar el saldo del fondo: $e');
+    } finally {
+      if (mounted) setState(() => _cargandoFondo = false);
+    }
+  }
 
   @override
   void initState() {
@@ -64,6 +91,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
     _loadMotivoOptions();
     _loadProveedores();
     _loadInversionesAbiertas();
+    _loadSaldosFondo();
     _searchController.addListener(_onSearchChanged);
 
     // Load persisted values from previous entries
@@ -416,6 +444,15 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
       }
     }
 
+    if (_isLoading) return;
+    if (!_montoRecepcion.isFinite || _montoRecepcion < 0 || (_usarFondo && _montoRecepcion == 0)) {
+      _showError('Indique un monto de recepción válido');
+      return;
+    }
+    if (_usarFondo) {
+      final error = FdiFuenteRecepcion.validar(_fuentesFondo, _montoRecepcion, _selectedCurrency);
+      if (error != null) { _showError(error); return; }
+    }
     setState(() => _isLoading = true);
 
     try {
@@ -462,9 +499,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
       }
       print("==========================================");
 
-      final montoRecepcion = _montoTotalController.text.isNotEmpty
-          ? double.parse(_montoTotalController.text)
-          : _totalAmount;
+      final montoRecepcion = _montoRecepcion;
       final inv = _selectedInversion;
       double? tasaInversion;
       if (inv != null && inv.monedaReferencia != _selectedCurrency) {
@@ -486,6 +521,8 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
         monedaFactura: _selectedCurrency,
         idInversion: inv?.id,
         tasaInversion: tasaInversion,
+        fuentesFondo: _usarFondo ? _fuentesFondo.map((f) => f.toJson()).toList() : null,
+        idempotencyKey: _usarFondo ? _claveFondo : null,
       );
 
       // La recepción ya quedó registrada; si el vínculo con la inversión
@@ -683,9 +720,34 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                 border: const OutlineInputBorder(),
               ),
               keyboardType: TextInputType.number,
+              onChanged: (_) => setState(() {}),
             ),
+            if (_cargandoFondo) const LinearProgressIndicator(),
+            if (_errorFondo != null)
+              TextButton(onPressed: _loadSaldosFondo, child: Text('$_errorFondo · Reintentar')),
+            if (!_cargandoFondo && _errorFondo == null && _saldosFondo.isEmpty)
+              const Text('No hay saldo disponible en el fondo de inversión.'),
+            if (_saldosFondo.isNotEmpty) ...[
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Financiar con fondo de inversión'),
+                subtitle: const Text('Descontar de una o varias cuentas y registrar el uso con esta recepción.'),
+                value: _usarFondo,
+                onChanged: _isLoading ? null : (value) => setState(() {
+                  _usarFondo = value;
+                  _selectedInversion = null;
+                  _fuentesFondo = [];
+                }),
+              ),
+              if (_usarFondo)
+                FdiRecepcionFuentes(
+                  saldos: _saldosFondo, total: _montoRecepcion,
+                  moneda: _selectedCurrency, enabled: !_isLoading,
+                  onChanged: (fuentes) => _fuentesFondo = fuentes,
+                ),
+            ],
             // Vínculo opcional con una inversión abierta del fondo
-            if (_inversionesAbiertas.isNotEmpty) ...[
+            if (!_usarFondo && _inversionesAbiertas.isNotEmpty) ...[
               const SizedBox(height: 12),
               DropdownButtonFormField<FdiInversion>(
                 initialValue: _selectedInversion,
@@ -787,7 +849,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
               height: 300,
               child: ProductSelectorWidget(
                 key: ValueKey(_selectedProveedor?['id']),
-                searchType: ProductSearchType.all,
+                searchType: ProductSearchType.reception,
                 requireInventory: false,
                 searchHint: 'Buscar productos para recibir...',
                 supplierId: _selectedProveedor?['id'] as int?,

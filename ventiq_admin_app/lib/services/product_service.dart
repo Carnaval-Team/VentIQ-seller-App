@@ -121,6 +121,51 @@ class ProductStockSnapshot {
 class ProductService {
   static final SupabaseClient _supabase = Supabase.instance.client;
 
+  static Future<void> crearInventarioInicialProducto({
+    required int productId,
+    required int idTienda,
+    required String sku,
+    bool esServicio = false,
+    bool esElaborado = false,
+  }) async {
+    if (!esServicio && !esElaborado) return;
+    final almacenes = await _supabase
+        .from('app_dat_almacen')
+        .select('id, denominacion')
+        .eq('id_tienda', idTienda);
+    if (almacenes.isEmpty) {
+      throw StateError('La tienda no tiene almacenes configurados');
+    }
+    final presentacion = await _supabase
+        .from('app_dat_producto_presentacion')
+        .select('id')
+        .eq('id_producto', productId)
+        .eq('es_base', true)
+        .single();
+    final layouts = await _supabase
+        .from('app_dat_layout_almacen')
+        .select('id, id_almacen')
+        .inFilter('id_almacen', almacenes.map((a) => a['id']).toList())
+        .order('id');
+    final filas = <Map<String, dynamic>>[];
+    for (final almacen in almacenes) {
+      final zonas = layouts.where((l) => l['id_almacen'] == almacen['id']);
+      if (zonas.isEmpty) {
+        throw StateError('El almacén ${almacen['denominacion']} no tiene ubicaciones');
+      }
+      filas.add({
+        'id_producto': productId,
+        'id_ubicacion': zonas.first['id'],
+        'id_presentacion': presentacion['id'],
+        'cantidad_inicial': 0,
+        'cantidad_final': 1,
+        'sku_producto': sku,
+        'origen_cambio': 2,
+      });
+    }
+    await _supabase.from('app_dat_inventario_productos').insert(filas);
+  }
+
   // Getter público para acceder al cliente Supabase
 
   static SupabaseClient get supabase => _supabase;
@@ -500,6 +545,7 @@ class ProductService {
     required String descripcion,
 
     String? skuCodigo,
+    bool especial = false,
   }) async {
     try {
       // Obtener ID de tienda desde las preferencias del usuario
@@ -548,6 +594,7 @@ class ProductService {
         'id_categoria': categoriaId,
 
         'id_tienda': idTienda,
+        'especial': especial,
       });
 
       print('✅ Categoría asociada a la tienda exitosamente');
@@ -3032,6 +3079,7 @@ class ProductService {
     required List<Map<String, dynamic>> ingredientes,
 
     required bool esServicio,
+    bool guardarAtomico = false,
   }) async {
     try {
       print('🍽️ ===== INICIANDO INSERCIÓN DE INGREDIENTES =====');
@@ -3070,6 +3118,11 @@ class ProductService {
       }).toList();
 
       print('🍽️ Datos finales para insertar: $ingredientesData');
+
+      if (esServicio || guardarAtomico) {
+        await _supabase.from('app_dat_producto_ingredientes').insert(ingredientesData);
+        return true;
+      }
 
       // Insertar cada ingrediente individualmente para mejor control de errores
 
@@ -3882,6 +3935,43 @@ class ProductService {
   }
 
   /// Actualiza el precio promedio de una presentación específica
+
+  /// Corrige el costo introducido en una línea de recepción (uso: Dueño desde
+  /// el historial de costos) vía `fn_corregir_costo_recepcion`: la RPC verifica
+  /// en servidor que el caller es dueño de la tienda del producto y, en una
+  /// sola transacción, reemplaza la línea de recepción, el evento histórico
+  /// erróneo de `app_dat_precio_costo` (así la valoración retroactiva también
+  /// usa el dato bueno) y el `precio_promedio` vigente.
+  ///
+  /// [eventoFecha] es el `created_at` del evento a reemplazar; la RPC busca la
+  /// fila de esa presentación más cercana en el tiempo.
+  static Future<bool> corregirCostoRecepcion({
+    int? idRecepcionProducto,
+    required int idProducto,
+    int? idPresentacion,
+    required double nuevoCostoUnitario,
+    DateTime? eventoFecha,
+  }) async {
+    try {
+      final response = await _supabase.rpc(
+        'fn_corregir_costo_recepcion',
+        params: {
+          'p_id_recepcion_producto': idRecepcionProducto,
+          'p_nuevo_costo': nuevoCostoUnitario,
+          if (eventoFecha != null)
+            'p_evento_fecha': eventoFecha.toIso8601String(),
+          'p_id_producto': idProducto,
+          'p_id_presentacion': idPresentacion,
+        },
+      );
+      if (response is Map && response['success'] == true) return true;
+      debugPrint('⚠️ fn_corregir_costo_recepcion: $response');
+      return false;
+    } catch (e) {
+      debugPrint('❌ Error corrigiendo costo de recepción: $e');
+      return false;
+    }
+  }
 
   static Future<bool> updatePresentationAveragePrice({
     required String presentationId,

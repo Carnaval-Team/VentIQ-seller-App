@@ -1681,9 +1681,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           }).toList();
         });
 
+    // Solo el Dueño puede corregir el costo registrado en una recepción.
+    final esDueno =
+        await PermissionsService().getUserRole() == UserRole.dueno;
+    if (!mounted) return;
+
     await showDialog<void>(
       context: context,
-      builder: (context) => Dialog(
+      builder: (dialogContext) => Dialog(
         insetPadding: const EdgeInsets.all(16),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 900, maxHeight: 700),
@@ -1986,6 +1991,27 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                           'Proveedor: ${header['proveedor'] ?? header['id_proveedor']}',
                                         ),
                                     ],
+                                    // El evento se puede corregir aunque no se
+                                    // haya encontrado la recepción asociada:
+                                    // la RPC solo corrige historial y promedio.
+                                    if (esDueno)
+                                      Align(
+                                        alignment: Alignment.centerRight,
+                                        child: TextButton.icon(
+                                          onPressed: () =>
+                                              _corregirCostoRecepcion(
+                                                dialogContext,
+                                                reception,
+                                                next,
+                                                date,
+                                              ),
+                                          icon: const Icon(
+                                            Icons.edit_outlined,
+                                            size: 16,
+                                          ),
+                                          label: const Text('Corregir costo'),
+                                        ),
+                                      ),
                                   ],
                                 ),
                               ),
@@ -2001,6 +2027,93 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         ),
       ),
     );
+  }
+
+  /// Diálogo del Dueño para corregir el costo registrado por una recepción:
+  /// el valor introducido pasa a ser el `precio_promedio` de la presentación
+  /// (con su evento en `app_dat_precio_costo`) y el costo de la línea de
+  /// recepción. Al terminar se cierra y reabre el historial ya corregido.
+  Future<void> _corregirCostoRecepcion(
+    BuildContext historyDialogContext,
+    Map<String, dynamic>? reception,
+    double? costoActual,
+    DateTime? eventoFecha,
+  ) async {
+    final controller = TextEditingController(
+      text: costoActual?.toStringAsFixed(4) ?? '',
+    );
+    final nuevoCosto = await showDialog<double>(
+      context: historyDialogContext,
+      builder: (context) => AlertDialog(
+        title: const Text('Corregir costo de la recepción'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Indica el costo real por unidad (USD) que debe quedar. '
+              'Se actualiza la línea de recepción y el costo promedio de la '
+              'presentación queda en ese valor.',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: const InputDecoration(
+                labelText: 'Costo real por unidad (USD)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final value = double.tryParse(controller.text.trim());
+              if (value == null || value <= 0 || !value.isFinite) return;
+              Navigator.pop(context, value);
+            },
+            child: const Text('Guardar'),
+          ),
+        ],
+      ),
+    );
+    if (nuevoCosto == null || !mounted) return;
+
+    final productId = int.tryParse(_product.id);
+    if (productId == null) return;
+
+    final ok = await ProductService.corregirCostoRecepcion(
+      idRecepcionProducto: (reception?['id'] as num?)?.toInt(),
+      idProducto: productId,
+      idPresentacion: (reception?['id_presentacion'] as num?)?.toInt(),
+      nuevoCostoUnitario: nuevoCosto,
+      eventoFecha: eventoFecha,
+    );
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ok
+              ? 'Costo corregido a ${nuevoCosto.toStringAsFixed(4)} USD'
+              : 'No se pudo corregir el costo',
+        ),
+        backgroundColor: ok ? Colors.green : Colors.red,
+      ),
+    );
+    if (ok) {
+      Navigator.of(historyDialogContext).pop();
+      setState(() {});
+      _showCostHistoryDialog();
+    }
   }
 
   Widget _buildPromotionalPricesSection() {

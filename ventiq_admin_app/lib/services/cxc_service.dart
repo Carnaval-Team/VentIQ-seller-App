@@ -135,4 +135,19 @@ class CxcService {
 
     return Map<String, dynamic>.from(response as Map);
   }
+
+  /// Saldo de la venta nueva, separado por moneda. Un fallo no se informa como cero.
+  static Future<List<Map<String, dynamic>>> saldosProductoV1(int idCliente) async {
+    final response = await _supabase.rpc(
+      'fn_m01_cxc_saldo_v1',
+      params: {'p_id_cliente': idCliente},
+    );
+    if (response is! List) {
+      throw Exception('El saldo por moneda no esta disponible');
+    }
+    return [
+      for (final row in response)
+        if (row is Map) Map<String, dynamic>.from(row),
+    ];
+  }
 }

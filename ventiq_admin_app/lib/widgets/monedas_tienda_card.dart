@@ -34,6 +34,7 @@ class _MonedasTiendaCardState extends State<MonedasTiendaCard> {
   /// aplica (más de una moneda vendible).
   bool _forzandoMonedaVenta = false;
   String? _monedaVentaForzada;
+  bool _monedaPorProducto = false;
 
   @override
   void initState() {
@@ -51,8 +52,9 @@ class _MonedasTiendaCardState extends State<MonedasTiendaCard> {
       _monedas.where(_esVendible).toList();
 
   /// Con una sola moneda no hay nada que forzar: el bloque no se pinta y la
-  /// configuración no se toca.
-  bool get _aplicaForzado => _monedasVendibles.length > 1;
+  /// configuración no se toca. Con "moneda por producto" encendida tampoco:
+  /// son mutuamente excluyentes (el servidor lo refuerza).
+  bool get _aplicaForzado => _monedasVendibles.length > 1 && !_monedaPorProducto;
 
   /// Divisa que muestra el selector y que se persiste: la forzada si sigue
   /// siendo vendible y, si no, la base (CUP) o la primera disponible. Evita que
@@ -89,11 +91,14 @@ class _MonedasTiendaCardState extends State<MonedasTiendaCard> {
       final monedaForzada = hayEleccion
           ? await StoreConfigService.getMonedaVentaForzada(widget.storeId)
           : null;
+      final monedaPorProducto =
+          await StoreConfigService.getPermitirMonedaPorProducto(widget.storeId);
       if (!mounted) return;
       setState(() {
         _monedas = lista;
         _forzandoMonedaVenta = forzando;
         _monedaVentaForzada = monedaForzada;
+        _monedaPorProducto = monedaPorProducto;
         _cargando = false;
       });
     } catch (e) {
@@ -135,6 +140,9 @@ class _MonedasTiendaCardState extends State<MonedasTiendaCard> {
   /// se toca… salvo que este mismo guardado haya dejado la moneda forzada sin
   /// ser aceptada: ahí se apaga para no bloquear la venta sin que nadie lo vea.
   Future<void> _guardarMonedaForzada() async {
+    // "Moneda por producto" excluye la forzada: el servidor la apaga al
+    // activar el flag, pero aquí tampoco se escribe por si acaso.
+    if (_monedaPorProducto) return;
     if (!_aplicaForzado && !_forzandoMonedaVenta) return;
 
     final forzar = _aplicaForzado && _forzandoMonedaVenta;
@@ -145,6 +153,37 @@ class _MonedasTiendaCardState extends State<MonedasTiendaCard> {
       // deja NULL: nunca una divisa huérfana lista para re-bloquear la venta.
       monedaVentaForzada: forzar ? _monedaVentaVigente : null,
     );
+  }
+
+  Future<void> _cambiarMonedaPorProducto(bool value) async {
+    setState(() => _guardando = true);
+    try {
+      final activa = await StoreConfigService.fijarMonedaPorProducto(
+        storeId: widget.storeId,
+        activar: value,
+      );
+      if (!mounted) return;
+      setState(() {
+        _monedaPorProducto = activa;
+        // El servidor apaga la forzada al encender el flag; la UI refleja lo
+        // mismo sin esperar la recarga.
+        if (activa) {
+          _forzandoMonedaVenta = false;
+          _monedaVentaForzada = null;
+        }
+      });
+      _avisar(
+        activa
+            ? 'Moneda por producto activa — se desactivó la moneda forzada'
+            : 'La moneda por producto sigue apagada',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _monedaPorProducto = false);
+      _avisar(TiendaMonedasService.mensajeError(e), error: true);
+    } finally {
+      if (mounted) setState(() => _guardando = false);
+    }
   }
 
   void _avisar(String mensaje, {bool error = false}) {
@@ -359,6 +398,19 @@ class _MonedasTiendaCardState extends State<MonedasTiendaCard> {
                 const Divider(height: 32),
                 _buildForzarMonedaVenta(theme),
               ],
+              const Divider(height: 32),
+              SwitchListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Moneda por producto'),
+                subtitle: const Text(
+                  'Si lo activas, el vendedor elige la moneda en el detalle del producto. '
+                  'Solo puede vender en una moneda que ya tenga precio configurado. '
+                  'Incompatible con forzar moneda de venta: al activarla se apaga.',
+                ),
+                value: _monedaPorProducto,
+                onChanged: _guardando ? null : _cambiarMonedaPorProducto,
+              ),
             ],
           ],
         ),

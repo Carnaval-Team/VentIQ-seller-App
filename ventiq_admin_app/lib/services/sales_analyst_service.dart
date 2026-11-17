@@ -1,7 +1,5 @@
 import 'dart:convert';
 
-import 'package:http/http.dart' as http;
-
 import '../config/gemini_config.dart';
 import '../models/sales.dart';
 import '../models/sales_analyst_models.dart';
@@ -83,6 +81,9 @@ class SalesAnalystService {
         .toList();
 
     final vendorTotals = _aggregateVendorTotals(vendorReports);
+    final usaPreciosActuales = productSalesReports.any(
+      (r) => r.usaPreciosActuales,
+    );
 
     return {
       'meta': {
@@ -96,10 +97,29 @@ class SalesAnalystService {
           'id': selectedWarehouseId,
           'nombre': selectedWarehouseName ?? '',
         },
+        // Magnitudes declaradas (spec de reportes): los totales escalares
+        // del contexto son neto contable en moneda base. Los nativos por
+        // divisa viven SOLO en `desglose_monedas` y nunca se suman a ellos.
         'moneda': 'CUP',
+        'magnitud_total_ventas': 'venta_neta_base_cup',
+        'base_temporal': 'comercial',
+        // Los importes por producto cambian de significado según el modo:
+        // histórico cobrado vs análisis con la lista vigente. No se pueden
+        // reetiquetar entre sí.
+        'modo_precios_productos':
+            usaPreciosActuales ? 'lista_actual' : 'precios_cobrados',
+        'cobertura': {
+          'productos': productSalesReports.length,
+          'vendedores': vendorReports.length,
+          'proveedores': supplierReports.length,
+          'analisis_productos': productAnalysis.length,
+          'incluye_ganancias': includeProfit,
+        },
       },
       'tiempo_real': {
         'total_ventas': totalSales,
+        'total_ventas_moneda': 'CUP',
+        'total_ventas_magnitud': 'venta_neta_base_cup',
         'total_productos_vendidos': totalProductsSold,
         'top_productos': topProducts,
         'productos': productSalesReports
@@ -185,6 +205,9 @@ Responde SOLO con JSON válido, sin markdown ni texto adicional.
 Tu misión:
 - Responder únicamente preguntas sobre ventas.
 - Si el contexto tiene "ocultar_ganancias": true, no menciones costos, márgenes, utilidad ni ganancias. Responde solo con ventas, cantidades e ingresos.
+- Los importes están en CUP salvo que el campo indique otra moneda. `desglose_monedas` trae importes NATIVOS por divisa: nunca sumes importe_nativo de divisas distintas ni los mezcles con los totales CUP; si comparas divisas usa importe_base_cup.
+- `modo_precios_productos` dice si los importes por producto son precios realmente cobrados o la lista vigente: si es "lista_actual", acláralo al citarlos.
+- No inventes cifras: si un dato no está en el contexto, dilo en vez de estimarlo como si estuviera medido.
 - Si la pregunta no está relacionada con ventas, responde con:
   {"summary":"Solo puedo responder preguntas sobre ventas.","insights":[],"projections":[],"recommendations":[],"tables":[],"charts":[],"cards":[]}
 
@@ -270,6 +293,23 @@ $question''';
       'primera_venta': report.primeraVenta.toIso8601String(),
       'ultima_venta': report.ultimaVenta.toIso8601String(),
       'status': report.status,
+      // Desglose nativo por divisa de la v2 del reporte: cada fila es
+      // cobrado en SU moneda (importe_nativo) y su equivalente CUP
+      // (importe_base). No sumar importe_nativo entre divisas.
+      if (report.desgloseMonedas.isNotEmpty)
+        'desglose_monedas': report.desgloseMonedas
+            .map(
+              (m) => {
+                'moneda': m.moneda,
+                'operaciones': m.operaciones,
+                'importe_nativo': m.importeNativo,
+                'importe_base_cup': m.importeBase,
+                'efectivo_nativo': m.efectivoNativo,
+                'digital_nativo': m.digitalNativo,
+              },
+            )
+            .toList(),
+      if (report.totalBase != null) 'total_base_cup': report.totalBase,
     };
   }
 

@@ -853,20 +853,6 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
                           _buildLoteSection(),
                           SizedBox(height: compact ? 12 : 16),
                         ],
-                        if (!_modoMixto)
-                          PriceCurrencyConverterWidget(
-                            invoiceCurrency: widget.invoiceCurrency,
-                            priceController: _precioUnitarioController,
-                            onPriceConverted: (convertedPrice, currency) {
-                              print(
-                                '💱 Precio convertido a USD: $convertedPrice',
-                              );
-                              setState(() {
-                                _finalPriceInUSD = convertedPrice;
-                                _finalCurrency = currency;
-                              });
-                            },
-                          ),
                         SizedBox(height: compact ? 14 : 20),
                         _buildAdvancedOptions(compact: compact),
                       ],
@@ -1385,47 +1371,44 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
         ),
         SizedBox(height: 16),
 
-        // Purchase Price
+        // Purchase Price: el selector de moneda va dentro del mismo campo y
+        // la conversión a USD se muestra debajo cuando aplica.
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            TextFormField(
-              controller: _precioUnitarioController,
-              decoration: InputDecoration(
-                labelText: compact
-                    ? 'Precio de compra'
-                    : 'Precio de Compra (por presentación seleccionada)',
-                hintText: compact
-                    ? 'A ${widget.invoiceCurrency}'
-                    : 'Se convertirá automáticamente a ${widget.invoiceCurrency}',
-                border: OutlineInputBorder(
-                  borderSide: BorderSide(color: AppColors.border),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderSide: BorderSide(color: AppColors.border),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderSide: BorderSide(color: AppColors.primary, width: 2),
-                ),
-                prefixIcon: _isLoadingLastPrice
-                    ? SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: Padding(
-                          padding: EdgeInsets.all(12),
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: AppColors.primary,
-                          ),
+            PriceCurrencyConverterWidget(
+              invoiceCurrency: widget.invoiceCurrency,
+              priceController: _precioUnitarioController,
+              label: compact
+                  ? 'Precio de compra'
+                  : 'Precio de Compra (por presentación seleccionada)',
+              hintText: compact
+                  ? 'A ${widget.invoiceCurrency}'
+                  : 'Se convertirá automáticamente a ${widget.invoiceCurrency}',
+              prefixIcon: _isLoadingLastPrice
+                  ? SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: Padding(
+                        padding: EdgeInsets.all(12),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppColors.primary,
                         ),
-                      )
-                    : Icon(Icons.attach_money, color: AppColors.primary),
-              ),
-              keyboardType: TextInputType.numberWithOptions(decimal: true),
+                      ),
+                    )
+                  : Icon(Icons.attach_money, color: AppColors.primary),
               validator: (value) {
                 if (value == null || value.isEmpty)
                   return 'El precio de compra es obligatorio';
                 return null;
+              },
+              onPriceConverted: (convertedPrice, currency) {
+                print('💱 Precio convertido a USD: $convertedPrice');
+                setState(() {
+                  _finalPriceInUSD = convertedPrice;
+                  _finalCurrency = currency;
+                });
               },
             ),
             if (_lastPurchaseDate != null && !_isLoadingLastPrice)

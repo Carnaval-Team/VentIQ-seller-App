@@ -1346,7 +1346,12 @@ class InventoryService {
     required String monedaFactura,
     int? idInversion,
     double? tasaInversion,
+    List<Map<String, dynamic>>? fuentesFondo,
+    String? idempotencyKey,
   }) async {
+    if (fuentesFondo != null && (fuentesFondo.isEmpty || idInversion != null || idempotencyKey == null)) {
+      throw ArgumentError('La financiación requiere fuentes, clave de reintento y ninguna inversión previa');
+    }
     try {
       print('🔍 Insertando recepción de inventario...');
       print(
@@ -1357,21 +1362,31 @@ class InventoryService {
       print('🔄 Procesando productos para conversión a presentación base...');
       final productosConvertidos = await processProductsForReception(productos);
 
+      final parametros = <String, dynamic>{
+        'p_entregado_por': entregadoPor,
+        'p_id_tienda': idTienda,
+        'p_monto_total': fuentesFondo == null
+            ? montoTotal : montoTotal.toStringAsFixed(2),
+        'p_motivo': motivo,
+        'p_observaciones': observaciones,
+        'p_productos': productosConvertidos, // Usar productos convertidos
+        'p_recibido_por': recibidoPor,
+        'p_uuid': uuid,
+        'p_moneda_factura': monedaFactura,
+        'p_id_inversion': idInversion,
+        'p_tasa_inversion': tasaInversion,
+      };
       final response = await _supabase.rpc(
-        'fn_registrar_recepcion_con_inventario',
-        params: {
-          'p_entregado_por': entregadoPor,
-          'p_id_tienda': idTienda,
-          'p_monto_total': montoTotal,
-          'p_motivo': motivo,
-          'p_observaciones': observaciones,
-          'p_productos': productosConvertidos, // Usar productos convertidos
-          'p_recibido_por': recibidoPor,
-          'p_uuid': uuid,
-          'p_moneda_factura': monedaFactura,
-          'p_id_inversion': idInversion,
-          'p_tasa_inversion': tasaInversion,
-        },
+        fuentesFondo == null
+            ? 'fn_registrar_recepcion_con_inventario'
+            : 'fn_fdi_registrar_recepcion',
+        params: fuentesFondo == null
+            ? parametros
+            : {
+              'p_recepcion': parametros,
+              'p_fuentes': fuentesFondo,
+              'p_idempotency_key': idempotencyKey,
+            },
       );
 
       print('📦 Respuesta RPC: $response');

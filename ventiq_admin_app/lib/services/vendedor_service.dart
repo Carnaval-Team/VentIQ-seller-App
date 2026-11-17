@@ -275,19 +275,22 @@ class VendedorService {
 
   // ==================== ASIGNACIÓN DE TPV ====================
 
-  /// Asigna o reasigna un vendedor a un TPV
+  /// Asigna o reasigna un vendedor a un TPV.
+  /// La RPC nueva es la vía. El UPDATE directo solo cubre newa mientras
+  /// esa función no esté creada. Un permiso denegado no abre el UPDATE.
   static Future<bool> asignarVendedorATpv({
     required int vendedorId,
     required int tpvId,
   }) async {
     try {
-      await _supabase
+      final viaRpc = await _reasignarPorRpc(vendedorId, tpvId);
+      if (viaRpc != null) return viaRpc;
+      final updated = await _supabase
           .from('app_dat_vendedor')
-          .update({
-            'id_tpv': tpvId,
-            'updated_at': DateTime.now().toIso8601String(),
-          })
-          .eq('id', vendedorId);
+          .update({'id_tpv': tpvId})
+          .eq('id', vendedorId)
+          .select('id');
+      if (updated.isEmpty) return false;
 
       print('✅ Vendedor asignado a TPV exitosamente');
       return true;
@@ -297,16 +300,17 @@ class VendedorService {
     }
   }
 
-  /// Desasigna un vendedor de su TPV
+  /// Desasigna un vendedor de su TPV.
   static Future<bool> desasignarVendedorDeTpv(int vendedorId) async {
     try {
-      await _supabase
+      final viaRpc = await _reasignarPorRpc(vendedorId, null);
+      if (viaRpc != null) return viaRpc;
+      final updated = await _supabase
           .from('app_dat_vendedor')
-          .update({
-            'id_tpv': null,
-            'updated_at': DateTime.now().toIso8601String(),
-          })
-          .eq('id', vendedorId);
+          .update({'id_tpv': null})
+          .eq('id', vendedorId)
+          .select('id');
+      if (updated.isEmpty) return false;
 
       print('✅ Vendedor desasignado de TPV exitosamente');
       return true;
@@ -314,6 +318,36 @@ class VendedorService {
       print('❌ Error desasignando vendedor de TPV: $e');
       return false;
     }
+  }
+
+  /// true/false si la RPC respondió. null si todavía no existe.
+  static Future<bool?> _reasignarPorRpc(int vendedorId, int? tpvId) async {
+    try {
+      final ok = await _supabase.rpc(
+        'fn_m01_personal_reasignar_vendedor',
+        params: {'p_id_vendedor': vendedorId, 'p_id_tpv': tpvId},
+      );
+      return ok == true;
+    } catch (e) {
+      if (_m01RpcUnavailable(e, 'fn_m01_personal_reasignar_vendedor')) {
+        return null;
+      }
+      rethrow;
+    }
+  }
+
+  static bool _m01RpcUnavailable(Object error, String functionName) {
+    final text = error.toString().toLowerCase();
+    if (text.contains('42501') ||
+        text.contains('insufficient_privilege') ||
+        text.contains('permission denied') ||
+        text.contains('acceso denegado')) {
+      return false;
+    }
+    final fn = functionName.toLowerCase();
+    return text.contains('pgrst202') ||
+        text.contains('could not find the function') ||
+        (text.contains('does not exist') && text.contains(fn));
   }
 
   // ==================== ELIMINAR ====================

@@ -125,7 +125,48 @@ class _FinancialReportsScreenState extends State<FinancialReportsScreen> with Si
     );
   }
 
+  Widget _buildUnavailableTab(String titulo, String? motivo) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.cloud_off, size: 40, color: Colors.grey[500]),
+            const SizedBox(height: 12),
+            Text(
+              titulo,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'La fuente de este reporte no está disponible en este entorno. '
+              'No se muestran cifras para no presentar valores fabricados.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey[600], fontSize: 13),
+            ),
+            if (motivo != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                motivo,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey[400], fontSize: 11),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildProfitabilityTab() {
+    if (_profitabilityReport['disponible'] == false) {
+      return _buildUnavailableTab(
+        'Rentabilidad no disponible',
+        _profitabilityReport['motivo']?.toString(),
+      );
+    }
     return RefreshIndicator(
       onRefresh: _loadReportsData,
       child: SingleChildScrollView(
@@ -379,6 +420,12 @@ class _FinancialReportsScreenState extends State<FinancialReportsScreen> with Si
   }
 
   Widget _buildProjectionsTab() {
+    if (_cashFlowProjections['disponible'] == false) {
+      return _buildUnavailableTab(
+        'Proyecciones no disponibles',
+        _cashFlowProjections['motivo']?.toString(),
+      );
+    }
     final projections = _cashFlowProjections['projections'] as List<dynamic>? ?? [];
     
     return RefreshIndicator(
@@ -453,6 +500,12 @@ class _FinancialReportsScreenState extends State<FinancialReportsScreen> with Si
   }
 
   Widget _buildBudgetTab() {
+    if (_budgetVariance['disponible'] == false) {
+      return _buildUnavailableTab(
+        'Análisis presupuestario no disponible',
+        _budgetVariance['motivo']?.toString(),
+      );
+    }
     return RefreshIndicator(
       onRefresh: _loadReportsData,
       child: SingleChildScrollView(

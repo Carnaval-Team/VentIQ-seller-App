@@ -827,4 +827,34 @@ class StoreConfigService {
   ) async {
     await updateStoreConfig(storeId, reporteTpvsModoTurno: value);
   }
+
+  static Future<bool> getPermitirMonedaPorProducto(int storeId) async {
+    try {
+      final response =
+          await _supabase
+              .from('app_dat_configuracion_tienda')
+              .select('permitir_moneda_por_producto')
+              .eq('id_tienda', storeId)
+              .maybeSingle();
+      return response?['permitir_moneda_por_producto'] == true;
+    } catch (e) {
+      print('❌ Error al leer moneda por producto: $e');
+      return false;
+    }
+  }
+
+  /// El servidor decide. Un rechazo no se convierte en un update directo.
+  static Future<bool> fijarMonedaPorProducto({
+    required int storeId,
+    required bool activar,
+  }) async {
+    final response = await _supabase.rpc(
+      'fn_m01_fijar_moneda_por_producto',
+      params: {'p_id_tienda': storeId, 'p_activar': activar},
+    );
+    if (response is Map && response['permitir_moneda_por_producto'] == true) {
+      return true;
+    }
+    return false;
+  }
 }

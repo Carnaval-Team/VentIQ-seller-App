@@ -157,30 +157,77 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
                   children: [
                     // Alertas
                     if (_alerts.isNotEmpty) _buildAlertsSection(),
-                    
-                    // KPIs principales
-                    _buildKPICards(),
-                    
+
+                    // Sin fuentes no hay KPIs: las RPCs financieras no
+                    // existen en este entorno y un mapa vacío dibujaría $0
+                    // fabricados en cada tarjeta.
+                    if (_keyMetrics['disponible'] == false ||
+                        _profitAndLoss['disponible'] == false)
+                      _buildUnavailableCard()
+                    else ...[
+                      // KPIs principales
+                      _buildKPICards(),
+
+                      const SizedBox(height: 24),
+
+                      // P&L y gráficos
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(flex: 2, child: _buildProfitLossCard()),
+                          const SizedBox(width: 16),
+                          Expanded(flex: 1, child: _buildRevenueChart()),
+                        ],
+                      ),
+                    ],
+
                     const SizedBox(height: 24),
-                    
-                    // P&L y gráficos
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(flex: 2, child: _buildProfitLossCard()),
-                        const SizedBox(width: 16),
-                        Expanded(flex: 1, child: _buildRevenueChart()),
-                      ],
-                    ),
-                    
-                    const SizedBox(height: 24),
-                    
+
                     // Análisis de rentabilidad
                     _buildProfitabilityAnalysis(),
                   ],
                 ),
               ),
             ),
+      ),
+    );
+  }
+
+  Widget _buildUnavailableCard() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[300]!),
+      ),
+      child: Column(
+        children: [
+          Icon(Icons.cloud_off, size: 40, color: Colors.grey[500]),
+          const SizedBox(height: 12),
+          const Text(
+            'Información financiera no disponible',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Las fuentes de métricas financieras no están disponibles en '
+            'este entorno. No se muestran cifras para evitar presentar '
+            'valores que no provienen de datos reales.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey[600], fontSize: 13),
+          ),
+          if ((_keyMetrics['motivo'] ?? _profitAndLoss['motivo']) != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              '${_keyMetrics['motivo'] ?? _profitAndLoss['motivo']}',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey[400], fontSize: 11),
+            ),
+          ],
+        ],
       ),
     );
   }
