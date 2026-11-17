@@ -54,6 +54,12 @@ Map<String, dynamic> _toMap(Object? value) {
   return const <String, dynamic>{};
 }
 
+/// CUP sin decimales cuando el monto es entero (1 500 → "1500").
+String _cupTexto(double valor) {
+  if (valor == valor.roundToDouble()) return valor.toStringAsFixed(0);
+  return valor.toStringAsFixed(2);
+}
+
 /// Icono del vehículo a partir del `tipo` del catálogo.
 IconData iconoVehiculo(String? tipo) {
   switch ((tipo ?? '').toLowerCase()) {
@@ -181,6 +187,35 @@ class Cotizacion {
   /// Km totales cobrados = recogida + viaje.
   final double kmCobrados;
 
+  // ── Tramo de recogida configurable (migración 055) ────────────────────
+  //
+  // El tramo de recogida (hub de flota → origen) pasó a ser configurable desde
+  // el superadmin: se puede apagar, darle su propio CUP/km, cambiarle el umbral
+  // y hasta cobrarlo dentro del municipio. La app NO decide nada de eso: sólo
+  // muestra lo que devuelve `fn_cotizar_viaje`.
+
+  /// CUP que se cobran por el tramo de recogida (0 si no se cobra).
+  final double tramoRecogidaCup;
+
+  /// CUP del tramo de viaje (origen → destino).
+  final double tramoViajeCup;
+
+  /// `true` si el tramo de recogida está habilitado en la configuración.
+  final bool recogidaActiva;
+
+  /// `true` si además se cobra cuando el origen está dentro del municipio.
+  final bool recogidaEnMunicipio;
+
+  /// CUP/km aplicado al tramo de recogida (puede diferir del del viaje).
+  final double recogidaPrecioKm;
+
+  /// Km del hub de flota al origen, aunque no se cobren.
+  final double distHubKm;
+
+  /// Por qué no se cobró el tramo (`desactivada`, `origen_en_el_municipio`,
+  /// `bajo_el_minimo`, `dentro_del_area_base`). `null` = se cobró.
+  final String? recogidaMotivo;
+
   /// Desglose interno completo (no se muestra crudo).
   final Map<String, dynamic> detalle;
 
@@ -209,6 +244,13 @@ class Cotizacion {
     this.tramoRecogidaKm = 0,
     this.tramoViajeKm = 0,
     this.kmCobrados = 0,
+    this.tramoRecogidaCup = 0,
+    this.tramoViajeCup = 0,
+    this.recogidaActiva = true,
+    this.recogidaEnMunicipio = false,
+    this.recogidaPrecioKm = 0,
+    this.distHubKm = 0,
+    this.recogidaMotivo,
     this.detalle = const <String, dynamic>{},
   });
 
@@ -261,6 +303,17 @@ class Cotizacion {
           _toDouble(pick('tramo_recogida_km') ?? d['km_recogida']),
       tramoViajeKm: _toDouble(pick('tramo_viaje_km')),
       kmCobrados: _toDouble(pick('km_cobrados') ?? d['km_cobrables']),
+      // 055: si el servidor todavía no aplica la migración estas claves no
+      // llegan; los defaults dejan el mismo comportamiento de la 054.
+      tramoRecogidaCup: _toDouble(pick('tramo_recogida_cup')),
+      tramoViajeCup: _toDouble(pick('tramo_viaje_cup')),
+      recogidaActiva: _toBool(pick('recogida_activa'), true),
+      recogidaEnMunicipio: _toBool(pick('recogida_en_municipio')),
+      recogidaPrecioKm: _toDouble(
+        pick('recogida_precio_km') ?? pick('precio_km_sc'),
+      ),
+      distHubKm: _toDouble(pick('dist_hub_km')),
+      recogidaMotivo: _toStr(pick('recogida_motivo')),
       detalle: d,
     );
   }
@@ -322,10 +375,21 @@ class Cotizacion {
 
   /// Etiqueta del tramo de recogida, sólo si el pasajero está fuera del área
   /// base y hay que ir a buscarlo desde el hub de flota.
+  ///
+  /// Desde la 055 el tramo es configurable (se puede apagar, cambiar de precio
+  /// o cobrar dentro del municipio), así que incluye el monto cuando el
+  /// servidor lo cobra.
   String? get recogidaEtiqueta {
     if (!esTarifaBase || tramoRecogidaKm <= 0) return null;
-    return 'Recogida hasta el origen · ${tramoRecogidaKm.toStringAsFixed(1)} km';
+    final km = '${tramoRecogidaKm.toStringAsFixed(1)} km';
+    if (tramoRecogidaCup > 0) {
+      return 'Recogida hasta el origen · $km · ${_cupTexto(tramoRecogidaCup)} CUP';
+    }
+    return 'Recogida hasta el origen · $km';
   }
+
+  /// `true` cuando al cliente se le está cobrando el tramo de recogida.
+  bool get recogidaSeCobra => tramoRecogidaKm > 0;
 }
 
 // ── Viaje disponible para el chofer (fn_viajes_disponibles) ───────────────

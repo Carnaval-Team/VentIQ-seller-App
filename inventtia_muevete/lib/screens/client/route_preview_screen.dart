@@ -802,7 +802,8 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
               isDark,
               etiqueta: 'Recogida hasta el origen',
               detalle:
-                  '${cotizacion.tramoRecogidaKm.toStringAsFixed(1)} km desde el Parque Vidal',
+                  '${cotizacion.tramoRecogidaKm.toStringAsFixed(1)} km desde el Parque Vidal'
+                  '${cotizacion.tramoRecogidaCup > 0 ? ' · ${Helpers.formatCup(cotizacion.tramoRecogidaCup)}' : ''}',
               valor: 'Incluido',
             ),
           _filaDesglose(

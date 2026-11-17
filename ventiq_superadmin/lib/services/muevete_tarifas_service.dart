@@ -209,6 +209,14 @@ class MueveteTarifasService {
     });
   }
 
+  /// `true` cuando la BD ya trae las columnas de la migración 055
+  /// (`recogida_activa`, `recogida_en_municipio`, `recogida_precio_km`).
+  ///
+  /// El panel usa esto para esconder la sección "Tramo de recogida" en vez de
+  /// fallar al guardar con un `column does not exist` de PostgREST.
+  static bool soportaRecogidaConfigurable(Map<String, dynamic> cfg) =>
+      cfg.containsKey('recogida_activa');
+
   /// Guarda los parámetros globales. `updated_at` lo pone el trigger.
   static Future<void> actualizarConfiguracion(Map<String, dynamic> cambios) {
     _validarConfiguracion(cambios);
@@ -461,6 +469,30 @@ class MueveteTarifasService {
     );
     rango('precio_km_fallback', 0, 5000, 'El precio por km de respaldo');
     rango('umbral_km_corto', 0, 999, 'El umbral de viaje corto');
+
+    // ─── 055 · tramo de recogida (hub → origen) ───────────────────────────
+    //
+    // `rango` no hace nada si la clave no viene, así que un cliente viejo del
+    // servicio (o una BD sin la migración 055) sigue funcionando igual.
+    rango(
+      'recogida_min_km',
+      0,
+      200,
+      'El mínimo de km para cobrar el tramo de recogida',
+    );
+    rango('tope_tramo_recogida_km', 0, 1000, 'El tope del tramo de recogida');
+    rango('hub_lat', -90, 90, 'La latitud del hub');
+    rango('hub_lon', -180, 180, 'La longitud del hub');
+    if (c.containsKey('recogida_precio_km')) {
+      final precioRecogida = _toDouble(c['recogida_precio_km']);
+      if (precioRecogida != null &&
+          (precioRecogida < 0 || precioRecogida > 5000)) {
+        throw const MueveteTarifasException(
+          'El precio por km del tramo de recogida debe estar entre 0 y 5 000 CUP '
+          '(vacío = usar el precio por km del viaje).',
+        );
+      }
+    }
 
     if (c.containsKey('redondeo_cup')) {
       final redondeo = _toInt(c['redondeo_cup']);

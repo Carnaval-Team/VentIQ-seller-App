@@ -31,13 +31,13 @@ cambiados". Sin que el Harness esté al frente.
 | Phase | Status |
 |---|---|
 | 0. Spike de viabilidad (headless resume · feed · coste) | in progress |
-| 1. Esqueleto modular, tema y presupuesto de CPU | in progress |
-| 2. Panel futurista + asistente de espacios y conversaciones | not started |
-| 3. Vida autónoma (comportamientos y estados de ánimo) | not started |
-| 4. Burbujas flotantes + feed en vivo | not started |
-| 5. Continuar conversación end-to-end y pulido | not started |
+| 1. Esqueleto modular, tema y presupuesto de CPU | done |
+| 2. Panel futurista + asistente de espacios y conversaciones | done |
+| 3. Vida autónoma (comportamientos y estados de ánimo) | done |
+| 4. Burbujas flotantes + feed en vivo | done |
+| 5. Continuar conversación end-to-end y pulido | in progress |
 
-Current phase: 1 · Recommended next: 1
+Current phase: 5 · Recommended next: 5 (probar la ejecución real)
 
 > Executing agent: update this table at the end of your run and note any
 > deviation from the plan in one line each, below this block.
@@ -60,6 +60,263 @@ Current phase: 1 · Recommended next: 1
 >   reiniciar el Harness. Reduce acoplamiento.
 > - **`lib/Workspaces.ps1` ya existe** con el índice de conversaciones (316 en 493 ms, lista de 8
 >   filas en 70 ms) y `lib/Theme.ps1` con los tokens. El resto de `lib/` sigue pendiente.
+
+### Estado tras la primera tanda de implementación (2026-11-17)
+
+Construido y verificado:
+
+- `lib/Theme.ps1`, `lib/Strings.ps1` + `lib/strings.json`, `lib/Workspaces.ps1`,
+  `lib/Panel.ps1`, `lib/Bubbles.ps1`, `lib/Life.ps1`.
+- El panel sustituye al `ContextMenu`: cabecera, espacios reales con conteo real, conversaciones
+  con título y fecha, caja de tarea, `×`, Esc, cierre al perder foco, cerrojo contra doble
+  `Close`, entrada animada y navegación interna por selección.
+- La vida autónoma pasa `scripts/test-life.ps1`: gestos distintos, reproducible con semilla, se
+  apaga con actividad real y con burbuja en pantalla.
+- `scripts/test-panel.ps1` abre y cierra el panel real sin excepciones.
+- `run-task.ps1` acepta `-SessionId` y `-OnDone`.
+
+Lo que **no** está verificado todavía, y no debe darse por hecho:
+
+- El clic real sobre una fila (cambiar de espacio, elegir conversación) no se ha ejercitado con
+  ratón; solo el render y la apertura de la ventana.
+- `dsh headless --session-id` sigue sin probarse en esta máquina (el sandbox no puede escribir
+  en `~/.dsh`). Es la fase 0 pendiente.
+- No hay medición de CPU después del refactor: `-Bench` no se implementó.
+- El feed en vivo de herramientas (burbujas con "Leyendo X") necesita el plugin `@local/dsh-orb-hub`,
+  que tampoco existe aún. Hoy las burbujas cubren lanzamiento y fin de tarea.
+
+Desviación nueva: el determinismo de la vida se comprueba con `scripts/test-life.ps1` (secuencia
+de gestos con semilla) y no con el hash del PNG, como proponía la fase 3. El PNG depende del
+reloj real del tick (`$elapsed`), así que dos capturas nunca podían ser idénticas sin congelar
+además el render.
+
+### Incidente del arranque automático (2026-11-17)
+
+Síntoma: tras reiniciar el Harness no aparecía ningún orbe, y `launch.vbs` salía con código 0
+sin lanzar nada.
+
+Causa: `-HiddenConsole` se pasaba **antes** de `-File`, es decir, como argumento de
+`powershell.exe` en vez de como parámetro del script. `powershell.exe` no reconoce ese flag,
+arranca, falla y muere con **exit 1** en menos de un segundo. Como `WScript.Shell.Run` con
+`bWaitOnReturn = False` no devuelve el código del hijo, el fallo era completamente silencioso.
+
+Arreglo: `-File "<ruta>\widget.ps1" -HiddenConsole`, con los parámetros del script detrás de
+`-File`. Verificado con `scripts/verify-launch.ps1`: orbe vivo y ninguna ventana de consola
+nueva.
+
+Regla para el futuro: **en `powershell.exe`, todo lo que va antes de `-File` es del motor; todo
+lo que va después es del script.** Un parámetro del script en el lado equivocado no da error de
+sintaxis: mata el proceso sin decir nada.
+
+### Incidente al ejecutar una tarea (2026-11-17)
+
+Síntoma: al pulsar EJECUTAR en el panel, el orbe desapareció y la tarea no se lanzó. No quedó
+ningún archivo de resultado en `%TEMP%`, así que el runner nunca llegó a arrancar.
+
+Lo que había: el lanzamiento vivía dentro del widget, `Show-Bubble` se llamaba justo antes de
+crear el proceso, y **no existía ningún log**. Un fallo ahí era indistinguible de un cierre
+voluntario.
+
+Lo que se cambió:
+
+- `lib/Log.ps1` — log en `%TEMP%\grok-orb.log`, rotación por tamaño, `Invoke-OrbSafe` y los dos
+  cazadores de excepciones (`AppDomain` y `Dispatcher`) con `Handled = $true`: una excepción en
+  un evento ya no se lleva el proceso.
+- `lib/Tasks.ps1` — el lanzamiento sale del widget y se puede probar sin ventana. El prompt va
+  por **variable de entorno** (`-TaskEnv`) en vez de por la línea de comandos: comillas, acentos
+  y saltos de línea rompían el `Arguments` de `ProcessStartInfo`.
+- El panel marca `$state.Busy` durante el envío: al aparecer la burbuja el panel perdía la
+  activación y su `Deactivated` cerraba la ventana **en mitad del manejador que la estaba
+  usando**. Ese cierre reentrante es el sospechoso principal del fallo original.
+- Un único camino de envío (Enter, botón y pruebas usan el mismo `Submit`).
+
+Verificado: `scripts/test-panel-run.ps1` (panel → submit → callback con prompt, espacio y
+carpeta correctos) y `scripts/test-panel-task.ps1` (panel → burbuja creada → proceso lanzado,
+sin excepciones). El lanzamiento con un prompt que lleva comillas y acentos pasa
+`scripts/test-task-launch.ps1` con el texto intacto.
+
+Lección: `$script:` dentro de un closure de WPF no apunta al script global. El registro de
+burbujas se movió a `$global:OrbBubbles` porque la lista que veía `Get-BubbleCount` desde el tick
+no era la que llenaba `Show-Bubble` desde un closure de evento.
+
+### El visor de ejecución cambia la fase 4 (2026-11-17)
+
+El plan decía que ver el avance en vivo exigía un plugin host (`@local/dsh-orb-hub`) escuchando
+`session/event`. No hace falta para las tareas que lanza el orbe: **`dsh headless --json` ya
+emite el flujo** y su contrato está verificado en el código del runtime:
+
+```
+{"type":"session","sessionId":…,"cwd":…}
+{"type":"status","phase":"turn_start|step_start|step_end|turn_end"}
+{"type":"thinking","text":…}      {"type":"text","text":…}
+{"type":"tool_call","tool":"read","input":{…}}
+{"type":"tool_result","status":"completed|error","result":…}
+{"type":"final","text":"respuesta completa"}
+```
+
+`run-task.ps1 -JsonOut <ruta>` escribe ese NDJSON en streaming (append por línea, stderr aparte)
+y `lib/Tasks.ps1` lo lee por índice de línea cada 400 ms, traduciéndolo a frases ("Leyendo
+widget.ps1", "Ejecutando npm test") y a una burbuja por paso (máximo una cada 1,4 s, nunca
+repetida). Al terminar guarda `%TEMP%\grok-orb-last-run.json` con prompt, pasos, respuesta y
+resultado, que el panel muestra en la sección **Última ejecución**.
+
+Consecuencia para el plan: el hub sigue siendo la vía para ver lo que pasa en sesiones que el
+usuario tiene abiertas en la GUI, pero **ya no es requisito** para el visor de tareas. La fase 4
+queda a medias de forma distinta a la prevista: el feed de las tareas lanzadas desde el orbe está
+hecho; el de las sesiones de la GUI sigue pendiente.
+
+Prueba: `scripts/test-run-viewer.ps1` (eventos → frases → resumen).
+
+### "Retomando hi" y nada más (2026-11-17)
+
+El usuario lanzó una tarea sobre una conversación y solo vio la burbuja "Retomando: hi". Nada más.
+El NDJSON dejó la respuesta:
+
+```
+{"type":"error","message":"session \"session-session-974f...\" does not exist"}
+```
+
+Dos fallos independientes, uno tapando al otro:
+
+1. **Doble prefijo en el id.** 105 de los 320 archivos del projcache se llaman
+   `session-<uuid>.json` y el resto `<uuid>.json`. El índice anteponía `session-` a
+   `$f.BaseName` sin normalizar, así que un tercio de las conversaciones quedaba con
+   `session-session-<uuid>`. El panel las ofrecía igual y `dsh headless --session-id`
+   las rechazaba al instante. Arreglo: `$bare = $f.BaseName -replace '^session-',''`.
+2. **El visor no leía nada.** El `Add_Tick` del visor usaba variables locales de
+   `Invoke-OrbTask` sin `.GetNewClosure()`; al ejecutarse el timer, `$state` y `$done`
+   llegaban nulos (`"LiteralPath" ... es nulo`, una vez cada 400 ms). Resultado: aunque el
+   NDJSON contenía el error, nadie lo miró. Arreglo: el manejador va con `.GetNewClosure()`
+   y todo cuelga de `$state`.
+
+Además: `ConvertTo-OrbRunEvent` no traducía el evento `error`, así que incluso leyéndolo no
+se habría mostrado. Ahora produce una burbuja roja con el mensaje, y el visor cierra con
+`final` o con `error` sin depender de que el runner escriba su archivo de resultado.
+
+### Lo visual cerrado (2026-11-17)
+
+El usuario pidió aparcar la ejecución de tareas y terminar antes lo visual. Hecho:
+
+- Sección **Orbe** en el panel: chasis y vida (Activa / Dormido / Apagada) en caliente, más
+  *Abrir DeepSeek Harness* y *Cerrar el avatar*. Ya no hace falta el menú de Ctrl+clic derecho.
+- Navegación con ↑ ↓ entre espacios de trabajo y Esc para cerrar, sin robar las flechas al
+  cuadro de tarea cuando tiene el foco.
+- La vida **habla**: cada gesto arranca con una frase en burbuja ("Uf…", "Cinco minutos más.",
+  "A ver si me muevo.", "¿Eh?"). `Update-Life` devuelve `Say` solo en el frame que inicia el
+  gesto y el widget compara con la última para no repetirla.
+
+Pendiente y consciente: la fase 5 (ejecutar y continuar tareas) sigue sin cerrarse. El último
+intento registrado en el log es el de las 11:27, **anterior** al arreglo del doble prefijo: el
+orbe abierto no había cargado el módulo nuevo. No hay evidencia de un fallo posterior al arreglo
+porque no ha habido ejecución nueva.
+
+### El orbe huérfano (2026-11-17)
+
+Síntoma: cerrar DeepSeek Harness no cerraba el orbe; seguía en pantalla.
+
+Causa: era **deliberado**. El orbe se quedaba atenuado para no parpadear en cada recarga de
+perfil. El efecto secundario costó tres intentos de depuración: al reabrir el Harness, el plugin
+lanzaba otro orbe que **moría en el mutex** `Local\GrokBotOrb`, así que el que seguía en pantalla
+era el de antes, con los módulos de antes cargados. Reiniciar el Harness no bastaba, y desde
+fuera se veía como "el arreglo no funciona".
+
+Arreglo: si el endpoint de estado deja de responder durante 8 s y el orbe **alguna vez** estuvo
+conectado, se cierra. El umbral distingue una recarga de perfil (el servidor sigue vivo, no
+dispara) de un cierre real del Harness. Un orbe abierto a mano sin Harness nunca se cierra solo.
+
+Herramienta: `scripts/stop-orb.ps1` cierra el orbe por el título de su ventana, para cuando hay
+que cargar código nuevo y el mutex está tomado por una instancia vieja.
+
+### Por qué "no mandaba la tarea" (2026-11-17)
+
+Con el orbe ya limpio y las tareas lanzándose, el log mostró `tarea lanzada, pid=…` y **ningún
+NDJSON ni archivo de resultado**. El runner moría antes de hacer nada, por dos motivos propios:
+
+1. **Función usada antes de definirla.** Al instrumentar añadí `Write-RunnerLog ('inicio …')`
+   justo después de `$started`, y la definición de `Write-RunnerLog` estaba 10 líneas más abajo.
+   PowerShell no iza funciones: el script abortaba en esa línea con `$ErrorActionPreference = 'Stop'`.
+   Arreglo: la llamada va después de las definiciones.
+2. **stderr de un proceso nativo abortaba el script.** `dsh headless` escribe el razonamiento del
+   modelo en stderr; con `2>` redirigido y `ErrorActionPreference = 'Stop'`, PowerShell lo trata
+   como error terminante y mata el runner aunque el proceso vaya bien. Arreglo: alrededor de la
+   llamada al comando nativo se baja a `Continue` y se restaura en el `finally`.
+
+Añadido además el fallback que el plan ya preveía: si `dsh` responde `session ... does not exist`,
+se relanza como conversación nueva en el mismo espacio y se avisa ("No encontré ese hilo; abrí uno
+nuevo aquí") en lugar de dejar un error sin salida.
+
+Regla que sale de esto: un script que instrumenta su propio arranque no puede usar herramientas
+que se definen después. Y cualquier `.ps1` que invoque un comando nativo debe asumir que ese
+comando escribirá en stderr.
+
+### Fase 0 resuelta, y en contra de lo previsto (2026-11-17)
+
+Con el doble prefijo corregido, el runner llegó a `dsh` y este respondió:
+
+```
+session "..." runs under agent preset "standard", which the one-shot runner does not compose
+```
+
+Medido sobre las conversaciones reales del espacio VentIQ-seller-App: **0 de 8 son adoptables**
+(`scripts/check-continuable.ps1`). Todas las conversaciones creadas desde la GUI llevan
+`rows.agentPreset` en la proyección, y `dsh headless` no compone presets.
+
+Consecuencia: **"continuar una conversación" no es viable con `headless` en esta instalación.** No
+es un bug a arreglar: es un límite del runner one-shot. Lo que sí funciona es lanzar una
+conversación nueva en el mismo espacio de trabajo, que es lo que hace ahora el orbe avisando del
+motivo. Para continuar de verdad haría falta enviar el mensaje a la sesión viva a través de la API
+del host (`dsh-api-session-controller`), que es otro trabajo y no está verificado.
+
+Cambios de esta tanda:
+
+- `Continuable` en el catálogo, leído de `rows.agentPreset`.
+- El panel avisa una sola vez bajo el encabezado ("Ninguna se puede retomar…") en vez de marcar
+  cada fila, y conserva la fecha.
+- `Invoke-OrbTask` comprueba `Continuable` **antes** de lanzar: no gasta 8 s en un rechazo seguro.
+- El fallback por error se amplió a `does not compose|preset`, por si alguna sesión se cuela.
+
+Y el bug de "Probar" que no hacía nada: `Force-LifeGesture` recibía `$script:Life.LastMove` como
+`NowMs`, que puede ser 0 o viejo, así que el gesto nacía ya expirado. Ahora marca un `Pending` y el
+siguiente `Update-Life` lo arranca con el reloj real. Cubierto en `test-life.ps1`.
+### Última tanda: vida visible y coste medido (2026-11-17)
+
+El usuario reportó que la vida "se ve como siempre". Diagnóstico: mientras una sesión está en
+`working`, `Update-Life` se retira por diseño, y el orbe ya se mueve por la actividad real. Con
+todo, era demasiado sutil:
+
+- Gestos cada **11–24 s** (antes 24–52 s) y el primero a los 6 s.
+- Deriva de mirada con el doble de recorrido (`driftX` 0.78 + 0.32).
+- `waiting` cuenta como ocio: el agente espera al usuario, no trabaja.
+- Chip **Probar** en la sección Orbe: `Set-LifeMode 'test'` fuerza un bostezo y un estiramiento.
+  Sin él no hay manera de distinguir "no funciona" de "está trabajando y se retira".
+
+Coste medido con `-BenchFrames`, que era lo único pendiente de la fase 1:
+
+```
+bench: 200 frames  media 1.71 ms  p95 2.04 ms  583.5 fps
+```
+
+La esfera a 160×160 cuesta ~1,7 ms; el gasto real estaba en los efectos WPF que ya no se animan
+por frame. `-Bench` se excluye del mutex igual que `-Selftest`, o no correría con un orbe abierto.
+
+Límite conocido: el panel completa mide ~993 px. En una pantalla de 1080p entra; en un portátil de
+768p no, y habría que añadir scroll al contenedor entero o recortar secciones.
+### Fase 4 cerrada sin plugin host (2026-11-17)
+
+El plan preveía un `@local/dsh-orb-hub` para el feed de las sesiones abiertas en la GUI. No hizo
+falta: el endpoint de estado que el orbe ya consulta (`/dsh-grok-buddy/state.json`) trae el
+`detail` de la herramienta en curso. El orbe lo traduce con `Get-OrbToolVerbKey` y suelta una
+burbuja ("Leyendo", "Ejecutando", "Organizando") cuando cambia la herramienta de la sesión
+activa, como máximo una cada 7 s y nunca con el panel abierto.
+
+Queda como límite conocido: se ve **qué tipo** de herramienta, no el archivo ni el comando, porque
+ese endpoint no lleva argumentos. Para el detalle exacto hace falta el NDJSON de una tarea lanzada
+desde el orbe, o el hub que el plan describe.
+Nota operativa: `lib\*.ps1` se cargan al arrancar el orbe, así que un cambio en `lib` exige
+reiniciarlo. `run-task.ps1` es un proceso aparte y se relee en cada ejecución.
+Regresiones: `scripts/test-session-ids.ps1` (124 conversaciones, 0 ids mal formados) y
+`scripts/check-error-event.ps1`. `run-task.ps1` deja ahora marcas `RUNNER` en el mismo
+`grok-orb.log`, para saber si llegó a arrancar cuando el resultado no aparece.
 
 ---
 

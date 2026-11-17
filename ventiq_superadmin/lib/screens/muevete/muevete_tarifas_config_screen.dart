@@ -110,6 +110,10 @@ class _MueveteTarifasConfigScreenState
   bool _taxiActivo = false;
   int _redondeo = 50;
 
+  /// 055 · tramo de recogida (hub → origen).
+  bool _recogidaActiva = true;
+  bool _recogidaEnMunicipio = false;
+
   /// Controladores por clave de `configuracion_tarifas` (se crean al vuelo).
   final Map<String, TextEditingController> _cfgCtrls = {};
 
@@ -133,6 +137,12 @@ class _MueveteTarifasConfigScreenState
     'descuento_pago_wallet_pct',
     'monto_fijo_fallback_municipio',
     'precio_km_fallback',
+    // 055 · tramo de recogida (hub → origen)
+    'recogida_precio_km',
+    'recogida_min_km',
+    'tope_tramo_recogida_km',
+    'hub_lat',
+    'hub_lon',
   ];
 
   // ── Multiplicadores por tipo ────────────────────────────────────────
@@ -205,6 +215,19 @@ class _MueveteTarifasConfigScreenState
   TextEditingController _cfgCtrl(String clave) =>
       _cfgCtrls.putIfAbsent(clave, TextEditingController.new);
 
+  /// `true` cuando la BD ya trae la migración 055. Si no, la sección del tramo
+  /// de recogida se muestra como aviso y no se manda nada al guardar.
+  bool get _soportaRecogida =>
+      _cfg != null && MueveteTarifasService.soportaRecogidaConfigurable(_cfg!);
+
+  /// Precio por km del viaje (el que también usa el tramo de recogida cuando
+  /// su campo se deja vacío). Sólo para el texto de ayuda.
+  String get _precioKmViajeTexto {
+    final valor = _cfg?['precio_km_sc'] ?? _cfg?['precio_km_fallback'];
+    final texto = _textoDe(valor);
+    return texto.isEmpty ? '120' : texto;
+  }
+
   // ═══════════════════════════════════════════════════════════════════════
   // Carga de datos
   // ═══════════════════════════════════════════════════════════════════════
@@ -222,6 +245,8 @@ class _MueveteTarifasConfigScreenState
         _cfgCargando = false;
         _permiteDeuda = cfg['permite_deuda'] as bool? ?? true;
         _taxiActivo = cfg['taxi_precio_fijo_activo'] as bool? ?? false;
+        _recogidaActiva = cfg['recogida_activa'] as bool? ?? true;
+        _recogidaEnMunicipio = cfg['recogida_en_municipio'] as bool? ?? false;
 
         final redondeo = (cfg['redondeo_cup'] as num?)?.toInt() ?? 50;
         _redondeo =
@@ -408,6 +433,16 @@ class _MueveteTarifasConfigScreenState
         'taxi_precio_fijo_activo': _taxiActivo,
       }..removeWhere((_, v) => v == null);
 
+      if (_soportaRecogida) {
+        cambios['recogida_activa'] = _recogidaActiva;
+        cambios['recogida_en_municipio'] = _recogidaEnMunicipio;
+        // Campo vacío = "usa el precio por km del viaje", que en la base es
+        // NULL. `removeWhere` ya se comió los null, así que se manda explícito.
+        cambios['recogida_precio_km'] = parseNumero(
+          _cfgCtrl('recogida_precio_km').text,
+        );
+      }
+
       await MueveteTarifasService.actualizarConfiguracion(cambios);
       await _cargarConfig();
       _snack(
@@ -507,6 +542,36 @@ class _MueveteTarifasConfigScreenState
     final fallbackKm = parseNumero(_cfgCtrl('precio_km_fallback').text);
     if (fallbackKm == null || fallbackKm < 0 || fallbackKm > 5000) {
       return 'El precio por km de respaldo debe estar entre 0 y 5 000 CUP.';
+    }
+
+    // ─── 055 · tramo de recogida ─────────────────────────────────────────
+    if (_soportaRecogida) {
+      final textoRecogida = _cfgCtrl('recogida_precio_km').text.trim();
+      final precioRecogida = parseNumero(textoRecogida);
+      if (textoRecogida.isNotEmpty &&
+          (precioRecogida == null ||
+              precioRecogida < 0 ||
+              precioRecogida > 5000)) {
+        return 'El precio por km del tramo de recogida debe estar entre 0 y '
+            '5 000 CUP, o vacío para usar el precio por km del viaje.';
+      }
+      final minRecogida = parseNumero(_cfgCtrl('recogida_min_km').text);
+      if (minRecogida == null || minRecogida < 0 || minRecogida > 200) {
+        return 'Los km mínimos del tramo de recogida deben estar entre 0 y 200.';
+      }
+      final topeRecogida = parseNumero(_cfgCtrl('tope_tramo_recogida_km').text);
+      if (topeRecogida == null || topeRecogida < 0 || topeRecogida > 1000) {
+        return 'El tope del tramo de recogida debe estar entre 0 y 1 000 km '
+            '(0 = sin tope).';
+      }
+      final hubLat = parseNumero(_cfgCtrl('hub_lat').text);
+      if (hubLat == null || hubLat < -90 || hubLat > 90) {
+        return 'La latitud del hub debe estar entre -90 y 90.';
+      }
+      final hubLon = parseNumero(_cfgCtrl('hub_lon').text);
+      if (hubLon == null || hubLon < -180 || hubLon > 180) {
+        return 'La longitud del hub debe estar entre -180 y 180.';
+      }
     }
 
     return null;
@@ -1151,6 +1216,107 @@ class _MueveteTarifasConfigScreenState
             sufijo: 'km',
           ),
           _dropdownRedondeo(),
+        ]),
+        _seccion('Tramo de recogida (hub → origen)', Icons.my_location_rounded, [
+          if (!_soportaRecogida)
+            Container(
+              constraints: const BoxConstraints(maxWidth: 520),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.warning.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: AppColors.warning.withValues(alpha: 0.4),
+                ),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.info_outline_rounded,
+                    size: 16,
+                    color: AppColors.warning,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Falta aplicar la migración '
+                      '055_tarifa_recogida_configurable.sql. Mientras no se '
+                      'aplique, el servidor sigue cobrando el tramo de recogida '
+                      'como en la 054 (sólo fuera del municipio, 120 CUP/km) y '
+                      'estos campos no se pueden guardar.',
+                      style: TextStyle(
+                        fontSize: 11,
+                        height: 1.35,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else ...[
+            _switchCampo(
+              titulo: 'Cobrar el tramo de recogida',
+              subtitulo:
+                  _recogidaActiva
+                      ? 'Encendido: el precio incluye los km del hub hasta el '
+                          'punto de recogida.'
+                      : 'Apagado: el cliente sólo paga el viaje, no el '
+                          'acercamiento del chofer.',
+              valor: _recogidaActiva,
+              color: _recogidaActiva ? AppColors.success : AppColors.warning,
+              onChanged: (v) => setState(() => _recogidaActiva = v),
+            ),
+            _switchCampo(
+              titulo: 'Cobrarlo también dentro del municipio',
+              subtitulo:
+                  _recogidaEnMunicipio
+                      ? 'Encendido: un origen dentro del municipio del hub paga '
+                          'el acercamiento si supera los km mínimos. Sube los '
+                          'viajes urbanos.'
+                      : 'Apagado: sólo se cobra si el origen está fuera del '
+                          'municipio del hub (comportamiento de la 054).',
+              valor: _recogidaEnMunicipio,
+              color:
+                  _recogidaEnMunicipio ? AppColors.warning : AppColors.primary,
+              onChanged: (v) => setState(() => _recogidaEnMunicipio = v),
+            ),
+            _campo(
+              _cfgCtrl('recogida_precio_km'),
+              'CUP por km del tramo',
+              hint: 'vacío = $_precioKmViajeTexto',
+              sufijo: 'CUP/km',
+            ),
+            _campo(
+              _cfgCtrl('recogida_min_km'),
+              'Km mínimos',
+              hint: '8',
+              sufijo: 'km',
+            ),
+            _campo(
+              _cfgCtrl('tope_tramo_recogida_km'),
+              'Tope del tramo',
+              hint: '0 = sin tope',
+              sufijo: 'km',
+            ),
+            _campo(_cfgCtrl('hub_lat'), 'Latitud del hub', ancho: 165),
+            _campo(_cfgCtrl('hub_lon'), 'Longitud del hub', ancho: 165),
+            Container(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Text(
+                'El tramo se mide del hub de flota al punto de recogida, no de '
+                'la posición del chofer: al cotizar todavía no hay chofer '
+                'asignado. Con "km mínimos" en 8 y el municipio apagado, el '
+                'precio es exactamente el mismo que antes de configurar esto.',
+                style: TextStyle(
+                  fontSize: 11,
+                  height: 1.35,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ),
+          ],
         ]),
         _seccion('Respaldo municipal (fallback)', Icons.location_city_rounded, [
           _campo(
@@ -1982,6 +2148,32 @@ class _MueveteTarifasConfigScreenState
     return null;
   }
 
+  /// Explica por qué el motor cobró o no el tramo de recogida (055).
+  ///
+  /// `motivo` viene del servidor; `distHub` es la distancia del hub al origen,
+  /// que se publica siempre aunque el tramo no se cobre.
+  String? _textoMotivoRecogida(String? motivo, num? distHub) {
+    final distancia = distHub == null ? null : fmtKm(distHub);
+    switch (motivo) {
+      case 'dentro_del_area_base':
+        return 'viaje dentro del área base: precio plano';
+      case 'desactivada':
+        return 'el interruptor del tramo está apagado';
+      case 'origen_en_el_municipio':
+        return distancia == null
+            ? 'origen dentro del municipio del hub'
+            : 'origen en el municipio, a $distancia del hub';
+      case 'bajo_el_minimo':
+        return distancia == null
+            ? 'por debajo de los km mínimos'
+            : 'a $distancia del hub: por debajo del mínimo';
+      default:
+        return distancia == null
+            ? 'km del hub al punto de recogida'
+            : '$distancia del hub al punto de recogida';
+    }
+  }
+
   String _etiquetaZona(Map<String, dynamic> c) {
     final fallback = _boolCotizacion(c, 'fallback_municipio') ?? false;
     final dentro = _boolCotizacion(c, 'dentro_de_zona');
@@ -2018,6 +2210,13 @@ class _MueveteTarifasConfigScreenState
     final tipo = _strCotizacion(r, 'tipo_vehiculo');
     final calculadoAt = _strCotizacion(r, 'calculado_at');
     final fallback = _boolCotizacion(r, 'fallback_municipio') ?? false;
+    // 055 · tramo de recogida (hub → origen).
+    final recogidaKm =
+        _numCotizacion(r, 'tramo_recogida_km') ??
+        _numCotizacion(r, 'km_recogida');
+    final recogidaCup = _numCotizacion(r, 'tramo_recogida_cup');
+    final recogidaMotivo = _strCotizacion(r, 'recogida_motivo');
+    final distHub = _numCotizacion(r, 'dist_hub_km');
 
     return Container(
       decoration: BoxDecoration(
@@ -2172,6 +2371,17 @@ class _MueveteTarifasConfigScreenState
                           : kmFuente == 'ruta'
                           ? 'distancia de la ruta'
                           : 'distancia en línea recta (haversine)',
+                ),
+                _filaResultado(
+                  'Tramo de recogida',
+                  recogidaKm == null || recogidaKm <= 0
+                      ? 'No se cobra'
+                      : '${fmtKm(recogidaKm)} · ${fmtCup(recogidaCup)}',
+                  detalle: _textoMotivoRecogida(recogidaMotivo, distHub),
+                  color:
+                      recogidaKm != null && recogidaKm > 0
+                          ? AppColors.primary
+                          : null,
                 ),
                 _filaResultado(
                   'Recargo nocturno',

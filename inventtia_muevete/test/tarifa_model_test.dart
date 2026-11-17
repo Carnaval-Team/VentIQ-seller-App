@@ -27,6 +27,8 @@ void main() {
     'tramo_recogida_km': 42,
     'tramo_viaje_km': 42,
     'km_cobrados': 84,
+    'tramo_recogida_cup': 5040,
+    'recogida_motivo': null,
     'detalle': <String, dynamic>{
       'dentro_de_zona': false,
       'fallback_municipio': true,
@@ -52,6 +54,12 @@ void main() {
       'factor_rodeo': 1.2359,
       'base_sc_cup': 1500,
       'precio_km_sc': 120,
+      // claves de la 055
+      'recogida_activa': true,
+      'recogida_en_municipio': false,
+      'recogida_precio_km': 120,
+      'tope_tramo_recogida_km': 0,
+      'dist_hub_km': 33.982,
     },
   };
 
@@ -181,6 +189,72 @@ void main() {
       expect(c.esTarifaBase, isFalse);
       expect(c.tarifaModoEtiqueta, 'Tarifa fija + km');
       expect(c.recogidaEtiqueta, isNull);
+    });
+  });
+
+  group('Tramo de recogida configurable (055)', () {
+    test('El monto del tramo llega a la etiqueta del desglose', () {
+      final c = Cotizacion.fromJson(cotizacionPlacetas);
+
+      expect(c.recogidaActiva, isTrue);
+      expect(c.recogidaEnMunicipio, isFalse);
+      expect(c.tramoRecogidaCup, 5040);
+      expect(c.recogidaPrecioKm, 120);
+      expect(c.distHubKm, 33.982);
+      expect(c.recogidaMotivo, isNull);
+      expect(c.recogidaSeCobra, isTrue);
+      expect(c.recogidaEtiqueta, contains('42.0 km'));
+      expect(c.recogidaEtiqueta, contains('5040 CUP'));
+    });
+
+    test('Con el interruptor apagado no se cobra y se explica por qué', () {
+      final c = Cotizacion.fromJson(<String, dynamic>{
+        'precio_plataforma': 8000,
+        'tarifa_modo': 'fijo_mas_km',
+        'km_total': 42,
+        'base_nombre': 'Base Santa Clara (Parque Vidal)',
+        'en_base_origen': false,
+        'en_base_destino': true,
+        'tramo_recogida_km': 0,
+        'tramo_viaje_km': 42,
+        'tramo_recogida_cup': 0,
+        'detalle': <String, dynamic>{
+          'dentro_de_zona': false,
+          'recogida_activa': false,
+          'recogida_en_municipio': false,
+          'dist_hub_km': 33.982,
+          'recogida_motivo': 'desactivada',
+        },
+      });
+
+      expect(c.recogidaActiva, isFalse);
+      expect(c.tramoRecogidaCup, 0);
+      expect(c.recogidaSeCobra, isFalse);
+      // Sin km del tramo no hay fila de recogida en el desglose.
+      expect(c.recogidaEtiqueta, isNull);
+      expect(c.recogidaMotivo, 'desactivada');
+      // La distancia al hub se publica igual: sirve para explicar la decisión.
+      expect(c.distHubKm, 33.982);
+    });
+
+    test('Una cotización de antes de la 055 sigue funcionando', () {
+      final c = Cotizacion.fromJson(<String, dynamic>{
+        'precio_plataforma': 10400,
+        'tarifa_modo': 'fijo_mas_km',
+        'km_total': 40,
+        'base_nombre': 'Base Santa Clara (Parque Vidal)',
+        'tramo_recogida_km': 33.982,
+        'tramo_viaje_km': 40,
+        'detalle': <String, dynamic>{'dentro_de_zona': false},
+      });
+
+      // Defaults = comportamiento de la 054.
+      expect(c.recogidaActiva, isTrue);
+      expect(c.recogidaEnMunicipio, isFalse);
+      expect(c.tramoRecogidaCup, 0);
+      expect(c.recogidaMotivo, isNull);
+      expect(c.recogidaEtiqueta, contains('34.0 km'));
+      expect(c.recogidaEtiqueta, isNot(contains('CUP')));
     });
   });
 }

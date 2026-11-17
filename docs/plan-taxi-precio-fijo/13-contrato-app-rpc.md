@@ -77,6 +77,26 @@ describía en un solo nivel y por eso hubo que corregir el modelo de la app.
 > (ver `Cotizacion.fromJson` en `lib/models/tarifa_model.dart`). El flag de precio
 > corto se llama `precio_corto` en la raíz y `precio_corto_aplicado` en `detalle`.
 
+**Tramo de recogida configurable (migración 055)** — `hub de flota → origen`:
+
+| clave | nivel | uso |
+|---|---|---|
+| `tramo_recogida_km` | raíz y `detalle` | km cobrados del hub al origen (`0` = no se cobra) |
+| `tramo_recogida_cup` | raíz y `detalle` | CUP de ese tramo. **Ya está sumado en `base`** |
+| `dist_hub_km` | `detalle` | km del hub al origen **aunque no se cobren** (para explicar la decisión) |
+| `recogida_activa`, `recogida_en_municipio` | `detalle` | interruptores vigentes en la config |
+| `recogida_precio_km` | `detalle` | CUP/km aplicado al tramo (puede diferir del viaje) |
+| `recogida_motivo` | raíz y `detalle` | `null` si **se cobró**; si no: `desactivada`, `origen_en_el_municipio`, `bajo_el_minimo`, `dentro_del_area_base` |
+
+Los parámetros viven en `muevete.configuracion_tarifas` y se editan desde
+**VentiQ Super Admin → Muevete → Tarifas → Configuración → "Tramo de recogida"**:
+interruptor maestro, si aplica dentro del municipio, CUP/km propio, km mínimos,
+tope del tramo y hub (`hub_lat`/`hub_lon`).
+
+> El tramo se mide del **hub de flota** (Parque Vidal por defecto), no de la
+> posición del chofer: al cotizar todavía no hay chofer asignado. Cobrar la
+> distancia real de acercamiento exigiría un cargo aparte al completar el viaje.
+
 > El precio del preview **coincide** con el cobrado porque es la misma función
 > que usa `fn_crear_solicitud`. Si el preview se hace con `p_km` de la ruta y
 > `fn_crear_solicitud` recibe el mismo `p_km`, no hay sorpresa.

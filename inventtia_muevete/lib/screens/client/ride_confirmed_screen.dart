@@ -691,14 +691,19 @@ class _RideConfirmedScreenState extends State<RideConfirmedScreen>
     if (base != null && base > 0) {
       filas.add(_filaRecibo(isDark, 'Tarifa base', Helpers.formatCup(base)));
     }
-    // 053: si hubo que ir a buscar al pasajero fuera del área base, se explica
-    // de dónde salen los km (el monto ya está sumado en "Tarifa base").
+    // 053/055: si hubo que ir a buscar al pasajero, se explica de dónde salen
+    // los km y cuánto pesan en el precio (el monto ya está sumado en la base).
     final recogidaKm = (desglose['tramo_recogida_km'] as num?)?.toDouble();
     if (recogidaKm != null && recogidaKm > 0) {
+      final recogidaCup =
+          (desglose['tramo_recogida_cup'] as num?)?.toDouble() ?? 0;
       filas.add(_filaRecibo(
         isDark,
         'Recogida hasta el origen',
-        '${recogidaKm.toStringAsFixed(1)} km',
+        recogidaCup > 0
+            ? '${recogidaKm.toStringAsFixed(1)} km · '
+                '${Helpers.formatCup(recogidaCup)}'
+            : '${recogidaKm.toStringAsFixed(1)} km',
       ));
     }
     final nocturno = (desglose['recargo_nocturno'] as num?)?.toDouble();
