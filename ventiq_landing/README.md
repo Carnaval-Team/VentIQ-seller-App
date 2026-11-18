@@ -1,244 +1,121 @@
-# VentIQ Landing Page
+# ventiq_landing · sitio de Inventtia
 
-Landing page promocional para las aplicaciones VentIQ Seller App y Inventtia Admin Web.
+Sitio estático (HTML + CSS + JS, sin build step ni framework) que presenta la empresa,
+sus siete aplicaciones y todas las descargas.
 
-## 🚀 Características
-
-### Páginas Incluidas
-- **Página Principal (index.html)**: Landing page con información de las aplicaciones
-- **Tutoriales (tutorials.html)**: Guías interactivas paso a paso
-- **Contacto (contact.html)**: Formulario de contacto y información
-
-### Funcionalidades Implementadas
-
-#### 🎨 Diseño Moderno
-- **Responsive Design**: Adaptable a todos los dispositivos
-- **Gradientes VentIQ**: Colores consistentes con las aplicaciones
-- **Animaciones Suaves**: Efectos hover y transiciones
-- **Cards Interactivas**: Elementos visuales atractivos
-
-#### 📱 Navegación Inteligente
-- **Navbar Fijo**: Con efectos de scroll
-- **Menú Hamburguesa**: Para dispositivos móviles
-- **Smooth Scrolling**: Navegación suave entre secciones
-- **Breadcrumbs**: Navegación clara entre páginas
-
-#### 🎯 Secciones Principales
-
-##### Hero Section
-- Título impactante con gradiente
-- Estadísticas del sistema
-- Botones de descarga prominentes
-- Mockup de la aplicación móvil
-
-##### Características
-- Comparación entre Seller App y Admin Web
-- Features específicas de cada aplicación
-- Iconos representativos
-- Diseño en cards
-
-##### Beneficios
-- Grid responsivo de beneficios
-- Iconos animados
-- Descripciones claras
-- Call-to-action integrado
-
-#### 📚 Sistema de Tutoriales
-
-##### Categorías Interactivas
-- **VentIQ Seller App**: Tutoriales para vendedores
-- **Inventtia Admin Web**: Tutoriales para administradores
-- Switching dinámico entre categorías
-
-##### Tutoriales Implementados
-
-**Seller App:**
-- Cómo realizar una venta (4 pasos)
-- Consultar inventario (3 pasos)
-- Configurar la aplicación (5 pasos)
-
-**Admin Web:**
-- Registrar una empresa (4 pasos)
-- Gestionar almacenes (5 pasos)
-- Agregar productos (4 pasos)
-- Recepcionar productos (3 pasos)
-
-##### Modal Interactivo
-- Navegación paso a paso
-- Mockups visuales
-- Instrucciones detalladas
-- Teclado shortcuts (←/→/Esc)
-
-#### 📞 Sistema de Contacto
-
-##### Formulario Completo
-- Validación en tiempo real
-- Campos requeridos marcados
-- Auto-guardado en localStorage
-- Estados de loading y éxito
-
-##### Métodos de Contacto
-- Email: contacto@ventiq.com
-- Teléfono: +1 (555) 123-4567
-- Chat en vivo (próximamente)
-- Oficina física con cita previa
-
-##### FAQ Interactivo
-- 6 preguntas frecuentes
-- Acordeón animado
-- Respuestas detalladas
-
-#### 🔧 Funcionalidades JavaScript
-
-##### Sistema de Descargas
-- Modal de descarga inteligente
-- Detección de tipo de app
-- Links a stores (simulados)
-- Notificaciones informativas
-
-##### Notificaciones
-- Sistema de toast messages
-- Diferentes tipos (success, error, warning, info)
-- Auto-hide configurable
-- Diseño consistente
-
-##### Animaciones
-- Intersection Observer para fade-in
-- Floating cards animadas
-- Hover effects en web
-- Smooth transitions
-
-## 🛠️ Estructura del Proyecto
+## Estructura
 
 ```
 ventiq_landing/
-├── index.html              # Página principal
-├── tutorials.html          # Página de tutoriales
-├── contact.html            # Página de contacto
-├── README.md               # Este archivo
-└── assets/
-    ├── css/
-    │   ├── styles.css       # Estilos principales
-    │   ├── tutorials.css    # Estilos de tutoriales
-    │   └── contact.css      # Estilos de contacto
-    ├── js/
-    │   ├── main.js          # JavaScript principal
-    │   ├── tutorials.js     # Funcionalidad de tutoriales
-    │   └── contact.js       # Funcionalidad de contacto
-    └── images/
-        ├── logo.svg         # Logo de VentIQ
-        └── ventas.png       # Screenshot de la app
+├── index.html               Home editorial (a mano)
+├── descargas.html           Todos los APK en un solo lugar        ← generado
+├── apps/
+│   ├── index.html           Índice de todas las apps              ← generado
+│   ├── caja.html            Inventtia Caja (TPV)                  ← generado
+│   ├── admin.html           Inventtia Gestión                     ← generado
+│   ├── catalogo.html        Inventtia Catálogo                    ← generado
+│   ├── flow.html            Inventtia GoReserva                   ← generado
+│   ├── muevete.html         Muevete (transporte)                  ← generado
+│   ├── carnaval.html        Carnaval (cliente · delivery · proveedor) ← generado
+│   └── superadmin.html      Super Admin (interno)                 ← generado
+├── tutorials.html · sales.html · contact.html · privacy.html
+├── data-safety.html · delete-account.html · r.html
+├── assets/
+│   ├── css/
+│   │   ├── premium-v3.css   Base de diseño (tokens, nav, botones, mockups)
+│   │   ├── responsive.css   Correcciones responsive (móvil real)
+│   │   ├── apps.css         Componentes de fichas de app y descargas
+│   │   └── fixes.css        Legibilidad de titulares (énfasis sin recortes)
+│   ├── js/
+│   │   ├── premium-v3.js    Nav, drawer, reveals, stack, tilt
+│   │   ├── app-page.js      Barra de descarga fija + acordeón FAQ
+│   │   ├── aurora-bg.js     Fondo animado del home
+│   │   ├── tracking.js      Métricas (Supabase) + gtag
+│   │   └── supabase.min.js
+│   └── images/              Logos, capturas y tutoriales
+└── scripts/
+    ├── apps.data.mjs        ← FUENTE ÚNICA: apps, precios, APK, textos
+    ├── build-pages.mjs      Genera apps/*.html, descargas.html y sitemap.xml
+    └── verify.mjs           Valida enlaces, HTML, CSS y APK
 ```
 
-## 🎨 Paleta de Colores
+## Flujo de trabajo
 
-Basada en los colores de las aplicaciones VentIQ:
-
-```css
---primary: #4A90E2        /* Azul principal */
---primary-dark: #357ABD   /* Azul oscuro */
---secondary: #6B7280      /* Gris secundario */
---success: #10B981        /* Verde éxito */
---warning: #FF6B35        /* Naranja advertencia */
---background: #F8F9FA     /* Fondo claro */
---surface: #FFFFFF        /* Superficie blanca */
-```
-
-## 📱 Responsividad
-
-### Breakpoints Implementados
-- **Mobile**: ≤480px
-- **Tablet**: 481px - 768px
-- **Desktop**: 769px - 1200px
-- **Large Desktop**: >1200px
-
-### Adaptaciones por Dispositivo
-- **Mobile**: Menú hamburguesa, cards apiladas, texto optimizado
-- **Tablet**: Grid 2 columnas, navegación híbrida
-- **Desktop**: Grid completo, efectos hover, espaciado amplio
-
-## 🚀 Características Técnicas
-
-### Performance
-- **CSS Optimizado**: Variables CSS, selectores eficientes
-- **JavaScript Modular**: Funciones separadas por página
-- **Lazy Loading**: Animaciones bajo demanda
-- **Debounced Events**: Scroll optimizado
-
-### Accesibilidad
-- **Semantic HTML**: Estructura semántica correcta
-- **Keyboard Navigation**: Navegación por teclado
-- **ARIA Labels**: Etiquetas de accesibilidad
-- **Color Contrast**: Contraste adecuado
-
-### SEO
-- **Meta Tags**: Título y descripción optimizados
-- **Open Graph**: Metadatos para redes sociales
-- **Structured Data**: Datos estructurados
-- **Sitemap Ready**: Estructura preparada para sitemap
-
-## 🔧 Instalación y Uso
-
-### Requisitos
-- Navegador web moderno
-- Servidor web local (opcional)
-
-### Instalación
-1. Clonar o descargar los archivos
-2. Abrir `index.html` en el navegador
-3. O servir desde un servidor web local
-
-### Desarrollo Local
 ```bash
-# Con Python
-python -m http.server 8000
+# 1. Editar contenido (una sola vez, en un solo sitio)
+#    scripts/apps.data.mjs  → nombre, resumen, features, precios, APK, FAQ…
 
-# Con Node.js
-npx serve .
+# 2. Regenerar las páginas derivadas
+node scripts/build-pages.mjs
 
-# Con PHP
-php -S localhost:8000
+# 3. Verificar antes de publicar (0 errores = listo)
+node scripts/verify.mjs
 ```
 
-## 🔗 Enlaces y Recursos
+`index.html` se edita a mano: es la home editorial. Todo lo demás sale del catálogo.
+No hay dependencias: solo Node 18+ (`node:fs`, `node:path`).
 
-### Dependencias Externas
-- **Font Awesome 6.0.0**: Iconos
-- **Google Fonts**: Fuente Inter
-- **CSS Variables**: Compatibilidad moderna
+## Descargas
 
-### Recursos Utilizados
-- Colores basados en `app_colors.dart` de Inventtia Admin
-- Iconos y assets copiados de las aplicaciones
-- Estructura inspirada en las pantallas existentes
+Los APK se sirven desde el bucket público `apk` del Supabase de producción:
 
-## 🎯 Próximas Mejoras
+```
+https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/<archivo>.apk
+```
 
-### Funcionalidades Pendientes
-- [ ] Integración con backend real
-- [ ] Sistema de analytics
-- [ ] Blog/noticias
-- [ ] Testimonios de clientes
-- [ ] Galería de screenshots
-- [ ] Videos demostrativos
+`apps.data.mjs` es la lista canónica. Estado verificado de los archivos:
 
-### Optimizaciones
-- [ ] Compresión de imágenes
-- [ ] Minificación de CSS/JS
-- [ ] Service Worker para PWA
-- [ ] Lazy loading de imágenes
+| App | Archivo | Tamaño | Subido |
+|---|---|---|---|
+| Inventtia Caja | `inventtia caja.apk` | 95,9 MB | 2026-10-27 |
+| Inventtia Gestión | `vendedor admin.apk` | 114,4 MB | 2026-10-29 |
+| Inventtia Catálogo | `inventtia marketplace.apk` | 23,6 MB | 2025-12-17 |
+| GoReserva | `goreservas.apk` | 79,5 MB | 2026-10-30 |
+| Muevete | `muevete.apk` | 187,3 MB | 2026-11-14 |
+| Carnaval | `carnaval_new.apk` | 93,0 MB | 2026-10-14 |
+| Carnaval Delivery | `carnaval-delivery.apk` | 58,5 MB | 2026-10-26 |
+| Carnaval Proveedores | `carnaval proveedores.apk` | 85,4 MB | 2026-02-16 |
+| Super Admin | `superadmin.apk` | 69,1 MB | 2026-09-23 |
 
-## 📞 Soporte
+> El enlace histórico `vendedor.apk` **no existe** en el bucket (devuelve 400).
+> Se sustituyó por `inventtia caja.apk`. `scripts/verify.mjs` falla si vuelve a aparecer.
 
-Para soporte técnico o consultas sobre la landing page:
-- **Email**: contacto@ventiq.com
-- **Documentación**: Ver archivos de código fuente
-- **Issues**: Reportar en el repositorio del proyecto
+Builds alternativas (`flow.apk`, `vendedor cuba.apk`, `inventtia catalogo.apk`,
+`carnaval.apk`) se listan al final de `descargas.html` por si soporte las pide.
 
-## 📄 Licencia
+## Por qué existe `responsive.css`
 
-Este proyecto es parte del ecosistema VentIQ. Todos los derechos reservados.
+`premium-v3.css` está escrito desktop-first y tenía cuatro fallos que rompían el
+móvil de verdad, no solo "se veía raro":
 
----
+1. **`.v2-eyebrow` con `width: max-content`** — el texto del hero no podía
+   envolver y desbordaba el viewport a 360–390 px, arrastrando scroll horizontal.
+2. **`.v2-nav-inner` sin regla móvil** — marca (132 px) + CTA "Pedir presupuesto"
+   (≈170 px) + burger (40 px) + gaps no caben bajo ~700 px. Ahora el CTA vive
+   solo en el drawer y la marca se reduce.
+3. **`.v2-hero h1 em` con `margin-top: -25px` y `line-height: 1.45`** — pensado
+   para 86 px de escritorio; a 33–42 px las líneas del titular se solapaban.
+   Ahora el desplazamiento negativo se anula bajo 980 px y el titular baja de
+   escala con `clamp()`.
+4. **`.v2-stack-visual-phone` con `min-height: 540px`** — dejaba medio metro de
+   aire en tablet y móvil; y las listas de dos columnas se apretaban bajo 560 px.
 
-**VentIQ Landing Page** - Promocionando el futuro de la gestión de ventas e inventario 🚀
+Además se añadieron: `overflow-x: clip` global (sin romper `position: sticky`),
+`scroll-margin-top` para que los anchors no queden bajo el nav fijo, áreas
+táctiles de 44–50 px y `text-wrap: balance` en titulares.
+
+## Convenciones
+
+- **Idioma**: todo el contenido en español.
+- **Precios**: salen de la base de datos de Inventtia (`app_suscripciones_plan`,
+  `muevete.configuracion_tarifas`). Si cambian allí, se actualizan en
+  `apps.data.mjs` y se regenera.
+- **APK**: siempre con `download` y `data-track-event="apk_download"`.
+- **Accesibilidad**: `alt` en todas las imágenes, skip-link, foco visible,
+  `aria-current` en la navegación, FAQ con `<details>`.
+
+## Publicación
+
+Sitio estático: basta con subir la carpeta tal cual (Vercel, Netlify, Nginx,
+S3…). Las rutas son relativas, así que funciona en la raíz del dominio o en
+cualquier subcarpeta. `sitemap.xml` y `robots.txt` apuntan a `https://inventtia.com`.

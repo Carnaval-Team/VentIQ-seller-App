@@ -7,33 +7,49 @@ class WalletBalanceCard extends StatelessWidget {
   final VoidCallback? onAddFunds;
   final VoidCallback? onWithdraw;
 
+  /// Cuando es true y el saldo es negativo se pinta como **deuda** (monto en
+  /// valor absoluto) en vez de como saldo. Se usa en la billetera del chofer:
+  /// un saldo negativo es la comisión que quedó a deber a la plataforma.
+  final bool esChofer;
+
+  /// Texto pequeño bajo el monto cuando el chofer tiene deuda.
+  final String? notaDeuda;
+
   const WalletBalanceCard({
     super.key,
     required this.balance,
     this.onAddFunds,
     this.onWithdraw,
+    this.esChofer = false,
+    this.notaDeuda,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final enDeuda = esChofer && balance < 0;
+    final monto = enDeuda ? balance.abs() : balance;
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            AppTheme.primaryColor,
-            AppTheme.primaryDark,
-          ],
+          colors: enDeuda
+              // Rojo de aviso: no es saldo, es lo que debe.
+              ? const [Color(0xFFB3261E), Color(0xFF7F1D1D)]
+              : const [
+                  AppTheme.primaryColor,
+                  AppTheme.primaryDark,
+                ],
         ),
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: AppTheme.primaryColor.withValues(alpha: 0.3),
+            color: (enDeuda ? const Color(0xFFB3261E) : AppTheme.primaryColor)
+                .withValues(alpha: 0.3),
             blurRadius: 20,
             offset: const Offset(0, 8),
           ),
@@ -46,16 +62,16 @@ class WalletBalanceCard extends StatelessWidget {
           Row(
             children: [
               Icon(
-                Icons.lock_outline,
+                enDeuda ? Icons.warning_amber_rounded : Icons.lock_outline,
                 size: 16,
-                color: Colors.white.withValues(alpha: 0.8),
+                color: Colors.white.withValues(alpha: 0.9),
               ),
               const SizedBox(width: 6),
               Text(
-                'Saldo Seguro',
+                enDeuda ? 'Deuda' : 'Saldo Seguro',
                 style: theme.textTheme.bodyMedium?.copyWith(
-                  color: Colors.white.withValues(alpha: 0.8),
-                  fontWeight: FontWeight.w500,
+                  color: Colors.white.withValues(alpha: 0.9),
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ],
@@ -65,13 +81,25 @@ class WalletBalanceCard extends StatelessWidget {
 
           // Large balance amount
           Text(
-            '\$${balance.toStringAsFixed(2)}',
+            '\$${monto.toStringAsFixed(2)}',
             style: theme.textTheme.displayLarge?.copyWith(
               color: Colors.white,
               fontWeight: FontWeight.w700,
               fontSize: 36,
             ),
           ),
+
+          if (enDeuda) ...[
+            const SizedBox(height: 6),
+            Text(
+              notaDeuda ??
+                  'Saldo negativo: es la comisión que debes a la plataforma.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: Colors.white.withValues(alpha: 0.85),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
 
           const SizedBox(height: 24),
 
@@ -82,7 +110,7 @@ class WalletBalanceCard extends StatelessWidget {
               Expanded(
                 child: _ActionButton(
                   icon: Icons.add,
-                  label: 'Recargar',
+                  label: enDeuda ? 'Pagar deuda' : 'Recargar',
                   onTap: onAddFunds,
                 ),
               ),

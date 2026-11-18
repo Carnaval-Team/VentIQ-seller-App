@@ -107,6 +107,21 @@ class PushyService {
           solicitudId: solicitudId,
         );
         break;
+      // Flujo sin negociación (precio fijado por la plataforma)
+      case 'viaje_disponible':
+        localNotif.showRideRequest(
+          title: title,
+          body: body,
+          solicitudId: solicitudId,
+        );
+        break;
+      case 'viaje_asignado':
+        localNotif.showDriverAssigned(
+          title: title,
+          body: body,
+          solicitudId: solicitudId,
+        );
+        break;
       default:
         localNotif.showGeneric(
           id: DateTime.now().millisecondsSinceEpoch % 100000,
@@ -133,6 +148,14 @@ class PushyService {
       case 'driver_offer':
         nav.pushNamedAndRemoveUntil(
             '/client/driver-offers', (r) => r.isFirst);
+        break;
+      // Flujo sin negociación
+      case 'viaje_disponible':
+        nav.pushNamedAndRemoveUntil('/driver/requests', (r) => r.isFirst);
+        break;
+      case 'viaje_asignado':
+        // El home del cliente resuelve el viaje activo y muestra al conductor.
+        nav.pushNamedAndRemoveUntil('/client/home', (r) => r.isFirst);
         break;
       default:
         break;

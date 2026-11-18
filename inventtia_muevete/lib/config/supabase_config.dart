@@ -7,11 +7,30 @@ class SupabaseConfig {
       'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFocHJzd2hoZmFzcmlraGF3am96Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAzNTg0NjksImV4cCI6MjEwNTkzNDQ2OX0.2CsGM_HCmBXNmPs7I8qTmQ9_-ouNsJquamKA593R82s';
 
   // Rama principal (main) -> se usa con `flutter run --release` / `flutter build apk --release`
+  //
+  // ATENCION: esta clave debe ser `anon`, NUNCA `service_role`.
+  // Con `anon` el RLS aplica. Dos operaciones quedan pendientes de pasar a RPC
+  // antes de publicar un release en produccion:
+  //   1. cierre de viaje (el chofer actualiza la solicitud del cliente)
+  //   2. movimientos de wallet entre usuarios (hold/refund)
+  // Ambas estan planificadas en H7 (migracion 040). Ver docs/plan-taxi-precio-fijo/11-impacto-cambio-de-clave.md
   static const String _releaseUrl = 'https://vsieeihstajlrdvpuooh.supabase.co';
   static const String _releaseAnonKey =
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZzaWVlaWhzdGFqbHJkdnB1b29oIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NDUzMjIwNiwiZXhwIjoyMDcwMTA4MjA2fQ.d9fKCcunP_J0tdlZF8eg0vAD-bsK3XfemavnZWT3Ro8';
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZzaWVlaWhzdGFqbHJkdnB1b29oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ1MzIyMDYsImV4cCI6MjA3MDEwODIwNn0.ZQmME9zoNTd77WwblxosRv5nnyMTWN8pKkDA6UMKcO4';
 
   static const String supabaseUrl = kReleaseMode ? _releaseUrl : _debugUrl;
   static const String supabaseAnonKey =
       kReleaseMode ? _releaseAnonKey : _debugAnonKey;
+
+  // ── Edge Functions públicas de Muévete ────────────────────────────────────
+  //
+  // Página de confirmación de un contacto de emergencia
+  // (`supabase/functions/contacto-invitacion/index.ts`, desplegada con
+  // `--no-verify-jwt`: la abre el contacto desde el navegador, sin cuenta).
+  //
+  // PRUEBAS (`qhprswhhfasrikhawjoz`). En producción se cambia al ref de
+  // producción cuando la función se despliegue allí:
+  //   https://vsieeihstajlrdvpuooh.supabase.co/functions/v1/contacto-invitacion
+  static const String contactoInvitacionUrlBase =
+      'https://qhprswhhfasrikhawjoz.supabase.co/functions/v1/contacto-invitacion';
 }

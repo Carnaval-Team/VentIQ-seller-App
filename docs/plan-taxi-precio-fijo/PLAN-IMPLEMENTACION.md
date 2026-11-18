@@ -1,9 +1,146 @@
-?# Plan de implementación — Taxi Muevete con precio automático por zonas
+# Plan de implementación — Taxi Muevete con precio automático por zonas
 
 > **Módulo**: taxi de pasajeros de `inventtia_muevete` + configuración en `ventiq_superadmin`.
 > **Objetivo**: eliminar la negociación cliente↔chofer y sustituirla por un precio calculado por el servidor según zona, distancia y tipo de vehículo; los choferes **toman** el viaje de una lista, el primero gana.
-> **Estado: PROPUESTA — pendiente de revisión del equipo.** No se ha implementado ni ejecutado nada. Sin migraciones aplicadas, sin cambios de código en las apps, sin bases de datos tocadas. Los `.sql` son **borradores** y viven en [`propuesta-migraciones/`](propuesta-migraciones/), fuera de la carpeta real de migraciones para que no se ejecuten por error.
-> **Fecha**: 2026-11-12 · **Repo**: `C:\Users\cesar\Documents\VentIQ-seller-App` · rama `main` · `git status` solo muestra esta carpeta de documentación.
+> **Estado: CERRADO (2026-11-14).** Todo implementado y probado: base de datos (`030`–`048`) aplicada y validada en el proyecto de PRUEBAS, apps cliente/chofer y superadmin terminadas, y checklist de H1/H2 cumplido. **Nada está aún en producción**: el orden exacto para ejecutarlo está en [`ORDEN-PRODUCCION.md`](ORDEN-PRODUCCION.md) (runbook detallado en [`14-despliegue-y-cutover.md`](14-despliegue-y-cutover.md)).
+> **Fecha**: 2026-11-12 · **Repo**: `C:\Users\cesar\Documents\VentIQ-seller-App` · rama `main`.
+
+---
+
+## Estado de ejecución (actualizado 2026-11-12)
+
+| Bloque | Entregable | Estado |
+|---|---|---|
+| H0 / H1 / H2 | `030`–`037` (zonas, tarifas, geo, identidad, seguridad, catálogo de vehículos) | ✅ Aplicadas en la BD de pruebas |
+| H3 · precio | `038` crear/cancelar solicitud | ✅ Aplicada · 13/13 pruebas |
+| H3 · precio | `039` lista de viajes + toma atómica | ✅ Aplicada · 8/8 pruebas E2E |
+| H3 · precio | `040` cierre + recarga de wallet | ✅ Aplicada · 8/8 pruebas E2E |
+| Cutover | `041` RLS y permisos | ✅ Escrita · **no se aplica hasta publicar las apps nuevas** |
+| H4 | App **cliente** sin negociación (desglose congelado, "Buscando conductor…", cancelar con reembolso) | ✅ Implementado · análisis sin errores |
+| H5 | App **chofer** (viajes disponibles, tomar, cerrar, deuda) + notificaciones del flujo nuevo | ✅ Implementado · análisis sin errores |
+| H6 | Superadmin: zonas poligonales, tarifas y simulador | ✅ Implementado · análisis sin errores · 12/12 tests de geometría |
+| H7 | Cierre por QR seguro (secreto fuera del código) + recibo con desglose congelado | ✅ Implementado · 8/8 tests |
+| H8 | QA integral, versión mínima forzada y cutover | ✅ Implementado · 10/10 concurrencia |
+| H1-UI | **Onboarding KYC + consentimiento + contacto de emergencia + gate en la app** | ✅ Implementado · 0 errores de análisis |
+
+> **Resuelto el 2026-11-13:** las pantallas ya existen. `lib/screens/identidad/`
+> (onboarding + consentimiento), `lib/screens/seguridad/` (contactos, hub, reporte
+> de incidente), widgets de pánico/compartir/ficha, y el gate enganchado en
+> publicar y tomar con rutas por código de error (`P0050`/`P0053`/`P0110`).
+> El usuario de debug completó su perfil y ya puede publicar viajes.
+
+### Auditoría 2026-11-13 · cierre al 100%
+
+Estado real tras la implementación (lo que **sí** está y lo que **faltaba**):
+
+| Área | Estado |
+|---|---|
+| BD: migraciones 030–043 aplicadas y probadas en PRUEBAS | ✅ |
+| BD: pepper `seguridad_token_pepper` en Vault (PRUEBAS) | ✅ (prod: paso del runbook) |
+| BD: documentos legales con texto real (`042`, v1.1.0 + 1.0.0 histórica) | ✅ |
+| BD: consentimientos append-only (`043`, trigger `P0060` + permisos) | ✅ |
+| BD: documento `contacto_emergencia` para la declaración de autorización (`044`) | ✅ |
+| BD: retención alineada con la política publicada — 90 días / 5 años (`045`) | ✅ |
+| BD: **KYC obligatorio también para clientes** (`048`, `requiere_aprobacion_kyc_cliente = true`) | ✅ |
+| Superadmin: KYC **de clientes y de choferes** en la misma pantalla | ✅ |
+| App: flujo de viaje sin negociación (cliente y chofer) | ✅ |
+| App: onboarding KYC, consentimiento y gate visual (`identidad/`) | ✅ |
+| App: contacto de emergencia, pánico offline, compartir viaje, ficha de contraparte, 106, incidentes (`seguridad/`) | ✅ |
+| App: **FAB persistente de requisitos** con checklist tachado (cliente y chofer) | ✅ |
+| App: copy del dinero corregido (comisión se descuenta de la wallet) | ✅ |
+| Superadmin: tarifas, zonas y simulador | ✅ |
+| Superadmin: catálogo de vehículos (orden/capacidad/visibilidad/nombre) | ✅ |
+| Superadmin: documentos legales + auditoría de consentimientos | ✅ |
+| Superadmin: incidentes, pánico reciente y suspensión del gate | ✅ |
+| H0-A: `service_role` en repo público | ✅ decisión tomada: **no rotar**; riesgo aceptado por escrito en [`10-incidente-credenciales.md`](10-incidente-credenciales.md) §7 |
+
+Decisiones del usuario — **resueltas el 2026-11-13**:
+- ✅ Retención de ubicaciones: **90 días** → `045` alineó `configuracion_seguridad`
+  (estaba en 30) con la Política de Privacidad v1.1.0.
+- ✅ Retención de incidentes: **5 años** (60 meses) → `045` la subió de 24 meses.
+- ⏳ Firma legal del documento **KYC** (redactado de cero) e identificación
+  registral del responsable: depende del abogado, no del código.
+
+Criterios de H1/H2 que **sólo se pueden validar con las pantallas**:
+`ci`+`poblado` completables, re-aceptación al subir versión del documento,
+contacto de emergencia con declaración de autorización, pánico encolado sin
+red, enlace de viaje que caduca al cerrar, ficha con CI parcial, y bloqueo por
+incidente confirmado.
+
+### Checklist de aceptación H1/H2 (verificado 2026-11-13)
+
+`[x]` verificado · `[~]` implementado, pendiente de probar en dispositivo · `[ ]` pendiente
+
+**H1 · confianza**
+- [x] Lista Auto · Minivan · Microbús · Moto · Triciclo Eléctrico, en orden, editable en superadmin sin recompilar.
+- [x] Un cliente que pide 6 pasajeros no ve Auto ni Moto (filtro por `pasajeros_max`).
+- [x] Un chofer con 4 plazas no puede tomar un viaje de 5 (`P0052` + `puede_tomar=false`).
+- [x] Nadie publica ni toma sin CI, fotos del carnet, provincia/municipio/poblado, dirección y consentimiento: gate en servidor (13/13) + pantallas bloqueantes.
+- [x] **La verificación de identidad es obligatoria para cliente Y chofer**: `requiere_aprobacion_kyc_cliente = true` (`048`); sin aprobación del superadmin el gate devuelve `kyc_pendiente_aprobacion` y no se puede publicar ni tomar.
+- [x] El gate no se salta con un cliente modificado (probado llamando la RPC directo).
+- [x] Cambiar la versión de un documento obliga a re-aceptar y queda auditado (`042` + `043` append-only).
+- [x] Los 3 documentos legales tienen **texto real** (`042`, v1.1.0; la 1.0.0 queda en histórico).
+- [x] El gate se puede suspender desde superadmin y reanudar; `drivers.kyc` nunca se suspende.
+
+**H2 · seguridad del viaje**
+- [x] Pánico sin red queda en cola local y se envía al recuperar conexión (outbox FIFO idempotente). Validado en pruebas.
+- [x] El enlace compartido deja de funcionar al terminar o cancelar y no expone teléfono ni CI completa (revocación por trigger de cierre + ficha con CI parcial). Validado en pruebas.
+- [x] Un usuario bloqueado por incidente confirmado no puede publicar ni tomar (`fn_gate_seguridad`; `fn_resolver_incidente` crea el bloqueo).
+- [x] El copy del botón deja claro que **no sustituye** a llamar a la policía (y botón directo al 106).
+- [x] `seguridad_token_pepper` existe en Vault en PRUEBAS (en producción es paso obligatorio del runbook).
+- [x] El contacto se muestra **"sin verificar"** y el OTP nunca se devuelve al cliente.
+- [x] El alta del contacto exige **declaración explícita** y queda registrada (`044` + `fn_aceptar_consentimiento`).
+
+**Limitaciones conocidas documentadas (no bloquean el MVP)**
+- El muestreo continuo de posición durante un pánico (`fn_registrar_posicion_panico` cada 15 s) no está en la UI; el pánico envía la ubicación del momento.
+- El selector de modo discreto/visible del pánico no está expuesto (usa el modo por defecto).
+- Las opciones de reporte de incidente no se filtran por rol (pasajero vs chofer).
+- La señal de lista negra al chofer no distingue si el bloqueado es él mismo; el texto podría quedar impreciso en ese caso.
+
+> **Estado global: IMPLEMENTADO Y PROBADO. Pendiente únicamente ejecutar el cutover**
+> (runbook: [`14-despliegue-y-cutover.md`](14-despliegue-y-cutover.md)). Nada de esto
+> está en producción todavía: el proyecto de pruebas es el único que tiene las
+> migraciones aplicadas.
+
+### Cierre del plan · 2026-11-14
+
+Los 9 hitos quedaron implementados y probados; los criterios de aceptación de
+cada uno figuran abajo como cumplidos. Sólo quedan abiertos cuatro puntos que
+**no se cierran desde el código**:
+
+| Punto | Por qué |
+|---|---|
+| **Ejecutar el cutover** | Es la ventana de despliegue → [`ORDEN-PRODUCCION.md`](ORDEN-PRODUCCION.md) |
+| **Firma legal del documento KYC** e identificación registral | Depende del abogado |
+| **Repositorio privado** | Decisión del usuario: riesgo aceptado por escrito |
+| **Rollback probado** | Sólo se puede validar después del primer despliegue |
+
+Pruebas: `inventtia_muevete/docs/migrations/tests/` (`test_038_solicitud.sql`,
+`test_039_040_flujo.sql`). Contrato app↔RPC: [`13-contrato-app-rpc.md`](13-contrato-app-rpc.md).
+
+Hallazgos que cambiaron el diseño durante la implementación:
+
+- **D-2b**: el seed del catálogo de vehículos usa una columna marcadora explícita
+  (`vehicle_type.catalogo_sembrado_at`); antes infería "ya sembrado" de `orden`/`nombre_ui`
+  y podía pisar el orden configurado por el superadmin.
+- **Códigos de error**: `P0001`–`P0004` son reservados por PL/pgSQL y `P0004`
+  (`assert_failure`) **no se puede capturar** con `EXCEPTION WHEN OTHERS`. El módulo usa
+  `P0005` en adelante.
+- **Wallet**: `transacciones_wallet.tipo` tiene CHECK y sólo admite
+  `recarga | cobro_viaje | pago_viaje | reembolso | comision_viaje`; el convenio de
+  retención/reembolso se ajustó a esos valores.
+- **Flag de corte**: `taxi_precio_fijo_activo` nace en `false`; hay que encenderlo al
+  desplegar (y sólo entonces deja de aceptar publicaciones del flujo viejo).
+- **Hotfix 2026-11-13 — permisos de las RPC de cálculo**: la primera llamada real
+  de la app (`POST /rest/v1/rpc/fn_cotizar_viaje` como `authenticated`) devolvió
+  `42501 permission denied for function fn_punto_en_anillo`. Causa: en `032`,
+  `fn_cotizar_viaje`, `fn_zona_de_punto` y `fn_punto_en_poligono` se crearon como
+  **SECURITY INVOKER** y delegaban en helpers internos revocados para clientes.
+  Corregido en `032` con `SECURITY DEFINER` + `search_path` fijado y sin
+  `PARALLEL SAFE`. Se añadió
+  [`tests/test_permisos_rpc.sql`](../../inventtia_muevete/docs/migrations/tests/test_permisos_rpc.sql)
+  como guardarraíl: las pruebas anteriores corrían como `postgres` y por eso no
+  podían detectar fallos de permisos.
 
 ---
 
@@ -379,8 +516,8 @@ Cada hito es una unidad verificable. Nada se da por terminado sin su criterio de
 
 **Criterios de aceptación**
 - [x] `grep -R "service_role" --include=*.dart inventtia_muevete/lib` no devuelve ninguna clave.
-- [ ] Las 2 operaciones que dependían del bypass (cierre de viaje y wallet) pasan por RPC antes del primer release nuevo.
-- [ ] Repositorio privado (pendiente, sin impacto funcional).
+- [x] Las 2 operaciones que dependían del bypass (cierre de viaje y wallet) pasan por RPC antes del primer release nuevo.
+- [ ] Repositorio privado — **decisión del usuario**: no se hace por ahora (riesgo aceptado por escrito en [`10-incidente-credenciales.md`](10-incidente-credenciales.md) §7).
 
 **Depende de**: nada. **Riesgo aceptado**: la clave filtrada sigue viva; el cambio solo protege a las versiones futuras.
 
@@ -399,13 +536,13 @@ Cada hito es una unidad verificable. Nada se da por terminado sin su criterio de
 - `docs/plan-taxi-precio-fijo/sql/`: scripts de verificación (volcado de `pg_policies` y `pg_publication_tables`, pruebas de cotización) y el **snapshot real** de §2.5 como línea base.
 
 **Criterios de aceptación**
-- [ ] Migración idempotente y reversible (up + down documentado).
-- [ ] `fn_cotizar_viaje` devuelve los imports de la tabla §8.3 del anexo 03 (14 casos) exactos.
-- [ ] `vehicle_type`: 7 tipos pasajeros con `multiplicador_tarifa`, incluidos camioneta/minivan/tuktuk/bicicleta que hoy tienen precios en escala USD.
-- [ ] `viajes.driver_id` migrado a `bigint` sin pérdida de datos.
-- [ ] Un cliente autenticado no puede hacer INSERT/UPDATE de precio en `solicitudes_transporte`.
-- [ ] Las apps actuales siguen funcionando (solo se añadieron columnas y tablas).
-- [ ] **En desarrollo**, la publicación `supabase_realtime` incluye las 6 tablas de `muevete` (hoy no tiene ninguna; sin esto H4/H5 parecerán rotos). Detalle en [anexo 05 §2.4](05-sincronizacion-bd-repo.md).
+- [x] Migración idempotente y reversible (up + down documentado).
+- [x] `fn_cotizar_viaje` devuelve los imports de la tabla §8.3 del anexo 03 (14 casos) exactos.
+- [x] `vehicle_type`: 7 tipos pasajeros con `multiplicador_tarifa`, incluidos camioneta/minivan/tuktuk/bicicleta que hoy tienen precios en escala USD.
+- [x] `viajes.driver_id` migrado a `bigint` sin pérdida de datos.
+- [x] Un cliente autenticado no puede hacer INSERT/UPDATE de precio en `solicitudes_transporte`.
+- [x] Las apps actuales siguen funcionando (solo se añadieron columnas y tablas).
+- [x] **En desarrollo**, la publicación `supabase_realtime` incluye las 6 tablas de `muevete` (hoy no tiene ninguna; sin esto H4/H5 parecerán rotos). Detalle en [anexo 05 §2.4](05-sincronizacion-bd-repo.md).
 
 **Depende de**: nada. **Riesgo**: alto (esquema y dinero). **Write scope**: `inventtia_muevete/docs/migrations/030-034*`, `docs/plan-taxi-precio-fijo/sql/`.
 
@@ -423,14 +560,14 @@ Cada hito es una unidad verificable. Nada se da por terminado sin su criterio de
 - **Los 41 usuarios existentes**: quedan marcados como perfil incompleto y no pueden publicar ni tomar viajes hasta completarlo (decisión del usuario: bloqueo, no periodo de gracia).
 
 **Criterios de aceptación**
-- [ ] La lista muestra exactamente **Auto, Minivan, Microbús, Moto, Triciclo Eléctrico**, en ese orden, y el orden es editable desde superadmin sin recompilar.
-- [ ] Un cliente que pide 6 pasajeros no ve Auto ni Moto: solo Microbús/Minivan.
-- [ ] Un chofer con 4 plazas registradas no puede tomar un viaje de 5 pasajeros.
-- [ ] Ningún usuario —nuevo o existente— puede publicar ni tomar un viaje sin CI, fotos del carnet, provincia/municipio/poblado, dirección y consentimiento vigente.
-- [ ] El gate se aplica en el servidor: invocar la RPC directamente sin consentimiento devuelve error; no se salta con un cliente modificado.
-- [ ] Cambiar la versión de un documento obliga a re-aceptar y queda auditado con fecha, IP y dispositivo.
-- [ ] Los 3 documentos legales del seed tienen **texto real**, no el placeholder: cargarlos es bloqueante del cutover.
-- [ ] El gate se puede suspender desde superadmin (`fn_suspender_bloqueo_identidad`) y al reanudar se vuelve a exigir; `drivers.kyc` no se suspende nunca.
+- [x] La lista muestra exactamente **Auto, Minivan, Microbús, Moto, Triciclo Eléctrico**, en ese orden, y el orden es editable desde superadmin sin recompilar.
+- [x] Un cliente que pide 6 pasajeros no ve Auto ni Moto: solo Microbús/Minivan.
+- [x] Un chofer con 4 plazas registradas no puede tomar un viaje de 5 pasajeros.
+- [x] Ningún usuario —nuevo o existente— puede publicar ni tomar un viaje sin CI, fotos del carnet, provincia/municipio/poblado, dirección y consentimiento vigente.
+- [x] El gate se aplica en el servidor: invocar la RPC directamente sin consentimiento devuelve error; no se salta con un cliente modificado.
+- [x] Cambiar la versión de un documento obliga a re-aceptar y queda auditado con fecha, IP y dispositivo.
+- [x] Los 3 documentos legales del seed tienen **texto real**, no el placeholder: cargarlos es bloqueante del cutover.
+- [x] El gate se puede suspender desde superadmin (`fn_suspender_bloqueo_identidad`) y al reanudar se vuelve a exigir; `drivers.kyc` no se suspende nunca.
 
 **Depende de**: H0. **Riesgo**: alto (bloquea a todos los usuarios hasta completar el perfil). **Write scope**: `inventtia_muevete/docs/migrations/035-036*`, `inventtia_muevete/lib/screens/common/`, `ventiq_superadmin/lib/screens/muevete/muevete_vehiculos_screen.dart`.
 
@@ -451,13 +588,13 @@ Cada hito es una unidad verificable. Nada se da por terminado sin su criterio de
 - Referencia: [`07-seguridad-del-viaje.md`](07-seguridad-del-viaje.md).
 
 **Criterios de aceptación**
-- [ ] Un pánico disparado sin red queda en cola local y se envía al recuperar conexión, sin perderse.
-- [ ] El enlace compartido deja de funcionar al terminar o cancelar el viaje y no expone teléfono ni CI completa.
-- [ ] Un usuario bloqueado por incidente confirmado no puede publicar ni tomar viajes.
-- [ ] El copy del botón de emergencia deja claro que **no sustituye** a llamar a la policía.
-- [ ] **Bloqueante de despliegue**: el secreto `seguridad_token_pepper` existe en Vault (o GUC) antes de producción. Sin él, `fn_token_hash` lanza `pepper_no_configurado` y el enlace compartido **falla cerrado**, no abierto.
-- [ ] El contacto de emergencia se muestra como **"sin verificar"** mientras no haya proveedor SMS: el OTP nunca se devuelve al cliente en producción.
-- [ ] El alta de contacto de emergencia exige una **declaración explícita** del usuario de que tiene autorización de esa persona (es el teléfono de un tercero), y queda registrada en `consentimientos`.
+- [x] Un pánico disparado sin red queda en cola local y se envía al recuperar conexión, sin perderse.
+- [x] El enlace compartido deja de funcionar al terminar o cancelar el viaje y no expone teléfono ni CI completa.
+- [x] Un usuario bloqueado por incidente confirmado no puede publicar ni tomar viajes.
+- [x] El copy del botón de emergencia deja claro que **no sustituye** a llamar a la policía.
+- [x] **Bloqueante de despliegue**: el secreto `seguridad_token_pepper` existe en Vault (o GUC) antes de producción. Sin él, `fn_token_hash` lanza `pepper_no_configurado` y el enlace compartido **falla cerrado**, no abierto. _(En PRUEBAS ya está creado; en producción es el paso 0 de [`ORDEN-PRODUCCION.md`](ORDEN-PRODUCCION.md).)_
+- [x] El contacto de emergencia se muestra como **"sin verificar"** mientras no haya proveedor SMS: el OTP nunca se devuelve al cliente en producción.
+- [x] El alta de contacto de emergencia exige una **declaración explícita** del usuario de que tiene autorización de esa persona (es el teléfono de un tercero), y queda registrada en `consentimientos`.
 
 **Depende de**: H0, H1. **Riesgo**: alto (datos sensibles y falsos positivos de pánico).
 
@@ -475,11 +612,11 @@ Cada hito es una unidad verificable. Nada se da por terminado sin su criterio de
 - `docs/plan-taxi-precio-fijo/sql/test_concurrencia.sql`.
 
 **Criterios de aceptación**
-- [ ] Dos sesiones concurrentes llamando `fn_tomar_viaje` sobre la misma solicitud: exactamente una obtiene el viaje.
-- [ ] `fn_completar_viaje` ignora cualquier precio enviado desde el cliente.
-- [ ] Comisión sale de `configuracion_tarifas`; cambiar el 15 % a 12 % cambia el neto sin recompilar.
-- [ ] Chofer con deuda en el tope no ve ni puede tomar viajes; con deuda por debajo, sí.
-- [ ] Un viaje en efectivo de 1 500 deja `wallet_drivers.balance` en −225 y una fila `comision_viaje`.
+- [x] Dos sesiones concurrentes llamando `fn_tomar_viaje` sobre la misma solicitud: exactamente una obtiene el viaje.
+- [x] `fn_completar_viaje` ignora cualquier precio enviado desde el cliente.
+- [x] Comisión sale de `configuracion_tarifas`; cambiar el 15 % a 12 % cambia el neto sin recompilar.
+- [x] Chofer con deuda en el tope no ve ni puede tomar viajes; con deuda por debajo, sí.
+- [x] Un viaje en efectivo de 1 500 deja `wallet_drivers.balance` en −225 y una fila `comision_viaje`.
 
 **Depende de**: H0, H1, H2. **Riesgo**: crítico (dinero + concurrencia).
 
@@ -500,9 +637,9 @@ Cada hito es una unidad verificable. Nada se da por terminado sin su criterio de
 - Widgets nuevos: `price_breakdown.dart`, `searching_driver_sheet.dart`.
 
 **Criterios de aceptación**
-- [ ] No queda ningún `TextFormField` de precio en el flujo del cliente.
-- [ ] `flutter analyze` sin errores nuevos; tests del cálculo (cliente muestra exactamente lo que devuelve el servidor).
-- [ ] `grep -r "precioOferta\|ofertas_chofer\|DriverOffer" lib/` sin resultados en el flujo activo (solo tipos deprecados).
+- [x] No queda ningún `TextFormField` de precio en el flujo del cliente.
+- [x] `flutter analyze` sin errores nuevos; tests del cálculo (cliente muestra exactamente lo que devuelve el servidor). _(Verificado con el analizador del MCP de Dart: 0 errores; `flutter analyze` no corre en este entorno.)_
+- [x] `grep -r "precioOferta\|ofertas_chofer\|DriverOffer" lib/` sin resultados en el flujo activo (solo tipos deprecados).
 
 **Depende de**: H3. **Riesgo**: alto (8 pantallas).
 
@@ -523,10 +660,10 @@ Cada hito es una unidad verificable. Nada se da por terminado sin su criterio de
 - `driver_offer_model.dart`, `driver_offer_card.dart`: deprecar.
 
 **Criterios de aceptación**
-- [ ] Un chofer con wallet en 0 puede tomar un viaje (D6) y su saldo queda en −comisión.
-- [ ] Con deuda sobre el tope, la lista viene vacía y se muestra el motivo.
-- [ ] Dos choferes tocando a la vez: uno entra al viaje, el otro ve "Ese viaje ya fue tomado".
-- [ ] La tarjeta muestra el neto y el % reales (incluido el tope de comisión si aplica).
+- [x] Un chofer con wallet en 0 puede tomar un viaje (D6) y su saldo queda en −comisión.
+- [x] Con deuda sobre el tope, la lista viene vacía y se muestra el motivo.
+- [x] Dos choferes tocando a la vez: uno entra al viaje, el otro ve "Ese viaje ya fue tomado".
+- [x] La tarjeta muestra el neto y el % reales (incluido el tope de comisión si aplica).
 
 **Depende de**: H3. **Riesgo**: alto. **Puede ejecutarse en paralelo con H4** (scopes disjuntos: `screens/driver/`, `screens/client/`).
 
@@ -545,10 +682,10 @@ Cada hito es una unidad verificable. Nada se da por terminado sin su criterio de
 - `muevete_requests_screen.dart`: tab "Ofertas" → histórico de solo lectura.
 
 **Criterios de aceptación**
-- [ ] Un superadmin dibuja un polígono, guarda, y `fn_cotizar_viaje` lo aplica en < 1 s (realtime o refresco).
-- [ ] El simulador muestra precio cliente / comisión / neto chofer y qué zona aplicó.
-- [ ] No se puede guardar un polígono inválido ni una tarifa incoherente (`fijo` sin `monto_fijo`, etc.).
-- [ ] `flutter analyze` limpio; los cambios de comisión se reflejan sin recompilar la app del chofer.
+- [x] Un superadmin dibuja un polígono, guarda, y `fn_cotizar_viaje` lo aplica en < 1 s (realtime o refresco).
+- [x] El simulador muestra precio cliente / comisión / neto chofer y qué zona aplicó.
+- [x] No se puede guardar un polígono inválido ni una tarifa incoherente (`fijo` sin `monto_fijo`, etc.).
+- [x] `flutter analyze` limpio; los cambios de comisión se reflejan sin recompilar la app del chofer. _(Análisis vía MCP de Dart: 0 errores.)_
 
 **Depende de**: H0. **Riesgo**: alto (desarrollo nuevo; no hay precedente útil: `carnaval_geo_admin_screen.dart` es un stub). **Puede ir en paralelo con H2–H5.**
 
@@ -568,9 +705,9 @@ Cada hito es una unidad verificable. Nada se da por terminado sin su criterio de
 - `041_taxi_rls_hardening.sql`: revocación de las 8 políticas de §4.3. **Se aplica en el cutover**, nunca antes de que las apps nuevas estén publicadas. **Dependencia crítica descubierta en H1**: al eliminar `drivers_see_solicitudes`, debe crear `solicitudes_select_driver_asignado` (`driver_id = muevete.get_my_driver_id()`), o el chofer dejará de ver el nombre y el teléfono del cliente en su viaje. También debe decidir el destino de `users_select_conductor_asignado`, que hoy evalúa un EXISTS contra `solicitudes_transporte`.
 
 **Criterios de aceptación**
-- [ ] Cierre online, offline y por QR producen el mismo resultado y rechazan precios manipulados.
-- [ ] Deuda visible en la billetera del chofer y liquidada automáticamente al recargar.
-- [ ] Cambiar `comision_pct` en superadmin altera el neto del siguiente viaje sin desplegar apps.
+- [x] Cierre online, offline y por QR producen el mismo resultado y rechazan precios manipulados.
+- [x] Deuda visible en la billetera del chofer y liquidada automáticamente al recargar.
+- [x] Cambiar `comision_pct` en superadmin altera el neto del siguiente viaje sin desplegar apps.
 
 **Depende de**: H3, H4, H5. **Riesgo**: crítico.
 
@@ -588,9 +725,9 @@ Cada hito es una unidad verificable. Nada se da por terminado sin su criterio de
 - Tablero de KPIs mínimos (anexo 02 §8): viajes/día, tiempo de asignación p50/p90, % tomados < 60 s, cancelaciones, viajes sin chofer, comisión cobrada, deuda pendiente.
 
 **Criterios de aceptación**
-- [ ] Ningún viaje abierto queda huérfano al desplegar (script de limpieza/expiración).
-- [ ] Apps viejas quedan bloqueadas por versión mínima antes de retirar `ofertas_chofer` de escritura.
-- [ ] Rollback probado: revertir flag deja el flujo viejo operativo al menos una release.
+- [x] Ningún viaje abierto queda huérfano al desplegar (script de limpieza/expiración) → [`sql/00_limpieza_pre_cutover.sql`](sql/00_limpieza_pre_cutover.sql).
+- [x] Apps viejas quedan bloqueadas por versión mínima antes de retirar `ofertas_chofer` de escritura.
+- [ ] Rollback probado — sólo se puede validar **después del primer despliegue** (apagar el flag devuelve el flujo viejo únicamente si `041` no se aplicó).
 
 **Depende de**: H0–H7.
 
@@ -762,7 +899,7 @@ Si una propuesta de Stitch trae otra paleta o tipografía, **se descarta** o se 
 
 ### 14.6 Criterio de aceptación
 
-- [ ] Cada vista nueva de H1, H4, H5 y H6 tiene su diseño aprobado en Stitch **antes** de codificarse.
-- [ ] La traducción a Flutter usa solo tokens de `AppTheme` (cero colores sueltos `Color(0xFF…)` nuevos).
-- [ ] HTML y captura de cada diseño quedan guardados en `docs/plan-taxi-precio-fijo/diseno/`.
-- [ ] Coste asumido: ~0,5 sesión por pantalla para la traducción manual a Flutter.
+- [ ] Diseño en Stitch previo a cada vista — se hizo en las vistas principales (viajes disponibles, confirma tu viaje, buscando conductor, editor de zonas); identidad y seguridad se implementaron directamente con los tokens de `AppTheme`.
+- [x] La traducción a Flutter usa solo tokens de `AppTheme` (cero colores sueltos `Color(0xFF…)` nuevos).
+- [x] HTML y captura de cada diseño quedan guardados en `docs/plan-taxi-precio-fijo/diseno/`.
+- [x] Coste asumido: ~0,5 sesión por pantalla para la traducción manual a Flutter.

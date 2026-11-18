@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -8,6 +9,7 @@ import '../config/app_theme.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../utils/app_error.dart';
+import 'legal/documento_legal_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -22,6 +24,22 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
   bool _rememberMe = false;
+
+  /// Los textos legales del pie SON enlaces reales (antes sólo estaban
+  /// subrayados y no hacían nada). Se abren sin sesión: la RLS de `046` deja a
+  /// `anon` leer los documentos publicados y vigentes.
+  late final TapGestureRecognizer _termsTap = TapGestureRecognizer()
+    ..onTap = () => DocumentoLegalScreen.abrir(
+          context,
+          codigo: 'terminos',
+          tituloRespaldo: 'Términos de Servicio',
+        );
+  late final TapGestureRecognizer _privacyTap = TapGestureRecognizer()
+    ..onTap = () => DocumentoLegalScreen.abrir(
+          context,
+          codigo: 'privacidad',
+          tituloRespaldo: 'Política de Privacidad',
+        );
 
   static const _keyEmail = 'saved_email';
   static const _keyPassword = 'saved_password';
@@ -65,6 +83,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
+    _termsTap.dispose();
+    _privacyTap.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
@@ -531,19 +551,23 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       children: [
                         TextSpan(
-                          text: 'Terminos de Servicio',
+                          text: 'Términos de Servicio',
+                          recognizer: _termsTap,
                           style: TextStyle(
                             color:
-                                AppTheme.primaryColor.withValues(alpha: 0.7),
+                                AppTheme.primaryColor.withValues(alpha: 0.8),
+                            fontWeight: FontWeight.w600,
                             decoration: TextDecoration.underline,
                           ),
                         ),
                         const TextSpan(text: ' y '),
                         TextSpan(
-                          text: 'Politica de Privacidad',
+                          text: 'Política de Privacidad',
+                          recognizer: _privacyTap,
                           style: TextStyle(
                             color:
-                                AppTheme.primaryColor.withValues(alpha: 0.7),
+                                AppTheme.primaryColor.withValues(alpha: 0.8),
+                            fontWeight: FontWeight.w600,
                             decoration: TextDecoration.underline,
                           ),
                         ),

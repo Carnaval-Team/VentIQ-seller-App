@@ -106,12 +106,20 @@ Prueba funcional del cálculo (debe dar 1 500 para auto en el centro de Santa Cl
 ```sql
 select muevete.fn_cotizar_viaje(
   22.40689, -79.96450,   -- origen: Parque Vidal
-  22.40750, -79.96300,   -- destino: ~200 m
-  0.3,                   -- km de ruta (aprox)
-  10                     -- id_tipo_vehiculo del auto
-);
--- esperado: precio_plataforma = 1500 (modo fijo de la zona MUN)
+  22.40900, -79.96000,   -- destino: ~0,5 km en línea recta
+  (select id from muevete.vehicle_type where lower(tipo) = 'auto'),
+  now(),
+  3.3,                   -- km de ruta declarados (la función los acota)
+  'Villa Clara', 'Santa Clara'
+) ->> 'precio_plataforma';
+-- esperado: 1500 (tarifa municipal fija; km_total queda en ~2,04 por el tope
+--           anti-inflación, así que NO entra la válvula de precio corto)
 ```
+
+> Ojo con acortar demasiado el trayecto: con un destino a ~200 m el `km_total`
+> baja de 1,5 km y entra `precio_corto_auto`, que devuelve **1 000** en lugar de
+> 1 500. No es un fallo, es la tarifa corta; usa el trayecto de arriba para la
+> comprobación de humo.
 
 ### Tras 033
 

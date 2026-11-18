@@ -1,20 +1,21 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 
 import '../../config/app_theme.dart';
-import '../../models/driver_offer_model.dart';
-import '../../providers/auth_provider.dart';
-import '../../providers/location_provider.dart';
-import '../../providers/transport_provider.dart';
 import '../../providers/theme_provider.dart';
-import '../../providers/wallet_provider.dart';
-import '../../utils/constants.dart';
-import '../../widgets/map_widget.dart';
-import '../../widgets/driver_offer_card.dart';
+import '../../providers/transport_provider.dart';
+import '../../utils/helpers.dart';
 import 'ride_confirmed_screen.dart';
 
+/// "Buscando conductor...".
+///
+/// En el flujo de precio fijo ya no hay ofertas que comparar: el cliente
+/// publica el viaje con el precio de la plataforma y espera a que un chofer
+/// lo tome. Cuando eso pasa (`driver_id` en la solicitud) se navega a
+/// [RideConfirmedScreen].
 class DriverOffersScreen extends StatefulWidget {
   const DriverOffersScreen({super.key});
 
@@ -24,22 +25,28 @@ class DriverOffersScreen extends StatefulWidget {
 
 class _DriverOffersScreenState extends State<DriverOffersScreen>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
-  final MapController _mapController = MapController();
-  String _selectedFilter = 'Mejor';
-  late AnimationController _pulseAnimController;
-  late Animation<double> _pulseAnim;
+  late final AnimationController _pulseController;
+  late final Animation<double> _pulseAnimation;
+  Timer? _reloj;
+  bool _cancelando = false;
+  bool _navegado = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _pulseAnimController = AnimationController(
+    _pulseController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 1400),
     )..repeat(reverse: true);
-    _pulseAnim = Tween<double>(begin: 0.5, end: 1.0).animate(
-      CurvedAnimation(parent: _pulseAnimController, curve: Curves.easeInOut),
+    _pulseAnimation = Tween<double>(begin: 0.9, end: 1.08).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
+
+    // Refresca la cuenta atrás del TTL.
+    _reloj = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
@@ -52,495 +59,458 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _pulseAnimController.dispose();
-    _mapController.dispose();
+    _reloj?.cancel();
+    _pulseController.dispose();
     super.dispose();
   }
 
-  List<DriverOfferModel> _filterOffers(List<DriverOfferModel> offers) {
-    final sorted = List<DriverOfferModel>.from(offers);
-    switch (_selectedFilter) {
-      case 'Menor Precio':
-        sorted
-            .sort((a, b) => (a.precio ?? 0).compareTo(b.precio ?? 0));
-        break;
-      case 'Mas Rapido':
-        sorted.sort((a, b) =>
-            (a.tiempoEstimado ?? 0).compareTo(b.tiempoEstimado ?? 0));
-        break;
-      case 'Mejor':
-      default:
-        // Keep default order (best match first)
-        break;
-    }
-    return sorted;
-  }
-
-  void _onAcceptOffer(DriverOfferModel offer) async {
-    final transportProvider = context.read<TransportProvider>();
-
-    // If wallet payment, validate balance against offer price
-    if (transportProvider.paymentMethod == 'wallet') {
-      final authProvider = context.read<AuthProvider>();
-      final walletProvider = context.read<WalletProvider>();
-      final userId = authProvider.user?.id ?? '';
-      await walletProvider.loadClientBalance(userId);
-      final offerPrice = offer.precio ?? 0;
-      if (!walletProvider.hasSufficientBalance(offerPrice)) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Saldo insuficiente. Tienes \$${walletProvider.balance.toStringAsFixed(2)} y la oferta es \$${offerPrice.toStringAsFixed(2)}',
-              ),
-              backgroundColor: const Color(0xFFE53935),
-            ),
-          );
-        }
-        return;
-      }
-    }
-
-    await transportProvider.acceptOffer(offer);
-
-    if (mounted &&
-        transportProvider.state == TransportState.rideConfirmed) {
+  /// Cuando el chofer toma el viaje pasamos a la pantalla del viaje.
+  void _irAlViajeSiCorresponde(TransportProvider tp) {
+    if (_navegado || !mounted) return;
+    if (tp.activeRequest?.driverId == null) return;
+    _navegado = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(
-          builder: (context) => const RideConfirmedScreen(),
+        MaterialPageRoute(builder: (_) => const RideConfirmedScreen()),
+      );
+    });
+  }
+
+  Future<void> _cancelarViaje() async {
+    final isDark = context.read<ThemeProvider>().isDark;
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: AppTheme.surface(isDark),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Cancelar viaje',
+          style: GoogleFonts.plusJakartaSans(
+            fontWeight: FontWeight.w700,
+            color: AppTheme.textPrimary(isDark),
+          ),
+        ),
+        content: Text(
+          '¿Seguro que quieres cancelar la solicitud de viaje?',
+          style: GoogleFonts.plusJakartaSans(
+            color: AppTheme.textSecondary(isDark),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(
+              'No',
+              style: GoogleFonts.plusJakartaSans(
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textTertiary(isDark),
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(
+              'Sí, cancelar',
+              style: GoogleFonts.plusJakartaSans(
+                fontWeight: FontWeight.w600,
+                color: AppTheme.error,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmado != true || !mounted) return;
+    setState(() => _cancelando = true);
+    final tp = context.read<TransportProvider>();
+    final ok = await tp.cancelarSolicitud();
+    if (!mounted) return;
+    setState(() => _cancelando = false);
+
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            tp.error ?? 'No se pudo cancelar la solicitud.',
+            style: GoogleFonts.plusJakartaSans(),
+          ),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+      return;
+    }
+
+    if (tp.reembolsoCancelacion != null && tp.reembolsoCancelacion! > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Se devolvieron ${Helpers.formatCup(tp.reembolsoCancelacion!)} '
+            'a tu billetera.',
+            style: GoogleFonts.plusJakartaSans(),
+          ),
+          backgroundColor: AppTheme.success,
         ),
       );
     }
+
+    Navigator.pushNamedAndRemoveUntil(context, '/client/home', (route) => false);
   }
 
-  void _onCancelTrip() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        final isDark = context.read<ThemeProvider>().isDark;
-        return AlertDialog(
-          backgroundColor: isDark ? AppTheme.darkSurface : Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: Text(
-            'Cancelar viaje',
-            style: GoogleFonts.plusJakartaSans(
-              fontWeight: FontWeight.w700,
-              color: isDark ? Colors.white : Colors.black87,
-            ),
-          ),
-          content: Text(
-            '\u00bfEstas seguro que deseas cancelar la solicitud?',
-            style: GoogleFonts.plusJakartaSans(
-              color: isDark ? Colors.white70 : Colors.grey[700],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: Text(
-                'No',
-                style: GoogleFonts.plusJakartaSans(
-                  color: isDark ? Colors.white70 : Colors.grey[600],
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: Text(
-                'Si, cancelar',
-                style: GoogleFonts.plusJakartaSans(
-                  color: AppTheme.error,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (confirmed == true && mounted) {
-      await context.read<TransportProvider>().cancelRequest();
-      if (mounted) {
-        // Go back to the client home, not to the app's first route
-        // (which is the landing/auth gate).
-        Navigator.pushNamedAndRemoveUntil(
-          context,
-          '/client/home',
-          (route) => false,
-        );
-      }
-    }
+  String _textoTtl(DateTime? expiresAt) {
+    if (expiresAt == null) return '';
+    final restante = expiresAt.difference(DateTime.now());
+    if (restante.isNegative) return 'La solicitud está por expirar';
+    final minutos = restante.inMinutes;
+    if (minutos <= 0) return 'Vence en menos de 1 minuto';
+    return 'La solicitud vence en $minutos min';
   }
 
   @override
   Widget build(BuildContext context) {
-    final themeProvider = context.watch<ThemeProvider>();
-    final transportProvider = context.watch<TransportProvider>();
-    final locationProvider = context.watch<LocationProvider>();
-    final authProvider = context.watch<AuthProvider>();
-    final isDark = themeProvider.isDark;
-    final profile = authProvider.userProfile;
-    final photoUrl =
-        profile?['photo_url'] as String? ?? profile?['image'] as String?;
-    final userName = profile?['name'] as String? ?? '';
-    final userLocation = locationProvider.locationOrDefault;
-    final offers = _filterOffers(transportProvider.driverOffers);
+    final isDark = context.watch<ThemeProvider>().isDark;
+    final tp = context.watch<TransportProvider>();
 
-    return Scaffold(
-      body: Stack(
-        children: [
-          // Map background with user location avatar marker
-          MapWidget(
-            isDark: isDark,
-            mapController: _mapController,
-            center: userLocation,
-            zoom: AppConstants.defaultZoom,
-            markers: [
-              Marker(
-                point: userLocation,
-                width: 50,
-                height: 50,
-                child: Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppTheme.primaryColor,
-                    border: Border.all(color: Colors.white, width: 3),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppTheme.primaryColor.withValues(alpha: 0.4),
-                        blurRadius: 10,
-                        spreadRadius: 2,
-                      ),
-                    ],
-                    image: photoUrl != null && photoUrl.isNotEmpty
-                        ? DecorationImage(
-                            image: NetworkImage(photoUrl),
-                            fit: BoxFit.cover,
-                          )
-                        : null,
-                  ),
-                  child: photoUrl == null || photoUrl.isEmpty
-                      ? (userName.isNotEmpty
-                          ? Center(
-                              child: Text(
-                                userName[0].toUpperCase(),
-                                style: GoogleFonts.plusJakartaSans(
-                                  color: Colors.white,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            )
-                          : const Icon(
-                              Icons.person,
-                              color: Colors.white,
-                              size: 24,
-                            ))
-                      : null,
-                ),
-              ),
-            ],
-          ),
+    _irAlViajeSiCorresponde(tp);
 
-          // "Negociando..." status badge at top
-          SafeArea(
-            child: Center(
-              heightFactor: 1,
-              child: Padding(
-                padding: const EdgeInsets.only(top: 16),
-                child: _NegotiatingBadge(
-                  animation: _pulseAnim,
-                  isDark: isDark,
-                ),
-              ),
+    final solicitud = tp.activeRequest;
+
+    if (solicitud == null) {
+      return Scaffold(
+        backgroundColor: AppTheme.bg(isDark),
+        appBar: AppBar(
+          backgroundColor: AppTheme.bg(isDark),
+          foregroundColor: AppTheme.textPrimary(isDark),
+          elevation: 0,
+          title: Text(
+            'Buscando conductor',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: AppTheme.textPrimary(isDark),
             ),
           ),
+        ),
+        body: _buildSinSolicitud(isDark),
+      );
+    }
 
-          // DraggableScrollableSheet with offers
-          DraggableScrollableSheet(
-            initialChildSize: 0.65,
-            minChildSize: 0.18,
-            maxChildSize: 0.92,
-            snap: true,
-            snapSizes: const [0.18, 0.45, 0.65, 0.92],
-            builder: (context, scrollController) {
-              return Container(
-                decoration: BoxDecoration(
-                  color: isDark ? AppTheme.darkSurface : Colors.white,
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(24)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.2),
-                      blurRadius: 20,
-                      offset: const Offset(0, -4),
-                    ),
-                  ],
-                ),
-                child: ListView(
-                  controller: scrollController,
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  children: [
-                    const SizedBox(height: 12),
-                    // Handle bar
-                    Center(
-                      child: Container(
-                        width: 40,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color:
-                              isDark ? Colors.white24 : Colors.grey[300],
-                          borderRadius: BorderRadius.circular(2),
-                        ),
+    final precio = solicitud.precioMostrado;
+
+    return Scaffold(
+      backgroundColor: AppTheme.bg(isDark),
+      appBar: AppBar(
+        backgroundColor: AppTheme.bg(isDark),
+        foregroundColor: AppTheme.textPrimary(isDark),
+        elevation: 0,
+        centerTitle: true,
+        title: Text(
+          'Buscando conductor',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            color: AppTheme.textPrimary(isDark),
+          ),
+        ),
+      ),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            children: [
+              const Spacer(),
+              ScaleTransition(
+                scale: _pulseAnimation,
+                child: Container(
+                  width: 128,
+                  height: 128,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppTheme.primaryColor.withValues(alpha: 0.10),
+                  ),
+                  child: const Center(
+                    child: SizedBox(
+                      width: 54,
+                      height: 54,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 3.4,
+                        color: AppTheme.primaryColor,
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    // Header with count and cancel button
+                  ),
+                ),
+              ),
+              const SizedBox(height: 28),
+              Text(
+                'Buscando conductor...',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: AppTheme.textPrimary(isDark),
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Estamos avisando a los conductores de tu zona. '
+                'No cierres la app.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 14,
+                  color: AppTheme.textSecondary(isDark),
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // Resumen del viaje (precio de la plataforma, no negociable).
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppTheme.card(isDark),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppTheme.border(isDark)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Row(
                       children: [
+                        Icon(
+                          Icons.lock_outline,
+                          size: 15,
+                          color: AppTheme.textTertiary(isDark),
+                        ),
+                        const SizedBox(width: 6),
                         Expanded(
                           child: Text(
-                            '${offers.length} Conductores encontrados',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
-                              color:
-                                  isDark ? Colors.white : Colors.black87,
-                            ),
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: _onCancelTrip,
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 6),
-                          ),
-                          child: Text(
-                            'Cancelar Viaje',
+                            'Precio del viaje',
                             style: GoogleFonts.plusJakartaSans(
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
-                              color: AppTheme.error,
+                              color: AppTheme.textSecondary(isDark),
                             ),
+                          ),
+                        ),
+                        Text(
+                          Helpers.formatCup(precio),
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                            color: AppTheme.textPrimary(isDark),
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 12),
-                    // Filter chips
-                    SizedBox(
-                      height: 36,
-                      child: ListView(
-                        scrollDirection: Axis.horizontal,
-                        children: [
-                          _buildFilterChip('Mejor', isDark),
-                          const SizedBox(width: 8),
-                          _buildFilterChip('Menor Precio', isDark),
-                          const SizedBox(width: 8),
-                          _buildFilterChip('Mas Rapido', isDark),
-                        ],
-                      ),
+                    _filaResumen(
+                      isDark,
+                      icono: Icons.my_location,
+                      color: AppTheme.success,
+                      texto: solicitud.direccionOrigen ?? 'Origen',
                     ),
-                    const SizedBox(height: 16),
-                    // Offer cards
-                    if (offers.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 40),
-                        child: Column(
-                          children: [
-                            Icon(
-                              Icons.hourglass_empty,
-                              size: 48,
-                              color: isDark
-                                  ? Colors.white38
-                                  : Colors.grey[400],
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              'Esperando ofertas de conductores...',
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 15,
-                                color: isDark
-                                    ? Colors.white54
-                                    : Colors.grey[600],
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
+                    const SizedBox(height: 8),
+                    _filaResumen(
+                      isDark,
+                      icono: Icons.location_on,
+                      color: AppTheme.error,
+                      texto: solicitud.direccionDestino ?? 'Destino',
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        _chip(
+                          isDark,
+                          icono: Icons.payments_outlined,
+                          texto: (solicitud.metodoPago ?? 'efectivo') == 'wallet'
+                              ? 'Wallet'
+                              : 'Efectivo',
                         ),
-                      )
-                    else
-                      ...List.generate(offers.length, (index) {
-                        final offer = offers[index];
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: DriverOfferCard(
-                            offer: offer,
-                            driverRating: offer.driverRating,
-                            onAccept: () => _onAcceptOffer(offer),
-                            onDecline: () {
-                              context
-                                  .read<TransportProvider>()
-                                  .declineOffer(offer);
-                            },
+                        const SizedBox(width: 8),
+                        if ((solicitud.tipoVehiculo ?? '').isNotEmpty)
+                          _chip(
+                            isDark,
+                            icono: Icons.directions_car_outlined,
+                            texto: solicitud.tipoVehiculo!,
                           ),
-                        );
-                      }),
-                    const SizedBox(height: 20),
+                        if ((solicitud.pasajeros ?? 1) > 1) ...[
+                          const SizedBox(width: 8),
+                          _chip(
+                            isDark,
+                            icono: Icons.person_outline,
+                            texto: '${solicitud.pasajeros} pas.',
+                          ),
+                        ],
+                      ],
+                    ),
+                    if (_textoTtl(solicitud.expiresAt).isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        _textoTtl(solicitud.expiresAt),
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          color: AppTheme.textTertiary(isDark),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
-              );
-            },
-          ),
-        ],
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: 0,
-        onTap: (index) {
-          if (index == 0) return;
-          switch (index) {
-            case 1:
-              Navigator.pushNamed(context, '/client/request-history');
-              break;
-            case 2:
-              Navigator.pushNamed(context, '/client/wallet');
-              break;
-            case 3:
-              Navigator.pushNamed(context, '/client/profile');
-              break;
-          }
-        },
-        type: BottomNavigationBarType.fixed,
-        backgroundColor: isDark ? AppTheme.darkSurface : Colors.white,
-        selectedItemColor: AppTheme.primaryColor,
-        unselectedItemColor: isDark ? Colors.white54 : Colors.grey,
-        selectedLabelStyle: GoogleFonts.plusJakartaSans(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-        ),
-        unselectedLabelStyle: GoogleFonts.plusJakartaSans(
-          fontSize: 12,
-          fontWeight: FontWeight.w400,
-        ),
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home_outlined),
-            activeIcon: Icon(Icons.home),
-            label: 'Inicio',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.receipt_long_outlined),
-            activeIcon: Icon(Icons.receipt_long),
-            label: 'Actividad',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.account_balance_wallet_outlined),
-            activeIcon: Icon(Icons.account_balance_wallet),
-            label: 'Billetera',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person_outline),
-            activeIcon: Icon(Icons.person),
-            label: 'Cuenta',
-          ),
-        ],
-      ),
-    );
-  }
+              ),
 
-  Widget _buildFilterChip(String label, bool isDark) {
-    final isSelected = _selectedFilter == label;
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          _selectedFilter = label;
-        });
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? AppTheme.primaryColor
-              : isDark
-                  ? AppTheme.darkCard
-                  : Colors.grey[100],
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected
-                ? AppTheme.primaryColor
-                : isDark
-                    ? AppTheme.darkBorder
-                    : Colors.grey[300]!,
-          ),
-        ),
-        child: Text(
-          label,
-          style: GoogleFonts.plusJakartaSans(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: isSelected
-                ? Colors.white
-                : isDark
-                    ? Colors.white70
-                    : Colors.grey[700],
+              const Spacer(),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: OutlinedButton.icon(
+                  onPressed: _cancelando ? null : _cancelarViaje,
+                  icon: _cancelando
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.close, size: 18),
+                  label: Text(
+                    _cancelando ? 'Cancelando...' : 'Cancelar viaje',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.error,
+                    side: const BorderSide(color: AppTheme.error),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
-}
 
-/// Animated "Negociando..." badge at the top of the screen.
-class _NegotiatingBadge extends AnimatedWidget {
-  final bool isDark;
+  Widget _buildSinSolicitud(bool isDark) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: AppTheme.primaryColor.withValues(alpha: 0.10),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.search_off,
+                size: 38,
+                color: AppTheme.textTertiary(isDark),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'No hay una solicitud activa',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: AppTheme.textPrimary(isDark),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Pide un viaje desde el mapa para empezar a buscar conductor.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 14,
+                color: AppTheme.textSecondary(isDark),
+              ),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: () => Navigator.pushNamedAndRemoveUntil(
+                context,
+                '/client/home',
+                (route) => false,
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primaryColor,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+              ),
+              child: Text(
+                'Pedir un viaje',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
-  const _NegotiatingBadge({
-    required Animation<double> animation,
-    required this.isDark,
-  }) : super(listenable: animation);
+  Widget _filaResumen(
+    bool isDark, {
+    required IconData icono,
+    required Color color,
+    required String texto,
+  }) {
+    return Row(
+      children: [
+        Icon(icono, size: 15, color: color),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            texto,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 13,
+              color: AppTheme.textPrimary(isDark),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
-  @override
-  Widget build(BuildContext context) {
-    final anim = listenable as Animation<double>;
+  Widget _chip(
+    bool isDark, {
+    required IconData icono,
+    required String texto,
+  }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: isDark
-            ? AppTheme.darkSurface.withValues(alpha: 0.95)
-            : Colors.white.withValues(alpha: 0.95),
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.primaryColor
-                .withValues(alpha: anim.value * 0.3),
-            blurRadius: 12,
-            spreadRadius: 1,
-          ),
-        ],
+        color: AppTheme.bg(isDark),
+        borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const SizedBox(
-            width: 18,
-            height: 18,
-            child: CircularProgressIndicator(
-              strokeWidth: 2.5,
-              color: AppTheme.primaryColor,
-            ),
-          ),
-          const SizedBox(width: 10),
+          Icon(icono, size: 13, color: AppTheme.textSecondary(isDark)),
+          const SizedBox(width: 5),
           Text(
-            'Negociando...',
+            texto,
             style: GoogleFonts.plusJakartaSans(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: isDark ? Colors.white : Colors.black87,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.textSecondary(isDark),
             ),
           ),
         ],

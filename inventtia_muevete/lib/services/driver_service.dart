@@ -1,13 +1,15 @@
 import 'dart:math';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../models/transport_request_model.dart';
-import '../models/notification_model.dart';
 import '../models/valoracion_model.dart';
-import 'notification_service.dart';
 
+/// Datos y operaciones del chofer que NO son dinero.
+///
+/// Tomar y cerrar viajes vive en las RPC (`fn_tomar_viaje`,
+/// `fn_completar_viaje`, ver `TransportProvider`): aquí no se negocia ni se
+/// escribe ningún precio. El flujo viejo de ofertas (crear oferta, escuchar
+/// aceptaciones, suscribirse a solicitudes) se eliminó en H5.
 class DriverService {
   final SupabaseClient _supabase = Supabase.instance.client;
-  RealtimeChannel? _requestsChannel;
 
   /// Toggles the driver's online/offline status in both
   /// muevete.drivers and muevete.place tables.
@@ -41,113 +43,6 @@ class DriverService {
           'longitude': lon,
         })
         .eq('driver', driverId);
-  }
-
-  /// Subscribes to new transport requests using Supabase Realtime
-  /// on the muevete.solicitudes_transporte table.
-  /// Filters incoming requests by distance from the driver's position.
-  void subscribeToRequests(
-    double lat,
-    double lon,
-    double radiusKm,
-    Function(TransportRequestModel) onRequest,
-  ) {
-    _requestsChannel = _supabase
-        .channel('solicitudes_transporte_driver')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.insert,
-          schema: 'muevete',
-          table: 'solicitudes_transporte',
-          callback: (payload) {
-            final data = payload.newRecord;
-            final request = TransportRequestModel.fromJson(data);
-
-            // Filter by distance from driver's current position
-            final originLat = double.tryParse(
-              data['lat_origen']?.toString() ?? '',
-            );
-            final originLon = double.tryParse(
-              data['lon_origen']?.toString() ?? '',
-            );
-
-            if (originLat != null && originLon != null) {
-              final distance = _haversineDistance(
-                lat,
-                lon,
-                originLat,
-                originLon,
-              );
-              if (distance <= radiusKm) {
-                onRequest(request);
-              }
-            }
-          },
-        )
-        .subscribe();
-  }
-
-  /// Returns true if [driverId] already has an offer for [requestId].
-  Future<bool> hasExistingOffer(int requestId, int driverId) async {
-    final existing = await _supabase
-        .schema('muevete')
-        .from('ofertas_chofer')
-        .select('id')
-        .eq('solicitud_id', requestId)
-        .eq('driver_id', driverId)
-        .maybeSingle();
-    return existing != null;
-  }
-
-  /// Inserts a driver offer into muevete.ofertas_chofer.
-  /// Throws if the driver already has an offer for this request.
-  Future<Map<String, dynamic>> makeOffer(
-    int requestId,
-    int driverId,
-    double price,
-    int estimatedMinutes, {
-    String? message,
-  }) async {
-    // Guard: no duplicate offers
-    final duplicate = await hasExistingOffer(requestId, driverId);
-    if (duplicate) {
-      throw Exception('Ya enviaste una oferta para esta solicitud');
-    }
-
-    final offerData = <String, dynamic>{
-      'solicitud_id': requestId,
-      'driver_id': driverId,
-      'precio': price,
-      'tiempo_estimado': estimatedMinutes,
-      'estado': 'pendiente',
-    };
-
-    if (message != null) {
-      offerData['mensaje'] = message;
-    }
-
-    final response = await _supabase
-        .schema('muevete')
-        .from('ofertas_chofer')
-        .insert(offerData)
-        .select()
-        .single();
-
-    // Notify client about new offer
-    try {
-      final solicitud = await fetchSolicitudById(requestId);
-      final clientUuid = solicitud?['user_id'] as String?;
-      if (clientUuid != null) {
-        await NotificationService().createNotification(
-          userUuid: clientUuid,
-          tipo: NotificationType.nuevaOferta,
-          titulo: 'Nueva oferta',
-          mensaje: 'Un conductor te ofrece viaje por Gs. ${price.toInt()}',
-          data: {'solicitud_id': requestId, 'oferta_id': response['id']},
-        );
-      }
-    } catch (_) {}
-
-    return response;
   }
 
   /// Fetches the active trip for a driver from muevete.viajes.
@@ -313,34 +208,6 @@ class DriverService {
     return nearby;
   }
 
-  /// Creates a new viaje in muevete.viajes when a ride starts.
-  /// Returns the created viaje row with its id.
-  Future<Map<String, dynamic>> createViaje({
-    required int driverId,
-    required String userId,       // auth.users UUID
-    required double latDestino,   // client's destination lat
-    required double lonDestino,   // client's destination lon
-    String? userDisplay,
-    String? telefono,
-  }) async {
-    final row = await _supabase
-        .schema('muevete')
-        .from('viajes')
-        .insert({
-          'driver_id': driverId,
-          'user': userId,
-          'estado': false,           // false = going to pickup, true = trip started
-          'completado': false,
-          'latitud_cliente': latDestino.toString(),
-          'longitud_cliente': lonDestino.toString(),
-          if (userDisplay != null) 'user_display': userDisplay,
-          if (telefono != null) 'telefono': telefono,
-        })
-        .select()
-        .single();
-    return row;
-  }
-
   /// Subscribes to Realtime updates on a specific viaje row.
   /// [onUpdate] is called with the full updated row when it changes.
   RealtimeChannel subscribeToViaje(
@@ -360,33 +227,6 @@ class DriverService {
           ),
           callback: (payload) {
             onUpdate(Map<String, dynamic>.from(payload.newRecord));
-          },
-        )
-        .subscribe();
-  }
-
-  /// Subscribes to Realtime UPDATE on ofertas_chofer for this driver.
-  /// Fires [onAccepted] when an offer's estado changes to 'aceptada'.
-  RealtimeChannel subscribeToMyOfferAcceptances(
-    int driverId,
-    void Function(Map<String, dynamic> offer) onAccepted,
-  ) {
-    return _supabase
-        .channel('offer_accept_$driverId')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.update,
-          schema: 'muevete',
-          table: 'ofertas_chofer',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'driver_id',
-            value: driverId.toString(),
-          ),
-          callback: (payload) {
-            final row = Map<String, dynamic>.from(payload.newRecord);
-            if (row['estado'] == 'aceptada') {
-              onAccepted(row);
-            }
           },
         )
         .subscribe();
@@ -413,26 +253,10 @@ class DriverService {
         .maybeSingle();
   }
 
-  /// Updates solicitud estado (e.g. 'completada').
-  Future<void> updateSolicitudEstado(int solicitudId, String estado) async {
-    await _supabase
-        .schema('muevete')
-        .from('solicitudes_transporte')
-        .update({'estado': estado})
-        .eq('id', solicitudId);
-  }
-
-  /// Removes the realtime subscription for transport requests.
-  Future<void> unsubscribe() async {
-    if (_requestsChannel != null) {
-      try {
-        await _supabase.removeChannel(_requestsChannel!);
-      } catch (_) {
-        // realtime_client has a known Web bug with List<Binding> cast on unsubscribe
-      }
-      _requestsChannel = null;
-    }
-  }
+  /// LEGACY: el flujo de precio fijo ya no abre canales propios desde este
+  /// servicio (la lista de viajes disponibles la refresca `TransportProvider`).
+  /// Se conserva el método para no romper a quien lo invoca al desconectarse.
+  Future<void> unsubscribe() async {}
 
   /// Submits a rating for a completed trip.
   Future<void> submitRating({

@@ -49,6 +49,9 @@ class _QrScannerDialogState extends State<QrScannerDialog> {
   @override
   Widget build(BuildContext context) {
     final isDark = context.watch<ThemeProvider>().isDark;
+    // Fail closed: sin MUEVETE_QR_SECRET no se puede verificar ningún QR, así
+    // que ni siquiera se abre la cámara.
+    final configurado = TripCompletionQrService.configurado;
 
     return Dialog(
       backgroundColor: AppTheme.surface(isDark),
@@ -68,25 +71,29 @@ class _QrScannerDialogState extends State<QrScannerDialog> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Apunta la cámara al código QR que muestra el cliente.',
+              configurado
+                  ? 'Apunta la cámara al código QR que muestra el cliente.'
+                  : TripCompletionQrService.noConfiguradoMensaje,
               textAlign: TextAlign.center,
               style: GoogleFonts.plusJakartaSans(
                 fontSize: 14,
                 color: AppTheme.textSecondary(isDark),
               ),
             ),
-            const SizedBox(height: 16),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: SizedBox(
-                height: 260,
-                width: 260,
-                child: MobileScanner(
-                  controller: _scannerController,
-                  onDetect: _onDetect,
+            if (configurado) ...[
+              const SizedBox(height: 16),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: SizedBox(
+                  height: 260,
+                  width: 260,
+                  child: MobileScanner(
+                    controller: _scannerController,
+                    onDetect: _onDetect,
+                  ),
                 ),
               ),
-            ),
+            ],
             if (_error != null) ...[
               const SizedBox(height: 12),
               Text(

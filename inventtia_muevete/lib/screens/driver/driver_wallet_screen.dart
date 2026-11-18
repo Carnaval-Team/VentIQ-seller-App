@@ -9,6 +9,7 @@ import '../../providers/wallet_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/profile_photo_service.dart';
+import '../../services/wallet_service.dart';
 import '../../utils/helpers.dart';
 import '../../widgets/wallet_balance_card.dart';
 import '../../widgets/transaction_list_item.dart';
@@ -23,11 +24,20 @@ class DriverWalletScreen extends StatefulWidget {
 }
 
 class _DriverWalletScreenState extends State<DriverWalletScreen> {
+  final WalletService _walletService = WalletService();
+
+  // Configuración de recarga/deuda (`muevete.configuracion_tarifas`).
+  double _recargaPct = 0;
+  double _limiteDeudaEfectivo = 0;
+  bool _permiteDeuda = false;
+  bool _configuracionLista = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadWalletData();
+      _loadConfiguracion();
     });
   }
 
@@ -44,6 +54,39 @@ class _DriverWalletScreenState extends State<DriverWalletScreen> {
     }
   }
 
+  Future<void> _loadConfiguracion() async {
+    final cfg = await _walletService.configuracionRecarga();
+    if (!mounted) return;
+    setState(() {
+      _recargaPct = (cfg['recarga_pct'] as num?)?.toDouble() ?? 0;
+      _limiteDeudaEfectivo =
+          (cfg['limite_deuda_efectivo'] as num?)?.toDouble() ?? 0;
+      _permiteDeuda = cfg['permite_deuda'] as bool? ?? false;
+      _configuracionLista = true;
+    });
+  }
+
+  /// `11` para 11.00, `12.5` para 12.50 (sin ceros de relleno).
+  String _pctTexto(double pct) => pct % 1 == 0
+      ? pct.toStringAsFixed(0)
+      : pct.toStringAsFixed(2).replaceFirst(RegExp(r'0+$'), '');
+
+  /// Texto real del tope de deuda que muestra la tarjeta de saldo.
+  String get _notaDeuda {
+    if (!_configuracionLista) {
+      return 'Consultando el tope de deuda de tu cuenta...';
+    }
+    if (!_permiteDeuda) {
+      return 'No se permite deuda en tu cuenta: recarga para seguir '
+          'tomando viajes.';
+    }
+    if (_limiteDeudaEfectivo <= 0) {
+      return 'No puedes acumular deuda: recarga para seguir tomando viajes.';
+    }
+    return 'Puedes seguir tomando viajes hasta un tope de deuda de '
+        '${Helpers.formatCup(_limiteDeudaEfectivo)}.';
+  }
+
   void _showAddFundsDialog() {
     final isDark = context.read<ThemeProvider>().isDark;
     final amountController = TextEditingController();
@@ -54,8 +97,9 @@ class _DriverWalletScreenState extends State<DriverWalletScreen> {
         return StatefulBuilder(
           builder: (dialogContext, setDialogState) {
             final parsed = double.tryParse(amountController.text);
-            final totalPagar =
-                parsed != null && parsed > 0 ? parsed * 1.11 : null;
+            final totalPagar = parsed != null && parsed > 0
+                ? parsed * (1 + _recargaPct / 100)
+                : null;
 
             return AlertDialog(
               backgroundColor:
@@ -75,7 +119,8 @@ class _DriverWalletScreenState extends State<DriverWalletScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    'Ingresa el monto a acreditar. Se aplica 11% de comision.',
+                    'Ingresa el monto a acreditar. Incluye '
+                    '${_pctTexto(_recargaPct)}% de comisión.',
                     style: GoogleFonts.plusJakartaSans(
                       fontSize: 13,
                       color: isDark ? Colors.white60 : Colors.grey[600],
@@ -173,7 +218,8 @@ class _DriverWalletScreenState extends State<DriverWalletScreen> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            '(\$${parsed!.toStringAsFixed(2)} recarga + 11% comision)',
+                            '(\$${parsed!.toStringAsFixed(2)} recarga + '
+                            '${_pctTexto(_recargaPct)}% de comisión)',
                             style: GoogleFonts.plusJakartaSans(
                               fontSize: 11,
                               color: isDark
@@ -250,7 +296,7 @@ class _DriverWalletScreenState extends State<DriverWalletScreen> {
     final detalleController = TextEditingController();
     String? _pickedImageName;
     XFile? _pickedFile;
-    final totalPagar = montoRecarga * 1.11;
+    final totalPagar = montoRecarga * (1 + _recargaPct / 100);
 
     showDialog(
       context: context,
@@ -307,7 +353,8 @@ class _DriverWalletScreenState extends State<DriverWalletScreen> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            '(\$${montoRecarga.toStringAsFixed(2)} recarga + 11% comision)',
+                            '(\$${montoRecarga.toStringAsFixed(2)} recarga + '
+                            '${_pctTexto(_recargaPct)}% de comisión)',
                             style: GoogleFonts.plusJakartaSans(
                               fontSize: 11,
                               color: isDark
@@ -612,6 +659,8 @@ class _DriverWalletScreenState extends State<DriverWalletScreen> {
                 children: [
                   WalletBalanceCard(
                     balance: walletProvider.balance,
+                    esChofer: true,
+                    notaDeuda: _notaDeuda,
                     onAddFunds: _showAddFundsDialog,
                     onWithdraw: () {},
                   ),

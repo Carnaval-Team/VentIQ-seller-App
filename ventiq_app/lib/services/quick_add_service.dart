@@ -441,7 +441,9 @@ class QuickAddService {
     }
     if (ubicacion != null && ubicacion.isNotEmpty) return ubicacion;
     if (almacen != null && almacen.isNotEmpty) return almacen;
-    return 'Almacén';
+    // Antes devolvía 'Almacén' a secas: se leía como un almacén real en el
+    // carrito y en el ticket. Si el dato no vino, se dice.
+    return 'Sin ubicación registrada';
   }
 
   /// `inventoryData` que espera `fn_registrar_venta`, con la presentación de la

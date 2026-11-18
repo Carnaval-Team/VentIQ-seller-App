@@ -68,8 +68,20 @@ class AppConstants {
   static const double defaultLon = -79.965681;
   static const double defaultZoom = 14.0;
 
-  // Santa Clara city zone pricing
+  // LEGACY: precio por círculo de ciudad. Se conserva una release de gracia
+  // (nadie lo lee ya); se borra en la siguiente.
+  @Deprecated(
+    'El precio ahora sale de polígonos de zona en el servidor (migración 031)',
+  )
   static const double cityCenterLat = 22.40689;
+
+  @Deprecated(
+    'El precio ahora sale de polígonos de zona en el servidor (migración 031)',
+  )
   static const double cityCenterLon = -79.96450;
+
+  @Deprecated(
+    'El precio ahora sale de polígonos de zona en el servidor (migración 031)',
+  )
   static const double cityRadiusKm = 2.53;
 }

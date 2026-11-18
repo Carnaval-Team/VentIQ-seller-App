@@ -281,6 +281,17 @@ class _ClientDrawerState extends State<ClientDrawer> {
                     },
                   ),
                   _DrawerItem(
+                    icon: Icons.health_and_safety_outlined,
+                    label: 'Mi seguridad',
+                    subtitle: 'Contactos de emergencia y 106',
+                    isDark: isDark,
+                    cardColor: cardColor,
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.pushNamed(context, '/seguridad');
+                    },
+                  ),
+                  _DrawerItem(
                     icon: Icons.notifications_outlined,
                     label: 'Notificaciones',
                     isDark: isDark,

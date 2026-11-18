@@ -1301,6 +1301,9 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
       // Producto con variantes - usar precio con presentación
       for (var entry in variantQuantities.entries) {
         final variant = entry.key;
+        // Solo variantes de ESTE producto: una entrada vieja (carga anterior)
+        // inflaba el total con un artículo que ya no está en pantalla.
+        if (!currentProduct.variantes.contains(variant)) continue;
         final quantity = entry.value;
         final basePrice = _getEffectiveBasePrice(currentProduct, variant);
         final prices = _calculatePromotionPrices(basePrice);
@@ -1630,7 +1633,12 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                                       ),
                                     if (currentProduct.variantes.isNotEmpty)
                                       ...variantQuantities.entries
-                                          .where((entry) => entry.value > 0)
+                                          .where(
+                                            (entry) =>
+                                                entry.value > 0 &&
+                                                currentProduct.variantes
+                                                    .contains(entry.key),
+                                          )
                                           .map(
                                             (
                                               entry,
@@ -2356,7 +2364,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
             child: Column(
               children:
                   variants.map((variant) {
-                    final isSelected = variantQuantities[variant]! > 0;
+                    final isSelected = (variantQuantities[variant] ?? 0.0) > 0;
                     return _buildLocationVariantCard(
                       variant,
                       isSelected,
@@ -3352,6 +3360,18 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   void _groupVariantsByLocation(List<ProductVariant> variants) {
     locationGroups.clear();
 
+    // `variantQuantities` está indexado por identidad de objeto: si queda una
+    // entrada de una carga anterior (dos `_loadProductDetails` que se solapan),
+    // la lista de «productos seleccionados» mostraba la MISMA línea dos veces y
+    // el cobro añadía las dos. Solo sobreviven las variantes de esta carga.
+    final vigentes = variants.toSet();
+    variantQuantities.removeWhere(
+      (ProductVariant v, double _) => !vigentes.contains(v),
+    );
+    for (final ProductVariant v in variants) {
+      variantQuantities.putIfAbsent(v, () => 0.0);
+    }
+
     for (var variant in variants) {
       String locationKey = _getLocationKey(variant);
 
@@ -3439,6 +3459,12 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     return Color.fromARGB(255, newRed, newGreen, newBlue);
   }
 
+  /// Etiqueta honesta cuando el payload no trae almacén/ubicación.
+  ///
+  /// Se usa en el nombre de la ubicación y en la clave de agrupación, para que
+  /// el vendedor vea «Sin ubicación registrada» en vez de un almacén inventado.
+  static const String _ubicacionDesconocida = 'Sin ubicación registrada';
+
   /// Get location key from variant's inventory metadata
   String _getLocationKey(ProductVariant variant) {
     final metadata = variant.inventoryMetadata;
@@ -3456,7 +3482,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     }
 
     // Fallback for variants without location metadata
-    return 'Ubicación no especificada';
+    return _ubicacionDesconocida;
   }
 
   /// Get total stock for a location group
@@ -3529,11 +3555,12 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     }
 
     // Fallback to default location names
-    if (variant != null) {
-      return 'Almacén B-${variant.nombre.substring(0, 1)}';
-    } else {
-      return 'Almacén A-1';
-    }
+    //
+    // NUNCA inventar un almacén. Antes se devolvía 'Almacén B-<letra>' o
+    // 'Almacén A-1': nombres que no existen en la base, que aparecían bajo la
+    // ubicación real del producto y que además viajaban al carrito y al ticket
+    // (`OrderItem.ubicacionAlmacen`). Si falta el dato, se dice.
+    return _ubicacionDesconocida;
   }
 
   // Build inventory data for fn_registrar_venta RPC
@@ -4185,6 +4212,9 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
       } else {
         // Producto con variantes
         for (var entry in variantQuantities.entries) {
+          // Sin este filtro, una variante que quedó de una carga anterior se
+          // cobraba dos veces: la línea fantasma y la real.
+          if (!currentProduct.variantes.contains(entry.key)) continue;
           if (entry.value > 0) {
             final basePrice = _getEffectiveBasePrice(currentProduct, entry.key);
             final discountPrice = _calculateDiscountPrice(basePrice);

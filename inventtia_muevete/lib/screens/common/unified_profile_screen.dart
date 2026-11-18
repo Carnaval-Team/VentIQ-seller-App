@@ -14,11 +14,11 @@ import '../../screens/client/map_picker_screen.dart';
 import '../../services/document_upload_service.dart';
 import '../../services/driver_service.dart';
 import '../../services/geonames_service.dart';
-import '../../services/mbtiles_service.dart';
 import '../../services/profile_photo_service.dart';
 import '../../services/saved_address_service.dart';
 import '../../services/vehicle_service.dart';
 import '../../services/vehicle_type_service.dart';
+import '../../widgets/offline_map_settings_card.dart';
 import '../../widgets/plan_suscripcion_widget.dart';
 import '../../utils/app_error.dart';
 
@@ -715,89 +715,6 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen>
     });
   }
 
-  void _showOfflineMapHelp() {
-    final isDark = context.read<ThemeProvider>().isDark;
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: isDark ? AppTheme.darkCard : Colors.white,
-        title: Text(
-          'Mapa Offline',
-          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700),
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _TutorialStep(
-                number: '1',
-                text:
-                    'La app usa un archivo .mbtiles con los mapas. El administrador lo publica en Supabase Storage desde una utilidad interna.',
-              ),
-              _TutorialStep(
-                number: '2',
-                text:
-                    'Si el mapa ya viene empaquetado en assets/tiles/cuba.mbtiles, se copia automáticamente al teléfono. Si no, usa el botón “Descargar / actualizar mapa” para bajarlo desde Supabase.',
-              ),
-              _TutorialStep(
-                number: '3',
-                text:
-                    'Para activarlo, simplemente enciende el interruptor “Mapa Offline” en esta pantalla.',
-              ),
-              _TutorialStep(
-                number: '4',
-                text:
-                    'Si el interruptor aparece deshabilitado, significa que el archivo .mbtiles no está disponible. Presiona “Descargar / actualizar mapa” o contacta al administrador.',
-              ),
-              _TutorialStep(
-                number: '5',
-                text:
-                    'Una vez activado, los mapas en las pantallas de viajes usarán los datos guardados sin necesidad de internet.',
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Entendido'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _downloadOfflineMap() async {
-    final messenger = ScaffoldMessenger.of(context);
-    setState(() {});
-
-    final ok = await MbTilesService.instance.syncMbtilesFromSupabase();
-    if (!mounted) return;
-
-    if (ok) {
-      setState(() {});
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text('Mapa descargado correctamente',
-              style: GoogleFonts.plusJakartaSans()),
-          backgroundColor: AppTheme.success,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } else {
-      setState(() {});
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text('No se pudo descargar el mapa. Revisa tu conexión.',
-              style: GoogleFonts.plusJakartaSans()),
-          backgroundColor: AppTheme.error,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
-  }
-
   void _snackOk() {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -1014,22 +931,98 @@ class _UnifiedProfileScreenState extends State<UnifiedProfileScreen>
               ),
             ],
             const SizedBox(height: 24),
-            if (!kIsWeb)
-              _offlineMapTile(
-                isDark,
-                () async {
-                  await MbTilesService.instance.toggleOffline(
-                      !MbTilesService.instance.useOffline);
-                  setState(() {});
-                },
-                onHelp: _showOfflineMapHelp,
-                onDownload: _downloadOfflineMap,
-              ),
+            if (!kIsWeb) OfflineMapSettingsCard(isDark: isDark),
+            const SizedBox(height: 24),
+            _buildSeguridadCard(isDark),
             const SizedBox(height: 24),
             _buildSignOutButton(),
             const SizedBox(height: 24),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Accesos a identidad, documentos legales y seguridad del viaje (H1 / H2).
+  Widget _buildSeguridadCard(bool isDark) {
+    final textPrimary = AppTheme.textPrimary(isDark);
+    final textSecondary = AppTheme.textSecondary(isDark);
+
+    Widget fila({
+      required IconData icon,
+      required String titulo,
+      required String subtitulo,
+      required String ruta,
+      Color? color,
+    }) {
+      return ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(icon, color: color ?? AppTheme.primaryColor, size: 22),
+        title: Text(
+          titulo,
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: textPrimary,
+          ),
+        ),
+        subtitle: Text(
+          subtitulo,
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 11.5,
+            color: textSecondary,
+          ),
+        ),
+        trailing: const Icon(Icons.chevron_right, size: 20),
+        onTap: () async {
+          await Navigator.pushNamed(context, ruta);
+          if (mounted) setState(() {});
+        },
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppTheme.card(isDark),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppTheme.border(isDark)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 10, bottom: 4),
+            child: Text(
+              'Seguridad y privacidad',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: textSecondary,
+              ),
+            ),
+          ),
+          fila(
+            icon: Icons.health_and_safety_outlined,
+            titulo: 'Mi seguridad',
+            subtitulo: 'Contactos de emergencia, 106 y reportes',
+            ruta: '/seguridad',
+          ),
+          Divider(height: 1, color: AppTheme.border(isDark)),
+          fila(
+            icon: Icons.badge_outlined,
+            titulo: 'Verificar mi identidad',
+            subtitulo: 'Carnet, fotos y datos de contacto',
+            ruta: '/identidad/onboarding',
+          ),
+          Divider(height: 1, color: AppTheme.border(isDark)),
+          fila(
+            icon: Icons.description_outlined,
+            titulo: 'Privacidad y términos',
+            subtitulo: 'Documentos legales y consentimientos',
+            ruta: '/identidad/consentimiento',
+          ),
+        ],
       ),
     );
   }
@@ -2070,81 +2063,6 @@ const _fiscalIdLabel = <String, String>{
 String _labelFiscal(String? iso) =>
     _fiscalIdLabel[iso?.toUpperCase()] ?? 'Identificador Fiscal';
 
-Widget _offlineMapTile(
-  bool isDark,
-  VoidCallback onToggle, {
-  VoidCallback? onHelp,
-  VoidCallback? onDownload,
-}) {
-  return Container(
-    decoration: BoxDecoration(
-      color: isDark ? AppTheme.darkCard : Colors.white,
-      borderRadius: BorderRadius.circular(14),
-      border: Border.all(
-          color: isDark ? AppTheme.darkBorder : Colors.grey[200]!),
-    ),
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SwitchListTile(
-          secondary: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.map_outlined,
-                  color: AppTheme.primaryColor, size: 22),
-              if (onHelp != null)
-                IconButton(
-                  icon: Icon(Icons.help_outline,
-                      color: AppTheme.primaryColor, size: 20),
-                  onPressed: onHelp,
-                ),
-            ],
-          ),
-          title: Text('Mapa Offline',
-              style: GoogleFonts.plusJakartaSans(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 15,
-                  color: isDark ? Colors.white : Colors.black87)),
-          subtitle: Text(
-              MbTilesService.instance.isAvailable
-                  ? 'Usar mapa descargado (sin internet)'
-                  : 'Archivo de mapa no disponible',
-              style: GoogleFonts.plusJakartaSans(
-                  fontSize: 12,
-                  color: isDark ? Colors.white54 : Colors.grey[500])),
-          value: MbTilesService.instance.useOffline,
-          activeThumbColor: AppTheme.primaryColor,
-          onChanged: MbTilesService.instance.isAvailable
-              ? (_) => onToggle()
-              : null,
-        ),
-        if (onDownload != null) ...[
-          Divider(
-            height: 1,
-            color: isDark ? AppTheme.darkBorder : Colors.grey[200]!,
-          ),
-          ListTile(
-            leading: const Icon(Icons.cloud_download,
-                color: AppTheme.primaryColor),
-            title: Text('Descargar / actualizar mapa',
-                style: GoogleFonts.plusJakartaSans(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                    color: isDark ? Colors.white : Colors.black87)),
-            subtitle: Text('Bajar el mapa desde Supabase Storage',
-                style: GoogleFonts.plusJakartaSans(
-                    fontSize: 12,
-                    color: isDark ? Colors.white54 : Colors.grey[500])),
-            trailing: const Icon(Icons.download,
-                color: AppTheme.primaryColor),
-            onTap: onDownload,
-          ),
-        ],
-      ],
-    ),
-  );
-}
-
 class _SectionHeader extends StatelessWidget {
   final String label;
   final bool isDark;
@@ -2274,45 +2192,4 @@ class _DialogField extends StatelessWidget {
   }
 }
 
-class _TutorialStep extends StatelessWidget {
-  final String number;
-  final String text;
 
-  const _TutorialStep({required this.number, required this.text});
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = context.read<ThemeProvider>().isDark;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          CircleAvatar(
-            radius: 12,
-            backgroundColor: AppTheme.primaryColor,
-            child: Text(
-              number,
-              style: GoogleFonts.plusJakartaSans(
-                color: Colors.white,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              text,
-              style: GoogleFonts.plusJakartaSans(
-                color: isDark ? Colors.white70 : Colors.black87,
-                fontSize: 13,
-                height: 1.4,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}

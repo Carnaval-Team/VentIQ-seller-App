@@ -590,6 +590,12 @@ class ProductDetailService {
   ]) {
     final List<ProductVariant> variants = [];
 
+    /// Fila de inventario ya vista: `get_detalle_producto` devuelve UNA fila
+    /// vigente por (almacén, ubicación, variante, opción, presentación), pero un
+    /// cache offline viejo puede traer la misma fila repetida. Repetirla crea
+    /// variantes gemelas y el producto aparece dos veces en UBICACIONES.
+    final vistos = <String>{};
+
     for (int i = 0; i < inventoryData.length; i++) {
       final raw = inventoryData[i];
       if (raw is! Map) continue;
@@ -654,6 +660,26 @@ class ProductDetailService {
       final variantInventoryMetadata = _extractInventoryMetadata(item);
       debugPrint('🔧 Variante ${i + 1} - metadata: $variantInventoryMetadata');
 
+      // Dos filas son la MISMA variante si coinciden almacén, ubicación,
+      // variante, opción y presentación. Los ids nulos (cache viejo que no
+      // guardaba ubicación) se desempatan con los nombres ya resueltos.
+      final claveFila = [
+        variantInventoryMetadata['id_almacen'],
+        variantInventoryMetadata['id_ubicacion'],
+        variantInventoryMetadata['id_variante'],
+        variantInventoryMetadata['id_opcion_variante'],
+        variantInventoryMetadata['id_presentacion'],
+        variantInventoryMetadata['ubicacion_nombre'] ?? '',
+        variantInventoryMetadata['almacen_nombre'] ?? '',
+      ].join('|');
+      if (!vistos.add(claveFila)) {
+        debugPrint(
+          '♻️ Fila de inventario repetida ignorada ($claveFila): la misma '
+          'variante ya venía en el detalle',
+        );
+        continue;
+      }
+
       variants.add(
         ProductVariant(
           id: i + 1, // Generate sequential IDs
@@ -689,6 +715,18 @@ class ProductDetailService {
             ? Map<String, dynamic>.from(inventoryItem['ubicacion'] as Map)
             : null;
 
+    /// `ubicacion` llegó a guardarse como String en caches offline viejos
+    /// (y `_normalizeInventarioUbicaciones` documenta ese caso). Sin esto la
+    /// fila se quedaba sin nombre de ubicación y la UI inventaba un almacén.
+    final ubicacionTexto =
+        inventoryItem['ubicacion'] is String
+            ? (inventoryItem['ubicacion'] as String).trim()
+            : null;
+    final almacenTexto =
+        inventoryItem['almacen'] is String
+            ? (inventoryItem['almacen'] as String).trim()
+            : null;
+
     return {
       'id_inventario': inventoryItem['id_inventario'],
       'id_variante': variante?['id'],
@@ -712,6 +750,7 @@ class ProductDetailService {
               inventoryItem['denominacion_ubicacion'],
               inventoryItem['ubicacion_label'],
               ubicacion?['denominacion'],
+              ubicacionTexto,
             ]) {
               final s = v?.toString();
               if (s != null && s.isNotEmpty) return s;
@@ -722,7 +761,9 @@ class ProductDetailService {
           (() {
             for (final v in [
               inventoryItem['almacen_nombre'],
+              inventoryItem['denominacion_almacen'],
               ubicacion?['almacen']?['denominacion'],
+              almacenTexto,
             ]) {
               final s = v?.toString();
               if (s != null && s.isNotEmpty) return s;

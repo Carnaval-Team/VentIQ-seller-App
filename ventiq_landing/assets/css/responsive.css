@@ -1,0 +1,609 @@
+/* =========================================================
+   INVENTTIA · RESPONSIVE.CSS
+   Capa de corrección responsive para premium-v3.css.
+   Se carga DESPUÉS de premium-v3.css en todas las páginas.
+
+   Por qué existe este archivo:
+   premium-v3.css está escrito desktop-first y varias reglas
+   rompen la vista móvil:
+     · .v2-eyebrow usa width:max-content → el texto no envuelve
+       y desborda el viewport a 360–390 px.
+     · .v2-nav-inner mantiene marca + CTA + burger con gap:24px
+       → no cabe en pantallas < ~660 px (scroll horizontal).
+     · .v2-hero h1 em lleva margin-top:-25px y line-height:1.45
+       → a 34–42 px las líneas del titular se solapan.
+     · .v2-stack-visual-phone fuerza min-height:540px hasta 540 px.
+     · Listas de 2 columnas (flow/carnaval) por debajo de 420 px.
+     · .v2-btn usa white-space:nowrap → los CTA largos desbordan.
+   Aquí se corrige todo eso por breakpoint, sin tocar el diseño
+   de escritorio que ya funcionaba.
+   ========================================================= */
+
+/* ---------- 0. GUARDAS GLOBALES ---------- */
+html {
+    /* clip (no hidden) para no crear un scroll container que rompa
+       position:sticky de las stack-cards en escritorio. */
+    overflow-x: clip;
+    scroll-behavior: smooth;
+}
+
+body {
+    overflow-x: clip;
+}
+
+/* Los anchors (#apps, #servicios…) quedaban bajo el nav fijo. */
+:target,
+section[id],
+header[id] {
+    scroll-margin-top: 96px;
+}
+
+/* La tipografía fluida nunca debe forzar scroll horizontal. */
+.v2 h1,
+.v2 h2,
+.v2 h3,
+.v2 h4,
+.v2 p,
+.v2 li,
+.v2 a {
+    overflow-wrap: break-word;
+}
+
+.v2-shell > * {
+    min-width: 0;
+}
+
+/* Skip link accesible (aparece solo con teclado) */
+.skip-link {
+    position: absolute;
+    left: 12px;
+    top: -60px;
+    z-index: 200;
+    padding: 12px 18px;
+    border-radius: 10px;
+    background: #0F2438;
+    color: #fff;
+    font-family: var(--v2-font-display);
+    font-size: 14px;
+    font-weight: 600;
+    transition: top 160ms var(--v2-ease-out);
+}
+
+.skip-link:focus-visible {
+    top: 12px;
+    outline: 2px solid #5EB8D1;
+    outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+}
+
+/* =========================================================
+   1. NAVEGACIÓN
+   ========================================================= */
+
+/* Tablets y portátiles pequeños: los 6 links + CTA no caben. */
+@media (max-width: 1180px) {
+    .v2-nav-links { gap: 18px; font-size: 13.5px; }
+    .v2-nav-inner { gap: 16px; }
+}
+
+/* Móvil: la marca y el burger son lo único imprescindible.
+   El CTA de WhatsApp vive dentro del drawer, que sí cabe. */
+@media (max-width: 700px) {
+    .v2-nav {
+        height: calc(62px + env(safe-area-inset-top, 0px));
+    }
+
+    .v2-nav-inner {
+        gap: 12px;
+        padding-inline: clamp(14px, 4.5vw, 22px);
+    }
+
+    .v2-nav .v2-brand-logo,
+    .v2-drawer .v2-brand-logo {
+        height: 23px;
+        max-width: 116px;
+    }
+
+    .v2-nav-cta {
+        display: none;
+    }
+
+    .v2-burger {
+        width: 42px;
+        height: 42px;
+        flex: 0 0 auto;
+    }
+}
+
+/* Drawer: panel un poco más ancho y links con área táctil de 48 px. */
+@media (max-width: 700px) {
+    .v2-drawer-panel {
+        width: min(360px, 92vw);
+        padding: 20px 20px 28px;
+    }
+
+    .v2-drawer-panel a:not(.v2-btn):not(.v2-brand) {
+        padding: 15px 0;
+        font-size: 16.5px;
+    }
+
+    .v2-drawer-panel .v2-btn {
+        min-height: 50px;
+        font-size: 15.5px;
+    }
+}
+
+/* =========================================================
+   2. HERO
+   ========================================================= */
+
+@media (max-width: 980px) {
+    .v2-hero {
+        padding-top: clamp(92px, 12vh, 118px);
+        padding-bottom: clamp(48px, 9vw, 80px);
+    }
+
+    .v2-hero-grid {
+        gap: 40px;
+    }
+
+    /* El eyebrow: de width:max-content (que desborda) a bloque que envuelve. */
+    .v2-eyebrow {
+        width: auto;
+        max-width: 100%;
+        flex-wrap: wrap;
+        row-gap: 4px;
+        font-size: 11.5px;
+        line-height: 1.35;
+        padding: 8px 12px;
+    }
+
+    .v2-hero h1 {
+        font-size: clamp(32px, 8.8vw, 52px);
+        line-height: 1.12;
+        letter-spacing: -0.032em;
+        margin: 18px 0 16px;
+    }
+
+    /* Aquí estaba la rotura: -25px de margen + line-height 1.45
+       sobre un inline-block hacía que "opera" se montara sobre
+       "Software que" en cuanto el titular bajaba de 60 px. */
+    .v2-hero h1 em {
+        margin-top: 0;
+        margin-inline: -0.12em;
+        padding: 0.06em 0.12em 0.1em;
+        line-height: 1.08;
+        vertical-align: baseline;
+    }
+
+    .v2-hero-sub {
+        font-size: clamp(16px, 4.1vw, 18px);
+        line-height: 1.55;
+        max-width: 46ch;
+        margin-bottom: 26px;
+    }
+
+    .v2-hero-actions {
+        gap: 10px;
+    }
+
+    .v2-hero-visual {
+        padding-block: 8px 0;
+        order: 2;
+    }
+
+    .v2-hero .v2-phone,
+    .v2-phone-hero {
+        max-width: min(300px, 74vw);
+    }
+
+    .v2-hero-trust {
+        margin-top: 40px;
+        padding-top: 22px;
+    }
+
+    .v2-trust-row {
+        gap: 12px 22px;
+    }
+
+    .v2-trust-row span {
+        font-size: 14px;
+    }
+}
+
+@media (max-width: 520px) {
+    .v2-hero-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .v2-hero-actions .v2-btn {
+        justify-content: center;
+        min-height: 50px;
+        font-size: 15px;
+    }
+
+    .v2-hero h1 {
+        font-size: clamp(30px, 9.4vw, 40px);
+    }
+
+    .v2-hero-trust {
+        margin-top: 32px;
+    }
+}
+
+/* =========================================================
+   3. BOTONES
+   ========================================================= */
+@media (max-width: 520px) {
+    .v2-btn {
+        white-space: normal;
+        text-align: center;
+        max-width: 100%;
+        line-height: 1.25;
+    }
+
+    /* Área táctil mínima 44 px en todos los CTA */
+    .v2-btn,
+    .v2-nav-cta {
+        min-height: 44px;
+    }
+}
+
+/* =========================================================
+   4. SECCIONES Y TITULARES
+   ========================================================= */
+@media (max-width: 980px) {
+    .v2-section {
+        padding-block: clamp(52px, 8vw, 88px);
+    }
+
+    .v2-h {
+        font-size: clamp(26px, 6.6vw, 38px);
+        line-height: 1.18;
+        max-width: none;
+    }
+
+    .v2-h em {
+        margin-top: 0;
+        padding: 0.05em 0.14em 0.1em;
+        margin-inline: -0.14em;
+    }
+
+    .v2-lede {
+        font-size: clamp(15.5px, 3.9vw, 17.5px);
+        max-width: 54ch;
+    }
+
+    .v2-stack-intro {
+        margin-bottom: 32px;
+    }
+
+    .v2-about-intro,
+    .v2-section-header {
+        margin-bottom: 32px;
+    }
+
+    .v2-cta {
+        padding-block: clamp(64px, 11vw, 110px);
+    }
+
+    .v2-cta h2 {
+        font-size: clamp(28px, 7.6vw, 46px);
+        padding-inline: 4px;
+    }
+
+    .v2-cta h2 em {
+        margin-top: 0;
+    }
+
+    .v2-cta p {
+        font-size: 16px;
+    }
+
+    .v2-cta-actions {
+        gap: 10px;
+    }
+}
+
+@media (max-width: 520px) {
+    .v2-cta-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .v2-cta-actions .v2-btn {
+        justify-content: center;
+        min-height: 50px;
+    }
+}
+
+/* =========================================================
+   5. STACK CARDS (apps en index)
+   ========================================================= */
+@media (max-width: 980px) {
+    .v2-stack-card {
+        padding: 26px 22px;
+        gap: 22px;
+        border-radius: 24px;
+        margin-bottom: 18px;
+        /* En móvil no hay stack: sobra el transform/opacity por JS. */
+        transform: none;
+        opacity: 1;
+    }
+
+    .v2-stack-card h3 {
+        font-size: clamp(22px, 5.8vw, 30px);
+        line-height: 1.15;
+        margin-top: 6px;
+    }
+
+    .v2-stack-card p {
+        font-size: 15px;
+        line-height: 1.55;
+        margin-bottom: 18px;
+    }
+
+    .v2-stack-features {
+        gap: 10px 14px;
+        margin-bottom: 22px;
+    }
+
+    .v2-stack-features li {
+        font-size: 13.5px;
+        align-items: flex-start;
+    }
+
+    .v2-stack-features i {
+        flex: 0 0 auto;
+        margin-top: 1px;
+    }
+
+    /* El mockup dejaba 540 px de aire en tablet/móvil. */
+    .v2-stack-visual.v2-stack-visual-phone,
+    .v2-carnaval-visual-phone {
+        min-height: 0;
+        padding: 6px 0 2px;
+    }
+
+    .v2-stack-visual .v2-phone {
+        max-width: min(270px, 68vw);
+    }
+
+    .v2-stack-card .v2-btn {
+        align-self: flex-start;
+    }
+}
+
+@media (max-width: 560px) {
+    .v2-stack-features {
+        grid-template-columns: 1fr;
+    }
+
+    .v2-stack-card .v2-btn {
+        align-self: stretch;
+        justify-content: center;
+    }
+}
+
+/* =========================================================
+   6. BENTO / TILES
+   ========================================================= */
+@media (max-width: 980px) {
+    .v2-bento {
+        gap: 14px;
+        margin-top: 32px;
+        grid-auto-rows: auto;
+    }
+
+    .v2-tile {
+        padding: 22px;
+        border-radius: 20px;
+    }
+
+    .v2-tile h4 {
+        font-size: 19px;
+    }
+
+    .v2-tile-1 h4 {
+        font-size: 23px;
+    }
+
+    .v2-tile-1 p {
+        font-size: 15px;
+    }
+
+    .v2-tile-stat .v2-num {
+        font-size: clamp(38px, 11vw, 54px);
+    }
+}
+
+/* =========================================================
+   7. FLOW / CARNAVAL (bloques oscuros)
+   ========================================================= */
+@media (max-width: 980px) {
+    .v2-flow,
+    .v2-carnaval {
+        margin-inline: 0;
+        padding: 30px 22px;
+        border-radius: 24px;
+    }
+
+    .v2-flow h2,
+    .v2-carnaval h2 {
+        font-size: clamp(28px, 7.2vw, 44px);
+        line-height: 1.1;
+    }
+
+    .v2-flow p,
+    .v2-carnaval p {
+        font-size: 15.5px;
+        margin-bottom: 22px;
+    }
+
+    .v2-flow-inner,
+    .v2-carnaval-inner {
+        gap: 26px;
+    }
+
+    .v2-flow .v2-phone,
+    .v2-carnaval .v2-phone {
+        max-width: min(270px, 66vw);
+    }
+
+    .v2-flow .v2-btn,
+    .v2-carnaval .v2-btn {
+        min-height: 50px;
+    }
+}
+
+@media (max-width: 560px) {
+    .v2-flow-list,
+    .v2-carnaval-list {
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+
+    .v2-flow .v2-btn,
+    .v2-carnaval .v2-btn {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
+/* =========================================================
+   8. ABOUT / SERVICIOS
+   ========================================================= */
+@media (max-width: 980px) {
+    .v2-about-card,
+    .v2-service-card {
+        padding: 24px 22px;
+    }
+
+    .v2-about-icon,
+    .v2-service-icon {
+        margin-bottom: 16px;
+    }
+}
+
+/* =========================================================
+   9. FOOTER
+   ========================================================= */
+@media (max-width: 980px) {
+    .v2-footer {
+        padding: 56px 0 26px;
+    }
+
+    .v2-footer-grid {
+        gap: 28px 24px;
+        padding-bottom: 32px;
+    }
+
+    .v2-footer-tag {
+        margin-top: 12px;
+    }
+
+    .v2-footer-bottom {
+        font-size: 12.5px;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+
+    .v2-footer-bottom .v2-mono {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 10px;
+    }
+}
+
+/* =========================================================
+   10. MOCKUPS
+   ========================================================= */
+@media (max-width: 980px) {
+    .v2-phone {
+        max-width: min(300px, 78vw);
+        border-radius: 38px;
+        padding: 10px;
+    }
+
+    .v2-phone-screen { border-radius: 28px; }
+    .v2-phone-island { width: 78px; height: 22px; top: 10px; }
+}
+
+/* =========================================================
+   11. PANTALLAS MUY ESTRECHAS (≤ 360 px)
+   ========================================================= */
+@media (max-width: 380px) {
+    .v2-hero h1 { font-size: 29px; }
+    .v2-h { font-size: 25px; }
+    .v2-flow h2,
+    .v2-carnaval h2 { font-size: 26px; }
+    .v2-cta h2 { font-size: 26px; }
+    .v2-stack-card { padding: 22px 18px; }
+    .v2-eyebrow { font-size: 10.5px; }
+    .v2-nav .v2-brand-logo { max-width: 104px; }
+}
+
+/* =========================================================
+   12. PULIDO DE ESCRITORIO (sin cambiar la identidad)
+   ========================================================= */
+
+/* Los mockups de las stack-cards podían tocar los bordes de la tarjeta. */
+.v2-stack-visual {
+    min-width: 0;
+}
+
+/* En pantallas bajas la tarjeta sticky podía cortar el CTA. */
+@media (min-width: 981px) and (max-height: 900px) {
+    .v2-stack-card {
+        min-height: min(70vh, 720px);
+    }
+}
+
+/* El titular del hero queda más equilibrado con menos medida. */
+.v2-hero h1 {
+    text-wrap: balance;
+}
+
+.v2-h,
+.v2-flow h2,
+.v2-carnaval h2,
+.v2-cta h2 {
+    text-wrap: balance;
+}
+
+/* Legibilidad de los párrafos largos en pantallas grandes. */
+.v2-lede,
+.v2-hero-sub {
+    text-wrap: pretty;
+}
+
+/* Los enlaces de descarga deben verse como acciones, no como texto. */
+.v2-footer a[download],
+.v2-footer a[href$=".apk"] {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Foco visible consistente en toda la web. */
+.v2 a:focus-visible,
+.v2 button:focus-visible,
+.v2 summary:focus-visible,
+.v2 [tabindex]:focus-visible {
+    outline: 2px solid #2A5F8A;
+    outline-offset: 3px;
+}
+
+@media (prefers-color-scheme: dark) {
+    .v2 a:focus-visible,
+    .v2 button:focus-visible,
+    .v2 summary:focus-visible,
+    .v2 [tabindex]:focus-visible {
+        outline-color: #5EB8D1;
+    }
+}

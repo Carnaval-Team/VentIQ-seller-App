@@ -9,38 +9,29 @@ import '../services/trip_completion_qr_service.dart';
 
 /// Dialog shown to the **client** when offline.
 /// Displays a QR code that the driver can scan to complete the trip locally.
+///
+/// El QR sólo identifica el viaje: no lleva precios. Si el build no trae
+/// `MUEVETE_QR_SECRET` el diálogo avisa y no genera un QR inválido.
 class QrCompletionDialog extends StatelessWidget {
   final int solicitudId;
   final int viajeId;
-  final int driverId;
-  final String userId;
-  final double precio;
-  final double precioBase;
-  final String metodoPago;
 
   const QrCompletionDialog({
     super.key,
     required this.solicitudId,
     required this.viajeId,
-    required this.driverId,
-    required this.userId,
-    required this.precio,
-    required this.precioBase,
-    required this.metodoPago,
   });
 
   @override
   Widget build(BuildContext context) {
     final isDark = context.watch<ThemeProvider>().isDark;
-    final payload = TripCompletionQrService.generatePayload(
-      solicitudId: solicitudId,
-      viajeId: viajeId,
-      driverId: driverId,
-      userId: userId,
-      precio: precio,
-      precioBase: precioBase,
-      metodoPago: metodoPago,
-    );
+    final configurado = TripCompletionQrService.configurado;
+    final payload = configurado
+        ? TripCompletionQrService.generatePayload(
+            solicitudId: solicitudId,
+            viajeId: viajeId,
+          )
+        : null;
 
     return Dialog(
       backgroundColor: AppTheme.surface(isDark),
@@ -62,42 +53,47 @@ class QrCompletionDialog extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Muestra este QR a tu conductor para completar el viaje.',
+              configurado
+                  ? 'Muestra este QR a tu conductor para completar el viaje.'
+                  : TripCompletionQrService.noConfiguradoMensaje,
               textAlign: TextAlign.center,
               style: GoogleFonts.plusJakartaSans(
                 fontSize: 14,
                 color: AppTheme.textSecondary(isDark),
               ),
             ),
-            const SizedBox(height: 20),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
+            if (payload != null) ...[
+              const SizedBox(height: 20),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: QrImageView(
+                  data: payload,
+                  version: QrVersions.auto,
+                  size: 220,
+                  errorCorrectionLevel: QrErrorCorrectLevel.M,
+                ),
               ),
-              child: QrImageView(
-                data: payload,
-                version: QrVersions.auto,
-                size: 220,
-                errorCorrectionLevel: QrErrorCorrectLevel.M,
-              ),
-            ),
+            ],
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
               height: 48,
               child: ElevatedButton(
-                onPressed: () => Navigator.pop(context, true),
+                onPressed: () => Navigator.pop(context, configurado),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primaryColor,
+                  backgroundColor:
+                      configurado ? AppTheme.primaryColor : AppTheme.textTertiary(isDark),
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
                 child: Text(
-                  'Listo',
+                  configurado ? 'Listo' : 'Entendido',
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,

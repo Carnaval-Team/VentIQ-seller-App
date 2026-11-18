@@ -39,6 +39,11 @@ import 'screens/muevete/muevete_wallets_screen.dart';
 import 'screens/muevete/muevete_kyc_screen.dart';
 import 'screens/muevete/muevete_planes_screen.dart';
 import 'screens/muevete/muevete_cargas_screen.dart';
+import 'screens/muevete/muevete_tarifas_config_screen.dart';
+import 'screens/muevete/muevete_zonas_screen.dart';
+import 'screens/muevete/muevete_vehiculos_screen.dart';
+import 'screens/muevete/muevete_documentos_legales_screen.dart';
+import 'screens/muevete/muevete_incidentes_screen.dart';
 import 'screens/agentes_screen.dart';
 import 'screens/ingresos_distribucion_screen.dart';
 import 'screens/carnaval_dashboard_screen.dart';
@@ -246,6 +251,31 @@ class VentIQSuperAdminApp extends StatelessWidget {
             (context) => const RouteGuard(
               route: '/muevete/cargas',
               child: MueveteCargasScreen(),
+            ),
+        '/muevete/tarifas':
+            (context) => const RouteGuard(
+              route: '/muevete/tarifas',
+              child: MueveteTarifasConfigScreen(),
+            ),
+        '/muevete/zonas':
+            (context) => const RouteGuard(
+              route: '/muevete/zonas',
+              child: MueveteZonasScreen(),
+            ),
+        '/muevete/vehiculos':
+            (context) => const RouteGuard(
+              route: '/muevete/vehiculos',
+              child: MueveteVehiculosScreen(),
+            ),
+        '/muevete/documentos':
+            (context) => const RouteGuard(
+              route: '/muevete/documentos',
+              child: MueveteDocumentosLegalesScreen(),
+            ),
+        '/muevete/incidentes':
+            (context) => const RouteGuard(
+              route: '/muevete/incidentes',
+              child: MueveteIncidentesScreen(),
             ),
         '/agentes':
             (context) =>

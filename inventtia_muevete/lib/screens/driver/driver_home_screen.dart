@@ -14,21 +14,18 @@ import '../../services/mbtiles_service.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../config/app_theme.dart';
-import '../../models/transport_request_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/location_provider.dart';
 import '../../providers/theme_provider.dart';
-import '../../models/notification_model.dart';
 import '../../services/completion_sync_service.dart';
 import '../../services/driver_service.dart';
-import '../../services/notification_service.dart';
 import '../../services/background_service.dart';
 import '../../utils/constants.dart';
 import '../../utils/helpers.dart';
 import '../../utils/app_error.dart';
+import '../../widgets/onboarding_checklist_fab.dart';
 import 'active_ride_screen.dart';
 import 'incoming_requests_screen.dart';
 import 'driver_wallet_screen.dart';
@@ -42,9 +39,13 @@ class DriverHomeScreen extends StatefulWidget {
 }
 
 class _DriverHomeScreenState extends State<DriverHomeScreen>
-    with TickerProviderStateMixin, WidgetsBindingObserver, SmoothCompassMixin {
+    with WidgetsBindingObserver, SmoothCompassMixin {
   final DriverService _driverService = DriverService();
   final MapController _mapController = MapController();
+
+  /// Checklist de requisitos (perfil, consentimiento, contacto, KYC, vehículo).
+  final GlobalKey<OnboardingChecklistFabState> _checklistKey =
+      GlobalKey<OnboardingChecklistFabState>();
 
   @override
   MapController get compassMapController => _mapController;
@@ -56,38 +57,19 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   // Periodic location tracker while online
   Timer? _locationTimer;
-  Timer? _requestsPollingTimer;
+  Timer? _tripPollingTimer;
 
-  // Solicitudes pendientes cercanas cargadas al iniciar / cambiar a online
+  // Viajes pendientes cercanos: sólo se usan para pintar el mapa.
   List<Map<String, dynamic>> _nearbyRequests = [];
 
-  // IDs de solicitudes a las que el driver ya envió oferta (no mostrar)
-  final Set<int> _offeredRequestIds = {};
-
-  // Offer acceptance subscription
-  RealtimeChannel? _offerAcceptChannel;
-  Map<String, dynamic>? _confirmedTripData; // enriched data for confirmed ride
-
-  final List<TransportRequestModel> _incomingRequests = [];
-  AnimationController? _slideController;
-  Animation<Offset>? _slideAnimation;
+  // Datos del viaje en curso para el banner. Se llena desde `muevete.viajes`
+  // + su `solicitudes_transporte`; nulo cuando no hay viaje activo.
+  Map<String, dynamic>? _confirmedTripData;
 
   @override
   void initState() {
     super.initState();
     _initializeDriver();
-
-    _slideController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 400),
-    );
-    _slideAnimation = Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
-        .animate(
-          CurvedAnimation(
-            parent: _slideController!,
-            curve: Curves.easeOutCubic,
-          ),
-        );
 
     WidgetsBinding.instance.addObserver(this);
     MbTilesService.instance.addListener(_onOfflineMapChanged);
@@ -135,18 +117,16 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       // Only seed from profile once — never overwrite a live toggle with stale cache
       setState(() => _isOnline = estado);
       if (_isOnline) {
-        _subscribeToRequests();
-        _subscribeToOfferAcceptances();
         _startLocationTracking();
         await _loadNearbyRequests();
-        _startRequestsPolling();
+        _startTripPolling();
         BackgroundService.updateStatus(
           title: 'Muevete - Conductor',
-          content: 'En línea · Esperando solicitudes',
+          content: 'En línea · Esperando viajes',
         );
       }
-      // Always subscribe to offer acceptances (even offline, to catch late accepts)
-      _subscribeToOfferAcceptances();
+      // El banner del viaje en curso se refresca también al arrancar.
+      await _refreshActiveTripBanner();
     }
   }
 
@@ -184,18 +164,20 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _locationTimer = null;
   }
 
-  void _startRequestsPolling() {
-    _requestsPollingTimer?.cancel();
-    _requestsPollingTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+  /// Refresco de seguridad: pinta los viajes cercanos en el mapa y mantiene
+  /// al día el banner del viaje en curso.
+  void _startTripPolling() {
+    _tripPollingTimer?.cancel();
+    _tripPollingTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       if (!mounted) return;
       if (_isOnline) _loadNearbyRequests();
-      if (_confirmedTripData != null) _refreshActiveTripBanner();
+      _refreshActiveTripBanner();
     });
   }
 
-  void _stopRequestsPolling() {
-    _requestsPollingTimer?.cancel();
-    _requestsPollingTimer = null;
+  void _stopTripPolling() {
+    _tripPollingTimer?.cancel();
+    _tripPollingTimer = null;
   }
 
   @override
@@ -208,10 +190,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     }
   }
 
+  /// Pinta en el mapa los viajes pendientes cercanos. La decisión real de
+  /// tomar un viaje vive en "Viajes disponibles" (`fn_viajes_disponibles`).
   Future<void> _loadNearbyRequests() async {
     if (!mounted) return;
-    final driverProfile = context.read<AuthProvider>().driverProfile;
-    final driverId = driverProfile?['id'] as int?;
     final loc = context.read<LocationProvider>().locationOrDefault;
     try {
       final rows = await _driverService.fetchNearbyPendingRequests(
@@ -220,38 +202,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         AppConstants.defaultSearchRadiusKm,
       );
 
-      // Load IDs where this driver already has an offer, filter them out
-      final Set<int> alreadyOffered = {};
-      if (driverId != null) {
-        for (final row in rows) {
-          final rid = row['id'] as int?;
-          if (rid != null) {
-            final has = await _driverService.hasExistingOffer(rid, driverId);
-            if (has) alreadyOffered.add(rid);
-          }
-        }
-      }
-
-      final filtered = rows
-          .where((r) => !alreadyOffered.contains(r['id']))
-          .toList();
-
-      for (final row in filtered) {
-        dev.log(
-          '[NearbyRequest] id=${row['id']} '
-          'origen=(${row['lat_origen']}, ${row['lon_origen']}) '
-          'destino=${row['direccion_destino']} precio=${row['precio_oferta']}',
-          name: 'DriverHome',
-        );
-      }
-
       if (mounted) {
         // Only rebuild if data actually changed
         final oldIds = _nearbyRequests.map((r) => r['id']).toSet();
-        final newIds = filtered.map((r) => r['id']).toSet();
-        _offeredRequestIds.addAll(alreadyOffered);
+        final newIds = rows.map((r) => r['id']).toSet();
         if (!_setEquals(oldIds, newIds)) {
-          setState(() => _nearbyRequests = filtered);
+          setState(() => _nearbyRequests = rows);
         }
       }
     } catch (e) {
@@ -260,109 +216,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 
   bool _setEquals(Set a, Set b) => a.length == b.length && a.containsAll(b);
-
-  void _subscribeToRequests() {
-    final locationProvider = context.read<LocationProvider>();
-    final location = locationProvider.locationOrDefault;
-
-    _driverService.subscribeToRequests(
-      location.latitude,
-      location.longitude,
-      AppConstants.defaultSearchRadiusKm,
-      (request) {
-        // Skip if we already offered on this request
-        if (request.id != null && _offeredRequestIds.contains(request.id)) {
-          return;
-        }
-        if (mounted) {
-          setState(() {
-            _incomingRequests.insert(0, request);
-            _nearbyRequests.removeWhere((r) => r['id'] == request.id);
-          });
-          _slideController?.forward();
-          NotificationService().pushLocal(
-            tipo: NotificationType.nuevaSolicitud,
-            titulo: 'Nueva solicitud',
-            mensaje: 'Nuevo pasajero cerca busca transporte.',
-            data: {'solicitud_id': request.id},
-          );
-        }
-      },
-    );
-  }
-
-  void _subscribeToOfferAcceptances() {
-    final driverProfile = context.read<AuthProvider>().driverProfile;
-    final driverId = driverProfile?['id'] as int?;
-    if (driverId == null) return;
-
-    _offerAcceptChannel?.unsubscribe();
-    _offerAcceptChannel = _driverService.subscribeToMyOfferAcceptances(
-      driverId,
-      (offer) => _onOfferAccepted(offer),
-    );
-  }
-
-  Future<void> _onOfferAccepted(Map<String, dynamic> offer) async {
-    final solicitudId = offer['solicitud_id'] as int?;
-    if (solicitudId == null) return;
-
-    NotificationService().pushLocal(
-      tipo: NotificationType.ofertaAceptada,
-      titulo: 'Oferta aceptada',
-      mensaje: 'Un pasajero aceptó tu oferta. Dirígete al punto de recogida.',
-      data: {'solicitud_id': solicitudId},
-    );
-
-    try {
-      final solicitud = await _driverService.fetchSolicitudById(solicitudId);
-      if (solicitud == null || !mounted) return;
-
-      final userId = solicitud['user_id'] as String?;
-      Map<String, dynamic>? clientInfo;
-      if (userId != null) {
-        clientInfo = await _driverService.fetchClientInfo(userId);
-      }
-
-      final tripData = <String, dynamic>{
-        'solicitud_id': solicitudId,
-        'client_name': clientInfo?['name'] as String? ?? 'Pasajero',
-        'client_phone': clientInfo?['phone'] as String? ?? '',
-        'client_image': clientInfo?['photo_url'] as String?,
-        'direccion_origen': solicitud['direccion_origen'] ?? 'Origen',
-        'direccion_destino': solicitud['direccion_destino'] ?? 'Destino',
-        'lat_origen': solicitud['lat_origen'],
-        'lon_origen': solicitud['lon_origen'],
-        'lat_destino': solicitud['lat_destino'],
-        'lon_destino': solicitud['lon_destino'],
-        'precio': offer['precio'] ?? solicitud['precio_oferta'] ?? 0,
-        'user_id': userId,
-      };
-
-      // Poll for newest trip ID (3 attempts)
-      final driverProfile = context.read<AuthProvider>().driverProfile;
-      final driverId = driverProfile?['id'] as int?;
-      if (driverId != null) {
-        Map<String, dynamic>? activeTrip;
-        for (int i = 0; i < 3; i++) {
-          activeTrip = await _driverService.getActiveTrip(driverId, userId: userId);
-          if (activeTrip != null) break;
-          await Future.delayed(const Duration(milliseconds: 1500));
-        }
-
-        if (activeTrip != null) {
-          tripData['viaje_id'] = activeTrip['id'];
-          tripData['estado'] = activeTrip['estado'];
-        }
-      }
-
-      if (mounted) {
-        setState(() => _confirmedTripData = tripData);
-      }
-    } catch (e) {
-      dev.log('[OfferAccept] Error: $e', name: 'DriverHome');
-    }
-  }
 
   Future<void> _goToActiveRide() async {
     if (_confirmedTripData == null) return;
@@ -374,20 +227,102 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     if (mounted) await _refreshActiveTripBanner();
   }
 
-  /// Clears the confirmed-trip banner if the viaje is already completed.
+  /// Mantiene el banner del viaje en curso.
+  ///
+  /// En el flujo de precio fijo el viaje lo crea `fn_tomar_viaje`: se busca la
+  /// fila abierta de `muevete.viajes` y se completa con su solicitud
+  /// (`solicitud_id`, migración 031). Sin viaje abierto, el banner desaparece.
   Future<void> _refreshActiveTripBanner() async {
     if (!mounted) return;
     final driverProfile = context.read<AuthProvider>().driverProfile;
     final driverId = driverProfile?['id'] as int?;
     if (driverId == null) {
-      setState(() => _confirmedTripData = null);
+      if (_confirmedTripData != null) {
+        setState(() => _confirmedTripData = null);
+      }
       return;
     }
-    final activeTrip = await _driverService.getActiveTrip(driverId);
-    if (!mounted) return;
-    if (activeTrip == null) {
-      setState(() => _confirmedTripData = null);
+
+    Map<String, dynamic>? activeTrip;
+    try {
+      activeTrip = await _driverService.getActiveTrip(driverId);
+    } catch (e) {
+      dev.log('[ActiveTrip] Error: $e', name: 'DriverHome');
+      return;
     }
+    if (!mounted) return;
+
+    if (activeTrip == null) {
+      if (_confirmedTripData != null) {
+        setState(() => _confirmedTripData = null);
+      }
+      return;
+    }
+
+    final data = await _tripDataDesdeViaje(activeTrip);
+    if (!mounted) return;
+    // Evita repintar cada 15 s cuando el viaje no cambió.
+    final mismoViaje = _confirmedTripData?['viaje_id'] == data['viaje_id'] &&
+        _confirmedTripData?['estado'] == data['estado'];
+    if (!mismoViaje) {
+      setState(() => _confirmedTripData = data);
+    }
+  }
+
+  /// Arma el `tripData` que espera `ActiveRideScreen` a partir de la fila del
+  /// viaje y su solicitud.
+  Future<Map<String, dynamic>> _tripDataDesdeViaje(
+    Map<String, dynamic> viaje,
+  ) async {
+    final data = <String, dynamic>{
+      'viaje_id': viaje['id'],
+      'estado': viaje['estado'],
+      'user_id': viaje['user'],
+    };
+
+    final solicitudId = (viaje['solicitud_id'] as num?)?.toInt();
+    if (solicitudId == null) return data;
+
+    data['solicitud_id'] = solicitudId;
+    try {
+      final solicitud = await _driverService.fetchSolicitudById(solicitudId);
+      if (solicitud == null) return data;
+
+      data['direccion_origen'] = solicitud['direccion_origen'] ?? 'Origen';
+      data['direccion_destino'] = solicitud['direccion_destino'] ?? 'Destino';
+      data['lat_origen'] = solicitud['lat_origen'];
+      data['lon_origen'] = solicitud['lon_origen'];
+      data['lat_destino'] = solicitud['lat_destino'];
+      data['lon_destino'] = solicitud['lon_destino'];
+      // Lo que paga el cliente: el precio lo fija el servidor al crear.
+      data['precio'] = solicitud['precio_plataforma'];
+      data['pago_chofer'] = solicitud['precio_chofer'];
+
+      final userId = solicitud['user_id'] as String?;
+      if (userId != null) {
+        data['user_id'] = userId;
+        final client = await _driverService.fetchClientInfo(userId);
+        if (client != null) {
+          data['client_name'] = client['name'] ?? 'Pasajero';
+          data['client_phone'] = client['phone'] ?? '';
+          data['client_image'] = client['photo_url'];
+        }
+      }
+    } catch (e) {
+      dev.log('[ActiveTrip] Error leyendo solicitud: $e', name: 'DriverHome');
+    }
+    return data;
+  }
+
+  /// Abre "Viajes disponibles": el chofer toma el viaje con el precio que ya
+  /// fijó la plataforma (no hay oferta ni contraoferta).
+  Future<void> _abrirViajesDisponibles() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const IncomingRequestsScreen()),
+    );
+    if (!mounted) return;
+    await _refreshActiveTripBanner();
+    if (mounted && _isOnline) await _loadNearbyRequests();
   }
 
   Future<void> _confirmAndSignOut() async {
@@ -491,24 +426,21 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       setState(() => _isOnline = newStatus);
 
       if (newStatus) {
-        _subscribeToRequests();
-        _subscribeToOfferAcceptances();
         _startLocationTracking();
-        _startRequestsPolling();
+        _startTripPolling();
         await _loadNearbyRequests();
+        await _refreshActiveTripBanner();
         BackgroundService.updateStatus(
           title: 'Muevete - Conductor',
-          content: 'En línea · Esperando solicitudes',
+          content: 'En línea · Esperando viajes',
         );
       } else {
         await _driverService.unsubscribe();
         _stopLocationTracking();
-        _stopRequestsPolling();
+        _stopTripPolling();
         setState(() {
-          _incomingRequests.clear();
           _nearbyRequests.clear();
         });
-        _slideController?.reverse();
         BackgroundService.updateStatus(
           title: 'Muevete - Conductor',
           content: 'Desconectado',
@@ -525,390 +457,32 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     }
   }
 
-  void _dismissRequest(int index) {
-    setState(() {
-      _incomingRequests.removeAt(index);
-    });
-    if (_incomingRequests.isEmpty) {
-      _slideController?.reverse();
-    }
-  }
-
-  Future<void> _showMakeOfferDialog(TransportRequestModel request) async {
-    final isDark = context.read<ThemeProvider>().isDark;
-    final priceController = TextEditingController(
-      text: request.precioOferta?.toStringAsFixed(2) ?? '0.00',
-    );
-    final messageController = TextEditingController();
-    final estimatedMinController = TextEditingController(text: '15');
-
-    final result = await showModalBottomSheet<Map<String, dynamic>>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(ctx).viewInsets.bottom,
-          ),
-          child: Container(
-            decoration: BoxDecoration(
-              color: AppTheme.surface(isDark),
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(24),
-              ),
-            ),
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: AppTheme.shimmer(isDark),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  'Hacer Oferta',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.textPrimary(isDark),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '${request.direccionOrigen ?? "Origen"} -> ${request.direccionDestino ?? "Destino"}',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 13,
-                    color: AppTheme.textTertiary(isDark),
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Precio del cliente: ${Helpers.formatCurrency(request.precioOferta ?? 0)}',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: AppTheme.primaryLight,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  'Tu precio (\$)',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: AppTheme.textSecondary(isDark),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: priceController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  style: GoogleFonts.plusJakartaSans(
-                    color: AppTheme.textPrimary(isDark),
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  decoration: InputDecoration(
-                    prefixText: '\$ ',
-                    prefixStyle: GoogleFonts.plusJakartaSans(
-                      color: AppTheme.primaryColor,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    filled: true,
-                    fillColor: AppTheme.bg(isDark),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: AppTheme.border(isDark)),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: AppTheme.border(isDark)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(
-                        color: AppTheme.primaryColor,
-                        width: 2,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Tiempo estimado (min)',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: AppTheme.textSecondary(isDark),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: estimatedMinController,
-                  keyboardType: TextInputType.number,
-                  style: GoogleFonts.plusJakartaSans(
-                    color: AppTheme.textPrimary(isDark),
-                    fontSize: 16,
-                  ),
-                  decoration: InputDecoration(
-                    suffixText: 'min',
-                    suffixStyle: GoogleFonts.plusJakartaSans(
-                      color: AppTheme.textTertiary(isDark),
-                    ),
-                    filled: true,
-                    fillColor: AppTheme.bg(isDark),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: AppTheme.border(isDark)),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: AppTheme.border(isDark)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(
-                        color: AppTheme.primaryColor,
-                        width: 2,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Mensaje (opcional)',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: AppTheme.textSecondary(isDark),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: messageController,
-                  maxLines: 2,
-                  style: GoogleFonts.plusJakartaSans(
-                    color: AppTheme.textPrimary(isDark),
-                    fontSize: 14,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: 'Ej: Estoy a 5 minutos de tu ubicación...',
-                    hintStyle: GoogleFonts.plusJakartaSans(
-                      color: AppTheme.textTertiary(isDark),
-                    ),
-                    filled: true,
-                    fillColor: AppTheme.bg(isDark),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: AppTheme.border(isDark)),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: AppTheme.border(isDark)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(
-                        color: AppTheme.primaryColor,
-                        width: 2,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      final price = double.tryParse(priceController.text) ?? 0;
-                      final minPrice = request.precioOferta ?? 0;
-                      if (price < minPrice) {
-                        ScaffoldMessenger.of(ctx).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'La oferta mínima es \$${minPrice.toStringAsFixed(2)}',
-                            ),
-                          ),
-                        );
-                        return;
-                      }
-                      final minutes =
-                          int.tryParse(estimatedMinController.text) ?? 15;
-                      Navigator.of(ctx).pop({
-                        'price': price,
-                        'minutes': minutes,
-                        'message': messageController.text.isEmpty
-                            ? null
-                            : messageController.text,
-                      });
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primaryColor,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                    child: Text(
-                      'Enviar Oferta',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-
-    if (result != null && mounted) {
-      await _submitOffer(
-        request,
-        result['price'] as double,
-        result['minutes'] as int,
-        result['message'] as String?,
-      );
-    }
-  }
-
-  Future<void> _submitOffer(
-    TransportRequestModel request,
-    double price,
-    int estimatedMinutes,
-    String? message,
-  ) async {
-    final authProvider = context.read<AuthProvider>();
-    final driverProfile = authProvider.driverProfile;
-    final driverId = driverProfile?['id'] as int?;
-    if (driverId == null || request.id == null) return;
-
-    try {
-      await _driverService.makeOffer(
-        request.id!,
-        driverId,
-        price,
-        estimatedMinutes,
-        message: message,
-      );
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Oferta enviada: ${Helpers.formatCurrency(price)}',
-              style: GoogleFonts.plusJakartaSans(),
-            ),
-            backgroundColor: AppTheme.success,
-          ),
-        );
-
-        setState(() {
-          // Mark as offered so it won't show again in map or cards
-          if (request.id != null) _offeredRequestIds.add(request.id!);
-          _incomingRequests.removeWhere((r) => r.id == request.id);
-          _nearbyRequests.removeWhere((r) => r['id'] == request.id);
-        });
-        if (_incomingRequests.isEmpty) {
-          _slideController?.reverse();
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(AppError.message(e, action: 'enviar la oferta')),
-            backgroundColor: AppTheme.error,
-          ),
-        );
-      }
-    }
-  }
-
-  void _checkForActiveRide() async {
-    final authProvider = context.read<AuthProvider>();
-    final driverProfile = authProvider.driverProfile;
-    final driverId = driverProfile?['id'] as int?;
-    if (driverId == null) return;
-
-    final activeTrip = await _driverService.getActiveTrip(driverId);
-    if (activeTrip == null || !mounted) return;
-
-    // Enrich with solicitud + client data
-    final tripData = Map<String, dynamic>.from(activeTrip);
-    tripData['viaje_id'] = activeTrip['id'];
-
-    // Try to find the related solicitud via ofertas_chofer
-    try {
-      final offers = await Supabase.instance.client
-          .schema('muevete')
-          .from('ofertas_chofer')
-          .select('solicitud_id, precio')
-          .eq('driver_id', driverId)
-          .eq('estado', 'aceptada')
-          .order('created_at', ascending: false)
-          .limit(1);
-
-      if (offers != null && (offers as List).isNotEmpty) {
-        final solicitudId = offers.first['solicitud_id'] as int?;
-        if (solicitudId != null) {
-          final solicitud = await _driverService.fetchSolicitudById(
-            solicitudId,
-          );
-          if (solicitud != null) {
-            tripData['solicitud_id'] = solicitudId;
-            tripData['direccion_origen'] =
-                solicitud['direccion_origen'] ?? 'Origen';
-            tripData['direccion_destino'] =
-                solicitud['direccion_destino'] ?? 'Destino';
-            tripData['lat_origen'] = solicitud['lat_origen'];
-            tripData['lon_origen'] = solicitud['lon_origen'];
-            tripData['lat_destino'] = solicitud['lat_destino'];
-            tripData['lon_destino'] = solicitud['lon_destino'];
-            tripData['precio'] =
-                offers.first['precio'] ?? solicitud['precio_oferta'] ?? 0;
-
-            final userId = solicitud['user_id'] as String?;
-            if (userId != null) {
-              tripData['user_id'] = userId;
-              final client = await _driverService.fetchClientInfo(userId);
-              if (client != null) {
-                tripData['client_name'] = client['name'] ?? 'Pasajero';
-                tripData['client_phone'] = client['phone'] ?? '';
-                tripData['client_image'] = client['photo_url'];
-              }
-            }
-          }
-        }
-      }
-    } catch (e) {
-      dev.log('[CheckActiveRide] Error enriching: $e', name: 'DriverHome');
-    }
-
+  /// Abre la pantalla del viaje en curso o avisa si no hay ninguno.
+  Future<void> _checkForActiveRide() async {
+    await _refreshActiveTripBanner();
     if (!mounted) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => ActiveRideScreen(tripData: tripData)),
-    );
-    if (mounted) await _refreshActiveTripBanner();
+    if (_confirmedTripData == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'No tienes un viaje en curso.',
+            style: GoogleFonts.plusJakartaSans(),
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+    await _goToActiveRide();
+  }
+
+  /// Abre el perfil (donde se registra el vehículo) y refresca al volver:
+  /// el checklist de requisitos depende de esos datos.
+  Future<void> _abrirPerfil() async {
+    await Navigator.of(context).pushNamed('/profile');
+    if (!mounted) return;
+    _checklistKey.currentState?.refresh();
+    if (_isOnline) _loadNearbyRequests();
   }
 
   void _onNavTap(int index) {
@@ -937,11 +511,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             });
         return;
       case 3:
-        Navigator.of(context)
-            .pushNamed('/profile')
-            .then((_) {
-              if (mounted && _isOnline) _loadNearbyRequests();
-            });
+        _abrirPerfil();
         return;
     }
 
@@ -956,12 +526,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     disposeCompass();
     WidgetsBinding.instance.removeObserver(this);
     _stopLocationTracking();
-    _stopRequestsPolling();
-    _slideController?.dispose();
+    _stopTripPolling();
     _driverService.unsubscribe();
-    try {
-      _offerAcceptChannel?.unsubscribe();
-    } catch (_) {}
     super.dispose();
   }
 
@@ -974,11 +540,18 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
     final driverProfile = authProvider.driverProfile;
     final driverName = driverProfile?['name'] as String? ?? 'Conductor';
+    final driverId = driverProfile?['id'] as int?;
     final vehiculo = driverProfile?['vehiculos'] as Map<String, dynamic>?;
     final vehicleType = vehiculo?['vehicle_type'] as Map<String, dynamic>?;
     final location = locationProvider.locationOrDefault;
 
     final tileUrl = isDark ? AppTheme.cartoDarkTileUrl : AppTheme.osmTileUrl;
+
+    // El botón "Viajes disponibles" es el acceso principal del home. Los
+    // flotantes suben para no quedar encima; si hay viaje en curso manda el
+    // banner y el botón de viajes se oculta.
+    final bool mostrarCtaViajes = _confirmedTripData == null;
+    final double fabBottom = mostrarCtaViajes ? 176 : 100;
 
     return Scaffold(
       backgroundColor: AppTheme.bg(isDark),
@@ -1046,7 +619,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                       ),
                     ),
                   ),
-                  // Nearby client request markers (origin green + destination red)
+                  // Viajes pendientes cercanos (origen verde + destino rojo).
+                  // Al tocar se abre "Viajes disponibles": aquí no se oferta.
                   ..._nearbyRequests.expand((row) {
                     final lat = (row['lat_origen'] as num?)?.toDouble();
                     final lon = (row['lon_origen'] as num?)?.toDouble();
@@ -1057,7 +631,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                         row['direccion_origen'] as String? ?? 'Cliente';
                     final destName =
                         row['direccion_destino'] as String? ?? 'Destino';
-                    final request = TransportRequestModel.fromJson(row);
                     return [
                       // Origin marker (green)
                       Marker(
@@ -1065,7 +638,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                         width: 56,
                         height: 56,
                         child: GestureDetector(
-                          onTap: () => _showMakeOfferDialog(request),
+                          onTap: _abrirViajesDisponibles,
                           child: Tooltip(
                             message: name,
                             child: Container(
@@ -1223,8 +796,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                           // Vehicle chip
                           vehiculo != null
                               ? GestureDetector(
-                                  onTap: () =>
-                                      Navigator.pushNamed(context, '/profile'),
+                                  onTap: _abrirPerfil,
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 8,
@@ -1276,8 +848,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                                   ),
                                 )
                               : GestureDetector(
-                                  onTap: () =>
-                                      Navigator.pushNamed(context, '/profile'),
+                                  onTap: _abrirPerfil,
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 8,
@@ -1365,12 +936,21 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             ),
           ),
 
-          // Re-center + theme toggle buttons
+          // Re-center + theme toggle buttons. El checklist de requisitos va
+          // encima del grupo, con 12 px de separación; se oculta solo cuando
+          // ya no falta nada, así que no deja hueco.
           Positioned(
             right: 16,
-            bottom: _incomingRequests.isNotEmpty ? 340 : 100,
+            bottom: fabBottom,
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
+                OnboardingChecklistFab(
+                  key: _checklistKey,
+                  rol: 'chofer',
+                  driverId: driverId,
+                  separacionInferior: 12,
+                ),
                 FloatingActionButton.small(
                   heroTag: 'autorotate',
                   onPressed: toggleAutoRotate,
@@ -1417,7 +997,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           if (_isOnline)
             Positioned(
               left: 16,
-              bottom: _incomingRequests.isNotEmpty ? 340 : 100,
+              bottom: fabBottom,
               child: FloatingActionButton.small(
                 heroTag: 'activeride',
                 onPressed: _checkForActiveRide,
@@ -1430,7 +1010,66 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               ),
             ),
 
-          // Confirmed trip panel
+          // Acceso principal del home del chofer: viajes disponibles.
+          // El precio ya viene fijado por la plataforma, no hay oferta.
+          if (mostrarCtaViajes)
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 92,
+              child: SizedBox(
+                height: 62,
+                child: ElevatedButton(
+                  onPressed: _abrirViajesDisponibles,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primaryColor,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.local_taxi, size: 24),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Viajes disponibles',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _isOnline
+                                  ? 'El precio ya está fijado por la plataforma'
+                                  : 'Ponte en línea para tomar viajes',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.white.withValues(alpha: 0.85),
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.chevron_right, size: 22),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+          // Banner del viaje en curso
           if (_confirmedTripData != null)
             Positioned(
               left: 0,
@@ -1477,7 +1116,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Viaje Confirmado',
+                                'Viaje en curso',
                                 style: GoogleFonts.plusJakartaSans(
                                   fontSize: 18,
                                   fontWeight: FontWeight.w700,
@@ -1495,28 +1134,30 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                             ],
                           ),
                         ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppTheme.success.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            Helpers.formatCurrency(
-                              (_confirmedTripData!['precio'] as num?)
-                                      ?.toDouble() ??
-                                  0,
+                        // Lo que paga el cliente. Si el viaje es de una versión anterior
+                        // (sin `precio_plataforma`) no se inventa un monto.
+                        if ((_confirmedTripData!['precio'] as num?) != null)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
                             ),
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              color: AppTheme.success,
+                            decoration: BoxDecoration(
+                              color: AppTheme.success.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              Helpers.formatCurrency(
+                                (_confirmedTripData!['precio'] as num)
+                                    .toDouble(),
+                              ),
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: AppTheme.success,
+                              ),
                             ),
                           ),
-                        ),
                       ],
                     ),
                     const SizedBox(height: 12),
@@ -1591,28 +1232,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 ),
               ),
             ),
-
-          // Incoming request cards sliding from bottom
-          if (_incomingRequests.isNotEmpty)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 80,
-              child: SlideTransition(
-                position: _slideAnimation!,
-                child: SizedBox(
-                  height: 250,
-                  child: PageView.builder(
-                    itemCount: _incomingRequests.length,
-                    controller: PageController(viewportFraction: 0.92),
-                    itemBuilder: (context, index) {
-                      final request = _incomingRequests[index];
-                      return _buildRequestCard(request, index, isDark: isDark);
-                    },
-                  ),
-                ),
-              ),
-            ),
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(
@@ -1647,208 +1266,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             icon: Icon(Icons.person_outline),
             activeIcon: Icon(Icons.person),
             label: 'Perfil',
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRequestCard(
-    TransportRequestModel request,
-    int index, {
-    bool isDark = true,
-  }) {
-    final vehicleType = request.tipoVehiculo ?? 'auto';
-    final vehicleLabel =
-        vehicleType[0].toUpperCase() + vehicleType.substring(1);
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppTheme.surface(isDark),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppTheme.border(isDark)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.4),
-            blurRadius: 16,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header row: vehicle type + price
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppTheme.primaryColor.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  AppConstants.vehicleIconData(vehicleLabel),
-                  color: AppTheme.primaryColor,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Text(
-                vehicleLabel,
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: AppTheme.textPrimary(isDark),
-                ),
-              ),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: AppTheme.success.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  Helpers.formatCurrency(request.precioOferta ?? 0),
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.success,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-
-          // Pickup address
-          Row(
-            children: [
-              const Icon(Icons.circle, color: AppTheme.success, size: 10),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  request.direccionOrigen ?? 'Punto de recogida',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 13,
-                    color: AppTheme.textPrimary(isDark),
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-
-          // Dropoff address
-          Row(
-            children: [
-              const Icon(Icons.circle, color: AppTheme.error, size: 10),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  request.direccionDestino ?? 'Destino',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 13,
-                    color: AppTheme.textPrimary(isDark),
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-
-          // Distance
-          Row(
-            children: [
-              Icon(
-                Icons.straighten,
-                color: AppTheme.textTertiary(isDark),
-                size: 16,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                Helpers.formatDistance(request.distanciaKm ?? 0),
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 12,
-                  color: AppTheme.textTertiary(isDark),
-                ),
-              ),
-              if (request.createdAt != null) ...[
-                const SizedBox(width: 16),
-                Icon(
-                  Icons.access_time,
-                  color: AppTheme.textTertiary(isDark),
-                  size: 16,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  Helpers.formatRelativeTime(request.createdAt!),
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 12,
-                    color: AppTheme.textTertiary(isDark),
-                  ),
-                ),
-              ],
-            ],
-          ),
-
-          const Spacer(),
-
-          // Action buttons
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => _dismissRequest(index),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppTheme.textSecondary(isDark),
-                    side: BorderSide(color: AppTheme.border(isDark)),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: Text(
-                    'Rechazar',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                flex: 2,
-                child: ElevatedButton(
-                  onPressed: () => _showMakeOfferDialog(request),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primaryColor,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: Text(
-                    'Hacer Oferta',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
-            ],
           ),
         ],
       ),

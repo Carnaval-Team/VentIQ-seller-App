@@ -101,6 +101,30 @@ class LocalNotificationService {
     );
   }
 
+  /// Aviso al cliente: su solicitud ya tiene conductor asignado
+  /// (`viaje_asignado`, flujo de precio fijo).
+  Future<void> showDriverAssigned({
+    required String title,
+    required String body,
+    String? solicitudId,
+  }) async {
+    await _plugin.show(
+      1003,
+      title,
+      body,
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          _channelId,
+          _channelName,
+          importance: Importance.high,
+          priority: Priority.high,
+          playSound: true,
+        ),
+      ),
+      payload: 'viaje_asignado:${solicitudId ?? ''}',
+    );
+  }
+
   /// Show a generic notification.
   Future<void> showGeneric({
     required int id,
@@ -134,6 +158,9 @@ class LocalNotificationService {
       nav.pushNamedAndRemoveUntil('/driver/requests', (r) => r.isFirst);
     } else if (payload.startsWith('driver_offer:')) {
       nav.pushNamedAndRemoveUntil('/client/driver-offers', (r) => r.isFirst);
+    } else if (payload.startsWith('viaje_asignado:')) {
+      // El mapa de inicio resuelve la solicitud activa y su conductor.
+      nav.pushNamedAndRemoveUntil('/client/home', (r) => r.isFirst);
     }
   }
 }

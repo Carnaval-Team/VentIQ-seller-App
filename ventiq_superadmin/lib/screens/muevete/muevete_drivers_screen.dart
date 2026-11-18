@@ -387,9 +387,31 @@ class _MueveteDriversScreenState extends State<MueveteDriversScreen> {
   }
 
   Future<void> _approveKyc(Map<String, dynamic> d) async {
-    await MueveteService.approveDriverKyc(d['id'] as int);
-    _loadData();
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${d['name']} verificado'), backgroundColor: AppColors.success, behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))));
+    // Por la RPC: actualiza `kyc`, `revisado` y `kyc_estado` de una vez (si sólo
+    // se escribe `kyc=true`, el gate sigue bloqueando al chofer por
+    // `kyc_pendiente_aprobacion`).
+    final uuid = d['uuid'] as String?;
+    if (uuid == null) return;
+    try {
+      await MueveteService.revisarKyc(
+          rol: 'chofer', uuid: uuid, decision: 'aprobado');
+      _loadData();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('${d['name']} verificado'),
+            backgroundColor: AppColors.success,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10))));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('No se pudo aprobar: $e'),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating));
+      }
+    }
   }
 
   Future<void> _rejectKyc(Map<String, dynamic> d) async {
@@ -405,9 +427,20 @@ class _MueveteDriversScreenState extends State<MueveteDriversScreen> {
       ],
     ));
     ctrl.dispose();
-    if (motivo != null && motivo.isNotEmpty) {
-      await MueveteService.rejectDriverKyc(d['id'] as int, motivo);
-      _loadData();
+    final uuid = d['uuid'] as String?;
+    if (motivo != null && motivo.isNotEmpty && uuid != null) {
+      try {
+        await MueveteService.revisarKyc(
+            rol: 'chofer', uuid: uuid, decision: 'rechazado', motivo: motivo);
+        _loadData();
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('No se pudo rechazar: $e'),
+              backgroundColor: AppColors.error,
+              behavior: SnackBarBehavior.floating));
+        }
+      }
     }
   }
 }

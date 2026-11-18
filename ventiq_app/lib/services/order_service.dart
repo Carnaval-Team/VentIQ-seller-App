@@ -3422,6 +3422,7 @@ class OrderService extends ChangeNotifier {
 
       if (orderData != null) {
         _currentOrder = Order.fromJson(orderData);
+        _sanearUbicacionesInventadas(_currentOrder!);
         print('📱 Preorden cargada desde persistencia');
         print('📦 Items restaurados: ${_currentOrder!.items.length}');
       } else {
@@ -3436,6 +3437,30 @@ class OrderService extends ChangeNotifier {
       _currentOrder = null;
     }
     notifyListeners();
+  }
+
+  /// Ubicaciones que versiones anteriores **inventaban** cuando el detalle no
+  /// traía almacén/ubicación (`Almacén A-1`, `Almacén B-<letra>`).
+  ///
+  /// Quedaron persistidas en preórdenes abiertas. Al restaurarlas se corrigen,
+  /// para que el carrito y el ticket no sigan mostrando un almacén inexistente.
+  /// En la base no existe ningún almacén con ese patrón (verificado).
+  static final RegExp _ubicacionInventada = RegExp(r'^Almac[eé]n [AB]-.{1}$');
+
+  void _sanearUbicacionesInventadas(Order order) {
+    var corregidos = 0;
+    for (var i = 0; i < order.items.length; i++) {
+      final item = order.items[i];
+      if (item.ubicacionAlmacen.trim().isEmpty) continue;
+      if (!_ubicacionInventada.hasMatch(item.ubicacionAlmacen.trim())) continue;
+      order.items[i] = item.copyWith(
+        ubicacionAlmacen: 'Sin ubicación registrada',
+      );
+      corregidos++;
+    }
+    if (corregidos > 0) {
+      print('🧹 Ubicaciones inventadas corregidas en la preorden: $corregidos');
+    }
   }
 
   /// Limpiar preorden persistente

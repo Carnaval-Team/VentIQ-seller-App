@@ -121,7 +121,14 @@ CREATE OR REPLACE FUNCTION muevete.fn_punto_en_poligono(
   p_lon     double precision,
   p_geojson jsonb
 ) RETURNS boolean
-LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE
+-- SECURITY DEFINER OBLIGATORIO: esta función se concede a `authenticated`, pero
+-- por dentro llama a `fn_punto_en_anillo`, que es INTERNA y está revocada para
+-- los clientes. Sin DEFINER, cualquier llamada desde la app fallaba con
+-- `42501 permission denied for function fn_punto_en_anillo` (detectado con una
+-- llamada real a `fn_cotizar_viaje` desde PostgREST). El `search_path` ya está
+-- fijado, que es lo que hace seguro el DEFINER.
+-- Tampoco puede ser PARALLEL SAFE: DEFINER + ejecución en paralelo es inseguro.
+LANGUAGE plpgsql STABLE SECURITY DEFINER
 SET search_path = muevete, pg_temp
 AS $$
 DECLARE
@@ -169,7 +176,9 @@ CREATE OR REPLACE FUNCTION muevete.fn_zona_de_punto(
   p_lon double precision,
   p_at  timestamptz DEFAULT now()
 ) RETURNS SETOF muevete.zonas_tarifa
-LANGUAGE sql STABLE PARALLEL SAFE
+-- SECURITY DEFINER por el mismo motivo que fn_punto_en_poligono: es pública
+-- (concedida a `authenticated`) y delega en helpers internos revocados.
+LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = muevete, pg_temp
 AS $$
   SELECT z.*
@@ -212,7 +221,11 @@ CREATE OR REPLACE FUNCTION muevete.fn_cotizar_viaje(
   p_provincia text DEFAULT NULL,
   p_municipio text DEFAULT NULL
 ) RETURNS jsonb
-LANGUAGE plpgsql STABLE
+-- SECURITY DEFINER: es la RPC pública que usa la app para el preview. Por dentro
+-- usa `fn_zona_de_punto`, `fn_haversine_km` y `fn_punto_en_anillo`, todos
+-- internos y revocados para `authenticated`. Resto de RPC del módulo (038–040)
+-- ya son DEFINER por el mismo motivo.
+LANGUAGE plpgsql STABLE SECURITY DEFINER
 SET search_path = muevete, pg_temp
 AS $$
 DECLARE

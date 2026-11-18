@@ -1,0 +1,114 @@
+/* =========================================================
+   INVENTTIA · FIXES.CSS
+   Se carga SIEMPRE al final, después de premium-v3 / premium-v2 /
+   sales / apps. Solo contiene correcciones de legibilidad.
+
+   PROBLEMA QUE CORRIGE
+   Los <em> de los titulares usaban `background-clip: text` con
+   `display:inline-block` y un `line-height` ajustado (~1.1). El degradado
+   solo se pinta dentro de la caja del elemento, y la tinta de una itálica
+   con descendente (p, g, y, q) sobresale por abajo: esa parte se queda sin
+   pintar y la palabra parece cortada ("empezar", "respuesta", "piensan").
+   Además, en fondos claros el tramo final claro del degradado se perdía.
+
+   SOLUCIÓN
+   · Fondos claros → color sólido de marca. No hay caja que recortar y el
+     contraste sobre el papel (#F7FAFB) es ~11:1.
+   · Fondos oscuros → se conserva el degradado claro, pero con una caja de
+     pintado más alta que la tinta y márgenes negativos que compensan para
+     no mover el layout.
+   ========================================================= */
+
+/* ---------- 1. Fondos claros: mismo acento que el hero, en teal legible ----------
+   El hero usa cian (#5EB8D1 → #B8E3F0) sobre navy y ahí destaca. En papel ese
+   cian da 2,4:1 y desaparece, y un navy sólido (#163353) se confunde con la
+   tinta del titular (#102033). Se usa la MISMA familia cromática del hero,
+   bajada de luminosidad: rampa teal #0A5468 → #1D7E96 (≥4,5:1 sobre #F7FAFB),
+   así el énfasis se lee como acento y no como "otro negro".
+
+   La caja de pintado es más alta que la tinta (line-height 1.25 + 0.26em de
+   padding inferior) y los márgenes negativos la compensan: ningún descendente
+   (p, g, y) vuelve a quedar cortado. */
+.v2-h em,
+.app-head h2 em,
+.legacy-light-hero .v2-hero h1 em,
+.legacy-light-hero .v2-hero-inner h1 em {
+    background-image: linear-gradient(135deg, #094F63 0%, #0E7490 55%, #177E95 100%) !important;
+    -webkit-background-clip: text !important;
+    background-clip: text !important;
+    -webkit-text-fill-color: transparent !important;
+    color: #116278; /* respaldo si el navegador no recorta el fondo al texto */
+    display: inline-block !important;
+    line-height: 1.25 !important;
+    padding: 0.04em 0.18em 0.26em !important;
+    margin: -0.04em -0.18em -0.26em !important;
+    vertical-align: baseline;
+    font-style: italic;
+    font-weight: inherit;
+}
+
+/* En modo oscuro el mismo énfasis va en cian claro: es el equivalente al
+   acento del hero sobre navy. Si se dejara el teal oscuro, el titular se
+   quedaría sin énfasis visible (teal #0E7490 sobre #0C1A2A ≈ 1,4:1). */
+@media (prefers-color-scheme: dark) {
+    .v2-h em,
+    .app-head h2 em,
+    .legacy-light-hero .v2-hero h1 em,
+    .legacy-light-hero .v2-hero-inner h1 em {
+        background-image: linear-gradient(135deg, #5EB8D1 0%, #CFEAF3 55%, #FFFFFF 100%) !important;
+        color: transparent;
+    }
+}
+
+/* ---------- 2. Superficies oscuras: degradado claro sin recortes ---------- */
+.v2-section-dark .v2-h em,
+.v2-flow .v2-h em,
+.v2-carnaval .v2-h em,
+.v2-hero .v2-h em {
+    background: linear-gradient(135deg, #5EB8D1 0%, #CFEAF3 55%, #FFFFFF 100%) !important;
+    -webkit-background-clip: text !important;
+    background-clip: text !important;
+    -webkit-text-fill-color: transparent !important;
+    color: transparent !important;
+    display: inline-block !important;
+    line-height: 1.25 !important;
+    /* Caja de pintado por encima y por debajo de la tinta; los márgenes
+       negativos la compensan para que el titular no se mueva. */
+    padding: 0.04em 0.18em 0.26em !important;
+    margin: -0.04em -0.18em -0.26em !important;
+    vertical-align: baseline;
+}
+
+/* ---------- 3. Checks de las listas de características ----------
+   El token `--v2-accent` (#163353) se usa para el check, pero NO cambia en
+   modo oscuro: sobre la tarjeta #102033 quedaba casi invisible (y el pill,
+   rgba(22,51,83,0.10), tampoco ayudaba). Se fija un color explícito por modo
+   para que el check resalte tanto en claro como en oscuro. */
+.v2-stack-features i,
+.capability-list li i {
+    color: #1E6E88;
+    background: rgba(58, 155, 184, 0.14);
+}
+
+@media (prefers-color-scheme: dark) {
+    .v2-stack-features i,
+    .capability-list li i {
+        color: #8FE3F5;                       /* cian claro, mismo acento del hero */
+        background: rgba(94, 184, 209, 0.22);
+    }
+}
+
+/* ---------- 4. Stack de apps: fuera el texto fantasma ----------
+   Cada tarjeta bajaba su opacidad hasta 0.55 mientras la siguiente la cubría.
+   Como la que cubre también estaba por debajo de 1, se transparentaba el texto
+   de la anterior (se leía "El POS más rápido que tu mejor cajero" detrás de
+   "El dashboard que ve todo el negocio"). Se conserva el efecto de profundidad
+   —translateY + scale— pero sin transparencia: la tarjeta de arriba es opaca. */
+.v2-stack-card {
+    opacity: 1 !important;
+}
+
+/* NOTA: no se sobreescriben aquí .v2-text-mute / .v2-stack-tag / .app-kicker.
+   Se probó y rompía el modo oscuro: forzaba el gris de modo claro (#4E657A)
+   sobre superficies #102033. Los tokens --v2-text-mute ya tienen un valor
+   correcto por modo; dejarlos en paz es lo correcto. */

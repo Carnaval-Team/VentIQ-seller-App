@@ -1,7 +1,66 @@
 {
-  "current_version": "1.0.0",
-  "build": 1,
+  "current_version": "1.1.0",
+  "build": 2,
   "app_name": "inventtia_muevete",
-  "download_url_apk": "",
-  "download_url_web": ""
+  "download_url_apk": "https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/muevete.apk",
+  "download_url_web": "https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/muevete.apk",
+  "changelogs": [
+    {
+      "version": "1.1.0",
+      "date": "2026-11-13",
+      "title": "🚕 El precio ya se sabe antes de subir al taxi",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Precio fijo, sin regateo",
+          "description": "Antes de pedir el viaje ves exactamente cuánto vas a pagar. La app calcula la tarifa según la zona y la distancia, y ese precio no cambia cuando llega el conductor."
+        },
+        {
+          "type": "feature",
+          "title": "Elige cómo viajar",
+          "description": "Auto, Minivan, Microbús, Moto o Triciclo Eléctrico: mira el precio de cada uno y elige el que mejor te venga."
+        },
+        {
+          "type": "feature",
+          "title": "Si eres conductor, los viajes te esperan",
+          "description": "Ves los viajes disponibles de tu zona con lo que te corresponde antes de decidir, y tomas el que quieras. El primero que llega se lo lleva."
+        },
+        {
+          "type": "feature",
+          "title": "Cuentas verificadas, viajes más seguros",
+          "description": "Ahora el cliente y el conductor verifican su identidad con su carnet y sus datos de residencia. Más confianza para las dos partes."
+        },
+        {
+          "type": "feature",
+          "title": "Botón de emergencia y compartir viaje",
+          "description": "Con un toque avisas a tus contactos de emergencia con tu ubicación y los datos del viaje, y puedes compartir el recorrido con quien quieras. También tienes el acceso directo a emergencias."
+        },
+        {
+          "type": "feature",
+          "title": "Tu billetera, más clara",
+          "description": "Consulta tu saldo, tu deuda y cada movimiento. Puedes recargar cuando quieras y pagar el viaje en efectivo o con la billetera, sin cambio en el precio."
+        },
+        {
+          "type": "improvement",
+          "title": "Todo lo que te falta, a la vista",
+          "description": "Un botón te recuerda qué te falta para poder viajar (documentos, datos, contacto de emergencia) y te lleva directo a completarlo."
+        },
+        {
+          "type": "improvement",
+          "title": "Conoce a quién sube contigo",
+          "description": "Antes de abordar ves la foto, el nombre, la chapa y parte del carnet de la otra persona, para confirmar que es quien debe ser."
+        },
+        {
+          "type": "improvement",
+          "title": "Avisos al instante",
+          "description": "Te avisamos en el momento en que se asigna tu conductor y cuando hay un viaje nuevo disponible en tu zona."
+        },
+        {
+          "type": "fix",
+          "title": "Más estabilidad y menos pasos",
+          "description": "Correcciones de funcionamiento y pantallas más claras para que pedir o tomar un viaje sea cuestión de segundos."
+        }
+      ]
+    }
+  ]
 }
