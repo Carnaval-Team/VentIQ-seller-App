@@ -2158,6 +2158,7 @@ class _SalesScreenState extends State<SalesScreen>
           fechaInicio: report.periodoInicio,
           fechaFin: report.periodoFin,
           uuidUsuario: report.uuidUsuario,
+          turnoId: report.idTurno,
         );
 
         reportsWithEgresos.add(report.copyWith(totalEgresos: totalEgresos));
@@ -8223,6 +8224,7 @@ class _SalesScreenState extends State<SalesScreen>
         fechaInicio: vendor.periodoInicio,
         fechaFin: vendor.periodoFin,
         uuidUsuario: vendor.uuidUsuario,
+        turnoId: vendor.idTurno,
       );
 
       if (!mounted) return;

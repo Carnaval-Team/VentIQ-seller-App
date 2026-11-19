@@ -261,6 +261,34 @@ class CashDelivery {
   }
 }
 
+/// Egresos de un solo turno de caja (`app_dat_caja_turno.id`).
+///
+/// El reporte separa los turnos por ese id. En un mismo día puede haber más
+/// de uno, y un turno que quedó abierto no debe aportar los egresos de otro.
+List<CashDelivery> filtrarEntregasPorTurno(
+  List<CashDelivery> entregas,
+  int? idTurno,
+) {
+  if (idTurno == null) return entregas;
+  return entregas.where((entrega) => entrega.idTurno == idTurno).toList();
+}
+
+/// Hora local con desplazamiento.
+///
+/// `fn_listar_entregas_por_fechas_usuario` en main recibe `timestamp without
+/// time zone` y descarta la zona. Un valor en `Z` se guarda con la hora UTC
+/// y se compara como hora de Cuba, así el rango del turno alcanza al turno
+/// siguiente del mismo día.
+String instanteEntregaParaRpc(DateTime value) {
+  final local = value.toLocal();
+  final reloj = local.toIso8601String();
+  final offset = local.timeZoneOffset;
+  final signo = offset.isNegative ? '-' : '+';
+  final horas = offset.inHours.abs().toString().padLeft(2, '0');
+  final minutos = (offset.inMinutes.abs() % 60).toString().padLeft(2, '0');
+  return '$reloj$signo$horas:$minutos';
+}
+
 class SalesVendorReport {
   final String uuidUsuario;
   final String nombres;

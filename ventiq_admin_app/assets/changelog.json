@@ -1,9 +1,21 @@
 {
-  "current_version": "2.9.6",
-  "build": 295,
+  "current_version": "2.9.7",
+  "build": 296,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.9.7",
+      "date": "2026-11-17",
+      "title": "Correcciones menores y ajustes generales",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Correcciones menores",
+          "description": "Correcciones menores y ajustes generales sobre las funcionalidades existentes."
+        }
+      ]
+    },
     {
       "version": "2.9.6",
       "date": "2026-10-29",
