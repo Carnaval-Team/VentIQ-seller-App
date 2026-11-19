@@ -3844,6 +3844,7 @@ class InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
               ? operationId
               : int.parse(operationId.toString()),
           'p_nuevo_estado': 3, // Estado cancelada
+          'p_uuid_usuario': userUuid,
         },
       );
 
@@ -3865,6 +3866,11 @@ class InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
         // Refresh the operations list
         _loadOperations();
+      } else if (result is Map &&
+          result['error_code'] == 'RECEPCION_INVENTARIO_USADO') {
+        // La recepción no se puede cancelar: el inventario de algunos
+        // productos ya cambió. Mostrar cuáles para ajuste manual.
+        await _showReceptionInventoryUsedDialog(result);
       } else {
         // Show error message
         ScaffoldMessenger.of(context).showSnackBar(
@@ -3883,6 +3889,73 @@ class InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
       );
     }
+  }
+
+  /// Aviso cuando no se puede cancelar una recepción porque el inventario de
+  /// algunos de sus productos ya se movió (venta, ajuste, transferencia...).
+  /// Lista cada producto con lo recibido y el saldo actual.
+  Future<void> _showReceptionInventoryUsedDialog(Map result) async {
+    final problemas = ((result['productos_con_problema'] as List?) ?? const [])
+        .whereType<Map>()
+        .toList();
+
+    String fmt(dynamic v) {
+      final n = (v as num?)?.toDouble() ?? 0;
+      return n == n.roundToDouble() ? n.toInt().toString() : n.toString();
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.orange),
+            SizedBox(width: 8),
+            Expanded(child: Text('No se puede cancelar la recepción')),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'El inventario de estos productos ya cambió después de '
+                'recibirse. Ajústalos manualmente y vuelve a intentar.',
+              ),
+              const SizedBox(height: 12),
+              if (problemas.isEmpty)
+                Text(result['message']?.toString() ?? '')
+              else
+                ...problemas.map(
+                  (p) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          p['producto']?.toString() ?? 'Producto',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        Text(
+                          'Recibido: ${fmt(p['cantidad_recibida'])}  ·  '
+                          'Saldo actual: ${fmt(p['saldo_actual'])}',
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Entendido'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _showCashRegisterOpeningDialog(

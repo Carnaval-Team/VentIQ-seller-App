@@ -1,0 +1,26 @@
+﻿@@ -37,0 +38,17 @@ BEGIN
++    turnos AS MATERIALIZED (
++        SELECT
++            ct.id_tpv,
++            ct.id_operacion_apertura,
++            ct.id_operacion_cierre,
++            v.uuid
++        FROM app_dat_caja_turno ct
++        JOIN app_dat_vendedor v ON v.id = ct.id_vendedor
++        JOIN app_dat_tpv tp ON tp.id = ct.id_tpv
++        WHERE tp.id_tienda = p_id_tienda
++          AND ct.fecha_apertura::date >= COALESCE(p_fecha_desde, CURRENT_DATE)
++          AND ct.fecha_apertura::date <= COALESCE(p_fecha_hasta, CURRENT_DATE)
++    ),
++    max_op AS MATERIALIZED (
++        SELECT MAX(o2.id) AS max_id FROM app_dat_operaciones o2
++    ),
+@@ -52,0 +70,5 @@ BEGIN
++        JOIN turnos t
++          ON t.uuid = o.uuid
++         AND ov.id_tpv = t.id_tpv
++         AND o.id >= t.id_operacion_apertura
++         AND o.id <= COALESCE(t.id_operacion_cierre, (SELECT max_id FROM max_op))
+@@ -62,2 +83,0 @@ BEGIN
+-          AND o.created_at >= COALESCE(p_fecha_desde, CURRENT_DATE)::timestamptz
+-          AND o.created_at <  (COALESCE(p_fecha_hasta, CURRENT_DATE) + INTERVAL '1 day')::timestamptz

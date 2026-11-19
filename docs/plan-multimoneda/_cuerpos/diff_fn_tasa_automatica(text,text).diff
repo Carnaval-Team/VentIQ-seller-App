@@ -1,0 +1,10 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_tasa_automatica(text,text).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_tasa_automatica(text,text).sql"
+index 644ff486..9cf77438 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_tasa_automatica(text,text).sql"
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_tasa_automatica(text,text).sql"
+@@ -11,4 +11,5 @@ BEGIN
+     v := flow.tasa_factor(upper(trim(p_origen)), upper(trim(p_destino)));
+   EXCEPTION WHEN OTHERS THEN
++    -- El esquema `flow` es opcional: sin él, la tasa automática no existe.
+     RETURN NULL;
+   END;

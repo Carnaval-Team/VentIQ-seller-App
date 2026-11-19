@@ -1,0 +1,15 @@
+﻿@@ -5 +5 @@
+- SET search_path TO 'public', 'pg_temp'
++ SET search_path TO 'public'
+@@ -7,2 +7,2 @@ AS $function$
+-      WITH base AS (
+-        SELECT * FROM public.fn_reporte_ventas_por_turno(
++      with base as (
++        select * from public.fn_reporte_ventas_por_turno(
+@@ -11,3 +11,3 @@ AS $function$
+-      SELECT b.*, d.desglose_monedas, d.total_base
+-      FROM base b
+-      CROSS JOIN LATERAL public.fn_desglose_monedas_turno(b.id_turno, false) d;
++      select b.*, d.desglose_monedas, d.total_base
++      from base b
++      cross join lateral public.fn_desglose_monedas_turno(b.id_turno, false) d;

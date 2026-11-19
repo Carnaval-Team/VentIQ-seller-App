@@ -1,0 +1,140 @@
+﻿@@ -12,0 +14,3 @@ DECLARE
++    v_uid                   UUID := auth.uid();
++    v_id_tipo_venta         BIGINT;
++    v_tiendas               BIGINT[];
+@@ -15 +19 @@ BEGIN
+-    v_uuid_usuario := COALESCE(id_usuario_param, auth.uid());
++    v_uuid_usuario := COALESCE(id_usuario_param, v_uid);
+@@ -19,0 +24,33 @@ BEGIN
++    SELECT id INTO v_id_tipo_venta
++      FROM app_nom_tipo_operacion
++     WHERE LOWER(denominacion) = 'venta'
++     LIMIT 1;
++    SELECT array_agg(DISTINCT tiendas_usuario.id_tienda) INTO v_tiendas
++    FROM (
++        SELECT gr.id_tienda  FROM app_dat_gerente gr     WHERE gr.uuid = v_uid
++        UNION
++        SELECT sup.id_tienda FROM app_dat_supervisor sup WHERE sup.uuid = v_uid
++        UNION
++        SELECT aud.id_tienda FROM auditor aud            WHERE aud.uuid = v_uid
++        UNION
++        SELECT a.id_tienda
++          FROM app_dat_almacenero al
++          JOIN app_dat_almacen a ON al.id_almacen = a.id
++         WHERE al.uuid = v_uid
++        UNION
++        SELECT tpv.id_tienda
++          FROM app_dat_vendedor vend2
++          JOIN app_dat_tpv tpv ON vend2.id_tpv = tpv.id
++         WHERE vend2.uuid = v_uid
++    ) AS tiendas_usuario;
++    IF v_tiendas IS NULL THEN
++        RETURN;
++    END IF;
+@@ -62 +99 @@ BEGIN
+@@ -64,4 +101 @@ BEGIN
+-                WHEN o.id_tipo_operacion = (
+-                    SELECT id FROM app_nom_tipo_operacion
+-                     WHERE LOWER(denominacion) = 'venta' LIMIT 1
+-                ) THEN (
++                WHEN o.id_tipo_operacion = v_id_tipo_venta THEN (
+@@ -86,6 +120,3 @@ BEGIN
+-            (SELECT COUNT(*)::INTEGER
+-               FROM app_dat_extraccion_productos ep
+-              WHERE ep.id_operacion = o.id)     AS cantidad_items,
+-            (SELECT COALESCE(SUM(ep.importe), 0)
+-               FROM app_dat_extraccion_productos ep
+-              WHERE ep.id_operacion = o.id)     AS total_operacion
++            ep_agg.cantidad_items,
++            ep_agg.total_operacion
+@@ -95,0 +127,6 @@ BEGIN
++        LEFT JOIN LATERAL (
++            SELECT COUNT(*)::INTEGER                 AS cantidad_items,
++                   COALESCE(SUM(ep.importe), 0)      AS total_operacion
++              FROM app_dat_extraccion_productos ep
++             WHERE ep.id_operacion = o.id
++        ) ep_agg ON TRUE
+@@ -112,4 +149,3 @@ BEGIN
+-        LEFT JOIN app_dat_estado_operacion e
+-               ON e.id_operacion = o.id
+-              AND e.id = (
+-                  SELECT MAX(id) FROM app_dat_estado_operacion er
++        LEFT JOIN LATERAL (
++            SELECT er.estado
++              FROM app_dat_estado_operacion er
+@@ -117 +153,3 @@ BEGIN
+-              )
++             ORDER BY er.id DESC
++             LIMIT 1
++        ) e ON TRUE
+@@ -120 +158,3 @@ BEGIN
+-            (id_tienda_param IS NULL OR o.id_tienda = id_tienda_param)
++            o.id_tienda = ANY(v_tiendas)
++            AND (id_tienda_param IS NULL OR o.id_tienda = id_tienda_param)
+@@ -130,20 +169,0 @@ BEGIN
+-            AND EXISTS (
+-                SELECT 1 FROM (
+-                    SELECT gr.id_tienda  FROM app_dat_gerente gr    WHERE gr.uuid = auth.uid()
+-                    UNION
+-                    SELECT sup.id_tienda FROM app_dat_supervisor sup WHERE sup.uuid = auth.uid()
+-                    UNION
+-                    SELECT aud.id_tienda FROM auditor aud           WHERE aud.uuid = auth.uid()
+-                    UNION
+-                    SELECT a.id_tienda
+-                      FROM app_dat_almacenero al
+-                      JOIN app_dat_almacen a ON al.id_almacen = a.id
+-                     WHERE al.uuid = auth.uid()
+-                    UNION
+-                    SELECT tpv.id_tienda
+-                      FROM app_dat_vendedor vend2
+-                      JOIN app_dat_tpv tpv ON vend2.id_tpv = tpv.id
+-                     WHERE vend2.uuid = auth.uid()
+-                ) AS tiendas_usuario
+-                WHERE tiendas_usuario.id_tienda = o.id_tienda
+-            )
+@@ -180,0 +201,16 @@ BEGIN
++            'version_monetaria', (
++                SELECT ov.version_monetaria
++                  FROM app_dat_operacion_venta ov
++                 WHERE ov.id_operacion = of.id
++                 LIMIT 1
++            ),
++            'client_uuid', (
++                SELECT i.client_uuid
++                  FROM app_dat_operacion_offline_idempotencia i
++                 WHERE i.id_operacion = of.id
++                   AND i.tipo = 'venta_v1'
++                 LIMIT 1
++            ),
+@@ -213 +249,16 @@ BEGIN
+-                    END
++                    END,
++                    'version_monetaria',             ep.version_monetaria,
++                    'id_linea_cliente',              ep.id_linea_cliente,
++                    'moneda_venta',                  ep.moneda_venta,
++                    'id_medio_pago_seleccionado',    ep.id_medio_pago_seleccionado,
++                    'seleccion_pendiente',           ep.seleccion_pendiente,
++                    'precio_unitario_nativo',        ep.precio_unitario_nativo,
++                    'descuento_manual_unitario_nativo', ep.descuento_manual_unitario_nativo,
++                    'precio_unitario_neto_nativo',   ep.precio_unitario_neto_nativo,
++                    'importe_neto_nativo',           ep.importe_neto_nativo,
++                    'tasa_cambio_cup',               ep.tasa_cambio_cup,
++                    'snapshot_precio',               ep.snapshot_precio,
++                    'snapshot_tasa',                 ep.snapshot_tasa,
++                    'snapshot_descuentos',           ep.snapshot_descuentos
+@@ -228,0 +280,2 @@ BEGIN
++                    'id_medio_pago',           mp.id,
++                    'monto',                   pv.monto,
+@@ -235 +288,4 @@ BEGIN
+-                    'tipo_pago',            pv.tipo_pago
++                    'tipo_paago',               pv.tipo_pago,
++                    'moneda',                  COALESCE(NULLIF(upper(trim(pv.moneda)), ''), 'CUP'),
++                    'tasa_usd',                pv.tasa_usd,
++                    'monto_cup_equivalente',   pv.monto_cup_equivalente
+@@ -237,2 +293 @@ BEGIN
+-                FROM app_dat_operacion_venta ov
+-                JOIN app_dat_pago_venta pv      ON ov.id_operacion = pv.id_operacion_venta
++                FROM app_dat_pago_venta pv
+@@ -240 +295 @@ BEGIN
+-                WHERE ov.id_operacion = of.id
++                WHERE pv.id_operacion_venta = of.id

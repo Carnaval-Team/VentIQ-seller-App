@@ -1,0 +1,39 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_update_carnaval_product_prices().sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_update_carnaval_product_prices().sql"
+index d28867af..f5849eff 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_update_carnaval_product_prices().sql"
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_update_carnaval_product_prices().sql"
+@@ -10,5 +10,13 @@ BEGIN
+     WITH productos AS (
+         SELECT p.id_vendedor_app,
+-               public.fn_carnaval_precio_base_vigente(p.id) AS precio_base,
++               -- Mismo criterio que sync_price_to_carnaval:
++               -- el precio mas reciente por created_at.
++               (SELECT pv.precio_venta_cup
++                  FROM public.app_dat_precio_venta pv
++                 WHERE pv.id_producto = p.id
++                 ORDER BY pv.created_at DESC
++                 LIMIT 1)                       AS precio_base,
++               -- El porciento de la tienda no puede bajar del
++               -- global que se acaba de guardar (NEW).
+                GREATEST(COALESCE(pg.precio_venta_carnaval,
+                                  NEW.porciento_efectivo),
+@@ -31,4 +39,7 @@ BEGIN
+        AND pr.precio_base IS NOT NULL
+        AND pr.precio_base > 0
++       -- proveedor = 3 esta bloqueado por
++       -- carnavalapp.productos_block_proveedor_3 (RAISE EXCEPTION):
++       -- incluirlo abortaria toda la operacion.
+        AND COALESCE(cp.proveedor, 0) <> 3;
+ 
+@@ -36,11 +47,4 @@ BEGIN
+     RAISE NOTICE '[piso_global] Productos recalculados: %.', v_actualizados;
+ 
+-    -- updated_at del global no se auto-actualiza en UPDATE;
+-    -- solo tocamos esa columna para no re-disparar este trigger
+-    -- (esta definido como UPDATE OF porciento_*).
+-    UPDATE public.precio_global_productos_carnaval
+-       SET updated_at = NOW()
+-     WHERE id = NEW.id;
+-
+     RETURN NEW;
+ END;

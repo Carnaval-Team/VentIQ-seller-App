@@ -1,0 +1,8 @@
+﻿@@ -30 +29,0 @@ BEGIN
+@@ -38,5 +37 @@ BEGIN
+-  RETURN jsonb_build_object(
+-    'status', 'success',
+-    'codigo', v_codigo,
+-    'id_tipos_moneda', v_nuevo_id
+-  );
++  RETURN jsonb_build_object('status','success','codigo',v_codigo,'id_tipos_moneda',v_nuevo_id);

@@ -138,3 +138,4 @@ __agent__/
 .devin/
 .qwen/
 ventiq_app/nul
+tools/web_cache_killer

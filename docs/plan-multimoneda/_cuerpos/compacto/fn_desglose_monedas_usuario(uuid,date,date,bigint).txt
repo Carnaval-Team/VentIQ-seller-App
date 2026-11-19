@@ -1,0 +1,12 @@
+﻿@@ -23 +23,3 @@ AS $function$
+@@ -31,4 +33,2 @@ AS $function$
+-           'moneda', p.moneda,
+-           'operaciones', p.operaciones,
+-           'importe_nativo', p.importe_nativo,
+-           'importe_base', p.importe_base,
++           'moneda', p.moneda, 'operaciones', p.operaciones,
++           'importe_nativo', p.importe_nativo, 'importe_base', p.importe_base,
+@@ -39,2 +39 @@ AS $function$
+-           'importe_consolidado', case when p.moneda = c.moneda
+-                                       then p.importe_nativo
++           'importe_consolidado', case when p.moneda = c.moneda then p.importe_nativo

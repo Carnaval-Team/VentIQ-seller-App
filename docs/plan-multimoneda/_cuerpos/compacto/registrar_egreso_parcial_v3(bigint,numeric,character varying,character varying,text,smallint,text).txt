@@ -1,0 +1,15 @@
+﻿@@ -7,4 +7 @@ AS $function$
+-declare
+-  v_res    jsonb;
+-  v_id     bigint;
+-  v_moneda text;
++declare v_res jsonb; v_id bigint; v_moneda text;
+@@ -17,3 +13 @@ begin
+-  v_res := public.registrar_egreso_parcial_v2(
+-             p_id_turno, p_monto_entrega, p_nombre_recibe,
++  v_res := public.registrar_egreso_parcial_v2(p_id_turno, p_monto_entrega, p_nombre_recibe,
+@@ -25,3 +18 @@ begin
+-      update public.app_dat_entregas_parciales_caja
+-      set moneda = v_moneda
+-      where id = v_id;
++      update public.app_dat_entregas_parciales_caja set moneda = v_moneda where id = v_id;

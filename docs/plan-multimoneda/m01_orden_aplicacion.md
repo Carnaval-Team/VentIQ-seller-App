@@ -4,6 +4,11 @@ Todos los archivos son **borradores para revisión y ejecución manual en newa**
 
 Cada script exige en su preflight `SET app.m01_<corte>_approved = 'yes'` (o la GUC correspondiente) dentro de la transacción: es el mecanismo de aprobación explícita por entrega.
 
+> **Promoción a main:** antes de aplicar nada en main, leer
+> `desincronizacion_newa_main.md`. Main tiene producción que newa no tiene (WhatsApp,
+> referidos, versiones de app, precios Carnaval, fix de egresos por turno). Además, los
+> preflight de estos scripts validan md5 de newa: hay que regenerarlos para main.
+
 ## Prerequisito
 
 - **S01** (endurecimiento de `app_dat_configuracion_tienda` + helpers `fn_config_tienda_puede_leer/escribir`) debe estar aplicado y verificado — ya aplicado.
@@ -67,6 +72,7 @@ Cada script exige en su preflight `SET app.m01_<corte>_approved = 'yes'` (o la G
 | 53 | `m01_r30_flag_forzada_exclusion_propuesta.sql` | MC-056. Exclusión mutua flag/forzada: `fn_m01_fijar_moneda_por_producto` apaga `forzar_moneda_venta`/`moneda_venta_forzada` en el mismo UPDATE al activar, y el trigger `fn_validar_moneda_forzada` rechaza forzar=true con el flag encendido. No toca `mostrar_selector_moneda` (retirada del admin y del TPV nuevo; la columna queda para clientes viejos). Preflight exige los cuerpos vigentes o corridas previas. |
 | 54 | `m01_r31_reporte_ordenes_v1_propuesta.sql` | M06-R02. Borrador para pegar. `reporte_ordenes_json_v2` aditiva: no toca la legacy. Items con `version_monetaria` + `linea_v1` (id_linea_cliente, componentes nativos/equivalentes como decimales exactos, medio seleccionado), pagos por identidad con `aplicaciones` (sin fan-out, sin filtrar medios inactivos), `totales_por_moneda` por orden y envelope R01 (versiones, base comercial, completitud con `V1_SIN_METADATA_DE_LINEA`). Exige `fn_config_tienda_puede_leer` en servidor — la v1 del reporte no validaba tienda. Preflight exige columnas v1 de extracción y `app_dat_pago_aplicacion`. |
 | 55 | `m01_r32_ventas_por_moneda_v2_propuesta.sql` | M06-R05. Borrador para pegar. `fn_reporte_ventas_por_moneda_v2` aditiva: mismo cálculo que la v1 de newa (cohorte: operaciones por created_at + último estado 2) pero declarado — envelope R01 con `magnitud='cobrado'`, `base_temporal='cohorte_ventas'` (no flujo de caja), decimales exactos, `PAGOS_SIN_EQUIVALENTE_CUP` como incompletitud, medios por LEFT JOIN, consolidado etiquetado como presentación con tasa actual, y `fn_config_tienda_puede_leer` en servidor. Preflight exige la v1 y `fn_moneda_consolidacion`. |
+| 56 | `m01_r33_turno_offline_fecha_propuesta.sql` | Enmienda de (14) y (17), vivos en newa. Ventas offline que quedan fuera de su turno (`docs/issues/ventas_offline_desaparecen_tras_sync.md`). La apertura reutilizada o en replay recupera la hora real con `fn_turno_alinear_fecha_apertura`: solo hacia atrás, nunca futura, sin pisar el turno anterior, tope 72 h. Candado por TPV + vendedor además del de `client_uuid`. Fechas de cierre y de venta acotadas a `now()`. La huella del replay ignora la fecha. Nueva `fn_alinear_apertura_turno_offline` para el cliente. Preflight exige los md5 vivos de (14) y (17). Sin tablas nuevas. Compatible con el cliente actual. Va antes de D1 (ver "R33 — cliente"). |
 
 **Nota de interdependencia:** aplicar (4)–(8) endurece los INSERT de trabajadores/roles. Hasta aplicar (9), el alta inicial de tiendas (`crear_estructura_tienda` directa) queda bloqueada — se restaura mediante `fn_m01_crear_estructura_tienda`. Aplicar el conjunto sin pausa larga entre (4) y (9), o aceptar esa ventana de bloqueo.
 
@@ -92,6 +98,7 @@ Cada script exige en su preflight `SET app.m01_<corte>_approved = 'yes'` (o la G
 | Lote 39 | `verificar_m01_lote_39.sql` |
 | Lote 40–44 | `verificar_m01_lote_40_44.sql` |
 | Piloto 49–51 | `verificar_m01_m07_piloto.sql` |
+| R33 (56) | `verificar_m01_r33.sql` |
 
 ## Migración de clientes
 
@@ -112,6 +119,64 @@ El admin ya llama primero a `fn_m01_*`. Si esa función todavía no existe, usa 
 | `fn_agregar_rol_trabajador` | `fn_m01_agregar_rol_trabajador` (`p_id_tienda`/`p_usuario_uuid` se validan contra el trabajador en DB) |
 | `fn_actualizar_datos_rol_trabajador` | `fn_m01_actualizar_datos_rol_trabajador` |
 | `fn_eliminar_rol_trabajador` | `fn_m01_eliminar_rol_trabajador` |
+
+## R33 — ventas offline fuera de su turno
+
+Diagnóstico completo y SQL de main en `docs/issues/ventas_offline_desaparecen_tras_sync.md`.
+El script 56 es la versión para newa, montada sobre los cuerpos de (14) y (17).
+
+### Estado en newa (consultado el 2026-11-18)
+
+- (14) y (17) **están aplicados**: los cuerpos llevan `m01_solicitud`, existe
+  `fn_m01_cerrar_turno_residual` y `anon` no ejecuta apertura, cierre ni venta. La nota
+  de "Pendientes" que dice "no está aplicado" quedó vieja.
+- **`TimeZone = UTC` en newa** (main usa `America/Havana`). El cliente envía las fechas
+  offline con `toIso8601String()` de un `DateTime` local, sin offset. En newa la hora
+  local de Cuba se guarda como si fuera UTC: **5 h antes** de la real. Las aperturas y
+  cierres hechos online, en cambio, usan `now()`. El mismo build sale bien o mal según el
+  proyecto: debug apunta a newa, release a main (`supabase_config.dart`). Hace falta D1
+  antes de cualquier piloto offline en newa.
+
+| Causa | (14)/(17) en newa | Lo cubre |
+|---|---|---|
+| Reutilizar un turno abierto no recupera la apertura real | No: la rama "reutilizado" solo inserta la idempotencia | 56 + D2 |
+| Dos aperturas simultáneas con distinta `client_uuid` | No: el candado es por `client_uuid` | 56 + D3 |
+| Fechas futuras (venta, apertura, cierre) | No: se copian tal cual | 56 + D1 |
+| El cierre toma el turno de otro vendedor del TPV | **Sí** (`creado_por = p_usuario`) | — |
+| `anon` ejecuta apertura y cierre | **Sí**, revocado | — |
+| Huella con la fecha: un replay con D1 cae en 42501 | Riesgo nuevo de (14)/(17) | 56 (la huella ignora la fecha) |
+
+### R33 — cliente (`ventiq_app`, rama `multimoneda`)
+
+El código y la explicación de cada cambio están en la sección 6.3 del documento de
+diagnóstico. Todo implementado el 18/11 en `multimoneda` (sin commit).
+
+| # | Cambio | Estado | Dónde |
+|---|---|---|---|
+| D1 | Enviar las fechas como UTC con `Z` | **Hecho**. Test `test/fecha_rpc_test.dart` | `lib/utils/fecha_rpc.dart` (`fechaUtcParaRpc`). `auto_sync_service.dart`: `p_fecha_apertura`, `p_fecha_cierre`, `p_fecha_creacion` |
+| D2 | Alinear la apertura al reutilizar un turno | **Hecho** | `auto_sync_service.dart`: `_alinearFechaAperturaEnServidor` → `fn_alinear_apertura_turno_offline`. Se llama en las cinco salidas de `_ensureAperturaForQueueEntryUnlocked` que reutilizan un turno abierto. Si la RPC no existe, solo lo registra en el log |
+| D3 | Encadenar aperturas por TPV + vendedor | **Hecho**. Test `test/cadena_por_clave_test.dart` | `lib/utils/cadena_por_clave.dart`. `_ensureAperturaForQueueEntry` usa `_aperturaPorTpv` (clave `id_tpv:id_vendedor`) además del candado por `local_id` |
+| D4 | Conservar la copia local sincronizada mientras su turno siga abierto | **Hecho** | `removeSyncedPendingPresentOnServer` no borra las del turno abierto. `loadOrdersFromLocalCacheForOpenTurno` no repite `ORD-{id}` ya presentes en el cache. `getSellerVisiblePendingOrdersCount` cuenta solo `synced != true` |
+| D5 | `saveOfflineTurno` conserva la apertura más temprana del mismo turno | **Hecho**. Test `test/apertura_mas_temprana_test.dart` | `UserPreferencesService.aperturaMasTemprana`, en `fecha_apertura` de la entrada y de `apertura` |
+| D6 | `savePendingOrder` no pisa `created_offline_at` | **Hecho** | `??=` en `savePendingOrder` |
+| D7 | Ajustes: un solo camino de sync | **Hecho** | `_SyncDialog`: el paso `pending_orders` pasa a `sync_turno_queue` (`AutoSyncService().forceSyncPendingOrders()`). Se eliminó `_processPendingOrders`. `pending_operations` sigue procesando `order_status_change` |
+
+Pendiente de prueba en dispositivo: pruebas de la sección 6.4 del diagnóstico en newa,
+con el teléfono en una zona horaria distinta de Cuba.
+
+### Orden de despliegue
+
+1. Script 56 en newa + `verificar_m01_r33.sql`. Mantiene firmas y retornos, así que el
+   build actual sigue funcionando. Tiene que ir **antes** de D1: con (14)/(17) sin
+   enmendar, un replay de una clave ya registrada con la fecha vieja y reenviada en UTC
+   cae en 42501 y la cola se detiene.
+2. Cliente con D1 a D7. D2 tolera que la RPC no exista (`_isRpcUnavailable`).
+3. Piloto offline en newa (pruebas de la sección 6.4 del diagnóstico), con el teléfono
+   en una zona horaria distinta de Cuba.
+4. Main: hasta que M01 llegue, se aplica el hotfix S1–S6 del diagnóstico (mismos nombres
+   `fn_turno_alinear_fecha_apertura` / `fn_alinear_apertura_turno_offline`, cuerpos sin
+   huella M01). Al promover M01 a main, (14), (17) y (56) necesitan baselines md5 de
+   main: los actuales son de newa y el hotfix cambia los cuerpos.
 
 ## Pendientes fuera de este paquete
 - Los scripts 14, 15 y 16 cubren la venta, el cobro y el cambio de estado offline, todavía sin aplicar. El 14 también revoca `fn_registrar_venta_offline_v2`. El vendedor ya no registra la venta offline ni el cambio de estado en cola con las funciones sin clave: ajustes delega en el sync y la cola usa `fn_registrar_cambio_estado_offline`. La apertura y el cierre de ajustes ya no llaman `fn_cerrar_turno_tpv` ni `registrar_apertura_turno`: los sube `uploadTurno`. Si `fn_cerrar_turno_offline` existe y rechaza, el sync no cierra sin clave. El cambio de estado online sale por `fn_registrar_cambio_estado_offline` y solo usa `fn_registrar_cambio_estado_operacion` si esa RPC no existe. La apertura online sale por `fn_apertura_turno_offline_monedas`. Si el cierre dice que cerró y la fila sigue abierta, el sync no la cierra con `UPDATE`. `fn_admin_caja_*` sigue con su cuerpo actual. Sus INSERT nombran columnas y toleran las columnas nuevas en NULL. El script 17 reemplaza los cuerpos con clave de turno, egreso y comanda. El cierre online ya llama `fn_cerrar_turno_offline_monedas` antes que `fn_cerrar_turno_tpv`. El KDS ya llama `fn_cambiar_estado_comanda_item_offline` antes que la función sin clave. El script 17 endurece apertura, cierre, egreso, pedido y estado de plato, guarda el mapa de monedas en la huella y hace que el pedido con clave delegue en v2. No está aplicado. El pedido online sigue en `fn_pedir_item_cuenta_v2` y, si esa función no existe, no llama la anterior. El ticket completo del KDS marca cada plato con `fn_cambiar_estado_comanda_item_offline` y, sin platos, no llama `fn_cambiar_estado_comanda`. El cierre offline envía `fecha_cierre` en la RPC con clave. Admin Lite no se continúa. El script 20 recibe una orden anterior al turno, anota los trabajadores y registra el cambio de precio. Si esa RPC no existe, el TPV conserva la escritura de hoy. Un 42501 no la abre. El script 21 escribe la configuración de tienda que el TPV cambia hoy a mano. Solo quien puede escribir la tienda. La cola de trabajadores y la campana usan las funciones del script 20. El 22 cierra las columnas de confianza de `app_dat_tienda`. El 23 quita la foto, limpia el SMS y reactivar o borra la notificación propia. El 24 desvincula el login sin borrar la cuenta ni los roles. El usuario corrió `m01_r0i_rol_harness.sql` en newa el 2026-11-14 y no saltó error. Termina en ROLLBACK. El 14 de noviembre de 2026 las huellas MD5 de las nueve funciones que los scripts 14 a 17 reemplazan coincidían con newa, y `fn_desvincular_usuario_trabajador` seguía ausente. Esa lectura no ejecuta los cuerpos.

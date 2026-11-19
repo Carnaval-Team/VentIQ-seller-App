@@ -1,0 +1,100 @@
+﻿CREATE OR REPLACE FUNCTION public.fn_pedir_item_cuenta_offline(p_client_uuid uuid, p_id_cuenta bigint, p_id_producto bigint, p_cantidad numeric, p_precio_unitario numeric, p_id_variante bigint DEFAULT NULL::bigint, p_id_opcion_variante bigint DEFAULT NULL::bigint, p_id_presentacion bigint DEFAULT NULL::bigint, p_id_ubicacion bigint DEFAULT NULL::bigint, p_precio_base numeric DEFAULT NULL::numeric, p_id_metodo_pago bigint DEFAULT NULL::bigint, p_promotion_data jsonb DEFAULT NULL::jsonb, p_inventory_data jsonb DEFAULT NULL::jsonb, p_notas text DEFAULT NULL::text, p_sku_producto text DEFAULT NULL::text, p_sku_ubicacion text DEFAULT NULL::text, p_uuid_vendedor uuid DEFAULT NULL::uuid, p_forzar_sin_stock boolean DEFAULT false)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'pg_catalog'
+AS $function$
+DECLARE
+    v_actor uuid := auth.uid();
+    v_request jsonb;
+    v_existing public.app_dat_operacion_offline_idempotencia%ROWTYPE;
+    v_store bigint;
+    v_res jsonb;
+    v_id_item bigint;
+BEGIN
+    IF v_actor IS NULL OR p_client_uuid IS NULL OR p_id_cuenta IS NULL OR p_id_producto IS NULL THEN
+        RAISE EXCEPTION 'Solicitud no autorizada' USING ERRCODE = '42501';
+    END IF;
+    v_request := jsonb_build_object(
+        'version', 1,
+        'id_cuenta', p_id_cuenta,
+        'id_producto', p_id_producto,
+        'cantidad', p_cantidad,
+        'precio_unitario', p_precio_unitario,
+        'id_variante', p_id_variante,
+        'id_opcion_variante', p_id_opcion_variante,
+        'id_presentacion', p_id_presentacion,
+        'id_ubicacion', p_id_ubicacion,
+        'precio_base', p_precio_base,
+        'id_metodo_pago', p_id_metodo_pago,
+        'promotion_data', p_promotion_data,
+        'inventory_data', p_inventory_data,
+        'notas', p_notas,
+        'sku_producto', p_sku_producto,
+        'sku_ubicacion', p_sku_ubicacion,
+        'uuid_vendedor', p_uuid_vendedor,
+        'forzar_sin_stock', COALESCE(p_forzar_sin_stock, false)
+    );
+    PERFORM pg_advisory_xact_lock(hashtextextended(p_client_uuid::text, 0));
+    SELECT * INTO v_existing
+    FROM public.app_dat_operacion_offline_idempotencia
+    WHERE client_uuid = p_client_uuid
+    FOR UPDATE;
+    IF FOUND THEN
+        IF v_existing.tipo IS DISTINCT FROM 'pedir_item'
+           OR v_existing.uuid_usuario IS DISTINCT FROM v_actor
+           OR v_existing.m01_solicitud IS DISTINCT FROM v_request
+           OR v_existing.m01_id_tienda IS NULL THEN
+            RAISE EXCEPTION 'Clave no verificable o solicitud no autorizada; requiere revision'
+                USING ERRCODE = '42501';
+        END IF;
+        RETURN (
+            SELECT jsonb_build_object(
+                'status', 'success', 'idempotent', true,
+                'id_item', i.id, 'id_cuenta', i.id_cuenta,
+                'origen', COALESCE(i.origen_stock, 'barra'),
+                'origen_stock', i.origen_stock,
+                'id_cocina', i.id_cocina, 'cocina', ck.denominacion,
+                'stock_movido', i.stock_movido,
+                'id_comanda_item', i.id_comanda_item,
+                'id_comanda', ci.id_comanda, 'numero_comanda', co.numero,
+                'estado_servicio', i.estado_servicio,
+                'message', 'Este pedido ya se habia registrado'
+            )
+            FROM public.app_dat_mesa_cuenta_item i
+            LEFT JOIN public.app_dat_cocina ck ON ck.id = i.id_cocina
+            LEFT JOIN public.app_dat_comanda_item ci ON ci.id = i.id_comanda_item
+            LEFT JOIN public.app_dat_comanda co ON co.id = ci.id_comanda
+            WHERE i.id = v_existing.id_operacion
+        );
+    END IF;
+
+    SELECT c.id_tienda INTO v_store
+    FROM public.app_dat_mesa_cuenta_abierta c
+    WHERE c.id = p_id_cuenta
+    FOR SHARE;
+    IF NOT FOUND OR v_store IS NULL THEN
+        RAISE EXCEPTION 'Solicitud no autorizada' USING ERRCODE = '42501';
+    END IF;
+
+    v_res := public.fn_pedir_item_cuenta_v2(
+        p_id_cuenta, p_id_producto, p_cantidad, p_precio_unitario,
+        p_id_variante, p_id_opcion_variante, p_id_presentacion, p_id_ubicacion,
+        p_precio_base, p_id_metodo_pago, p_promotion_data, p_inventory_data,
+        p_notas, p_sku_producto, p_sku_ubicacion, p_uuid_vendedor,
+        COALESCE(p_forzar_sin_stock, false)
+    );
+    IF (v_res->>'status') IS DISTINCT FROM 'success' THEN
+        RETURN v_res;
+    END IF;
+    v_id_item := NULLIF(v_res->>'id_item', '')::bigint;
+    IF v_id_item IS NULL THEN
+        RAISE EXCEPTION 'El servidor rechazó el pedido' USING ERRCODE = '42501';
+    END IF;
+    INSERT INTO public.app_dat_operacion_offline_idempotencia
+        (client_uuid, id_operacion, tipo, uuid_usuario, m01_solicitud, m01_id_tienda)
+    VALUES (p_client_uuid, v_id_item, 'pedir_item', v_actor, v_request, v_store);
+    RETURN v_res || jsonb_build_object('idempotent', false);
+END;
+$function$
+

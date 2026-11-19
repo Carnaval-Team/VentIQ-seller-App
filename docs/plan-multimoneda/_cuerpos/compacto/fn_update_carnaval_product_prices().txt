@@ -1,0 +1,12 @@
+﻿@@ -12 +12,9 @@ BEGIN
+-               public.fn_carnaval_precio_base_vigente(p.id) AS precio_base,
++               (SELECT pv.precio_venta_cup
++                  FROM public.app_dat_precio_venta pv
++                 WHERE pv.id_producto = p.id
++                 ORDER BY pv.created_at DESC
++                 LIMIT 1)                       AS precio_base,
+@@ -32,0 +41,3 @@ BEGIN
+@@ -38,7 +48,0 @@ BEGIN
+-    UPDATE public.precio_global_productos_carnaval
+-       SET updated_at = NOW()
+-     WHERE id = NEW.id;

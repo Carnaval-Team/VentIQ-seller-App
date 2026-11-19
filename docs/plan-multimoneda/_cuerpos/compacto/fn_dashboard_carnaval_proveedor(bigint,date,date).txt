@@ -1,0 +1,39 @@
+﻿@@ -102,3 +102,2 @@ BEGIN
+-            SUM(cantidad) FILTER (WHERE status = 'Completado')              AS productos_vendidos,
+-            SUM(monto) FILTER (WHERE status = 'Completado')                 AS monto_total
++            SUM(cantidad)                                                   AS productos_vendidos,
++            SUM(monto)                                                      AS monto_total
+@@ -108,4 +107 @@ BEGIN
+-        SELECT
+-            status,
+-            COUNT(DISTINCT order_id) AS count,
+-            SUM(monto)               AS monto
++        SELECT status, COUNT(DISTINCT order_id) AS count
+@@ -136,3 +131,0 @@ BEGIN
+-        SELECT id, status, nombre, cantidad, monto
+-        FROM (
+@@ -141 +133,0 @@ BEGIN
+-                c.status,
+@@ -144,5 +136 @@ BEGIN
+-                SUM(c.monto)        AS monto,
+-                ROW_NUMBER() OVER (
+-                    PARTITION BY c.status
+-                    ORDER BY SUM(c.monto) DESC
+-                ) AS rn
++            SUM(c.monto)        AS monto
+@@ -150,3 +138,3 @@ BEGIN
+-            GROUP BY c.id_producto_local, c.status
+-        ) ranked
+-        WHERE rn <= 10
++        GROUP BY c.id_producto_local
++        ORDER BY monto DESC
++        LIMIT 10
+@@ -163 +151 @@ BEGIN
+-            'ticket_promedio',     CASE WHEN r.ordenes_completadas > 0 THEN ROUND(r.monto_total / r.ordenes_completadas, 2) ELSE 0 END
++            'ticket_promedio',     CASE WHEN r.ordenes_count > 0 THEN ROUND(r.monto_total / r.ordenes_count, 2) ELSE 0 END
+@@ -167,2 +155 @@ BEGIN
+-            'count',  pe.count,
+-            'monto',  ROUND(pe.monto, 2)
++            'count',  pe.count
+@@ -183 +169,0 @@ BEGIN
+-            'status',  tp.status,

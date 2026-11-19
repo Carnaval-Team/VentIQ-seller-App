@@ -1,0 +1,222 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_listar_ordenes(bigint,bigint,uuid,smallint,date,date,bigint,boolean,boolean,integer,integer).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_listar_ordenes(bigint,bigint,uuid,smallint,date,date,bigint,boolean,boolean,integer,integer).sql"
+index c0ce50ef..5ea5b25c 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_listar_ordenes(bigint,bigint,uuid,smallint,date,date,bigint,boolean,boolean,integer,integer).sql"
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_listar_ordenes(bigint,bigint,uuid,smallint,date,date,bigint,boolean,boolean,integer,integer).sql"
+@@ -5,4 +5,5 @@
+  SET search_path TO 'public'
+ AS $function$
++
+ DECLARE
+     v_fecha_inicio          TIMESTAMPTZ;
+@@ -11,11 +12,47 @@ DECLARE
+     v_id_turno_abierto      BIGINT;
+     v_uuid_usuario          UUID := NULL;
++    v_uid                   UUID := auth.uid();
++    v_id_tipo_venta         BIGINT;
++    v_tiendas               BIGINT[];
+ BEGIN
+     -- Obtener el usuario autenticado si no se pasa
+-    v_uuid_usuario := COALESCE(id_usuario_param, auth.uid());
++    v_uuid_usuario := COALESCE(id_usuario_param, v_uid);
+ 
+     -- Verificar que el usuario tenga permisos en al menos una tienda
+     PERFORM check_user_has_access_to_any_tienda();
+ 
++    -- (OPT 1) Resolver el id del tipo 'venta' UNA sola vez
++    SELECT id INTO v_id_tipo_venta
++      FROM app_nom_tipo_operacion
++     WHERE LOWER(denominacion) = 'venta'
++     LIMIT 1;
++
++    -- (OPT 2) Calcular UNA vez las tiendas a las que el usuario tiene acceso.
++    -- Se califica con el alias (tiendas_usuario.id_tienda) porque 'id_tienda'
++    -- es también un parámetro OUT de la función (RETURNS TABLE) y colisiona.
++    SELECT array_agg(DISTINCT tiendas_usuario.id_tienda) INTO v_tiendas
++    FROM (
++        SELECT gr.id_tienda  FROM app_dat_gerente gr     WHERE gr.uuid = v_uid
++        UNION
++        SELECT sup.id_tienda FROM app_dat_supervisor sup WHERE sup.uuid = v_uid
++        UNION
++        SELECT aud.id_tienda FROM auditor aud            WHERE aud.uuid = v_uid
++        UNION
++        SELECT a.id_tienda
++          FROM app_dat_almacenero al
++          JOIN app_dat_almacen a ON al.id_almacen = a.id
++         WHERE al.uuid = v_uid
++        UNION
++        SELECT tpv.id_tienda
++          FROM app_dat_vendedor vend2
++          JOIN app_dat_tpv tpv ON vend2.id_tpv = tpv.id
++         WHERE vend2.uuid = v_uid
++    ) AS tiendas_usuario;
++
++    -- Si el usuario no tiene ninguna tienda accesible, no hay nada que devolver
++    IF v_tiendas IS NULL THEN
++        RETURN;
++    END IF;
++
+     -- Si NO se pasan fechas, usar el turno abierto del vendedor en el TPV
+     IF fecha_desde_param IS NULL AND fecha_hasta_param IS NULL
+@@ -60,10 +97,7 @@ BEGIN
+                                                 AS estado_nombre,
+             o.observaciones::TEXT,
+-            -- Datos específicos de TPV
++            -- Datos específicos de TPV (usa la variable v_id_tipo_venta cacheada)
+             CASE
+-                WHEN o.id_tipo_operacion = (
+-                    SELECT id FROM app_nom_tipo_operacion
+-                     WHERE LOWER(denominacion) = 'venta' LIMIT 1
+-                ) THEN (
++                WHEN o.id_tipo_operacion = v_id_tipo_venta THEN (
+                     SELECT jsonb_build_object(
+                         'id_tpv',            ov.id_tpv,
+@@ -84,14 +118,17 @@ BEGIN
+                 ELSE NULL
+             END                                 AS datos_especificos,
+-            (SELECT COUNT(*)::INTEGER
+-               FROM app_dat_extraccion_productos ep
+-              WHERE ep.id_operacion = o.id)     AS cantidad_items,
+-            (SELECT COALESCE(SUM(ep.importe), 0)
+-               FROM app_dat_extraccion_productos ep
+-              WHERE ep.id_operacion = o.id)     AS total_operacion
++            -- (OPT 3) cantidad_items + total en un solo LATERAL
++            ep_agg.cantidad_items,
++            ep_agg.total_operacion
+         FROM app_dat_operaciones o
+         JOIN app_nom_tipo_operacion top ON o.id_tipo_operacion = top.id
+         JOIN app_dat_tienda t           ON o.id_tienda = t.id
+         LEFT JOIN auth.users u          ON o.uuid = u.id
++        LEFT JOIN LATERAL (
++            SELECT COUNT(*)::INTEGER                 AS cantidad_items,
++                   COALESCE(SUM(ep.importe), 0)      AS total_operacion
++              FROM app_dat_extraccion_productos ep
++             WHERE ep.id_operacion = o.id
++        ) ep_agg ON TRUE
+         LEFT JOIN LATERAL (
+             SELECT jsonb_build_object(
+@@ -110,13 +147,16 @@ BEGIN
+              LIMIT 1
+         ) desc_vendedor ON TRUE
+-        LEFT JOIN app_dat_estado_operacion e
+-               ON e.id_operacion = o.id
+-              AND e.id = (
+-                  SELECT MAX(id) FROM app_dat_estado_operacion er
+-                   WHERE er.id_operacion = o.id
+-              )
++        LEFT JOIN LATERAL (
++            SELECT er.estado
++              FROM app_dat_estado_operacion er
++             WHERE er.id_operacion = o.id
++             ORDER BY er.id DESC
++             LIMIT 1
++        ) e ON TRUE
+         LEFT JOIN app_nom_estado_operacion es ON e.estado = es.id
+         WHERE
+-            (id_tienda_param IS NULL OR o.id_tienda = id_tienda_param)
++            -- (OPT 2) filtro de acceso por array precalculado
++            o.id_tienda = ANY(v_tiendas)
++            AND (id_tienda_param IS NULL OR o.id_tienda = id_tienda_param)
+             AND (id_tpv_param IS NULL OR EXISTS (
+                 SELECT 1 FROM app_dat_operacion_venta ov
+@@ -128,24 +168,4 @@ BEGIN
+             AND (v_fecha_fin    IS NULL OR o.created_at <= v_fecha_fin)
+             AND (id_tipo_operacion_param IS NULL OR o.id_tipo_operacion = id_tipo_operacion_param)
+-            AND EXISTS (
+-                SELECT 1 FROM (
+-                    SELECT gr.id_tienda  FROM app_dat_gerente gr    WHERE gr.uuid = auth.uid()
+-                    UNION
+-                    SELECT sup.id_tienda FROM app_dat_supervisor sup WHERE sup.uuid = auth.uid()
+-                    UNION
+-                    SELECT aud.id_tienda FROM auditor aud           WHERE aud.uuid = auth.uid()
+-                    UNION
+-                    SELECT a.id_tienda
+-                      FROM app_dat_almacenero al
+-                      JOIN app_dat_almacen a ON al.id_almacen = a.id
+-                     WHERE al.uuid = auth.uid()
+-                    UNION
+-                    SELECT tpv.id_tienda
+-                      FROM app_dat_vendedor vend2
+-                      JOIN app_dat_tpv tpv ON vend2.id_tpv = tpv.id
+-                     WHERE vend2.uuid = auth.uid()
+-                ) AS tiendas_usuario
+-                WHERE tiendas_usuario.id_tienda = o.id_tienda
+-            )
+         ORDER BY o.created_at DESC
+         LIMIT  CASE WHEN limite_param = 0 THEN NULL ELSE limite_param END
+@@ -179,4 +199,20 @@ BEGIN
+                 'telefono',         of.datos_especificos->>'cliente_telefono'
+             ),
++            -- Contrato v1 a nivel de operacion: version y clave de la
++            -- huella de idempotencia (para rearmar la seleccion al
++            -- reimprimir sin tocar precios vigentes).
++            'version_monetaria', (
++                SELECT ov.version_monetaria
++                  FROM app_dat_operacion_venta ov
++                 WHERE ov.id_operacion = of.id
++                 LIMIT 1
++            ),
++            'client_uuid', (
++                SELECT i.client_uuid
++                  FROM app_dat_operacion_offline_idempotencia i
++                 WHERE i.id_operacion = of.id
++                   AND i.tipo = 'venta_v1'
++                 LIMIT 1
++            ),
+             'items', (
+                 SELECT jsonb_agg(jsonb_build_object(
+@@ -211,5 +247,20 @@ BEGIN
+                         )
+                         ELSE NULL
+-                    END
++                    END,
++                    -- Contrato v1 por linea: todo lo necesario para
++                    -- rearmar `seleccion` en el cliente.
++                    'version_monetaria',             ep.version_monetaria,
++                    'id_linea_cliente',              ep.id_linea_cliente,
++                    'moneda_venta',                  ep.moneda_venta,
++                    'id_medio_pago_seleccionado',    ep.id_medio_pago_seleccionado,
++                    'seleccion_pendiente',           ep.seleccion_pendiente,
++                    'precio_unitario_nativo',        ep.precio_unitario_nativo,
++                    'descuento_manual_unitario_nativo', ep.descuento_manual_unitario_nativo,
++                    'precio_unitario_neto_nativo',   ep.precio_unitario_neto_nativo,
++                    'importe_neto_nativo',           ep.importe_neto_nativo,
++                    'tasa_cambio_cup',               ep.tasa_cambio_cup,
++                    'snapshot_precio',               ep.snapshot_precio,
++                    'snapshot_tasa',                 ep.snapshot_tasa,
++                    'snapshot_descuentos',           ep.snapshot_descuentos
+                 ))
+                 FROM app_dat_extraccion_productos ep
+@@ -226,17 +277,21 @@ BEGIN
+             'pagos', (
+                 SELECT jsonb_agg(jsonb_build_object(
+-                    'medio_pago',           mp.denominacion,
+-                    'total',                pv.monto,
+-                    'total_sin_descuento',  pv.importe_sin_descuento,
+-                    'referencia_pago',      pv.referencia_pago,
+-                    'fecha_pago',           pv.fecha_pago,
+-                    'es_digital',           mp.es_digital,
+-                    'es_efectivo',          mp.es_efectivo,
+-                    'tipo_pago',            pv.tipo_pago
++                    'medio_pago',              mp.denominacion,
++                    'id_medio_pago',           mp.id,
++                    'monto',                   pv.monto,
++                    'total',                   pv.monto,
++                    'total_sin_descuento',     pv.importe_sin_descuento,
++                    'referencia_pago',         pv.referencia_pago,
++                    'fecha_pago',              pv.fecha_pago,
++                    'es_digital',              mp.es_digital,
++                    'es_efectivo',             mp.es_efectivo,
++                    'tipo_paago',               pv.tipo_pago,
++                    'moneda',                  COALESCE(NULLIF(upper(trim(pv.moneda)), ''), 'CUP'),
++                    'tasa_usd',                pv.tasa_usd,
++                    'monto_cup_equivalente',   pv.monto_cup_equivalente
+                 ))
+-                FROM app_dat_operacion_venta ov
+-                JOIN app_dat_pago_venta pv      ON ov.id_operacion = pv.id_operacion_venta
+-                JOIN app_nom_medio_pago mp       ON pv.id_medio_pago = mp.id
+-                WHERE ov.id_operacion = of.id
++                FROM app_dat_pago_venta pv
++                JOIN app_nom_medio_pago mp ON pv.id_medio_pago = mp.id
++                WHERE pv.id_operacion_venta = of.id
+                   AND mp.es_activo = TRUE
+             ),

@@ -1,0 +1,359 @@
+﻿##### fn_esperado_turno_por_moneda(bigint)
+@@ -12,2 +12 @@ AS $function$
+-    from public.app_dat_caja_turno
+-    where id = p_id_turno
++    from public.app_dat_caja_turno where id = p_id_turno
+@@ -19 +18,2 @@ AS $function$
+-  ),  pagos as (
++  ),
++  pagos as (
+@@ -23,5 +23,2 @@ AS $function$
+-      on o.uuid = t.creado_por
+-     and o.created_at >= t.fecha_apertura
+-     and o.created_at <= t.fecha_fin
+-    join public.app_dat_operacion_venta ov
+-      on ov.id_operacion = o.id and ov.id_tpv = t.id_tpv
++      on o.uuid = t.creado_por and o.created_at >= t.fecha_apertura and o.created_at <= t.fecha_fin
++    join public.app_dat_operacion_venta ov on ov.id_operacion = o.id and ov.id_tpv = t.id_tpv
+@@ -33,2 +30 @@ AS $function$
+-                    and eo.id = (select max(eo2.id) from public.app_dat_estado_operacion eo2
+-                                 where eo2.id_operacion = o.id))
++                    and eo.id = (select max(eo2.id) from public.app_dat_estado_operacion eo2 where eo2.id_operacion = o.id))
+@@ -38,2 +34 @@ AS $function$
+-    select 'CUP'::text as moneda,
+-           coalesce((select a.efectivo_inicial from arqueo a where a.moneda = 'CUP'),
++    select 'CUP'::text as moneda, coalesce((select a.efectivo_inicial from arqueo a where a.moneda='CUP'),
+@@ -42,2 +37 @@ AS $function$
+-    select 'USD',
+-           coalesce((select a.efectivo_inicial from arqueo a where a.moneda = 'USD'),
++    select 'USD', coalesce((select a.efectivo_inicial from arqueo a where a.moneda='USD'),
+@@ -49,2 +43 @@ AS $function$
+-    from arqueo a
+-    where a.moneda not in ('CUP','USD')
++    from arqueo a where a.moneda not in ('CUP','USD')
+@@ -52,4 +45,2 @@ AS $function$
+-  select b.moneda,
+-         b.inicial + coalesce(p.efectivo_nativo, 0)
+-  from base b
+-  left join pagos p on p.moneda = b.moneda
++  select b.moneda, b.inicial + coalesce(p.efectivo_nativo, 0)
++  from base b left join pagos p on p.moneda = b.moneda
+@@ -58,2 +49 @@ AS $function$
+-  from pagos p
+-  where not exists (select 1 from base b where b.moneda = p.moneda);
++  from pagos p where not exists (select 1 from base b where b.moneda = p.moneda);
+
+##### fn_fdi_repartir_ganancia()
+@@ -8,0 +9 @@ DECLARE
++    v_igual  boolean;
+@@ -9,0 +11 @@ DECLARE
++    v_n      integer;
+@@ -11,0 +14 @@ DECLARE
++    v_pct    numeric;
+@@ -15 +18,2 @@ BEGIN
+-    SELECT id_tienda INTO STRICT v_tienda FROM public.fdi_dat_liquidacion WHERE id = NEW.id_liquidacion;
++    SELECT id_tienda, repartir_igual INTO STRICT v_tienda, v_igual
++    FROM public.fdi_dat_liquidacion WHERE id = NEW.id_liquidacion;
+@@ -20 +24 @@ BEGIN
+-    SELECT sum(porcentaje), max(id) INTO v_total, v_ultimo
++    SELECT sum(porcentaje), max(id), count(*) INTO v_total, v_ultimo, v_n
+@@ -22 +26,4 @@ BEGIN
+-    IF v_total IS DISTINCT FROM 100::numeric THEN
++    IF v_n IS NULL OR v_n = 0 THEN
++        RAISE EXCEPTION 'No hay inversores activos para repartir la ganancia';
++    END IF;
++    IF NOT v_igual AND v_total IS DISTINCT FROM 100::numeric THEN
+@@ -30,2 +37,6 @@ BEGIN
+-        v_monto := CASE WHEN v_i.id = v_ultimo THEN NEW.monto_ganancia_retirada - v_asignado
+-                        ELSE trunc(NEW.monto_ganancia_retirada * v_i.porcentaje / 100, 2) END;
++        v_pct := CASE WHEN v_igual THEN 100.0 / v_n ELSE v_i.porcentaje END;
++        v_monto := CASE WHEN NOT v_igual AND v_i.id = v_ultimo
++                        THEN NEW.monto_ganancia_retirada - v_asignado
++                        ELSE trunc(NEW.monto_ganancia_retirada * v_pct / 100, 2) END;
+@@ -33 +44 @@ BEGIN
+-        VALUES (v_tienda, v_i.id, NEW.id, v_i.nombre, v_i.porcentaje, NEW.moneda, v_monto);
++        VALUES (v_tienda, v_i.id, NEW.id, v_i.nombre, v_pct, NEW.moneda, v_monto);
+
+##### fn_listar_motivos_extraccion()
+@@ -5 +4,0 @@
+- SET search_path TO 'public', 'pg_temp'
+@@ -8 +7 @@ BEGIN
+@@ -13 +12,13 @@ BEGIN
++    IF NOT EXISTS (
++        SELECT 1 FROM app_dat_almacenero WHERE uuid = auth.uid()
++        UNION
++        SELECT 1 FROM app_dat_supervisor WHERE uuid = auth.uid()
++        UNION
++        SELECT 1 FROM app_dat_gerente WHERE uuid = auth.uid()
++    ) THEN
++        RAISE EXCEPTION 'No tienes permisos para listar motivos de extracción';
++    END IF;
+@@ -19 +30 @@ BEGIN
+-        (me.created_at IS NOT NULL) AS es_activo,
++        (me.created_at IS NOT NULL) AS es_activo,  -- Asumimos que todos son activos (o puedes agregar un campo `activo`)
+
+##### fn_listar_ordenes(bigint,bigint,uuid,smallint,date,date,bigint,boolean,boolean,integer,integer)
+@@ -12,0 +14,3 @@ DECLARE
++    v_uid                   UUID := auth.uid();
++    v_id_tipo_venta         BIGINT;
++    v_tiendas               BIGINT[];
+@@ -15 +19 @@ BEGIN
+-    v_uuid_usuario := COALESCE(id_usuario_param, auth.uid());
++    v_uuid_usuario := COALESCE(id_usuario_param, v_uid);
+@@ -19,0 +24,33 @@ BEGIN
++    SELECT id INTO v_id_tipo_venta
++      FROM app_nom_tipo_operacion
++     WHERE LOWER(denominacion) = 'venta'
++     LIMIT 1;
++    SELECT array_agg(DISTINCT tiendas_usuario.id_tienda) INTO v_tiendas
++    FROM (
++        SELECT gr.id_tienda  FROM app_dat_gerente gr     WHERE gr.uuid = v_uid
++        UNION
++        SELECT sup.id_tienda FROM app_dat_supervisor sup WHERE sup.uuid = v_uid
++        UNION
++        SELECT aud.id_tienda FROM auditor aud            WHERE aud.uuid = v_uid
++        UNION
++        SELECT a.id_tienda
++          FROM app_dat_almacenero al
++          JOIN app_dat_almacen a ON al.id_almacen = a.id
++         WHERE al.uuid = v_uid
++        UNION
++        SELECT tpv.id_tienda
++          FROM app_dat_vendedor vend2
++          JOIN app_dat_tpv tpv ON vend2.id_tpv = tpv.id
++         WHERE vend2.uuid = v_uid
++    ) AS tiendas_usuario;
++    IF v_tiendas IS NULL THEN
++        RETURN;
++    END IF;
+@@ -62 +99 @@ BEGIN
+@@ -64,4 +101 @@ BEGIN
+-                WHEN o.id_tipo_operacion = (
+-                    SELECT id FROM app_nom_tipo_operacion
+-                     WHERE LOWER(denominacion) = 'venta' LIMIT 1
+-                ) THEN (
++                WHEN o.id_tipo_operacion = v_id_tipo_venta THEN (
+@@ -86,6 +120,3 @@ BEGIN
+-            (SELECT COUNT(*)::INTEGER
+-               FROM app_dat_extraccion_productos ep
+-              WHERE ep.id_operacion = o.id)     AS cantidad_items,
+-            (SELECT COALESCE(SUM(ep.importe), 0)
+-               FROM app_dat_extraccion_productos ep
+-              WHERE ep.id_operacion = o.id)     AS total_operacion
++            ep_agg.cantidad_items,
++            ep_agg.total_operacion
+@@ -95,0 +127,6 @@ BEGIN
++        LEFT JOIN LATERAL (
++            SELECT COUNT(*)::INTEGER                 AS cantidad_items,
++                   COALESCE(SUM(ep.importe), 0)      AS total_operacion
++              FROM app_dat_extraccion_productos ep
++             WHERE ep.id_operacion = o.id
++        ) ep_agg ON TRUE
+@@ -112,4 +149,3 @@ BEGIN
+-        LEFT JOIN app_dat_estado_operacion e
+-               ON e.id_operacion = o.id
+-              AND e.id = (
+-                  SELECT MAX(id) FROM app_dat_estado_operacion er
++        LEFT JOIN LATERAL (
++            SELECT er.estado
++              FROM app_dat_estado_operacion er
+@@ -117 +153,3 @@ BEGIN
+-              )
++             ORDER BY er.id DESC
++             LIMIT 1
++        ) e ON TRUE
+@@ -120 +158,3 @@ BEGIN
+-            (id_tienda_param IS NULL OR o.id_tienda = id_tienda_param)
++            o.id_tienda = ANY(v_tiendas)
++            AND (id_tienda_param IS NULL OR o.id_tienda = id_tienda_param)
+@@ -130,20 +169,0 @@ BEGIN
+-            AND EXISTS (
+-                SELECT 1 FROM (
+-                    SELECT gr.id_tienda  FROM app_dat_gerente gr    WHERE gr.uuid = auth.uid()
+-                    UNION
+-                    SELECT sup.id_tienda FROM app_dat_supervisor sup WHERE sup.uuid = auth.uid()
+-                    UNION
+-                    SELECT aud.id_tienda FROM auditor aud           WHERE aud.uuid = auth.uid()
+-                    UNION
+-                    SELECT a.id_tienda
+-                      FROM app_dat_almacenero al
+-                      JOIN app_dat_almacen a ON al.id_almacen = a.id
+-                     WHERE al.uuid = auth.uid()
+-                    UNION
+-                    SELECT tpv.id_tienda
+-                      FROM app_dat_vendedor vend2
+-                      JOIN app_dat_tpv tpv ON vend2.id_tpv = tpv.id
+-                     WHERE vend2.uuid = auth.uid()
+-                ) AS tiendas_usuario
+-                WHERE tiendas_usuario.id_tienda = o.id_tienda
+-            )
+@@ -180,0 +201,16 @@ BEGIN
++            'version_monetaria', (
++                SELECT ov.version_monetaria
++                  FROM app_dat_operacion_venta ov
++                 WHERE ov.id_operacion = of.id
++                 LIMIT 1
++            ),
++            'client_uuid', (
++                SELECT i.client_uuid
++                  FROM app_dat_operacion_offline_idempotencia i
++                 WHERE i.id_operacion = of.id
++                   AND i.tipo = 'venta_v1'
++                 LIMIT 1
++            ),
+@@ -213 +249,16 @@ BEGIN
+-                    END
++                    END,
++                    'version_monetaria',             ep.version_monetaria,
++                    'id_linea_cliente',              ep.id_linea_cliente,
++                    'moneda_venta',                  ep.moneda_venta,
++                    'id_medio_pago_seleccionado',    ep.id_medio_pago_seleccionado,
++                    'seleccion_pendiente',           ep.seleccion_pendiente,
++                    'precio_unitario_nativo',        ep.precio_unitario_nativo,
++                    'descuento_manual_unitario_nativo', ep.descuento_manual_unitario_nativo,
++                    'precio_unitario_neto_nativo',   ep.precio_unitario_neto_nativo,
++                    'importe_neto_nativo',           ep.importe_neto_nativo,
++                    'tasa_cambio_cup',               ep.tasa_cambio_cup,
++                    'snapshot_precio',               ep.snapshot_precio,
++                    'snapshot_tasa',                 ep.snapshot_tasa,
++                    'snapshot_descuentos',           ep.snapshot_descuentos
+@@ -228,0 +280,2 @@ BEGIN
++                    'id_medio_pago',           mp.id,
++                    'monto',                   pv.monto,
+@@ -235 +288,4 @@ BEGIN
+-                    'tipo_pago',            pv.tipo_pago
++                    'tipo_paago',               pv.tipo_pago,
++                    'moneda',                  COALESCE(NULLIF(upper(trim(pv.moneda)), ''), 'CUP'),
++                    'tasa_usd',                pv.tasa_usd,
++                    'monto_cup_equivalente',   pv.monto_cup_equivalente
+@@ -237,2 +293 @@ BEGIN
+-                FROM app_dat_operacion_venta ov
+-                JOIN app_dat_pago_venta pv      ON ov.id_operacion = pv.id_operacion_venta
++                FROM app_dat_pago_venta pv
+@@ -240 +295 @@ BEGIN
+-                WHERE ov.id_operacion = of.id
++                WHERE pv.id_operacion_venta = of.id
+
+##### fn_moneda_consolidacion(bigint)
+@@ -3 +3 @@
+- LANGUAGE sql
++ LANGUAGE plpgsql
+@@ -6,0 +7,5 @@ AS $function$
++#variable_conflict use_column
++BEGIN
++    PERFORM public.fn_config_tienda_exigir_lectura(p_id_tienda);
++    RETURN QUERY
+@@ -10,2 +15 @@ AS $function$
+-    where c.id_tienda = p_id_tienda
+-      and c.forzar_moneda_venta
++    where c.id_tienda = p_id_tienda and c.forzar_moneda_venta
+@@ -13,5 +17,2 @@ AS $function$
+-      and exists (
+-        select 1 from public.app_dat_tienda_moneda m
+-        where m.id_tienda = c.id_tienda
+-          and m.moneda = c.moneda_venta_forzada
+-          and m.activo)
++      and exists (select 1 from public.app_dat_tienda_moneda m
++                  where m.id_tienda = c.id_tienda and m.moneda = c.moneda_venta_forzada and m.activo)
+@@ -22,7 +23,2 @@ AS $function$
+-           coalesce(
+-             public.fn_tasa_cambio('CUP', cd.moneda, p_id_tienda, now()),
+-             1::numeric / nullif(
+-               public.fn_tasa_cambio(cd.moneda, 'CUP', p_id_tienda, now()), 0)
+-           ) as tasa
++           coalesce(public.fn_tasa_cambio('CUP', cd.moneda, p_id_tienda, now()),
++                    1::numeric / nullif(public.fn_tasa_cambio(cd.moneda, 'CUP', p_id_tienda, now()), 0)) as tasa
+@@ -31,4 +27 @@ AS $function$
+-  select coalesce(r.moneda, 'CUP')::text,
+-         coalesce(r.tasa, 1)::numeric,
+-         (r.moneda is null)::boolean
++  select coalesce(r.moneda, 'CUP')::text, coalesce(r.tasa, 1)::numeric, (r.moneda is null)::boolean
+@@ -36,0 +30,2 @@ AS $function$
++END;
+
+##### fn_obtener_ingredientes_recursivos(bigint,numeric)
+@@ -4 +3,0 @@
+- SET search_path TO 'public', 'pg_catalog'
+@@ -6,3 +5,3 @@ AS $function$
+-begin
+-  return query
+-  with recursive ingredientes_recursivos as (
++BEGIN
++  RETURN QUERY
++  WITH RECURSIVE ingredientes_recursivos AS (
+@@ -10 +9 @@ begin
+-    select
++    SELECT 
+@@ -14,3 +13,3 @@ begin
+-      array[p_id_producto_elaborado] as ruta_productos
+-    from public.app_dat_producto_ingredientes pi
+-    where pi.id_producto_elaborado = p_id_producto_elaborado
++      ARRAY[p_id_producto_elaborado] as ruta_productos
++    FROM app_dat_producto_ingredientes pi
++    WHERE pi.id_producto_elaborado = p_id_producto_elaborado
+@@ -18 +17 @@ begin
+-    union all
++    UNION ALL
+@@ -20,2 +19,2 @@ begin
+-    select
++    SELECT 
+@@ -26,6 +25,6 @@ begin
+-    from public.app_dat_producto_ingredientes pi
+-    inner join ingredientes_recursivos ir on pi.id_producto_elaborado = ir.id_ingrediente
+-    inner join public.app_dat_producto p on p.id = pi.id_producto_elaborado
+-    where p.es_elaborado = true
+-      and not (pi.id_producto_elaborado = any(ir.ruta_productos)) -- evitar ciclos
+-      and ir.nivel < 10                                            -- limite de seguridad
++    FROM app_dat_producto_ingredientes pi
++    INNER JOIN ingredientes_recursivos ir ON pi.id_producto_elaborado = ir.id_ingrediente
++    INNER JOIN app_dat_producto p ON p.id = pi.id_producto_elaborado
++    WHERE p.es_elaborado = true
++      AND NOT (pi.id_producto_elaborado = ANY(ir.ruta_productos)) -- Evitar ciclos infinitos
++      AND ir.nivel < 10 -- Límite de seguridad
+@@ -34 +33 @@ begin
+-  select
++  SELECT 
+@@ -36,7 +35,7 @@ begin
+-    sum(ir.cantidad_total) as cantidad_total_necesaria,
+-    max(ir.nivel) as nivel_recursion
+-  from ingredientes_recursivos ir
+-  inner join public.app_dat_producto p on p.id = ir.id_ingrediente
+-  where p.es_elaborado = false -- solo ingredientes finales (no elaborados)
+-  group by ir.id_ingrediente;
+-end;
++    SUM(ir.cantidad_total) as cantidad_total_necesaria,
++    MAX(ir.nivel) as nivel_recursion
++  FROM ingredientes_recursivos ir
++  INNER JOIN app_dat_producto p ON p.id = ir.id_ingrediente
++  WHERE p.es_elaborado = false -- Solo ingredientes finales (no elaborados)
++  GROUP BY ir.id_ingrediente;
++END;
+
+##### fn_obtener_licencia_firmada(bigint)
+@@ -18,0 +19 @@ BEGIN
++    PERFORM public.fn_config_tienda_exigir_lectura(p_id_tienda);
+
+##### fn_pago_venta_equivalente()
+@@ -6,3 +6 @@ AS $function$
+-declare
+-  v_moneda text;
+-  v_tasa   numeric;
++declare v_moneda text; v_tasa numeric;
+@@ -11,9 +9,2 @@ begin
+-  v_tasa := case
+-              when v_moneda = 'CUP' then 1
+-              else coalesce(new.tasa_cambio, new.tasa_usd)
+-            end;
++  v_tasa := case when v_moneda = 'CUP' then 1
++                 else coalesce(new.tasa_cambio, new.tasa_usd) end;
+@@ -25,10 +15,2 @@ begin
+-  if new.tasa_cambio is null then
+-    new.tasa_cambio := v_tasa;
+-  end if;
+-  if v_moneda = 'USD' and new.tasa_usd is null then
+-    new.tasa_usd := v_tasa;
+-  end if;
++  if new.tasa_cambio is null then new.tasa_cambio := v_tasa; end if;
++  if v_moneda = 'USD' and new.tasa_usd is null then new.tasa_usd := v_tasa; end if;
+
+

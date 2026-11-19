@@ -1,0 +1,294 @@
+﻿##### fn_pedir_item_cuenta_offline(uuid,bigint,bigint,numeric,numeric,bigint,bigint,bigint,bigint,numeric,bigint,jsonb,jsonb,text,text,text,uuid,boolean)
+@@ -5 +5 @@
+- SET search_path TO 'public'
++ SET search_path TO 'pg_catalog'
+@@ -8 +8,4 @@ DECLARE
+-    v_existing bigint;
++    v_actor uuid := auth.uid();
++    v_request jsonb;
++    v_existing public.app_dat_operacion_offline_idempotencia%ROWTYPE;
++    v_store bigint;
+@@ -12,4 +15,35 @@ BEGIN
+-    IF p_client_uuid IS NULL THEN
+-        RETURN jsonb_build_object('status','error',
+-            'message','Falta el client_uuid: sin el no se puede garantizar que el pedido no se duplique al reintentar',
+-            'error_code','CLIENT_UUID_REQUERIDO');
++    IF v_actor IS NULL OR p_client_uuid IS NULL OR p_id_cuenta IS NULL OR p_id_producto IS NULL THEN
++        RAISE EXCEPTION 'Solicitud no autorizada' USING ERRCODE = '42501';
++    END IF;
++    v_request := jsonb_build_object(
++        'version', 1,
++        'id_cuenta', p_id_cuenta,
++        'id_producto', p_id_producto,
++        'cantidad', p_cantidad,
++        'precio_unitario', p_precio_unitario,
++        'id_variante', p_id_variante,
++        'id_opcion_variante', p_id_opcion_variante,
++        'id_presentacion', p_id_presentacion,
++        'id_ubicacion', p_id_ubicacion,
++        'precio_base', p_precio_base,
++        'id_metodo_pago', p_id_metodo_pago,
++        'promotion_data', p_promotion_data,
++        'inventory_data', p_inventory_data,
++        'notas', p_notas,
++        'sku_producto', p_sku_producto,
++        'sku_ubicacion', p_sku_ubicacion,
++        'uuid_vendedor', p_uuid_vendedor,
++        'forzar_sin_stock', COALESCE(p_forzar_sin_stock, false)
++    );
++    PERFORM pg_advisory_xact_lock(hashtextextended(p_client_uuid::text, 0));
++    SELECT * INTO v_existing
++    FROM public.app_dat_operacion_offline_idempotencia
++    WHERE client_uuid = p_client_uuid
++    FOR UPDATE;
++    IF FOUND THEN
++        IF v_existing.tipo IS DISTINCT FROM 'pedir_item'
++           OR v_existing.uuid_usuario IS DISTINCT FROM v_actor
++           OR v_existing.m01_solicitud IS DISTINCT FROM v_request
++           OR v_existing.m01_id_tienda IS NULL THEN
++            RAISE EXCEPTION 'Clave no verificable o solicitud no autorizada; requiere revision'
++                USING ERRCODE = '42501';
+@@ -17,6 +50,0 @@ BEGIN
+-    SELECT id_operacion INTO v_existing
+-      FROM app_dat_operacion_offline_idempotencia
+-     WHERE client_uuid = p_client_uuid AND tipo = 'pedir_item';
+-    IF v_existing IS NOT NULL THEN
+@@ -27,10 +55,14 @@ BEGIN
+-                     'origen_stock',i.origen_stock,'id_cocina',i.id_cocina,
+-                     'cocina',ck.denominacion,'stock_movido',i.stock_movido,
+-                     'id_comanda_item',i.id_comanda_item,'id_comanda',ci.id_comanda,
+-                     'numero_comanda',co.numero,'estado_servicio',i.estado_servicio,
+-                     'message','Este pedido ya se habia registrado')
+-              FROM app_dat_mesa_cuenta_item i
+-              LEFT JOIN app_dat_cocina ck ON ck.id = i.id_cocina
+-              LEFT JOIN app_dat_comanda_item ci ON ci.id = i.id_comanda_item
+-              LEFT JOIN app_dat_comanda co ON co.id = ci.id_comanda
+-             WHERE i.id = v_existing
++                'origen', COALESCE(i.origen_stock, 'barra'),
++                'origen_stock', i.origen_stock,
++                'id_cocina', i.id_cocina, 'cocina', ck.denominacion,
++                'stock_movido', i.stock_movido,
++                'id_comanda_item', i.id_comanda_item,
++                'id_comanda', ci.id_comanda, 'numero_comanda', co.numero,
++                'estado_servicio', i.estado_servicio,
++                'message', 'Este pedido ya se habia registrado'
++            )
++            FROM public.app_dat_mesa_cuenta_item i
++            LEFT JOIN public.app_dat_cocina ck ON ck.id = i.id_cocina
++            LEFT JOIN public.app_dat_comanda_item ci ON ci.id = i.id_comanda_item
++            LEFT JOIN public.app_dat_comanda co ON co.id = ci.id_comanda
++            WHERE i.id = v_existing.id_operacion
+@@ -40,28 +72,6 @@ BEGIN
+-    v_res := fn_pedir_item_cuenta(
+-        p_id_cuenta          := p_id_cuenta,
+-        p_id_producto        := p_id_producto,
+-        p_cantidad           := p_cantidad,
+-        p_precio_unitario    := p_precio_unitario,
+-        p_id_variante        := p_id_variante,
+-        p_id_opcion_variante := p_id_opcion_variante,
+-        p_id_presentacion    := p_id_presentacion,
+-        p_id_ubicacion       := p_id_ubicacion,
+-        p_precio_base        := p_precio_base,
+-        p_id_metodo_pago     := p_id_metodo_pago,
+-        p_promotion_data     := p_promotion_data,
+-        p_inventory_data     := p_inventory_data,
+-        p_notas              := p_notas,
+-        p_sku_producto       := p_sku_producto,
+-        p_sku_ubicacion      := p_sku_ubicacion,
+-        p_uuid_vendedor      := p_uuid_vendedor,
+-        p_forzar_sin_stock   := p_forzar_sin_stock
+-    );
+-    IF (v_res->>'status') = 'success' THEN
+-        v_id_item := (v_res->>'id_item')::bigint;
+-        INSERT INTO app_dat_operacion_offline_idempotencia
+-            (client_uuid, id_operacion, tipo, uuid_usuario)
+-        VALUES (p_client_uuid, v_id_item, 'pedir_item', COALESCE(p_uuid_vendedor, auth.uid()))
+-        ON CONFLICT (client_uuid) DO NOTHING;
+-        v_res := v_res || jsonb_build_object('idempotent', false);
++    SELECT c.id_tienda INTO v_store
++    FROM public.app_dat_mesa_cuenta_abierta c
++    WHERE c.id = p_id_cuenta
++    FOR SHARE;
++    IF NOT FOUND OR v_store IS NULL THEN
++        RAISE EXCEPTION 'Solicitud no autorizada' USING ERRCODE = '42501';
+@@ -69,0 +80,8 @@ BEGIN
++    v_res := public.fn_pedir_item_cuenta_v2(
++        p_id_cuenta, p_id_producto, p_cantidad, p_precio_unitario,
++        p_id_variante, p_id_opcion_variante, p_id_presentacion, p_id_ubicacion,
++        p_precio_base, p_id_metodo_pago, p_promotion_data, p_inventory_data,
++        p_notas, p_sku_producto, p_sku_ubicacion, p_uuid_vendedor,
++        COALESCE(p_forzar_sin_stock, false)
++    );
++    IF (v_res->>'status') IS DISTINCT FROM 'success' THEN
+@@ -70,0 +89,9 @@ BEGIN
++    END IF;
++    v_id_item := NULLIF(v_res->>'id_item', '')::bigint;
++    IF v_id_item IS NULL THEN
++        RAISE EXCEPTION 'El servidor rechazó el pedido' USING ERRCODE = '42501';
++    END IF;
++    INSERT INTO public.app_dat_operacion_offline_idempotencia
++        (client_uuid, id_operacion, tipo, uuid_usuario, m01_solicitud, m01_id_tienda)
++    VALUES (p_client_uuid, v_id_item, 'pedir_item', v_actor, v_request, v_store);
++    RETURN v_res || jsonb_build_object('idempotent', false);
+
+##### fn_pedir_item_cuenta_v2(bigint,bigint,numeric,numeric,bigint,bigint,bigint,bigint,numeric,bigint,jsonb,jsonb,text,character varying,character varying,uuid,boolean)
+@@ -30 +30 @@ BEGIN
+@@ -66 +66 @@ BEGIN
+@@ -87,2 +87,2 @@ BEGIN
+@@ -117 +117 @@ BEGIN
+@@ -141 +141 @@ BEGIN
+@@ -178 +178 @@ BEGIN
+
+##### fn_registrar_cambio_estado_offline(uuid,bigint,smallint,uuid)
+@@ -4,0 +5 @@
++ SET search_path TO 'pg_catalog'
+@@ -7 +8,8 @@ DECLARE
+-    v_existing bigint;
++    v_actor uuid := auth.uid();
++    v_request jsonb;
++    v_existing public.app_dat_operacion_offline_idempotencia%ROWTYPE;
++    v_tipo text;
++    v_store bigint;
++    v_sale_actor uuid;
++    v_tpv bigint;
++    v_seller_ok boolean;
+@@ -9,2 +17,17 @@ BEGIN
+-    SELECT id_operacion INTO v_existing
++    IF v_actor IS NULL
++       OR p_client_uuid IS NULL
++       OR p_id_operacion IS NULL
++       OR p_nuevo_estado IS NULL THEN
++        RAISE EXCEPTION 'Solicitud no autorizada' USING ERRCODE = '42501';
++    END IF;
++    v_tipo := 'estado:' || p_nuevo_estado::text;
++    v_request := jsonb_build_object(
++        'version', 1,
++        'id_operacion', p_id_operacion,
++        'nuevo_estado', p_nuevo_estado,
++        'uuid_vendedor', p_uuid_usuario
++    );
++    PERFORM pg_advisory_xact_lock(hashtextextended(p_client_uuid::text, 0));
++    SELECT * INTO v_existing
+@@ -12 +35,2 @@ BEGIN
+-    WHERE client_uuid = p_client_uuid;
++    WHERE client_uuid = p_client_uuid
++    FOR UPDATE;
+@@ -14 +38,21 @@ BEGIN
+-    IF v_existing IS NOT NULL THEN
++    IF FOUND THEN
++        IF v_existing.tipo IS DISTINCT FROM v_tipo
++           OR v_existing.uuid_usuario IS DISTINCT FROM v_actor
++           OR v_existing.m01_solicitud IS DISTINCT FROM v_request
++           OR v_existing.m01_id_tienda IS NULL
++           OR v_existing.id_operacion IS DISTINCT FROM p_id_operacion THEN
++            RAISE EXCEPTION 'Clave no verificable o solicitud no autorizada; requiere revision'
++                USING ERRCODE = '42501';
++        END IF;
++        IF public.fn_config_tienda_puede_escribir(v_existing.m01_id_tienda) IS DISTINCT FROM true
++           AND NOT EXISTS (
++                SELECT 1
++                FROM public.app_dat_vendedor s
++                JOIN public.app_dat_trabajadores w ON w.id = s.id_trabajador
++                WHERE s.uuid = v_actor
++                  AND w.uuid = v_actor
++                  AND w.deleted_at IS NULL
++                  AND w.id_tienda = v_existing.m01_id_tienda
++           ) THEN
++            RAISE EXCEPTION 'Solicitud no autorizada' USING ERRCODE = '42501';
++        END IF;
+@@ -16 +60,2 @@ BEGIN
+-            'success', true, 'idempotent', true,
++            'success', true,
++            'idempotent', true,
+@@ -21 +66,37 @@ BEGIN
++    SELECT o.id_tienda, o.uuid, ov.id_tpv
++    INTO v_store, v_sale_actor, v_tpv
++    FROM public.app_dat_operaciones o
++    JOIN public.app_dat_operacion_venta ov ON ov.id_operacion = o.id
++    WHERE o.id = p_id_operacion
++    FOR SHARE OF o, ov;
++    IF NOT FOUND OR v_store IS NULL OR v_tpv IS NULL OR v_sale_actor IS NULL THEN
++        RAISE EXCEPTION 'Solicitud no autorizada' USING ERRCODE = '42501';
++    END IF;
++    PERFORM 1
++    FROM public.app_dat_tpv t
++    WHERE t.id = v_tpv AND t.id_tienda = v_store
++    FOR SHARE;
++    IF NOT FOUND THEN
++        RAISE EXCEPTION 'Solicitud no autorizada' USING ERRCODE = '42501';
++    END IF;
++    SELECT EXISTS (
++        SELECT 1
++        FROM public.app_dat_vendedor s
++        JOIN public.app_dat_trabajadores w ON w.id = s.id_trabajador
++        WHERE s.uuid = v_actor
++          AND s.id_tpv = v_tpv
++          AND w.uuid = v_actor
++          AND w.deleted_at IS NULL
++          AND w.id_tienda = v_store
++    ) INTO v_seller_ok;
++    IF p_uuid_usuario IS NOT NULL AND p_uuid_usuario IS DISTINCT FROM v_actor THEN
++        IF p_uuid_usuario IS DISTINCT FROM v_sale_actor
++           OR public.fn_config_tienda_puede_escribir(v_store) IS DISTINCT FROM true THEN
++            RAISE EXCEPTION 'Solicitud no autorizada' USING ERRCODE = '42501';
++        END IF;
++    ELSIF v_actor IS DISTINCT FROM v_sale_actor OR v_seller_ok IS DISTINCT FROM true THEN
++        RAISE EXCEPTION 'Solicitud no autorizada' USING ERRCODE = '42501';
++    END IF;
+@@ -23,3 +104 @@ BEGIN
+-        p_id_operacion := p_id_operacion,
+-        p_nuevo_estado := p_nuevo_estado,
+-        p_uuid_usuario := p_uuid_usuario
++        p_id_operacion, p_nuevo_estado, v_sale_actor
+@@ -29,3 +108,3 @@ BEGIN
+-        (client_uuid, id_operacion, tipo, uuid_usuario)
+-    VALUES (p_client_uuid, p_id_operacion, 'estado:' || p_nuevo_estado, p_uuid_usuario)
+-    ON CONFLICT (client_uuid) DO NOTHING;
++        (client_uuid, id_operacion, tipo, uuid_usuario, m01_solicitud, m01_id_tienda)
++    VALUES
++        (p_client_uuid, p_id_operacion, v_tipo, v_actor, v_request, v_store);
+
+##### fn_registrar_cambio_estado_operacion(bigint,smallint,uuid)
+@@ -5 +5,3 @@
+-AS $function$DECLARE
++ SET search_path TO 'pg_catalog', 'public'
++AS $function$
++DECLARE
+@@ -14,0 +17 @@ AS $function$DECLARE
++    v_presentacion_devolver BIGINT;
+@@ -93,0 +97,14 @@ BEGIN
++            v_presentacion_devolver := COALESCE(
++                v_productos_extraidos.id_presentacion,
++                (
++                    SELECT pp.id
++                    FROM app_dat_producto_presentacion pp
++                    WHERE pp.id_producto = v_productos_extraidos.id_producto
++                      AND pp.es_base
++                    ORDER BY pp.id
++                    LIMIT 1
++                )
++            );
+@@ -100 +117 @@ BEGIN
+-              AND COALESCE(id_presentacion, 0) = COALESCE(v_productos_extraidos.id_presentacion, 0)
++              AND COALESCE(id_presentacion, 0) = COALESCE(v_presentacion_devolver, 0)
+@@ -127 +144 @@ BEGIN
+-                v_productos_extraidos.id_presentacion,
++                v_presentacion_devolver,
+@@ -171 +188,3 @@ BEGIN
+@@ -178,0 +198,10 @@ BEGIN
++                IF v_ultimo_inventario.id_presentacion IS NULL THEN
++                    v_ultimo_inventario.id_presentacion := (
++                        SELECT pp.id
++                        FROM app_dat_producto_presentacion pp
++                        WHERE pp.id_producto = v_ingrediente.id_ingrediente
++                          AND pp.es_base
++                        ORDER BY pp.id
++                        LIMIT 1
++                    );
++                END IF;
+@@ -212 +241,2 @@ BEGIN
+-END;$function$
++END;
++$function$
+
+

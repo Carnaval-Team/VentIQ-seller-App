@@ -1,0 +1,12 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_desglose_monedas_turno(bigint,boolean).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_desglose_monedas_turno(bigint,boolean).sql"
+index 2949aff2..c6997710 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_desglose_monedas_turno(bigint,boolean).sql"
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_desglose_monedas_turno(bigint,boolean).sql"
+@@ -34,6 +34,5 @@ AS $function$
+     where exists (select 1 from public.app_dat_estado_operacion eo
+                   where eo.id_operacion = o.id and eo.estado = 2
+-                    and eo.id = (select max(eo2.id) from public.app_dat_estado_operacion eo2
+-                                 where eo2.id_operacion = o.id))
++                    and eo.id = (select max(eo2.id) from public.app_dat_estado_operacion eo2 where eo2.id_operacion = o.id))
+     group by 1
+   ),

@@ -1,0 +1,3 @@
+﻿@@ -124 +124 @@ BEGIN
+-        ORDER BY id_producto, id DESC
++        ORDER BY id_producto, fecha_desde DESC

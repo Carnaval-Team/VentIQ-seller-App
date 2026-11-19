@@ -1,0 +1,58 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_agregar_producto_orden_pendiente_v2(bigint,jsonb,uuid).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_agregar_producto_orden_pendiente_v2(bigint,jsonb,uuid).sql"
+index e462ab3b..dc12d58e 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_agregar_producto_orden_pendiente_v2(bigint,jsonb,uuid).sql"
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_agregar_producto_orden_pendiente_v2(bigint,jsonb,uuid).sql"
+@@ -26,8 +26,8 @@ BEGIN
+ 
+     IF v_estado IS DISTINCT FROM 1 THEN
+-        RETURN jsonb_build_object('status','error','message','Solo se pueden editar Ã³rdenes en estado Pendiente');
++        RETURN jsonb_build_object('status','error','message','Solo se pueden editar órdenes en estado Pendiente');
+     END IF;
+ 
+-    -- 2. Validar campos mÃ­nimos
++    -- 2. Validar campos mínimos
+     IF p_producto->>'id_producto'     IS NULL OR
+        p_producto->>'cantidad'        IS NULL OR
+@@ -39,5 +39,5 @@ BEGIN
+     v_id_medio_pago := (p_producto->>'id_medio_pago')::INT;
+ 
+-    -- 3. Buscar si ya existe una extracciÃ³n con el mismo producto/variante/ubicaciÃ³n
++    -- 3. Buscar si ya existe una extracción con el mismo producto/variante/ubicación
+     SELECT ep.id, ep.cantidad
+       INTO v_extraccion_exist
+@@ -51,5 +51,5 @@ BEGIN
+ 
+     IF FOUND THEN
+-        -- â”€â”€ Producto duplicado: redirigir a la version _v2 del ajuste â”€â”€
++        -- ── Producto duplicado: redirigir a la version _v2 del ajuste ──
+         v_nueva_cantidad := v_extraccion_exist.cantidad + (p_producto->>'cantidad')::NUMERIC;
+ 
+@@ -63,5 +63,5 @@ BEGIN
+     v_importe := (p_producto->>'cantidad')::NUMERIC * (p_producto->>'precio_unitario')::NUMERIC;
+ 
+-    -- 4. Insertar extracciÃ³n (producto nuevo en la orden). La cantidad de la
++    -- 4. Insertar extracción (producto nuevo en la orden). La cantidad de la
+     --    LINEA sigue en la presentacion vendida.
+     INSERT INTO public.app_dat_extraccion_productos (
+@@ -123,11 +123,11 @@ BEGIN
+         -- que la viva: la linea y el ledger hablan la misma unidad.
+     ELSE
+-        -- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+-        -- FASE 2 / C5 Â· Descuento de materia prima por EQUIVALENTE BASE.
++        -- ══════════════════════════════════════════════════════════════════
++        -- FASE 2 / C5 · Descuento de materia prima por EQUIVALENTE BASE.
+         -- La linea trae la cantidad en la presentacion vendida; la receta se
+         -- multiplica por unidades base. Si la linea no trae presentacion,
+         -- fn_cantidad_en_base devuelve la cantidad sin tocar (comportamiento
+         -- anterior, compatible con builds viejos).
+-        -- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
++        -- ══════════════════════════════════════════════════════════════════
+         v_id_almacen := COALESCE(
+             public.fn_almacen_de_extraccion(v_id_extraccion),
+@@ -180,5 +180,5 @@ BEGIN
+      WHERE id_operacion = p_id_operacion;
+ 
+-    -- 8. Registrar/acumular pago para el mÃ©todo seleccionado
++    -- 8. Registrar/acumular pago para el método seleccionado
+     IF EXISTS (
+         SELECT 1 FROM public.app_dat_pago_venta

@@ -1,0 +1,12 @@
+﻿@@ -7,9 +7,2 @@ BEGIN
+-    SELECT
+-        epc.id,
+-        epc.monto_entrega,
+-        epc.motivo_entrega,
+-        epc.nombre_recibe,
+-        epc.nombre_autoriza,
+-        epc.fecha_entrega,
+-        epc.id_medio_pago,
+-        ct.estado,
++    SELECT epc.id, epc.monto_entrega, epc.motivo_entrega, epc.nombre_recibe,
++           epc.nombre_autoriza, epc.fecha_entrega, epc.id_medio_pago, ct.estado,

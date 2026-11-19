@@ -1,0 +1,17 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_registrar_pago_venta(bigint,jsonb).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_registrar_pago_venta(bigint,jsonb).sql"
+index d932a48e..557f558f 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_registrar_pago_venta(bigint,jsonb).sql"
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_registrar_pago_venta(bigint,jsonb).sql"
+@@ -3,5 +3,5 @@
+  LANGUAGE plpgsql
+  SECURITY DEFINER
+- SET search_path TO 'public'
++ SET search_path TO 'pg_catalog', 'public'
+ AS $function$
+ DECLARE
+@@ -39,4 +39,5 @@ BEGIN
+     v_id_medio_pago := (v_pago->>'id_medio_pago')::SMALLINT;
+ 
++    -- ANTES: CASE ... ELSE 'CUP' (coacción silenciosa). AHORA: rechazo explícito.
+     v_moneda := UPPER(COALESCE(v_pago->>'moneda', 'CUP'));
+     IF v_moneda NOT IN ('CUP', 'USD') THEN

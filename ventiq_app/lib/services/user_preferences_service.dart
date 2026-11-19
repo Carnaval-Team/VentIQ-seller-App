@@ -1582,7 +1582,9 @@ class UserPreferencesService {
 
     // Agregar nueva orden con timestamp y flag de pendiente
     orderData['is_pending_sync'] = true;
-    orderData['created_offline_at'] = DateTime.now().toIso8601String();
+    // El checkout ya manda la hora corregida (ServerTimeService): no pisarla
+    // con la del dispositivo.
+    orderData['created_offline_at'] ??= DateTime.now().toIso8601String();
     orderData['offline_user_id'] ??= prefs.getString(_userIdKey);
     orderData['offline_store_id'] ??= prefs.getInt(_offlineInventoryStoreKey);
     final existingUuid = orderData['client_uuid']?.toString();
@@ -1701,7 +1703,9 @@ class UserPreferencesService {
   }
 
   Future<int> getSellerVisiblePendingOrdersCount() async {
-    return (await getSellerVisiblePendingOrders()).length;
+    // Las ya sincronizadas siguen en la cola hasta el cierre: no son pendientes.
+    final orders = await getSellerVisiblePendingOrders();
+    return orders.where((o) => o['synced'] != true).length;
   }
 
   /// Eliminar una orden pendiente específica (después de sincronizar)
@@ -1822,6 +1826,12 @@ class UserPreferencesService {
     final json = prefs.getString(_pendingOrdersKey);
     if (json == null) return 0;
 
+    // Las del turno que sigue abierto se conservan hasta el cierre
+    // (purgeFinalizedSyncedOrdersForTurno). Si la copia del servidor queda
+    // fuera de la ventana del turno, esta es la única que ve el vendedor.
+    final open = await getOpenOfflineTurno();
+    final openLocalId = open?['local_id']?.toString();
+
     final decoded = jsonDecode(json) as List<dynamic>;
     final remaining = <Map<String, dynamic>>[];
     var removed = 0;
@@ -1834,8 +1844,14 @@ class UserPreferencesService {
           rawOp is int
               ? rawOp
               : (rawOp is num ? rawOp.toInt() : int.tryParse('$rawOp'));
+      final delTurnoAbierto =
+          openLocalId != null &&
+          order['local_turno_id']?.toString() == openLocalId;
 
-      if (synced && opId != null && serverOpIds.contains(opId)) {
+      if (synced &&
+          opId != null &&
+          serverOpIds.contains(opId) &&
+          !delTurnoAbierto) {
         removed++;
         continue;
       }
@@ -3177,6 +3193,17 @@ class UserPreferencesService {
   /// `created_offline_at`/`tipo_operacion` heredados de una entrada previa
   /// de la cola offline, para que no se confunda con una apertura hecha
   /// realmente offline (ver `_isOfflineTurno` en apertura_screen.dart).
+  /// La apertura más temprana de dos valores (texto ISO o DateTime).
+  /// Compara instantes: una fecha local sin offset y una del servidor con
+  /// offset se comparan bien. Devuelve el valor original elegido.
+  static String? aperturaMasTemprana(dynamic local, dynamic servidor) {
+    final l = DateTime.tryParse(local?.toString() ?? '');
+    final s = DateTime.tryParse(servidor?.toString() ?? '');
+    if (l == null) return servidor?.toString();
+    if (s == null) return local.toString();
+    return l.isBefore(s) ? local.toString() : servidor.toString();
+  }
+
   Future<void> saveOfflineTurno(Map<String, dynamic> turnoData) async {
     final estado = turnoData['estado'];
     if (estado != null && estado != 1) {
@@ -3273,6 +3300,32 @@ class UserPreferencesService {
       final localId = open['local_id']?.toString();
       if (localId == null) return;
       final usuario = await resolveUsuario() ?? open['usuario']?.toString();
+      // Mismo turno: el servidor puede traer la apertura con la hora del sync.
+      // Se conserva la más temprana para no perder la ventana de las ventas
+      // offline ni la fecha que alinea el servidor.
+      final openServerId = open['server_id_turno'];
+      final mismoTurno =
+          openServerId == null ||
+          (incomingId != null &&
+              openServerId.toString() == incomingId.toString());
+      final aperturaPrevia =
+          open['apertura'] is Map
+              ? (open['apertura'] as Map)['fecha_apertura']
+              : null;
+      final fechaAperturaApertura =
+          mismoTurno
+              ? aperturaMasTemprana(
+                aperturaPrevia ?? open['fecha_apertura'],
+                turnoData['fecha_apertura'],
+              )
+              : turnoData['fecha_apertura'];
+      final fechaAperturaTurno =
+          mismoTurno
+              ? aperturaMasTemprana(
+                open['fecha_apertura'],
+                turnoData['fecha_apertura'],
+              )
+              : (turnoData['fecha_apertura'] ?? open['fecha_apertura']);
       final mergedApertura = {
         ...Map<String, dynamic>.from(
           open['apertura'] is Map
@@ -3280,6 +3333,8 @@ class UserPreferencesService {
               : {},
         ),
         ...turnoData,
+        if (fechaAperturaApertura != null)
+          'fecha_apertura': fechaAperturaApertura,
         'local_id': localId,
         'local_turno_id': localId,
         'origen_apertura': 'online',
@@ -3289,7 +3344,7 @@ class UserPreferencesService {
       await upsertOfflineTurno({
         ...open,
         'apertura': mergedApertura,
-        'fecha_apertura': turnoData['fecha_apertura'] ?? open['fecha_apertura'],
+        'fecha_apertura': fechaAperturaTurno,
         'id_tpv': turnoData['id_tpv'] ?? open['id_tpv'],
         'id_vendedor': turnoData['id_vendedor'] ?? open['id_vendedor'],
         if (usuario != null) 'usuario': usuario,

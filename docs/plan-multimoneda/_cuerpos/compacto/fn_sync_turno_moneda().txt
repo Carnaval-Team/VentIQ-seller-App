@@ -1,0 +1,20 @@
+﻿@@ -7,2 +7 @@ AS $function$
+-declare
+-  v_esperado record;
++declare v_esperado record;
+@@ -30,2 +28 @@ begin
+-    for v_esperado in
+-      select moneda, esperado from public.fn_esperado_turno_por_moneda(new.id)
++    for v_esperado in select moneda, esperado from public.fn_esperado_turno_por_moneda(new.id)
+@@ -36,2 +33 @@ begin
+-              case when v_esperado.moneda = 'USD'
+-                   then coalesce(new.efectivo_inicial_usd, 0)
++              case when v_esperado.moneda = 'USD' then coalesce(new.efectivo_inicial_usd,0)
+@@ -40,2 +36 @@ begin
+-              case when v_esperado.moneda = 'USD'
+-                   then new.efectivo_real_usd
++              case when v_esperado.moneda = 'USD' then new.efectivo_real_usd
+@@ -45,2 +40 @@ begin
+-            efectivo_real     = coalesce(excluded.efectivo_real,
+-                                         public.app_dat_caja_turno_moneda.efectivo_real),
++            efectivo_real = coalesce(excluded.efectivo_real, public.app_dat_caja_turno_moneda.efectivo_real),

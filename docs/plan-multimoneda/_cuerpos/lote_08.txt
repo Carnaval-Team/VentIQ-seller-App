@@ -1,0 +1,415 @@
+﻿##### fn_registrar_venta_offline_v4(uuid,bigint,uuid,jsonb,text,text,text,smallint,bigint,timestamp with time zone,jsonb)
+@@ -5 +5 @@
+- SET search_path TO 'public', 'pg_catalog'
++ SET search_path TO 'pg_catalog'
+@@ -8,2 +8,10 @@ DECLARE
+-  v_existing_op bigint; v_result jsonb; v_op bigint; v_ok boolean;
+-  v_id_tienda bigint;
++    v_actor uuid := auth.uid();
++    v_request jsonb;
++    v_existing public.app_dat_operacion_offline_idempotencia%ROWTYPE;
++    v_matches integer := 0;
++    v_seller_id bigint;
++    v_store bigint;
++    v_result jsonb;
++    v_op bigint;
++    v_ok boolean;
++    v_fecha timestamptz;
+@@ -11,17 +19,84 @@ BEGIN
+-  SELECT t.id_tienda INTO v_id_tienda FROM public.app_dat_tpv t WHERE t.id = p_id_tpv;
+-  IF v_id_tienda IS NULL THEN
+-    RETURN jsonb_build_object('status','error','error_code','TPV_NOT_FOUND','message','El TPV no existe');
+-  END IF;
+-  PERFORM public.check_user_has_access_to_tienda(v_id_tienda);
+-  SELECT i.id_operacion INTO v_existing_op
+-  FROM public.app_dat_operacion_offline_idempotencia i
+-  WHERE i.client_uuid = p_client_uuid;
+-  IF v_existing_op IS NOT NULL THEN
+-    v_op := v_existing_op;
+-    v_result := jsonb_build_object('status','success','id_operacion',v_op,'idempotent',true,
+-  ELSE
+-    v_result := public.fn_registrar_venta_v3(p_id_tpv, p_uuid, p_productos, p_codigo_promocion,
+-                                             p_denominacion, p_observaciones, p_estado_inicial, p_id_cliente);
+-    IF v_result IS NULL OR v_result->>'status' IS DISTINCT FROM 'success' THEN RETURN v_result; END IF;
++    IF v_actor IS NULL OR p_client_uuid IS NULL OR p_id_tpv IS NULL OR p_uuid IS NULL THEN
++        RAISE EXCEPTION 'Solicitud no autorizada' USING ERRCODE = '42501';
++    END IF;
++    v_request := jsonb_build_object(
++        'version', 1,
++        'id_tpv', p_id_tpv,
++        'uuid_vendedor', p_uuid,
++        'productos', p_productos,
++        'codigo_promocion', p_codigo_promocion,
++        'denominacion', p_denominacion,
++        'observaciones', p_observaciones,
++        'estado_inicial', p_estado_inicial,
++        'id_cliente', p_id_cliente,
++        'fecha_creacion', p_fecha_creacion,
++        'pagos', p_pagos
++    );
++    PERFORM pg_advisory_xact_lock(hashtextextended(p_client_uuid::text, 0));
++    SELECT * INTO v_existing
++    FROM public.app_dat_operacion_offline_idempotencia
++    WHERE client_uuid = p_client_uuid
++    FOR UPDATE;
++    IF FOUND THEN
++        IF v_existing.tipo IS DISTINCT FROM 'venta_v4'
++           OR v_existing.uuid_usuario IS DISTINCT FROM v_actor
++           OR (v_existing.m01_solicitud - 'fecha_creacion') IS DISTINCT FROM (v_request - 'fecha_creacion')
++           OR v_existing.m01_id_tienda IS NULL
++           OR v_existing.id_operacion IS NULL THEN
++            RAISE EXCEPTION 'Clave no verificable o solicitud no autorizada; requiere revision'
++                USING ERRCODE = '42501';
++        END IF;
++        IF public.fn_config_tienda_puede_escribir(v_existing.m01_id_tienda) IS DISTINCT FROM true
++           AND NOT EXISTS (
++                SELECT 1
++                FROM public.app_dat_vendedor v
++                JOIN public.app_dat_trabajadores w ON w.id = v.id_trabajador
++                WHERE v.uuid = v_actor
++                  AND w.uuid = v_actor
++                  AND w.deleted_at IS NULL
++                  AND w.id_tienda = v_existing.m01_id_tienda
++           ) THEN
++            RAISE EXCEPTION 'Solicitud no autorizada' USING ERRCODE = '42501';
++        END IF;
++        RETURN jsonb_build_object(
++            'status', 'success',
++            'id_operacion', v_existing.id_operacion,
++            'idempotent', true,
++            'client_uuid', p_client_uuid,
++            'message', 'Operación ya registrada previamente (idempotente)'
++        );
++    END IF;
++    FOR v_seller_id, v_store IN
++        SELECT v.id, t.id_tienda
++        FROM public.app_dat_vendedor v
++        JOIN public.app_dat_trabajadores w ON w.id = v.id_trabajador
++        JOIN public.app_dat_tpv t ON t.id = v.id_tpv
++        WHERE v.uuid = p_uuid
++          AND v.id_tpv = p_id_tpv
++          AND t.id = p_id_tpv
++          AND w.uuid = p_uuid
++          AND w.id_tienda = t.id_tienda
++          AND w.deleted_at IS NULL
++        FOR SHARE OF v, w, t
++    LOOP
++        v_matches := v_matches + 1;
++    END LOOP;
++    IF v_matches IS DISTINCT FROM 1
++       OR v_store IS NULL
++       OR (p_uuid IS DISTINCT FROM v_actor
++           AND public.fn_config_tienda_puede_escribir(v_store) IS DISTINCT FROM true) THEN
++        RAISE EXCEPTION 'Solicitud no autorizada' USING ERRCODE = '42501';
++    END IF;
++    v_result := public.fn_registrar_venta_v3(
++        p_id_tpv, p_uuid, p_productos, p_codigo_promocion,
++        p_denominacion, p_observaciones, p_estado_inicial, p_id_cliente
++    );
++    IF v_result IS NULL OR v_result->>'status' IS DISTINCT FROM 'success' THEN
++        RETURN v_result;
++    END IF;
+@@ -29,6 +104,2 @@ BEGIN
+-    INSERT INTO public.app_dat_operacion_offline_idempotencia(client_uuid, id_operacion, tipo, uuid_usuario)
+-    VALUES (p_client_uuid, v_op, 'venta_v4', p_uuid) ON CONFLICT(client_uuid) DO NOTHING;
+-    IF p_fecha_creacion IS NOT NULL THEN
+-      UPDATE public.app_dat_operaciones SET created_at = p_fecha_creacion WHERE id = v_op;
+-      UPDATE public.app_dat_operacion_venta SET created_at = p_fecha_creacion WHERE id_operacion = v_op;
++    IF v_op IS NULL THEN
++        RAISE EXCEPTION 'Registro de venta incompleto';
+@@ -36 +107,15 @@ BEGIN
+-    v_result := v_result || jsonb_build_object('idempotent', false, 'client_uuid', p_client_uuid);
++    INSERT INTO public.app_dat_operacion_offline_idempotencia
++        (client_uuid, id_operacion, tipo, uuid_usuario, m01_solicitud, m01_id_tienda)
++    VALUES
++        (p_client_uuid, v_op, 'venta_v4', v_actor, v_request, v_store);
++    IF p_fecha_creacion IS NOT NULL THEN
++        v_fecha := LEAST(p_fecha_creacion, now());
++        UPDATE public.app_dat_operaciones
++        SET created_at = v_fecha
++        WHERE id = v_op;
++        UPDATE public.app_dat_operacion_venta
++        SET created_at = v_fecha
++        WHERE id_operacion = v_op;
+@@ -39,3 +124,3 @@ BEGIN
+-  IF p_pagos IS NOT NULL AND jsonb_typeof(p_pagos) = 'array' AND jsonb_array_length(p_pagos) > 0 THEN
++    IF p_pagos IS NOT NULL
++       AND jsonb_typeof(p_pagos) = 'array'
++       AND jsonb_array_length(p_pagos) > 0 THEN
+@@ -44 +129 @@ BEGIN
++            RAISE EXCEPTION 'No se pudieron registrar los pagos de la operación %', v_op;
+@@ -49 +134 @@ BEGIN
+-  RETURN v_result;
++    RETURN v_result || jsonb_build_object('idempotent', false, 'client_uuid', p_client_uuid);
+
+##### fn_reporte_ventas_con_proveedor_por_turno(bigint,date,date,bigint)
+@@ -37,0 +38,17 @@ BEGIN
++    turnos AS MATERIALIZED (
++        SELECT
++            ct.id_tpv,
++            ct.id_operacion_apertura,
++            ct.id_operacion_cierre,
++            v.uuid
++        FROM app_dat_caja_turno ct
++        JOIN app_dat_vendedor v ON v.id = ct.id_vendedor
++        JOIN app_dat_tpv tp ON tp.id = ct.id_tpv
++        WHERE tp.id_tienda = p_id_tienda
++          AND ct.fecha_apertura::date >= COALESCE(p_fecha_desde, CURRENT_DATE)
++          AND ct.fecha_apertura::date <= COALESCE(p_fecha_hasta, CURRENT_DATE)
++    ),
++    max_op AS MATERIALIZED (
++        SELECT MAX(o2.id) AS max_id FROM app_dat_operaciones o2
++    ),
+@@ -52,0 +70,5 @@ BEGIN
++        JOIN turnos t
++          ON t.uuid = o.uuid
++         AND ov.id_tpv = t.id_tpv
++         AND o.id >= t.id_operacion_apertura
++         AND o.id <= COALESCE(t.id_operacion_cierre, (SELECT max_id FROM max_op))
+@@ -62,2 +83,0 @@ BEGIN
+-          AND o.created_at >= COALESCE(p_fecha_desde, CURRENT_DATE)::timestamptz
+-          AND o.created_at <  (COALESCE(p_fecha_hasta, CURRENT_DATE) + INTERVAL '1 day')::timestamptz
+
+##### fn_reporte_ventas_con_proveedor_por_turno_v2(bigint,date,date,bigint)
+@@ -35,2 +35,2 @@ BEGIN
+
+##### fn_reporte_ventas_por_moneda(bigint,date,date,bigint)
+@@ -23,3 +22,0 @@ AS $function$
+@@ -32,7 +29,2 @@ AS $function$
+-  select a.moneda,
+-         a.operaciones,
+-         a.importe_nativo,
+-         a.importe_base,
+-         a.efectivo_nativo,
+-         a.digital_nativo,
+-         a.tasa_promedio,
++  select a.moneda, a.operaciones, a.importe_nativo, a.importe_base,
++         a.efectivo_nativo, a.digital_nativo, a.tasa_promedio,
+@@ -40,4 +32,2 @@ AS $function$
+-         case when a.moneda = c.moneda
+-              then a.importe_nativo            -- exacto: es la divisa que se cobró
+-              else a.importe_base * c.tasa_cup -- aproximado: cambio de hoy
+-         end::numeric
++         case when a.moneda = c.moneda then a.importe_nativo
++              else a.importe_base * c.tasa_cup end::numeric
+
+##### fn_reporte_ventas_por_turno(uuid,date,date,bigint)
+@@ -4,2 +4,2 @@
+- STABLE SECURITY DEFINER
+- SET search_path TO 'public', 'pg_temp'
++ SECURITY DEFINER
++ SET search_path TO 'public'
+@@ -15,5 +15,3 @@ BEGIN
+-  SELECT tipo.id
+-    INTO v_id_tipo_venta
+-    FROM public.app_nom_tipo_operacion tipo
+-   WHERE LOWER(tipo.denominacion) = 'venta'
+-   ORDER BY tipo.id
++  SELECT id INTO v_id_tipo_venta
++  FROM app_nom_tipo_operacion
++  WHERE LOWER(denominacion) = 'venta'
+@@ -22,4 +19,0 @@ BEGIN
+-  IF v_id_tipo_venta IS NULL THEN
+-    RETURN;
+-  END IF;
+@@ -29,23 +23,16 @@ BEGIN
+-      ct.id AS turno_id,
+-      ct.id_tpv AS turno_tpv_id,
+-      tp.denominacion AS turno_tpv_nombre,
+-      ct.estado::smallint AS turno_estado,
+-      ct.fecha_apertura AS turno_apertura,
+-      ct.fecha_cierre AS turno_cierre,
+-      ct.id_operacion_apertura AS op_apertura,
+-      COALESCE(
+-        ct.id_operacion_cierre,
+-        (SELECT MAX(o2.id) FROM public.app_dat_operaciones o2)
+-      ) AS op_cierre_efectivo,
+-      vendedor.uuid AS vendedor_uuid,
+-      trabajador.nombres AS vendedor_nombres,
+-      trabajador.apellidos AS vendedor_apellidos,
+-      CONCAT_WS(' ', trabajador.nombres, trabajador.apellidos)::varchar
+-        AS vendedor_nombre_completo
+-    FROM public.app_dat_caja_turno ct
+-    INNER JOIN public.app_dat_tpv tp
+-      ON tp.id = ct.id_tpv
+-    INNER JOIN public.app_dat_vendedor vendedor
+-      ON vendedor.id = ct.id_vendedor
+-    INNER JOIN public.app_dat_trabajadores trabajador
+-      ON trabajador.id = vendedor.id_trabajador
++      ct.id AS tid,
++      ct.id_tpv AS ttpv,
++      tp.denominacion AS ttpv_nombre,
++      ct.estado AS testado,
++      ct.fecha_apertura AS tapertura,
++      ct.fecha_cierre AS tcierre,
++      v.uuid AS tuuid,
++      t.nombres AS tnombres,
++      t.apellidos AS tapellidos,
++      (t.nombres || ' ' || t.apellidos)::varchar AS tnombre_completo,
++      ct.fecha_apertura AS tinicio,
++      COALESCE(ct.fecha_cierre, NOW()) AS tfin
++    FROM app_dat_caja_turno ct
++    JOIN app_dat_tpv tp ON tp.id = ct.id_tpv
++    JOIN app_dat_vendedor v ON v.id = ct.id_vendedor
++    JOIN app_dat_trabajadores t ON t.id = v.id_trabajador
+@@ -55 +42 @@ BEGIN
+-      AND (p_uuid_usuario IS NULL OR vendedor.uuid = p_uuid_usuario)
++      AND (p_uuid_usuario IS NULL OR v.uuid = p_uuid_usuario)
+@@ -63 +50 @@ BEGIN
+-    FROM public.app_dat_extraccion_productos ep
++    FROM app_dat_extraccion_productos ep
+@@ -72 +59 @@ BEGIN
+-    FROM public.app_dat_pago_venta pv
++    FROM app_dat_pago_venta pv
+@@ -75,3 +62,3 @@ BEGIN
+-  ventas AS (
+-    SELECT DISTINCT ON (o.id)
+-      t.turno_id,
++  ventas_turno AS (
++    SELECT
++      tr.tid,
+@@ -80,9 +67,9 @@ BEGIN
+-      COALESCE(ppo.total_productos, 0) AS total_productos,
+-      COALESCE(ppo.total_importe, 0) AS total_importe,
+-      COALESCE(ppo.productos_diferentes, 0) AS productos_diferentes,
+-      COALESCE(pago.total_efectivo, 0) AS total_efectivo,
+-      COALESCE(pago.total_transferencia, 0) AS total_transferencia,
+-      COALESCE(pago.total_general, 0) AS total_general
+-    FROM turnos t
+-    INNER JOIN public.app_dat_operaciones o
+-      ON o.uuid = t.vendedor_uuid
++      ppo.total_productos,
++      ppo.total_importe,
++      ppo.productos_diferentes,
++      pago.total_efectivo,
++      pago.total_transferencia,
++      pago.total_general
++    FROM turnos tr
++    JOIN app_dat_operaciones o
++      ON o.uuid = tr.tuuid
+@@ -90,3 +77,3 @@ BEGIN
+-     AND o.id >= t.op_apertura
+-     AND o.id <= t.op_cierre_efectivo
+-    INNER JOIN public.app_dat_operacion_venta ov
++     AND o.created_at >= tr.tinicio
++     AND o.created_at <= tr.tfin
++    JOIN app_dat_operacion_venta ov
+@@ -94 +81 @@ BEGIN
+-     AND ov.id_tpv = t.turno_tpv_id
++     AND ov.id_tpv = tr.ttpv
+@@ -96 +83 @@ BEGIN
+-    INNER JOIN LATERAL (
++    JOIN LATERAL (
+@@ -98 +85 @@ BEGIN
+-      FROM public.app_dat_estado_operacion eo
++      FROM app_dat_estado_operacion eo
+@@ -103,6 +90,2 @@ BEGIN
+-    LEFT JOIN productos_por_operacion ppo
+-      ON ppo.id_operacion = o.id
+-    LEFT JOIN pagos_por_operacion pago
+-      ON pago.id_operacion_venta = o.id
+-    WHERE (p_id_tienda IS NULL OR o.id_tienda = p_id_tienda)
+-    ORDER BY o.id, t.turno_id
++    LEFT JOIN productos_por_operacion ppo ON ppo.id_operacion = o.id
++    LEFT JOIN pagos_por_operacion pago ON pago.id_operacion_venta = ov.id_operacion
+@@ -111,21 +94,21 @@ BEGIN
+-    t.turno_id,
+-    t.turno_tpv_id,
+-    t.turno_tpv_nombre,
+-    t.turno_estado,
+-    t.turno_apertura,
+-    t.turno_cierre,
+-    t.vendedor_uuid,
+-    t.vendedor_nombres,
+-    t.vendedor_apellidos,
+-    t.vendedor_nombre_completo,
+-    COUNT(v.id_operacion)::bigint,
+-    COALESCE(SUM(v.total_productos), 0)::numeric,
+-    COALESCE(SUM(v.total_efectivo), 0)::numeric,
+-    COALESCE(SUM(v.total_transferencia), 0)::numeric,
+-    COALESCE(SUM(v.total_general), 0)::numeric,
+-    COALESCE(SUM(v.total_importe), 0)::numeric,
+-    COALESCE(SUM(v.productos_diferentes), 0)::bigint,
+-    MIN(v.created_at),
+-    MAX(v.created_at)
+-  FROM turnos t
+-  LEFT JOIN ventas v ON v.turno_id = t.turno_id
++    tr.tid,
++    tr.ttpv,
++    tr.ttpv_nombre,
++    tr.testado,
++    tr.tapertura,
++    tr.tcierre,
++    tr.tuuid,
++    tr.tnombres,
++    tr.tapellidos,
++    tr.tnombre_completo,
++    COUNT(vt.id_operacion)::bigint,
++    COALESCE(SUM(vt.total_productos), 0),
++    COALESCE(SUM(vt.total_efectivo), 0),
++    COALESCE(SUM(vt.total_transferencia), 0),
++    COALESCE(SUM(vt.total_general), 0),
++    COALESCE(SUM(vt.total_importe), 0),
++    COALESCE(SUM(vt.productos_diferentes), 0)::bigint,
++    MIN(vt.created_at),
++    MAX(vt.created_at)
++  FROM turnos tr
++  LEFT JOIN ventas_turno vt ON vt.tid = tr.tid
+@@ -133,11 +116,11 @@ BEGIN
+-    t.turno_id,
+-    t.turno_tpv_id,
+-    t.turno_tpv_nombre,
+-    t.turno_estado,
+-    t.turno_apertura,
+-    t.turno_cierre,
+-    t.vendedor_uuid,
+-    t.vendedor_nombres,
+-    t.vendedor_apellidos,
+-    t.vendedor_nombre_completo
+-  ORDER BY t.turno_apertura DESC, t.turno_tpv_id, t.turno_id;
++    tr.tid,
++    tr.ttpv,
++    tr.ttpv_nombre,
++    tr.testado,
++    tr.tapertura,
++    tr.tcierre,
++    tr.tuuid,
++    tr.tnombres,
++    tr.tapellidos,
++    tr.tnombre_completo
++  ORDER BY tr.tapertura DESC, tr.ttpv, tr.tid;
+
+##### fn_reporte_ventas_por_turno_v2(uuid,date,date,bigint)
+@@ -5 +5 @@
+- SET search_path TO 'public', 'pg_temp'
++ SET search_path TO 'public'
+@@ -7,2 +7,2 @@ AS $function$
+-      WITH base AS (
+-        SELECT * FROM public.fn_reporte_ventas_por_turno(
++      with base as (
++        select * from public.fn_reporte_ventas_por_turno(
+@@ -11,3 +11,3 @@ AS $function$
+-      SELECT b.*, d.desglose_monedas, d.total_base
+-      FROM base b
+-      CROSS JOIN LATERAL public.fn_desglose_monedas_turno(b.id_turno, false) d;
++      select b.*, d.desglose_monedas, d.total_base
++      from base b
++      cross join lateral public.fn_desglose_monedas_turno(b.id_turno, false) d;
+
+##### fn_resumen_diario_cierre_v4(bigint,uuid)
+@@ -11,2 +11 @@ AS $function$
+-  from base b
+-  cross join lateral public.fn_desglose_monedas_turno(b.turno_id, false) d;
++  from base b cross join lateral public.fn_desglose_monedas_turno(b.turno_id, false) d;
+
+##### fn_resumen_turno_kpi_v2(bigint,bigint,timestamp with time zone,timestamp with time zone)
+@@ -8,2 +8 @@ AS $function$
+-    select * from public.fn_resumen_turno_kpi(p_id_tpv, p_id_vendedor,
+-                                              p_fecha_desde, p_fecha_hasta)
++    select * from public.fn_resumen_turno_kpi(p_id_tpv, p_id_vendedor, p_fecha_desde, p_fecha_hasta)
+@@ -12,2 +11 @@ AS $function$
+-  from base b
+-  cross join lateral public.fn_desglose_monedas_turno(b.turno_id, true) d;
++  from base b cross join lateral public.fn_desglose_monedas_turno(b.turno_id, true) d;
+
+

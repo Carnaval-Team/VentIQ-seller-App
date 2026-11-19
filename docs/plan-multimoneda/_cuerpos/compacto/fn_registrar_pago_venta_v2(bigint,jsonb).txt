@@ -1,0 +1,3 @@
+﻿@@ -5 +5 @@
+- SET search_path TO 'public'
++ SET search_path TO 'pg_catalog', 'public'

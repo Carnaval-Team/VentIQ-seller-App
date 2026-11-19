@@ -1,0 +1,17 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_resumen_turno_por_id_v2(bigint).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_resumen_turno_por_id_v2(bigint).sql"
+index 34d14a51..8500f085 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_resumen_turno_por_id_v2(bigint).sql"
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_resumen_turno_por_id_v2(bigint).sql"
+@@ -5,10 +5,7 @@
+  SET search_path TO 'public'
+ AS $function$
+-  with base as (
+-    select * from public.fn_resumen_turno_por_id(p_turno_id)
+-  )
++  with base as (select * from public.fn_resumen_turno_por_id(p_turno_id))
+   select b.*, d.desglose_monedas, d.total_base
+-  from base b
+-  cross join lateral public.fn_desglose_monedas_turno(b.turno_id, true) d;
++  from base b cross join lateral public.fn_desglose_monedas_turno(b.turno_id, true) d;
+ $function$
+ 

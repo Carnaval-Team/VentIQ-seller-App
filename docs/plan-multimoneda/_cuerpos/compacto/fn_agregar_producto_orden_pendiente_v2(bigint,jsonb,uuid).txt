@@ -1,0 +1,9 @@
+﻿@@ -28 +28 @@ BEGIN
++        RETURN jsonb_build_object('status','error','message','Solo se pueden editar órdenes en estado Pendiente');
+@@ -31 +31 @@ BEGIN
+@@ -41 +41 @@ BEGIN
+@@ -53 +53 @@ BEGIN
+@@ -65 +65 @@ BEGIN
+@@ -125,2 +125,2 @@ BEGIN
+@@ -131 +131 @@ BEGIN
+@@ -182 +182 @@ BEGIN

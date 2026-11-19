@@ -1,0 +1,74 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_check_update(character varying,character varying,integer).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_check_update(character varying,character varying,integer).sql"
+index f13d694b..8a17ddd2 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_check_update(character varying,character varying,integer).sql"	
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_check_update(character varying,character varying,integer).sql"	
+@@ -2,45 +2,29 @@
+  RETURNS json
+  LANGUAGE plpgsql
+- STABLE SECURITY DEFINER
+- SET search_path TO 'public'
+ AS $function$
+-declare
+-  v_latest       public.app_versiones%rowtype;
+-  v_hay          boolean := false;
+-  v_build_actual integer := coalesce(p_build_actual, 0);
+-begin
+-  -- Última versión activa de la app. `id` como desempate: si dos filas
+-  -- comparten build, gana la insertada después.
+-  select v.* into v_latest
+-  from public.app_versiones v
+-  where v.app_name = p_app_name
+-    and v.activa = true
+-  order by v.build_number desc, v.id desc
+-  limit 1;
+-
+-  if found and coalesce(v_latest.build_number, 0) > v_build_actual then
+-    v_hay := true;
+-  end if;
+-
+-  return json_build_object(
+-    -- ── claves originales (mismo significado) ──
+-    'hay_actualizacion',  v_hay,
+-    'version_disponible', coalesce(v_latest.version_actual, ''),
+-    'obligatoria',        coalesce(v_latest.actualizacion_obligatoria, false)
+-                          or public.fn_version_menor(p_version_actual, v_latest.version_minima),
+-    'version_minima',     coalesce(v_latest.version_minima, ''),
+-    'fecha_lanzamiento',  coalesce(v_latest.fecha_lanzamiento, now()),
+-    -- ── claves nuevas (72/75: null o [] cuando no hay actualización) ──
+-    'id_version',         case when v_hay then v_latest.id else null end,
+-    'build_disponible',   case when v_hay then v_latest.build_number else null end,
+-    'titulo',             case when v_hay then v_latest.titulo else null end,
+-    'novedades',          case
+-                            when v_hay and jsonb_typeof(v_latest.novedades) = 'array'
+-                              then v_latest.novedades
+-                            else '[]'::jsonb
+-                          end,
+-    'url_descarga',       case when v_hay then v_latest.url_descarga else null end
+-  );
+-end;
++DECLARE
++    v_latest RECORD;
++    v_hay_update BOOLEAN := FALSE;
++BEGIN
++    -- Obtener última versión activa
++    SELECT * INTO v_latest
++    FROM app_versiones
++    WHERE app_name = p_app_name AND activa = TRUE
++    ORDER BY build_number DESC
++    LIMIT 1;
++    
++    -- Verificar si hay actualización
++    IF FOUND AND v_latest.build_number > p_build_actual THEN
++        v_hay_update := TRUE;
++    END IF;
++    
++    RETURN json_build_object(
++        'hay_actualizacion', v_hay_update,
++        'version_disponible', COALESCE(v_latest.version_actual, ''),
++        'obligatoria', COALESCE(v_latest.actualizacion_obligatoria, false),
++        'version_minima', COALESCE(v_latest.version_minima, ''),
++        'fecha_lanzamiento', COALESCE(v_latest.fecha_lanzamiento, NOW())
++    );
++END;
+ $function$
+ 

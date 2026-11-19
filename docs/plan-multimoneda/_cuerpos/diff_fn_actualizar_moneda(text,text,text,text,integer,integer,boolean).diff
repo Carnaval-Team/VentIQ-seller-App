@@ -1,0 +1,27 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_actualizar_moneda(text,text,text,text,integer,integer,boolean).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_actualizar_moneda(text,text,text,text,integer,integer,boolean).sql"
+index fe745447..b54d8edf 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_actualizar_moneda(text,text,text,text,integer,integer,boolean).sql"
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_actualizar_moneda(text,text,text,text,integer,integer,boolean).sql"
+@@ -19,14 +19,11 @@ BEGIN
+   END IF;
+ 
+-  -- No se puede desactivar la moneda base ni una con pagos registrados
+   IF p_activo IS FALSE THEN
+     IF v_es_base THEN
+       RAISE EXCEPTION 'No se puede desactivar la moneda base (%)', v_codigo;
+     END IF;
+-    SELECT count(*) INTO v_pagos
+-    FROM public.app_dat_pago_venta WHERE moneda = v_codigo;
++    SELECT count(*) INTO v_pagos FROM public.app_dat_pago_venta WHERE moneda = v_codigo;
+     IF v_pagos > 0 THEN
+-      RAISE EXCEPTION 'No se puede desactivar %: tiene % pagos registrados',
+-        v_codigo, v_pagos;
++      RAISE EXCEPTION 'No se puede desactivar %: tiene % pagos registrados', v_codigo, v_pagos;
+     END IF;
+   END IF;
+@@ -42,5 +39,4 @@ BEGIN
+   WHERE codigo = v_codigo;
+ 
+-  -- Mantener el puente alineado
+   UPDATE public.tipos_moneda SET
+     denominacion = coalesce(nullif(trim(p_nombre),''), denominacion),

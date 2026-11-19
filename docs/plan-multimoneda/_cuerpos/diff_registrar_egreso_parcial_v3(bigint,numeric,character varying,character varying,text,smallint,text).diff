@@ -1,0 +1,38 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\registrar_egreso_parcial_v3(bigint,numeric,character varying,character varying,text,smallint,text).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\registrar_egreso_parcial_v3(bigint,numeric,character varying,character varying,text,smallint,text).sql"
+index d81b4d3f..d9295dc2 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\registrar_egreso_parcial_v3(bigint,numeric,character varying,character varying,text,smallint,text).sql"	
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\registrar_egreso_parcial_v3(bigint,numeric,character varying,character varying,text,smallint,text).sql"	
+@@ -5,28 +5,18 @@
+  SET search_path TO 'public'
+ AS $function$
+-declare
+-  v_res    jsonb;
+-  v_id     bigint;
+-  v_moneda text;
++declare v_res jsonb; v_id bigint; v_moneda text;
+ begin
+-  v_moneda := upper(trim(coalesce(nullif(p_moneda, ''), 'CUP')));
+-
++  v_moneda := upper(trim(coalesce(nullif(p_moneda,''),'CUP')));
+   if not exists (select 1 from public.monedas m where m.codigo = v_moneda and m.activo) then
+     raise exception 'La moneda % no existe o no está activa en el catálogo', v_moneda;
+   end if;
+-
+-  v_res := public.registrar_egreso_parcial_v2(
+-             p_id_turno, p_monto_entrega, p_nombre_recibe,
++  v_res := public.registrar_egreso_parcial_v2(p_id_turno, p_monto_entrega, p_nombre_recibe,
+              p_nombre_autoriza, p_motivo_entrega, p_id_medio_pago);
+-
+   if coalesce((v_res->>'success')::boolean, false) then
+-    v_id := nullif(v_res->>'egreso_id', '')::bigint;
++    v_id := nullif(v_res->>'egreso_id','')::bigint;
+     if v_id is not null then
+-      update public.app_dat_entregas_parciales_caja
+-      set moneda = v_moneda
+-      where id = v_id;
++      update public.app_dat_entregas_parciales_caja set moneda = v_moneda where id = v_id;
+     end if;
+   end if;
+-
+   return v_res;
+ end $function$

@@ -1,0 +1,356 @@
+﻿##### fn_cerrar_turno_offline_monedas(uuid,bigint,uuid,jsonb,jsonb,text,timestamp with time zone)
+@@ -5 +5 @@
+- SET search_path TO 'public'
++ SET search_path TO 'pg_catalog'
+@@ -7 +7 @@ AS $function$
+-declare
++DECLARE
+@@ -13,16 +13,20 @@ declare
+-begin
+-  if p_efectivo_real_por_moneda is null
+-     or jsonb_typeof(p_efectivo_real_por_moneda) <> 'object' then
+-    raise exception 'Se esperaba un objeto {"MONEDA": monto} de efectivo real';
+-  end if;
+-  v_cup := coalesce(public.fn_jsonb_monto(p_efectivo_real_por_moneda, 'CUP'), 0);
+-  v_usd := coalesce(public.fn_jsonb_monto(p_efectivo_real_por_moneda, 'USD'), 0);
+-  select ct.id into v_turno_id
+-  from public.app_dat_caja_turno ct
+-  where ct.id_tpv = p_id_tpv and ct.estado = 1 and ct.creado_por = p_usuario
+-  order by ct.fecha_apertura desc
+-  limit 1;
++BEGIN
++    IF p_efectivo_real_por_moneda IS NULL
++       OR jsonb_typeof(p_efectivo_real_por_moneda) <> 'object' THEN
++        RAISE EXCEPTION 'Se esperaba un objeto {"MONEDA": monto} de efectivo real';
++    END IF;
++    v_cup := COALESCE(public.fn_jsonb_monto(p_efectivo_real_por_moneda, 'CUP'), 0);
++    v_usd := COALESCE(public.fn_jsonb_monto(p_efectivo_real_por_moneda, 'USD'), 0);
++    PERFORM set_config(
++        'app.m01_caja_extra',
++        jsonb_build_object(
++            'efectivo_por_moneda', p_efectivo_real_por_moneda,
++            'efectivo_usd', v_usd
++        )::text,
++        true
++    );
++    SELECT ct.id INTO v_turno_id
++    FROM public.app_dat_caja_turno ct
++    WHERE ct.id_tpv = p_id_tpv AND ct.estado = 1 AND ct.creado_por = p_usuario
++    ORDER BY ct.fecha_apertura DESC
++    LIMIT 1;
+@@ -37,7 +41,10 @@ begin
+-    p_efectivo_real_usd  := v_usd);
+-  if (v_res->>'status') = 'success' and v_turno_id is not null then
+-    for v_esperado in
+-      select moneda, esperado from public.fn_esperado_turno_por_moneda(v_turno_id)
+-    loop
+-      insert into public.app_dat_caja_turno_moneda
++        p_efectivo_real_usd := v_usd
++    );
++    IF COALESCE((v_res->>'idempotent')::boolean, false) THEN
++        RETURN v_res;
++    END IF;
++    IF (v_res->>'status') = 'success' AND v_turno_id IS NOT NULL THEN
++        FOR v_esperado IN
++            SELECT moneda, esperado FROM public.fn_esperado_turno_por_moneda(v_turno_id)
++        LOOP
++            INSERT INTO public.app_dat_caja_turno_moneda
+@@ -45,5 +52,7 @@ begin
+-      values (v_turno_id, v_esperado.moneda,
+-              coalesce((select m.efectivo_inicial
+-                        from public.app_dat_caja_turno_moneda m
+-                        where m.id_turno = v_turno_id
+-                          and m.moneda = v_esperado.moneda), 0),
++            VALUES (
++                v_turno_id, v_esperado.moneda,
++                COALESCE((
++                    SELECT m.efectivo_inicial
++                    FROM public.app_dat_caja_turno_moneda m
++                    WHERE m.id_turno = v_turno_id AND m.moneda = v_esperado.moneda
++                ), 0),
+@@ -51,5 +60,8 @@ begin
+-              public.fn_jsonb_monto(p_efectivo_real_por_moneda, v_esperado.moneda))
+-      on conflict (id_turno, moneda) do update
+-        set efectivo_esperado = excluded.efectivo_esperado,
+-            efectivo_real     = coalesce(excluded.efectivo_real,
+-                                         public.app_dat_caja_turno_moneda.efectivo_real),
++                public.fn_jsonb_monto(p_efectivo_real_por_moneda, v_esperado.moneda)
++            )
++            ON CONFLICT (id_turno, moneda) DO UPDATE
++                SET efectivo_esperado = excluded.efectivo_esperado,
++                    efectivo_real = COALESCE(
++                        excluded.efectivo_real,
++                        public.app_dat_caja_turno_moneda.efectivo_real
++                    ),
+@@ -57,5 +69,5 @@ begin
+-    end loop;
+-  end if;
+-  return v_res;
+-end $function$
++        END LOOP;
++    END IF;
++    RETURN v_res;
++END;
++$function$
+
+##### fn_cerrar_turno_offline_usd(uuid,bigint,numeric,uuid,jsonb,text,timestamp with time zone,numeric)
+@@ -5 +5 @@
+- SET search_path TO 'public'
++ SET search_path TO 'pg_catalog'
+@@ -8,3 +8,3 @@ DECLARE
+-  v_result JSONB;
+-  v_turno_id BIGINT;
+-  v_efectivo_esperado_usd NUMERIC := 0;
++    v_result jsonb;
++    v_turno_id bigint;
++    v_efectivo_esperado_usd numeric := 0;
+@@ -11,0 +12,7 @@ BEGIN
++    IF NULLIF(btrim(COALESCE(current_setting('app.m01_caja_extra', true), '')), '') IS NULL THEN
++        PERFORM set_config(
++            'app.m01_caja_extra',
++            jsonb_build_object('efectivo_usd', p_efectivo_real_usd)::text,
++            true
++        );
++    END IF;
+@@ -18,9 +24,0 @@ BEGIN
+-  SELECT COALESCE(SUM(pv.monto), 0) INTO v_efectivo_esperado_usd
+-  FROM public.app_dat_pago_venta pv
+-  JOIN public.app_dat_operacion_venta ov
+-    ON ov.id_operacion = pv.id_operacion_venta
+-  JOIN public.app_nom_medio_pago mp ON mp.id = pv.id_medio_pago
+-  WHERE pv.moneda = 'USD'
+-    AND mp.es_efectivo = TRUE
+-    AND ov.id_turno_apertura = v_turno_id;
+@@ -30,0 +29,10 @@ BEGIN
++    IF COALESCE((v_result->>'idempotent')::boolean, false) THEN
++        RETURN v_result;
++    END IF;
++    SELECT COALESCE(SUM(pv.monto), 0) INTO v_efectivo_esperado_usd
++    FROM public.app_dat_pago_venta pv
++    JOIN public.app_dat_operacion_venta ov ON ov.id_operacion = pv.id_operacion_venta
++    JOIN public.app_nom_medio_pago mp ON mp.id = pv.id_medio_pago
++    WHERE pv.moneda = 'USD' AND mp.es_efectivo IS TRUE
++      AND ov.id_turno_apertura = v_turno_id;
+@@ -37,2 +45,2 @@ BEGIN
+-          ELSE p_efectivo_real_usd -
+-            (COALESCE(efectivo_inicial_usd, 0) + v_efectivo_esperado_usd)
++                ELSE p_efectivo_real_usd
++                     - (COALESCE(efectivo_inicial_usd, 0) + v_efectivo_esperado_usd)
+
+##### fn_cerrar_turno_tpv_monedas(bigint,uuid,jsonb,jsonb,text)
+@@ -7,5 +7 @@ AS $function$
+-declare
+-  v_turno   record;
+-  v_ok      boolean;
+-  v_cup     numeric;
+-  v_usd     numeric;
++declare v_turno record; v_ok boolean; v_cup numeric; v_usd numeric;
+@@ -13,2 +9 @@ begin
+-  if p_efectivo_real_por_moneda is null
+-     or jsonb_typeof(p_efectivo_real_por_moneda) <> 'object' then
++  if p_efectivo_real_por_moneda is null or jsonb_typeof(p_efectivo_real_por_moneda) <> 'object' then
+@@ -17,3 +12 @@ begin
+-  select * into v_turno
+-  from public.app_dat_caja_turno
++  select * into v_turno from public.app_dat_caja_turno
+@@ -21,5 +14,2 @@ begin
+-  order by fecha_apertura desc
+-  limit 1;
+-  if not found then
+-    return false;
+-  end if;
++  order by fecha_apertura desc limit 1;
++  if not found then return false; end if;
+@@ -30 +19,0 @@ begin
+@@ -32,5 +21,2 @@ begin
+-            p_id_tpv            := p_id_tpv,
+-            p_efectivo_real     := v_cup,
+-            p_usuario           := p_usuario,
+-            p_productos         := p_productos,
+-            p_observaciones     := p_observaciones,
++            p_id_tpv := p_id_tpv, p_efectivo_real := v_cup, p_usuario := p_usuario,
++            p_productos := p_productos, p_observaciones := p_observaciones,
+@@ -38,3 +24 @@ begin
+-  if not coalesce(v_ok, false) then
+-    return false;
+-  end if;
++  if not coalesce(v_ok, false) then return false; end if;
+@@ -42,2 +25,0 @@ begin
+@@ -45,2 +27 @@ begin
+-    select upper(trim(pv.moneda)) as moneda,
+-           sum(pv.monto) as efectivo_nativo
++    select upper(trim(pv.moneda)) as moneda, sum(pv.monto) as efectivo_nativo
+@@ -51,2 +32 @@ begin
+-    where ov.id_tpv = p_id_tpv
+-      and o.uuid = p_usuario
++    where ov.id_tpv = p_id_tpv and o.uuid = p_usuario
+@@ -55,2 +35 @@ begin
+-      and exists (
+-        select 1 from public.app_dat_estado_operacion eo
++      and exists (select 1 from public.app_dat_estado_operacion eo
+@@ -58,2 +37 @@ begin
+-          and eo.id = (select max(eo2.id) from public.app_dat_estado_operacion eo2
+-                       where eo2.id_operacion = o.id))
++                    and eo.id = (select max(eo2.id) from public.app_dat_estado_operacion eo2 where eo2.id_operacion = o.id))
+@@ -63,3 +41 @@ begin
+-    select moneda, efectivo_inicial
+-    from public.app_dat_caja_turno_moneda
+-    where id_turno = v_turno.id
++    select moneda, efectivo_inicial from public.app_dat_caja_turno_moneda where id_turno = v_turno.id
+@@ -71,2 +47 @@ begin
+-    from inicial i
+-    full join pagos p on p.moneda = i.moneda
++    from inicial i full join pagos p on p.moneda = i.moneda
+@@ -74,2 +49 @@ begin
+-  insert into public.app_dat_caja_turno_moneda
+-    (id_turno, moneda, efectivo_inicial, efectivo_esperado, efectivo_real)
++  insert into public.app_dat_caja_turno_moneda (id_turno, moneda, efectivo_inicial, efectivo_esperado, efectivo_real)
+@@ -82,2 +56 @@ begin
+-        efectivo_real     = excluded.efectivo_real,
+-        updated_at        = now();
++        efectivo_real = excluded.efectivo_real, updated_at = now();
+
+##### fn_check_update(character varying,character varying,integer)
+@@ -4,2 +3,0 @@
+- STABLE SECURITY DEFINER
+- SET search_path TO 'public'
+@@ -7,13 +5,10 @@ AS $function$
+-declare
+-  v_latest       public.app_versiones%rowtype;
+-  v_hay          boolean := false;
+-  v_build_actual integer := coalesce(p_build_actual, 0);
+-begin
+-  select v.* into v_latest
+-  from public.app_versiones v
+-  where v.app_name = p_app_name
+-    and v.activa = true
+-  order by v.build_number desc, v.id desc
+-  limit 1;
++DECLARE
++    v_latest RECORD;
++    v_hay_update BOOLEAN := FALSE;
++BEGIN
++    SELECT * INTO v_latest
++    FROM app_versiones
++    WHERE app_name = p_app_name AND activa = TRUE
++    ORDER BY build_number DESC
++    LIMIT 1;
+@@ -21,3 +16,4 @@ begin
+-  if found and coalesce(v_latest.build_number, 0) > v_build_actual then
+-    v_hay := true;
+-  end if;
++    IF FOUND AND v_latest.build_number > p_build_actual THEN
++        v_hay_update := TRUE;
++    END IF;
+@@ -25,18 +21,6 @@ begin
+-  return json_build_object(
+-    'hay_actualizacion',  v_hay,
+-    'version_disponible', coalesce(v_latest.version_actual, ''),
+-    'obligatoria',        coalesce(v_latest.actualizacion_obligatoria, false)
+-                          or public.fn_version_menor(p_version_actual, v_latest.version_minima),
+-    'version_minima',     coalesce(v_latest.version_minima, ''),
+-    'fecha_lanzamiento',  coalesce(v_latest.fecha_lanzamiento, now()),
+-    'id_version',         case when v_hay then v_latest.id else null end,
+-    'build_disponible',   case when v_hay then v_latest.build_number else null end,
+-    'titulo',             case when v_hay then v_latest.titulo else null end,
+-    'novedades',          case
+-                            when v_hay and jsonb_typeof(v_latest.novedades) = 'array'
+-                              then v_latest.novedades
+-                            else '[]'::jsonb
+-                          end,
+-    'url_descarga',       case when v_hay then v_latest.url_descarga else null end
++    RETURN json_build_object(
++        'hay_actualizacion', v_hay_update,
++        'version_disponible', COALESCE(v_latest.version_actual, ''),
++        'obligatoria', COALESCE(v_latest.actualizacion_obligatoria, false),
++        'version_minima', COALESCE(v_latest.version_minima, ''),
++        'fecha_lanzamiento', COALESCE(v_latest.fecha_lanzamiento, NOW())
+@@ -44 +28 @@ begin
+-end;
++END;
+
+##### fn_crear_moneda(text,text,text,text,integer,integer)
+@@ -30 +29,0 @@ BEGIN
+@@ -38,5 +37 @@ BEGIN
+-  RETURN jsonb_build_object(
+-    'status', 'success',
+-    'codigo', v_codigo,
+-    'id_tipos_moneda', v_nuevo_id
+-  );
++  RETURN jsonb_build_object('status','success','codigo',v_codigo,'id_tipos_moneda',v_nuevo_id);
+
+##### fn_dashboard_carnaval_proveedor(bigint,date,date)
+@@ -102,3 +102,2 @@ BEGIN
+-            SUM(cantidad) FILTER (WHERE status = 'Completado')              AS productos_vendidos,
+-            SUM(monto) FILTER (WHERE status = 'Completado')                 AS monto_total
++            SUM(cantidad)                                                   AS productos_vendidos,
++            SUM(monto)                                                      AS monto_total
+@@ -108,4 +107 @@ BEGIN
+-        SELECT
+-            status,
+-            COUNT(DISTINCT order_id) AS count,
+-            SUM(monto)               AS monto
++        SELECT status, COUNT(DISTINCT order_id) AS count
+@@ -136,3 +131,0 @@ BEGIN
+-        SELECT id, status, nombre, cantidad, monto
+-        FROM (
+@@ -141 +133,0 @@ BEGIN
+-                c.status,
+@@ -144,5 +136 @@ BEGIN
+-                SUM(c.monto)        AS monto,
+-                ROW_NUMBER() OVER (
+-                    PARTITION BY c.status
+-                    ORDER BY SUM(c.monto) DESC
+-                ) AS rn
++            SUM(c.monto)        AS monto
+@@ -150,3 +138,3 @@ BEGIN
+-            GROUP BY c.id_producto_local, c.status
+-        ) ranked
+-        WHERE rn <= 10
++        GROUP BY c.id_producto_local
++        ORDER BY monto DESC
++        LIMIT 10
+@@ -163 +151 @@ BEGIN
+-            'ticket_promedio',     CASE WHEN r.ordenes_completadas > 0 THEN ROUND(r.monto_total / r.ordenes_completadas, 2) ELSE 0 END
++            'ticket_promedio',     CASE WHEN r.ordenes_count > 0 THEN ROUND(r.monto_total / r.ordenes_count, 2) ELSE 0 END
+@@ -167,2 +155 @@ BEGIN
+-            'count',  pe.count,
+-            'monto',  ROUND(pe.monto, 2)
++            'count',  pe.count
+@@ -183 +169,0 @@ BEGIN
+-            'status',  tp.status,
+
+##### fn_desglose_monedas_turno(bigint,boolean)
+@@ -36,2 +36 @@ AS $function$
+-                    and eo.id = (select max(eo2.id) from public.app_dat_estado_operacion eo2
+-                                 where eo2.id_operacion = o.id))
++                    and eo.id = (select max(eo2.id) from public.app_dat_estado_operacion eo2 where eo2.id_operacion = o.id))
+
+##### fn_desglose_monedas_usuario(uuid,date,date,bigint)
+@@ -23 +23,3 @@ AS $function$
+@@ -31,4 +33,2 @@ AS $function$
+-           'moneda', p.moneda,
+-           'operaciones', p.operaciones,
+-           'importe_nativo', p.importe_nativo,
+-           'importe_base', p.importe_base,
++           'moneda', p.moneda, 'operaciones', p.operaciones,
++           'importe_nativo', p.importe_nativo, 'importe_base', p.importe_base,
+@@ -39,2 +39 @@ AS $function$
+-           'importe_consolidado', case when p.moneda = c.moneda
+-                                       then p.importe_nativo
++           'importe_consolidado', case when p.moneda = c.moneda then p.importe_nativo
+
+##### fn_devolver_ingredientes_elaborado_v2(bigint,numeric,bigint,bigint,integer)
+@@ -42,2 +42,2 @@ BEGIN
+@@ -45 +45 @@ BEGIN
+@@ -147,3 +147,3 @@ BEGIN
+
+##### fn_eliminar_producto_orden_v2(bigint,uuid)
+@@ -16 +16 @@ BEGIN
+@@ -24 +24 @@ BEGIN
++        RETURN jsonb_build_object('status','error','message','Extracción no encontrada');
+@@ -35 +35 @@ BEGIN
++        RETURN jsonb_build_object('status','error','message','Solo se pueden editar órdenes en estado Pendiente');
+@@ -107 +107 @@ BEGIN
+
+

@@ -1,0 +1,21 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_crear_moneda(text,text,text,text,integer,integer).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_crear_moneda(text,text,text,text,integer,integer).sql"
+index 11bcf13c..a6a92669 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_crear_moneda(text,text,text,text,integer,integer).sql"
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_crear_moneda(text,text,text,text,integer,integer).sql"
+@@ -28,5 +28,4 @@ BEGIN
+           false, false);
+ 
+-  -- Puente para las tasas por tienda. `tipos_moneda.id` no tiene DEFAULT.
+   SELECT coalesce(max(id), 0) + 1 INTO v_nuevo_id FROM public.tipos_moneda;
+ 
+@@ -36,9 +35,5 @@ BEGIN
+           v_codigo, nullif(trim(p_pais),''), true, v_codigo);
+ 
+-  RETURN jsonb_build_object(
+-    'status', 'success',
+-    'codigo', v_codigo,
+-    'id_tipos_moneda', v_nuevo_id
+-  );
++  RETURN jsonb_build_object('status','success','codigo',v_codigo,'id_tipos_moneda',v_nuevo_id);
+ END;
+ $function$

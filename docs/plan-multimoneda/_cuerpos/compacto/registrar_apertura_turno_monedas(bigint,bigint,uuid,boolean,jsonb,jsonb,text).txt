@@ -1,0 +1,33 @@
+﻿@@ -13,2 +13 @@ begin
+-  if p_efectivo_inicial_por_moneda is null
+-     or jsonb_typeof(p_efectivo_inicial_por_moneda) <> 'object' then
++  if p_efectivo_inicial_por_moneda is null or jsonb_typeof(p_efectivo_inicial_por_moneda) <> 'object' then
+@@ -18 +16,0 @@ begin
+@@ -21,0 +20 @@ begin
+@@ -23,8 +22,4 @@ begin
+-            p_efectivo_inicial      := v_cup,
+-            p_id_tpv                := p_id_tpv,
+-            p_id_vendedor           := p_id_vendedor,
+-            p_usuario               := p_usuario,
+-            p_maneja_inventario     := p_maneja_inventario,
+-            p_productos             := p_productos,
+-            p_observaciones         := p_observaciones,
+-            p_efectivo_inicial_usd  := v_usd);
++            p_efectivo_inicial := v_cup, p_id_tpv := p_id_tpv,
++            p_id_vendedor := p_id_vendedor, p_usuario := p_usuario,
++            p_maneja_inventario := p_maneja_inventario, p_productos := p_productos,
++            p_observaciones := p_observaciones, p_efectivo_inicial_usd := v_usd);
+@@ -32,4 +26,0 @@ begin
+@@ -39,2 +30,2 @@ begin
+-  order by ct.id desc
+-  limit 1;
++  order by ct.id desc limit 1;
+@@ -42,2 +33 @@ begin
+-    select ct.id into v_turno_id from public.app_dat_caja_turno ct
+-    where ct.id = v_operacion_id limit 1;
++    select ct.id into v_turno_id from public.app_dat_caja_turno ct where ct.id = v_operacion_id limit 1;
+@@ -54,2 +45 @@ begin
+-    set efectivo_inicial = excluded.efectivo_inicial,
+-        updated_at = now();
++    set efectivo_inicial = excluded.efectivo_inicial, updated_at = now();
+@@ -56,0 +47 @@ begin

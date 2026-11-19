@@ -1,0 +1,11 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\get_detalle_producto(bigint).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\get_detalle_producto(bigint).sql"
+index 286f24e9..878eae7c 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\get_detalle_producto(bigint).sql"
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\get_detalle_producto(bigint).sql"
+@@ -91,5 +91,5 @@ BEGIN
+             SELECT precio_venta_cup
+             FROM public.app_v_precio_venta_base_vigente
+-            WHERE id_producto = p.id
++            WHERE id_producto = p.id AND COALESCE(id_variante, 0) = 0
+               AND (fecha_hasta IS NULL OR fecha_hasta >= CURRENT_DATE)
+             ORDER BY fecha_desde DESC LIMIT 1

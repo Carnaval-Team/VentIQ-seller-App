@@ -24,6 +24,8 @@ import 'currency_service.dart';
 import 'product_recipe_cache_service.dart';
 import '../utils/price_utils.dart';
 import '../utils/uuid_generator.dart';
+import '../utils/fecha_rpc.dart';
+import '../utils/cadena_por_clave.dart';
 import '../money/politica_moneda_store.dart';
 import '../money/venta_v1_envio.dart';
 import 'venta_v1_cliente.dart';
@@ -48,6 +50,9 @@ class AutoSyncService {
   bool _pendingReconnectSync = false;
   Future<Map<String, dynamic>>? _turnoQueueInFlight;
   final Map<String, Future<int?>> _aperturaInFlight = {};
+  // Dos entradas de cola del mismo turno real (distinto local_id) abrían en
+  // paralelo: se encadenan por TPV + vendedor.
+  final CadenaPorClave _aperturaPorTpv = CadenaPorClave();
   DateTime? _lastSyncTime;
   DateTime? _lastReconnectSyncAt;
   int _syncCount = 0;
@@ -928,6 +933,39 @@ class AutoSyncService {
     return int.tryParse('$raw');
   }
 
+  /// Lleva `fecha_apertura` del turno del servidor a la apertura offline real
+  /// cuando el sync reutiliza un turno ya abierto sin pasar por la apertura
+  /// con clave: si no, queda la hora del sync y las ventas offline previas
+  /// caen fuera del turno. El servidor valida (solo hacia atrás, nunca
+  /// futura, sin pisar el turno anterior).
+  Future<void> _alinearFechaAperturaEnServidor(
+    int serverId,
+    Map<String, dynamic> entry,
+  ) async {
+    final aperturaRaw = entry['apertura'];
+    final fecha = fechaUtcParaRpc(
+      entry['fecha_apertura'] ??
+          (aperturaRaw is Map ? aperturaRaw['fecha_apertura'] : null),
+    );
+    if (fecha == null) return;
+    try {
+      final resp = await Supabase.instance.client.rpc(
+        'fn_alinear_apertura_turno_offline',
+        params: {'p_id_turno': serverId, 'p_fecha_apertura': fecha},
+      );
+      print('[TURNO_SYNC] 🕒 alinear apertura $serverId ← $fecha: $resp');
+    } catch (e) {
+      if (_isRpcUnavailable(
+        e,
+        functionName: 'fn_alinear_apertura_turno_offline',
+      )) {
+        print('[TURNO_SYNC] ⚠️ fn_alinear_apertura_turno_offline no desplegada');
+        return;
+      }
+      print('[TURNO_SYNC] ⚠️ No se pudo alinear apertura de $serverId: $e');
+    }
+  }
+
   Future<bool> _isServerTurnoOpen(int serverId) async {
     final estado = await _queryTurnoEstado(serverId);
     return estado == 1;
@@ -1287,7 +1325,15 @@ class AutoSyncService {
       );
       return running;
     }
-    final future = _ensureAperturaForQueueEntryUnlocked(entry);
+    final aperturaRaw = entry['apertura'];
+    final apertura = aperturaRaw is Map ? aperturaRaw : const {};
+    final clave =
+        '${entry['id_tpv'] ?? apertura['id_tpv']}:'
+        '${entry['id_vendedor'] ?? apertura['id_vendedor']}';
+    final future = _aperturaPorTpv.ejecutar(
+      clave,
+      () => _ensureAperturaForQueueEntryUnlocked(entry),
+    );
     _aperturaInFlight[localId] = future;
     return future.whenComplete(() {
       if (identical(_aperturaInFlight[localId], future)) {
@@ -1328,6 +1374,7 @@ class AutoSyncService {
                 : <String, dynamic>{};
         await _ensureEntryHasUsuario(entry, aperturaDataEarly, localId);
         await _clearStaleFechaCierre(existingId);
+        await _alinearFechaAperturaEnServidor(existingId, entry);
         return existingId;
       }
 
@@ -1408,6 +1455,7 @@ class AutoSyncService {
       );
       await _ensureEntryHasUsuario(entry, aperturaData, localId);
       await _clearStaleFechaCierre(alreadyOpenId);
+      await _alinearFechaAperturaEnServidor(alreadyOpenId, entry);
       return alreadyOpenId;
     }
 
@@ -1447,8 +1495,9 @@ class AutoSyncService {
         productosRaw
             .map((item) => Map<String, dynamic>.from(item as Map))
             .toList();
-    final fechaApertura =
-        entry['fecha_apertura'] ?? aperturaData['fecha_apertura'];
+    final fechaApertura = fechaUtcParaRpc(
+      entry['fecha_apertura'] ?? aperturaData['fecha_apertura'],
+    );
 
     print('  🔄 Apertura cola turno $localId (TPV $idTpv)...');
     bool aperturaOk = false;
@@ -1554,6 +1603,7 @@ class AutoSyncService {
         aperturaOk = true;
         serverId = racedId;
         print('  ♻️ Se reutiliza turno $racedId ya abierto en servidor');
+        await _alinearFechaAperturaEnServidor(racedId, entry);
       } else if (rpcMissing) {
         print(
           '  ⚠️ fn_apertura_turno_offline no existe. Fallback v3.',
@@ -1608,6 +1658,7 @@ class AutoSyncService {
           );
           aperturaOk = true;
           serverId = existingOpenId;
+          await _alinearFechaAperturaEnServidor(existingOpenId, entry);
         }
       } catch (e) {
         print('  ⚠️ No se pudo consultar turno abierto tras RPC: $e');
@@ -1622,6 +1673,9 @@ class AutoSyncService {
         idVendedor: idVendedor,
       );
       serverId = _parseTurnoId(online?['id']);
+      if (serverId != null) {
+        await _alinearFechaAperturaEnServidor(serverId!, entry);
+      }
     }
 
     if (serverId == null) {
@@ -2452,7 +2506,9 @@ class AutoSyncService {
     Future<void> tryCierreRpc({required bool withFecha}) async {
       final fecha =
           withFecha
-              ? (cierreData['fecha_cierre'] ?? latest['fecha_cierre'])
+              ? fechaUtcParaRpc(
+                cierreData['fecha_cierre'] ?? latest['fecha_cierre'],
+              )
               : null;
       final paramsMonedas = <String, dynamic>{
         'p_client_uuid': clientUuid,
@@ -4389,8 +4445,9 @@ class AutoSyncService {
       'p_productos': productos,
       'p_uuid': userId,
       'p_id_cliente': orderData['idCliente'],
-      'p_fecha_creacion':
-          orderData['fecha_creacion'] ?? orderData['created_offline_at'],
+      'p_fecha_creacion': fechaUtcParaRpc(
+        orderData['fecha_creacion'] ?? orderData['created_offline_at'],
+      ),
       'p_pagos': pagos,
     };
 

@@ -1,0 +1,22 @@
+﻿@@ -5 +5 @@
+- SET search_path TO 'public'
++ SET search_path TO 'pg_catalog'
+@@ -8,2 +8,2 @@ DECLARE
+-  v_result JSONB;
+-  v_turno_id BIGINT;
++    v_result jsonb;
++    v_turno_id bigint;
+@@ -10,0 +11,7 @@ BEGIN
++    IF NULLIF(btrim(COALESCE(current_setting('app.m01_caja_extra', true), '')), '') IS NULL THEN
++        PERFORM set_config(
++            'app.m01_caja_extra',
++            jsonb_build_object('efectivo_usd', p_efectivo_inicial_usd)::text,
++            true
++        );
++    END IF;
+@@ -15 +22,4 @@ BEGIN
+-  v_turno_id := NULLIF(v_result->>'id_turno', '')::BIGINT;
++    IF COALESCE((v_result->>'idempotent')::boolean, false) THEN
++        RETURN v_result;
++    END IF;
++    v_turno_id := NULLIF(v_result->>'id_turno', '')::bigint;

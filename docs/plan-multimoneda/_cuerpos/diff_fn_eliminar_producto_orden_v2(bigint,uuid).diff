@@ -1,0 +1,32 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_eliminar_producto_orden_v2(bigint,uuid).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_eliminar_producto_orden_v2(bigint,uuid).sql"
+index 58a697a9..a0f6d8ea 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_eliminar_producto_orden_v2(bigint,uuid).sql"
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_eliminar_producto_orden_v2(bigint,uuid).sql"
+@@ -14,5 +14,5 @@ DECLARE
+     v_cantidad_base    NUMERIC;
+ BEGIN
+-    -- 1. Obtener extracciÃ³n
++    -- 1. Obtener extracción
+     SELECT e.*, o.id AS op_id
+       INTO v_extraccion
+@@ -22,5 +22,5 @@ BEGIN
+ 
+     IF NOT FOUND THEN
+-        RETURN jsonb_build_object('status','error','message','ExtracciÃ³n no encontrada');
++        RETURN jsonb_build_object('status','error','message','Extracción no encontrada');
+     END IF;
+ 
+@@ -33,5 +33,5 @@ BEGIN
+ 
+     IF v_estado IS DISTINCT FROM 1 THEN
+-        RETURN jsonb_build_object('status','error','message','Solo se pueden editar Ã³rdenes en estado Pendiente');
++        RETURN jsonb_build_object('status','error','message','Solo se pueden editar órdenes en estado Pendiente');
+     END IF;
+ 
+@@ -105,5 +105,5 @@ BEGIN
+     END IF;
+ 
+-    -- 5. Eliminar extracciÃ³n
++    -- 5. Eliminar extracción
+     DELETE FROM public.app_dat_extraccion_productos WHERE id = p_id_extraccion;
+ 

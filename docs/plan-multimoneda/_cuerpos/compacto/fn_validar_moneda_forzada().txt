@@ -1,0 +1,21 @@
+﻿@@ -7,0 +8,3 @@ begin
++    if new.permitir_moneda_por_producto then
++      raise exception 'La moneda por producto es incompatible con forzar la moneda de venta';
++    end if;
+@@ -11,2 +14 @@ begin
+-    if not exists (
+-      select 1 from public.app_dat_tienda_moneda m
++    if not exists (select 1 from public.app_dat_tienda_moneda m
+@@ -14,5 +16,2 @@ begin
+-        and m.moneda = new.moneda_venta_forzada
+-        and m.activo
+-    ) then
+-      raise exception 'La tienda % no acepta la moneda %',
+-        new.id_tienda, new.moneda_venta_forzada;
++                     and m.moneda = new.moneda_venta_forzada and m.activo) then
++      raise exception 'La tienda % no acepta la moneda %', new.id_tienda, new.moneda_venta_forzada;
+@@ -21 +19,0 @@ begin
+@@ -25 +23,2 @@ begin
+-end $function$
++end
++$function$

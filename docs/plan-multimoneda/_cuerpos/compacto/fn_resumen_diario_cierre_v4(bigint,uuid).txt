@@ -1,0 +1,4 @@
+﻿@@ -11,2 +11 @@ AS $function$
+-  from base b
+-  cross join lateral public.fn_desglose_monedas_turno(b.turno_id, false) d;
++  from base b cross join lateral public.fn_desglose_monedas_turno(b.turno_id, false) d;

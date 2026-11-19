@@ -1,0 +1,31 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_desglose_monedas_usuario(uuid,date,date,bigint).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_desglose_monedas_usuario(uuid,date,date,bigint).sql"
+index 9f8d3e8a..b85a398f 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_desglose_monedas_usuario(uuid,date,date,bigint).sql"
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_desglose_monedas_usuario(uuid,date,date,bigint).sql"
+@@ -21,5 +21,7 @@ AS $function$
+       and (p_fecha_desde is null or o.created_at::date >= p_fecha_desde)
+       and (p_fecha_hasta is null or o.created_at::date <= p_fecha_hasta)
+-      -- Mismo criterio que el informe al que acompaña: solo ventas completadas.
++      -- Solo ventas COMPLETADAS: es el mismo criterio que el informe al que
++      -- acompaña. Sin esto el desglose incluye pagos de operaciones abiertas y
++      -- deja de cuadrar con los totales de la tarjeta.
+       and exists (select 1 from public.app_dat_estado_operacion eo
+                   where eo.id_operacion = o.id and eo.estado = 2
+@@ -29,14 +31,11 @@ AS $function$
+   )
+   select coalesce(jsonb_agg(jsonb_build_object(
+-           'moneda', p.moneda,
+-           'operaciones', p.operaciones,
+-           'importe_nativo', p.importe_nativo,
+-           'importe_base', p.importe_base,
++           'moneda', p.moneda, 'operaciones', p.operaciones,
++           'importe_nativo', p.importe_nativo, 'importe_base', p.importe_base,
+            'efectivo_nativo', coalesce(p.efectivo_nativo, 0),
+            'digital_nativo', coalesce(p.digital_nativo, 0),
+            'tasa_promedio', round(p.importe_base / nullif(p.importe_nativo, 0), 4),
+            'moneda_consolidacion', c.moneda,
+-           'importe_consolidado', case when p.moneda = c.moneda
+-                                       then p.importe_nativo
++           'importe_consolidado', case when p.moneda = c.moneda then p.importe_nativo
+                                        else p.importe_base * c.tasa_cup end
+          ) order by p.importe_base desc), '[]'::jsonb),

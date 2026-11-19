@@ -1,0 +1,83 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_registrar_cambio_estado_operacion(bigint,smallint,uuid).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_registrar_cambio_estado_operacion(bigint,smallint,uuid).sql"
+index a5328509..79690193 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_registrar_cambio_estado_operacion(bigint,smallint,uuid).sql"
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_registrar_cambio_estado_operacion(bigint,smallint,uuid).sql"
+@@ -3,5 +3,7 @@
+  LANGUAGE plpgsql
+  SECURITY DEFINER
+-AS $function$DECLARE
++ SET search_path TO 'pg_catalog', 'public'
++AS $function$
++DECLARE
+     v_productos_extraidos RECORD;
+     v_existente_estado RECORD;
+@@ -13,4 +15,5 @@ AS $function$DECLARE
+     v_id_tienda BIGINT;
+     v_cambiar_fecha_creacion BOOLEAN;
++    v_presentacion_devolver BIGINT;
+ BEGIN
+     -- Primero, validar que el estado sea válido
+@@ -92,4 +95,18 @@ BEGIN
+         ) LOOP
+ 
++            -- producto-v1 deja NULL cuando la venta fue en la base; el
++            -- ledger exige la fila de app_dat_producto_presentacion.
++            v_presentacion_devolver := COALESCE(
++                v_productos_extraidos.id_presentacion,
++                (
++                    SELECT pp.id
++                    FROM app_dat_producto_presentacion pp
++                    WHERE pp.id_producto = v_productos_extraidos.id_producto
++                      AND pp.es_base
++                    ORDER BY pp.id
++                    LIMIT 1
++                )
++            );
++
+             -- Obtener inventario actual más reciente
+             SELECT * INTO v_inventario_actual
+@@ -98,5 +115,5 @@ BEGIN
+               AND COALESCE(id_variante, 0) = COALESCE(v_productos_extraidos.id_variante, 0)
+               AND COALESCE(id_opcion_variante, 0) = COALESCE(v_productos_extraidos.id_opcion_variante, 0)
+-              AND COALESCE(id_presentacion, 0) = COALESCE(v_productos_extraidos.id_presentacion, 0)
++              AND COALESCE(id_presentacion, 0) = COALESCE(v_presentacion_devolver, 0)
+               AND COALESCE(id_ubicacion, 0) = COALESCE(v_productos_extraidos.id_ubicacion, 0)
+             ORDER BY created_at DESC
+@@ -125,5 +142,5 @@ BEGIN
+                 v_productos_extraidos.id_variante,
+                 v_productos_extraidos.id_opcion_variante,
+-                v_productos_extraidos.id_presentacion,
++                v_presentacion_devolver,
+                 v_productos_extraidos.id_ubicacion,
+                 v_inventario_actual.cantidad_final,
+@@ -169,5 +186,7 @@ BEGIN
+                 LIMIT 1;
+ 
+-                -- Si no existe inventario previo del ingrediente, usar valores por defecto
++                -- Si no existe inventario previo del ingrediente, usar la
++                -- presentacion base del ingrediente; sin ella no hay fila
++                -- de ledger posible.
+                 IF v_ultimo_inventario IS NULL THEN
+                     v_ultimo_inventario.cantidad_final := 0;
+@@ -177,4 +196,14 @@ BEGIN
+                     v_ultimo_inventario.sku_ubicacion := NULL;
+                 END IF;
++                IF v_ultimo_inventario.id_presentacion IS NULL THEN
++                    v_ultimo_inventario.id_presentacion := (
++                        SELECT pp.id
++                        FROM app_dat_producto_presentacion pp
++                        WHERE pp.id_producto = v_ingrediente.id_ingrediente
++                          AND pp.es_base
++                        ORDER BY pp.id
++                        LIMIT 1
++                    );
++                END IF;
+ 
+                 -- Devolver ingrediente al inventario usando el id_presentacion del último registro
+@@ -210,4 +239,5 @@ BEGIN
+         END LOOP;
+     END IF;
+-END;$function$
++END;
++$function$
+ 

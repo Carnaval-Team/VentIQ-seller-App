@@ -1,0 +1,43 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_reporte_ventas_con_proveedor_por_turno(bigint,date,date,bigint).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_reporte_ventas_con_proveedor_por_turno(bigint,date,date,bigint).sql"
+index 3e2f6e51..1224c618 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_reporte_ventas_con_proveedor_por_turno(bigint,date,date,bigint).sql"
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_reporte_ventas_con_proveedor_por_turno(bigint,date,date,bigint).sql"
+@@ -36,4 +36,21 @@ BEGIN
+     --    de operación existente como cierre efectivo.
+     -- -------------------------------------------------------------------------
++    turnos AS MATERIALIZED (
++        SELECT
++            ct.id_tpv,
++            ct.id_operacion_apertura,
++            ct.id_operacion_cierre,
++            v.uuid
++        FROM app_dat_caja_turno ct
++        JOIN app_dat_vendedor v ON v.id = ct.id_vendedor
++        JOIN app_dat_tpv tp ON tp.id = ct.id_tpv
++        WHERE tp.id_tienda = p_id_tienda
++          AND ct.fecha_apertura::date >= COALESCE(p_fecha_desde, CURRENT_DATE)
++          AND ct.fecha_apertura::date <= COALESCE(p_fecha_hasta, CURRENT_DATE)
++    ),
++
++    max_op AS MATERIALIZED (
++        SELECT MAX(o2.id) AS max_id FROM app_dat_operaciones o2
++    ),
+ 
+     -- -------------------------------------------------------------------------
+@@ -51,4 +68,9 @@ BEGIN
+           ON ov.id_operacion = o.id
+          AND ov.es_pagada = true
++        JOIN turnos t
++          ON t.uuid = o.uuid
++         AND ov.id_tpv = t.id_tpv
++         AND o.id >= t.id_operacion_apertura
++         AND o.id <= COALESCE(t.id_operacion_cierre, (SELECT max_id FROM max_op))
+         CROSS JOIN LATERAL (
+             SELECT eo.estado
+@@ -60,6 +82,4 @@ BEGIN
+         WHERE o.id_tienda = p_id_tienda
+           AND o.id_tipo_operacion = v_id_tipo_venta
+-          AND o.created_at >= COALESCE(p_fecha_desde, CURRENT_DATE)::timestamptz
+-          AND o.created_at <  (COALESCE(p_fecha_hasta, CURRENT_DATE) + INTERVAL '1 day')::timestamptz
+           AND e.estado = 2
+     ),

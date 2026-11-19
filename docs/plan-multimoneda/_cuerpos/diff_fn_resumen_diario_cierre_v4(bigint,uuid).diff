@@ -1,0 +1,12 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_resumen_diario_cierre_v4(bigint,uuid).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_resumen_diario_cierre_v4(bigint,uuid).sql"
+index 3cd46896..00e5edc8 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_resumen_diario_cierre_v4(bigint,uuid).sql"
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_resumen_diario_cierre_v4(bigint,uuid).sql"
+@@ -9,6 +9,5 @@ AS $function$
+   )
+   select b.*, d.desglose_monedas, d.total_base
+-  from base b
+-  cross join lateral public.fn_desglose_monedas_turno(b.turno_id, false) d;
++  from base b cross join lateral public.fn_desglose_monedas_turno(b.turno_id, false) d;
+ $function$
+ 

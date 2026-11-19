@@ -1,0 +1,385 @@
+﻿##### fn_resumen_turno_por_id_v2(bigint)
+@@ -7,3 +7 @@ AS $function$
+-  with base as (
+-    select * from public.fn_resumen_turno_por_id(p_turno_id)
+-  )
++  with base as (select * from public.fn_resumen_turno_por_id(p_turno_id))
+@@ -11,2 +9 @@ AS $function$
+-  from base b
+-  cross join lateral public.fn_desglose_monedas_turno(b.turno_id, true) d;
++  from base b cross join lateral public.fn_desglose_monedas_turno(b.turno_id, true) d;
+
+##### fn_stock_producto_almacen_detalle(bigint,bigint)
+@@ -6,33 +6,12 @@ AS $function$
+-    WITH RECURSIVE combos AS (
+-        (SELECT ip.id,
+-                COALESCE(ip.id_variante, 0)        AS v,
+-                COALESCE(ip.id_opcion_variante, 0) AS o,
+-                COALESCE(ip.id_presentacion, 0)    AS p,
+-                COALESCE(ip.id_ubicacion, 0)       AS u
+-           FROM public.app_dat_inventario_productos ip
+-          WHERE ip.id_producto = p_id_producto
+-          ORDER BY ip.id_producto,
+-                   COALESCE(ip.id_variante, 0),
+-                   COALESCE(ip.id_opcion_variante, 0),
+-                   COALESCE(ip.id_presentacion, 0),
+-                   COALESCE(ip.id_ubicacion, 0),
+-                   ip.id DESC
+-          LIMIT 1)
+-        UNION ALL
+-        SELECT n.id, n.v, n.o, n.p, n.u
+-          FROM combos c
+-          CROSS JOIN LATERAL (
+-              SELECT ip.id,
+-                     COALESCE(ip.id_variante, 0)        AS v,
+-                     COALESCE(ip.id_opcion_variante, 0) AS o,
+-                     COALESCE(ip.id_presentacion, 0)    AS p,
+-                     COALESCE(ip.id_ubicacion, 0)       AS u
+-                FROM public.app_dat_inventario_productos ip
+-               WHERE ip.id_producto = p_id_producto
+-                 AND (COALESCE(ip.id_variante, 0),
+-                      COALESCE(ip.id_opcion_variante, 0),
+-                      COALESCE(ip.id_presentacion, 0),
+-                      COALESCE(ip.id_ubicacion, 0)) > (c.v, c.o, c.p, c.u)
+-               ORDER BY ip.id_producto,
++    SELECT
++        v.id_ubicacion,
++        v.id_almacen,
++        v.id_variante,
++        v.id_opcion_variante,
++        v.id_presentacion,
++        v.cantidad_final,
++        v.sku_producto,
++        v.sku_ubicacion
++    FROM (
++        SELECT DISTINCT ON (
++                   ip.id_ubicacion,
+@@ -41,5 +20 @@ AS $function$
+-                        COALESCE(ip.id_presentacion, 0),
+-                        COALESCE(ip.id_ubicacion, 0),
+-                        ip.id DESC
+-               LIMIT 1
+-          ) n
++                   COALESCE(ip.id_presentacion, 0)
+@@ -47 +22 @@ AS $function$
+-    SELECT ip.id_ubicacion,
++               ip.id_ubicacion,
+@@ -55,2 +30 @@ AS $function$
+-      FROM combos c
+-      JOIN public.app_dat_inventario_productos ip ON ip.id = c.id
++          FROM public.app_dat_inventario_productos ip
+@@ -58 +32,2 @@ AS $function$
+-     WHERE la.deleted_at IS NULL
++         WHERE ip.id_producto = p_id_producto
++           AND la.deleted_at IS NULL
+@@ -60,2 +35,9 @@ AS $function$
+-       AND COALESCE(ip.cantidad_final, 0) > 0
+-     ORDER BY ip.cantidad_final DESC, ip.id_ubicacion;
++         ORDER BY
++               ip.id_ubicacion,
++               COALESCE(ip.id_variante, 0),
++               COALESCE(ip.id_opcion_variante, 0),
++               COALESCE(ip.id_presentacion, 0),
++               ip.id DESC
++    ) v
++    WHERE COALESCE(v.cantidad_final, 0) > 0
++    ORDER BY v.cantidad_final DESC, v.id_ubicacion;
+
+##### fn_stock_saldos_presentacion(bigint,bigint,bigint,boolean)
+@@ -6,71 +6 @@ AS $function$
+-    WITH RECURSIVE
+-    hay_lotes AS (
+-        SELECT EXISTS (
+-            SELECT 1
+-              FROM public.app_dat_inventario_productos x
+-             WHERE x.id_producto = p_id_producto
+-               AND x.id_lote IS NOT NULL
+-        ) AS hay
+-    ),
+-    combos AS (
+-        (SELECT ip.id,
+-                COALESCE(ip.id_variante, 0)        AS v,
+-                COALESCE(ip.id_opcion_variante, 0) AS o,
+-                COALESCE(ip.id_presentacion, 0)    AS p,
+-                COALESCE(ip.id_ubicacion, 0)       AS u
+-           FROM public.app_dat_inventario_productos ip
+-          WHERE ip.id_producto = p_id_producto
+-            AND NOT (SELECT hay FROM hay_lotes)
+-          ORDER BY ip.id_producto,
+-                   COALESCE(ip.id_variante, 0),
+-                   COALESCE(ip.id_opcion_variante, 0),
+-                   COALESCE(ip.id_presentacion, 0),
+-                   COALESCE(ip.id_ubicacion, 0),
+-                   ip.id DESC
+-          LIMIT 1)
+-        UNION ALL
+-        SELECT n.id, n.v, n.o, n.p, n.u
+-          FROM combos c
+-          CROSS JOIN LATERAL (
+-              SELECT ip.id,
+-                     COALESCE(ip.id_variante, 0)        AS v,
+-                     COALESCE(ip.id_opcion_variante, 0) AS o,
+-                     COALESCE(ip.id_presentacion, 0)    AS p,
+-                     COALESCE(ip.id_ubicacion, 0)       AS u
+-                FROM public.app_dat_inventario_productos ip
+-               WHERE ip.id_producto = p_id_producto
+-                 AND (COALESCE(ip.id_variante, 0),
+-                      COALESCE(ip.id_opcion_variante, 0),
+-                      COALESCE(ip.id_presentacion, 0),
+-                      COALESCE(ip.id_ubicacion, 0)) > (c.v, c.o, c.p, c.u)
+-               ORDER BY ip.id_producto,
+-                        COALESCE(ip.id_variante, 0),
+-                        COALESCE(ip.id_opcion_variante, 0),
+-                        COALESCE(ip.id_presentacion, 0),
+-                        COALESCE(ip.id_ubicacion, 0),
+-                        ip.id DESC
+-               LIMIT 1
+-          ) n
+-    ),
+-    vigente_lote AS (
+-        SELECT ip.id_ubicacion,
+-               la.id_almacen,
+-               ip.id_variante,
+-               ip.id_opcion_variante,
+-               ip.id_presentacion,
+-               ip.id_lote,
+-               COALESCE(ip.cantidad_final, 0) AS saldo,
+-               ip.sku_producto,
+-               ip.sku_ubicacion
+-          FROM combos c
+-          JOIN public.app_dat_inventario_productos ip ON ip.id = c.id
+-          JOIN public.app_dat_layout_almacen la      ON la.id = ip.id_ubicacion
+-         WHERE la.deleted_at IS NULL
+-           AND (p_id_ubicacion IS NULL OR ip.id_ubicacion = p_id_ubicacion)
+-           AND (p_id_almacen   IS NULL OR la.id_almacen   = p_id_almacen)
+-        UNION ALL
+-        SELECT o.*
+-          FROM (
++    WITH vigente_lote AS (
+@@ -106,2 +35,0 @@ AS $function$
+-          ) o
+-         WHERE (SELECT hay FROM hay_lotes)
+
+##### fn_subcategoria_general_especial()
+@@ -7,3 +7 @@ AS $function$
+-declare
+-  v_denom constant text := 'General';
+-  v_sku   text;
++declare v_denom constant text := 'General'; v_sku text;
+@@ -11,11 +9,3 @@ begin
+-  if not new.especial or new.id_categoria is null then
+-    return new;
+-  end if;
+-  if tg_op = 'UPDATE' and coalesce(old.especial, false) then
+-    return new;
+-  end if;
+-  if exists (
+-    select 1 from public.app_dat_subcategorias s
++  if not new.especial or new.id_categoria is null then return new; end if;
++  if tg_op = 'UPDATE' and coalesce(old.especial, false) then return new; end if;
++  if exists (select 1 from public.app_dat_subcategorias s
+@@ -23,2 +13 @@ begin
+-      and lower(trim(s.denominacion)) = lower(v_denom)
+-  ) then
++               and lower(trim(s.denominacion)) = lower(v_denom)) then
+@@ -27,2 +15,0 @@ begin
+@@ -30,4 +17 @@ begin
+-  into v_sku
+-  from public.app_dat_categoria
+-  where id = new.id_categoria;
++  into v_sku from public.app_dat_categoria where id = new.id_categoria;
+@@ -35,2 +18,0 @@ begin
+
+##### fn_sync_turno_moneda()
+@@ -7,2 +7 @@ AS $function$
+-declare
+-  v_esperado record;
++declare v_esperado record;
+@@ -30,2 +28 @@ begin
+-    for v_esperado in
+-      select moneda, esperado from public.fn_esperado_turno_por_moneda(new.id)
++    for v_esperado in select moneda, esperado from public.fn_esperado_turno_por_moneda(new.id)
+@@ -36,2 +33 @@ begin
+-              case when v_esperado.moneda = 'USD'
+-                   then coalesce(new.efectivo_inicial_usd, 0)
++              case when v_esperado.moneda = 'USD' then coalesce(new.efectivo_inicial_usd,0)
+@@ -40,2 +36 @@ begin
+-              case when v_esperado.moneda = 'USD'
+-                   then new.efectivo_real_usd
++              case when v_esperado.moneda = 'USD' then new.efectivo_real_usd
+@@ -45,2 +40 @@ begin
+-            efectivo_real     = coalesce(excluded.efectivo_real,
+-                                         public.app_dat_caja_turno_moneda.efectivo_real),
++            efectivo_real = coalesce(excluded.efectivo_real, public.app_dat_caja_turno_moneda.efectivo_real),
+
+##### fn_tasa_automatica(text,text)
+@@ -12,0 +13 @@ BEGIN
+
+##### fn_tasa_cambio(text,text,bigint,timestamp with time zone)
+@@ -21 +21 @@ BEGIN
+@@ -49 +49 @@ BEGIN
+
+##### fn_update_carnaval_product_prices()
+@@ -12 +12,9 @@ BEGIN
+-               public.fn_carnaval_precio_base_vigente(p.id) AS precio_base,
++               (SELECT pv.precio_venta_cup
++                  FROM public.app_dat_precio_venta pv
++                 WHERE pv.id_producto = p.id
++                 ORDER BY pv.created_at DESC
++                 LIMIT 1)                       AS precio_base,
+@@ -32,0 +41,3 @@ BEGIN
+@@ -38,7 +48,0 @@ BEGIN
+-    UPDATE public.precio_global_productos_carnaval
+-       SET updated_at = NOW()
+-     WHERE id = NEW.id;
+
+##### fn_validar_moneda_forzada()
+@@ -7,0 +8,3 @@ begin
++    if new.permitir_moneda_por_producto then
++      raise exception 'La moneda por producto es incompatible con forzar la moneda de venta';
++    end if;
+@@ -11,2 +14 @@ begin
+-    if not exists (
+-      select 1 from public.app_dat_tienda_moneda m
++    if not exists (select 1 from public.app_dat_tienda_moneda m
+@@ -14,5 +16,2 @@ begin
+-        and m.moneda = new.moneda_venta_forzada
+-        and m.activo
+-    ) then
+-      raise exception 'La tienda % no acepta la moneda %',
+-        new.id_tienda, new.moneda_venta_forzada;
++                     and m.moneda = new.moneda_venta_forzada and m.activo) then
++      raise exception 'La tienda % no acepta la moneda %', new.id_tienda, new.moneda_venta_forzada;
+@@ -21 +19,0 @@ begin
+@@ -25 +23,2 @@ begin
+-end $function$
++end
++$function$
+
+##### get_detalle_producto(bigint)
+@@ -93 +93 @@ BEGIN
+-            WHERE id_producto = p.id
++            WHERE id_producto = p.id AND COALESCE(id_variante, 0) = 0
+
+##### get_detalles_productos_batch(bigint[])
+@@ -95 +95 @@ BEGIN
+-                WHERE id_producto = p.id
++                WHERE id_producto = p.id AND COALESCE(id_variante, 0) = 0
+
+##### get_productos_completos_by_tienda_optimized(integer,integer,boolean)
+@@ -124 +124 @@ BEGIN
+-        ORDER BY id_producto, id DESC
++        ORDER BY id_producto, fecha_desde DESC
+
+##### get_productos_completos_by_tienda_optimized_provider(bigint,bigint,boolean,integer)
+@@ -124 +124 @@ BEGIN
+-        ORDER BY id_producto, id DESC
++        ORDER BY id_producto, fecha_desde DESC
+
+##### get_productos_completos_by_tienda_optimized_provider2(bigint,bigint,boolean,integer)
+@@ -125 +125 @@ BEGIN
+-        ORDER BY id_producto, id DESC
++        ORDER BY id_producto, fecha_desde DESC
+
+##### get_productos_completos_by_tienda_optimized_provider2(bigint,bigint,boolean,integer,boolean)
+@@ -125 +125 @@ BEGIN
+-        ORDER BY id_producto, id DESC
++        ORDER BY id_producto, fecha_desde DESC
+
+##### get_productos_completos_by_tienda_optimized_v2(bigint,bigint,boolean,boolean)
+@@ -237 +237 @@ BEGIN
+-        ORDER BY id_producto, id DESC
++        ORDER BY id_producto, fecha_desde DESC
+
+##### get_productos_completos_by_tienda_optimized2(bigint,bigint,boolean,boolean)
+@@ -122 +122 @@ BEGIN
+-        ORDER BY id_producto, id DESC
++        ORDER BY id_producto, fecha_desde DESC
+
+##### get_productos_completos_by_tienda_with_supplier(integer,integer,boolean,integer)
+@@ -115 +115 @@ BEGIN
+-        ORDER BY id_producto, id DESC
++        ORDER BY id_producto, fecha_desde DESC
+
+##### registrar_apertura_turno_monedas(bigint,bigint,uuid,boolean,jsonb,jsonb,text)
+@@ -13,2 +13 @@ begin
+-  if p_efectivo_inicial_por_moneda is null
+-     or jsonb_typeof(p_efectivo_inicial_por_moneda) <> 'object' then
++  if p_efectivo_inicial_por_moneda is null or jsonb_typeof(p_efectivo_inicial_por_moneda) <> 'object' then
+@@ -18 +16,0 @@ begin
+@@ -21,0 +20 @@ begin
+@@ -23,8 +22,4 @@ begin
+-            p_efectivo_inicial      := v_cup,
+-            p_id_tpv                := p_id_tpv,
+-            p_id_vendedor           := p_id_vendedor,
+-            p_usuario               := p_usuario,
+-            p_maneja_inventario     := p_maneja_inventario,
+-            p_productos             := p_productos,
+-            p_observaciones         := p_observaciones,
+-            p_efectivo_inicial_usd  := v_usd);
++            p_efectivo_inicial := v_cup, p_id_tpv := p_id_tpv,
++            p_id_vendedor := p_id_vendedor, p_usuario := p_usuario,
++            p_maneja_inventario := p_maneja_inventario, p_productos := p_productos,
++            p_observaciones := p_observaciones, p_efectivo_inicial_usd := v_usd);
+@@ -32,4 +26,0 @@ begin
+@@ -39,2 +30,2 @@ begin
+-  order by ct.id desc
+-  limit 1;
++  order by ct.id desc limit 1;
+@@ -42,2 +33 @@ begin
+-    select ct.id into v_turno_id from public.app_dat_caja_turno ct
+-    where ct.id = v_operacion_id limit 1;
++    select ct.id into v_turno_id from public.app_dat_caja_turno ct where ct.id = v_operacion_id limit 1;
+@@ -54,2 +45 @@ begin
+-    set efectivo_inicial = excluded.efectivo_inicial,
+-        updated_at = now();
++    set efectivo_inicial = excluded.efectivo_inicial, updated_at = now();
+@@ -56,0 +47 @@ begin
+
+##### registrar_egreso_parcial_v3(bigint,numeric,character varying,character varying,text,smallint,text)
+@@ -7,4 +7 @@ AS $function$
+-declare
+-  v_res    jsonb;
+-  v_id     bigint;
+-  v_moneda text;
++declare v_res jsonb; v_id bigint; v_moneda text;
+@@ -17,3 +13 @@ begin
+-  v_res := public.registrar_egreso_parcial_v2(
+-             p_id_turno, p_monto_entrega, p_nombre_recibe,
++  v_res := public.registrar_egreso_parcial_v2(p_id_turno, p_monto_entrega, p_nombre_recibe,
+@@ -25,3 +18 @@ begin
+-      update public.app_dat_entregas_parciales_caja
+-      set moneda = v_moneda
+-      where id = v_id;
++      update public.app_dat_entregas_parciales_caja set moneda = v_moneda where id = v_id;
+
+##### sync_bundle(bigint,bigint)
+@@ -12,0 +13,9 @@ BEGIN
++    PERFORM public.fn_config_tienda_exigir_lectura(id_tienda_param);
++    IF id_tpv_param IS NOT NULL AND NOT EXISTS (
++        SELECT 1 FROM public.app_dat_tpv t
++        WHERE t.id = id_tpv_param AND t.id_tienda = id_tienda_param
++    ) THEN
++        RAISE EXCEPTION 'TPV no pertenece a la tienda solicitada' USING ERRCODE = '42501';
++    END IF;
+
+##### sync_price_to_carnaval()
+@@ -19,7 +19,4 @@ BEGIN
+-    IF TG_OP = 'UPDATE'
+-       AND NEW.precio_venta_cup IS NOT DISTINCT FROM OLD.precio_venta_cup
+-       AND NEW.precio_venta_usd IS NOT DISTINCT FROM OLD.precio_venta_usd
+-       AND NEW.precio_descuento IS NOT DISTINCT FROM OLD.precio_descuento
+-    THEN
++    v_base_price := NEW.precio_venta_cup;
++    IF v_base_price IS NULL OR v_base_price <= 0 THEN
+@@ -33,0 +31 @@ BEGIN
+@@ -38,7 +36 @@ BEGIN
+-    v_base_price := public.fn_carnaval_precio_base_vigente(NEW.id_producto);
+-    IF v_base_price IS NULL OR v_base_price <= 0 THEN
+-        RETURN NEW;
+-    END IF;
+@@ -48,0 +41,3 @@ BEGIN
+@@ -52,0 +48,3 @@ BEGIN
+@@ -55,0 +54,3 @@ BEGIN
+
+

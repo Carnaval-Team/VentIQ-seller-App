@@ -1,0 +1,27 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_devolver_ingredientes_elaborado_v2(bigint,numeric,bigint,bigint,integer).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_devolver_ingredientes_elaborado_v2(bigint,numeric,bigint,bigint,integer).sql"
+index 1725703c..d339f11d 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_devolver_ingredientes_elaborado_v2(bigint,numeric,bigint,bigint,integer).sql"
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_devolver_ingredientes_elaborado_v2(bigint,numeric,bigint,bigint,integer).sql"
+@@ -40,8 +40,8 @@ BEGIN
+     END IF;
+ 
+-    -- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+-    -- PASADA 1 Â· resolver y validar TODO, sin escribir
++    -- ════════════════════════════════════════════════════════════════════════
++    -- PASADA 1 · resolver y validar TODO, sin escribir
+     --   (atomicidad: si algo no cuadra se sale con status='error' y 0 filas)
+-    -- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
++    -- ════════════════════════════════════════════════════════════════════════
+     FOR v_ing IN
+         SELECT i.id_ingrediente, i.cantidad_total_necesaria
+@@ -145,7 +145,7 @@ BEGIN
+     END LOOP;
+ 
+-    -- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+-    -- PASADA 2 Â· escribir el plan (una fila de ledger por ingrediente)
+-    -- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
++    -- ════════════════════════════════════════════════════════════════════════
++    -- PASADA 2 · escribir el plan (una fila de ledger por ingrediente)
++    -- ════════════════════════════════════════════════════════════════════════
+     FOR v_paso IN SELECT e.value FROM jsonb_array_elements(v_plan) AS e
+     LOOP

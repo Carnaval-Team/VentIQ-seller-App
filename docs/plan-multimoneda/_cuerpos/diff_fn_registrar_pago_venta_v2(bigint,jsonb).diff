@@ -1,0 +1,11 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_registrar_pago_venta_v2(bigint,jsonb).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_registrar_pago_venta_v2(bigint,jsonb).sql"
+index 3a4a1652..33535e6b 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_registrar_pago_venta_v2(bigint,jsonb).sql"
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_registrar_pago_venta_v2(bigint,jsonb).sql"
+@@ -3,5 +3,5 @@
+  LANGUAGE plpgsql
+  SECURITY DEFINER
+- SET search_path TO 'public'
++ SET search_path TO 'pg_catalog', 'public'
+ AS $function$
+ DECLARE

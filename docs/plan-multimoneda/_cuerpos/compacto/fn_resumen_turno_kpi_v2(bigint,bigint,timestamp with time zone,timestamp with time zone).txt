@@ -1,0 +1,8 @@
+﻿@@ -8,2 +8 @@ AS $function$
+-    select * from public.fn_resumen_turno_kpi(p_id_tpv, p_id_vendedor,
+-                                              p_fecha_desde, p_fecha_hasta)
++    select * from public.fn_resumen_turno_kpi(p_id_tpv, p_id_vendedor, p_fecha_desde, p_fecha_hasta)
+@@ -12,2 +11 @@ AS $function$
+-  from base b
+-  cross join lateral public.fn_desglose_monedas_turno(b.turno_id, true) d;
++  from base b cross join lateral public.fn_desglose_monedas_turno(b.turno_id, true) d;

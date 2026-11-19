@@ -1,0 +1,17 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_resumen_turno_kpi_v2(bigint,bigint,timestamp with time zone,timestamp with time zone).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_resumen_turno_kpi_v2(bigint,bigint,timestamp with time zone,timestamp with time zone).sql"
+index 0061afba..eb32fc71 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_resumen_turno_kpi_v2(bigint,bigint,timestamp with time zone,timestamp with time zone).sql"	
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_resumen_turno_kpi_v2(bigint,bigint,timestamp with time zone,timestamp with time zone).sql"	
+@@ -6,10 +6,8 @@
+ AS $function$
+   with base as (
+-    select * from public.fn_resumen_turno_kpi(p_id_tpv, p_id_vendedor,
+-                                              p_fecha_desde, p_fecha_hasta)
++    select * from public.fn_resumen_turno_kpi(p_id_tpv, p_id_vendedor, p_fecha_desde, p_fecha_hasta)
+   )
+   select b.*, d.desglose_monedas, d.total_base
+-  from base b
+-  cross join lateral public.fn_desglose_monedas_turno(b.turno_id, true) d;
++  from base b cross join lateral public.fn_desglose_monedas_turno(b.turno_id, true) d;
+ $function$
+ 

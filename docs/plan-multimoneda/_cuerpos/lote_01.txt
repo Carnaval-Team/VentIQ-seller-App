@@ -1,0 +1,367 @@
+﻿##### buscar_producto_por_codigo_barras_v3(text)
+@@ -109 +109 @@ BEGIN
+-        ORDER BY id_producto, id DESC
++        ORDER BY id_producto, fecha_desde DESC
+
+##### egresos_por_turno(bigint)
+@@ -7,9 +7,2 @@ BEGIN
+-    SELECT
+-        epc.id,
+-        epc.monto_entrega,
+-        epc.motivo_entrega,
+-        epc.nombre_recibe,
+-        epc.nombre_autoriza,
+-        epc.fecha_entrega,
+-        epc.id_medio_pago,
+-        ct.estado,
++    SELECT epc.id, epc.monto_entrega, epc.motivo_entrega, epc.nombre_recibe,
++           epc.nombre_autoriza, epc.fecha_entrega, epc.id_medio_pago, ct.estado,
+
+##### fn_actualizar_cantidad_producto_orden_v2(bigint,numeric,uuid)
+@@ -19 +19 @@ BEGIN
+@@ -27 +27 @@ BEGIN
++        RETURN jsonb_build_object('status','error','message','Extracción no encontrada');
+@@ -30 +30 @@ BEGIN
+@@ -38 +38 @@ BEGIN
++        RETURN jsonb_build_object('status','error','message','Solo se pueden editar órdenes en estado Pendiente');
+@@ -104,2 +104,2 @@ BEGIN
+@@ -109 +109 @@ BEGIN
+@@ -124 +124 @@ BEGIN
+@@ -133 +133 @@ BEGIN
+@@ -161 +161 @@ BEGIN
+
+##### fn_actualizar_moneda(text,text,text,text,integer,integer,boolean)
+@@ -21 +20,0 @@ BEGIN
+@@ -26,2 +25 @@ BEGIN
+-    SELECT count(*) INTO v_pagos
+-    FROM public.app_dat_pago_venta WHERE moneda = v_codigo;
++    SELECT count(*) INTO v_pagos FROM public.app_dat_pago_venta WHERE moneda = v_codigo;
+@@ -29,2 +27 @@ BEGIN
+-      RAISE EXCEPTION 'No se puede desactivar %: tiene % pagos registrados',
+-        v_codigo, v_pagos;
++      RAISE EXCEPTION 'No se puede desactivar %: tiene % pagos registrados', v_codigo, v_pagos;
+@@ -44 +40,0 @@ BEGIN
+
+##### fn_actualizar_operacion_contabilizada(bigint,boolean,bigint)
+@@ -13,2 +13,2 @@ BEGIN
+@@ -28 +27,0 @@ BEGIN
+
+##### fn_actualizar_precio_promedio_recepcion_v2(bigint,jsonb)
+@@ -3,0 +4 @@
++ SECURITY DEFINER
+@@ -11,0 +13,4 @@ DECLARE
++    v_linea         record;
++    v_costo         record;
++    v_id_producto   bigint;
++    v_factor_rel    numeric;
+@@ -15,0 +21,7 @@ DECLARE
++    v_id_rp         bigint;
++    v_prev_avg      numeric;
++    v_nuevo_avg     numeric;
++    v_adicionales   numeric;
++    v_puro_dto      numeric;
++    v_cant_base_ln  numeric;
++    v_costos_json   jsonb;
+@@ -59,0 +72,141 @@ BEGIN
++    FOR v_linea IN
++        SELECT
++            (e->>'id_presentacion')::bigint AS id_pp,
++            (e->>'precio_unitario')::numeric AS precio_unitario,
++            (e->>'cantidad')::numeric        AS cantidad,
++            COALESCE(e->'costos', '[]'::jsonb) AS costos_json
++          FROM jsonb_array_elements(p_productos) e
++         WHERE NULLIF(e->>'id_presentacion','') IS NOT NULL
++           AND NULLIF(e->>'precio_unitario','') IS NOT NULL
++           AND NULLIF(e->>'cantidad','')        IS NOT NULL
++           AND (e->>'precio_unitario')::numeric > 0
++           AND (e->>'cantidad')::numeric        > 0
++    LOOP
++        SELECT pp.id_producto,
++               COALESCE(f.factor_rel, 1)
++          INTO v_id_producto, v_factor_rel
++          FROM app_dat_producto_presentacion pp
++          LEFT JOIN LATERAL public.fn_presentaciones_producto(pp.id_producto) f
++                 ON f.id_presentacion = pp.id
++         WHERE pp.id = v_linea.id_pp;
++        IF v_id_producto IS NULL THEN
++            CONTINUE;
++        END IF;
++        v_factor_rel := COALESCE(v_factor_rel, 1);
++        v_cant_base_ln := v_linea.cantidad * v_factor_rel;
++        SELECT rp.id INTO v_id_rp
++          FROM app_dat_recepcion_productos rp
++         WHERE rp.id_operacion = p_id_operacion
++           AND rp.id_presentacion = v_linea.id_pp
++         ORDER BY rp.id
++         LIMIT 1;
++        IF v_id_rp IS NULL THEN
++            SELECT rp.id INTO v_id_rp
++              FROM app_dat_recepcion_productos rp
++             WHERE rp.id_operacion = p_id_operacion
++               AND rp.id_producto = v_id_producto
++             ORDER BY rp.id
++             LIMIT 1;
++        END IF;
++        v_costos_json := v_linea.costos_json;
++        IF (v_costos_json IS NULL
++            OR jsonb_typeof(v_costos_json) <> 'array'
++            OR jsonb_array_length(v_costos_json) = 0)
++           AND v_id_rp IS NOT NULL THEN
++            SELECT COALESCE(jsonb_agg(jsonb_build_object(
++                     'id_tipo_costo', rpc.id_tipo_costo,
++                     'monto_usd', rpc.monto_usd
++                   )), '[]'::jsonb)
++              INTO v_costos_json
++              FROM app_dat_recepcion_producto_costo rpc
++             WHERE rpc.id_recepcion_producto = v_id_rp;
++        END IF;
++        IF v_costos_json IS NULL
++           OR jsonb_typeof(v_costos_json) <> 'array'
++           OR jsonb_array_length(v_costos_json) = 0 THEN
++            CONTINUE;
++        END IF;
++        v_adicionales := 0;
++        FOR v_costo IN
++            SELECT (c->>'id_tipo_costo')::bigint AS id_tipo_costo,
++                   (c->>'monto_usd')::numeric    AS monto_usd
++              FROM jsonb_array_elements(v_costos_json) c
++             WHERE NULLIF(c->>'id_tipo_costo','') IS NOT NULL
++               AND NULLIF(c->>'monto_usd','') IS NOT NULL
++        LOOP
++            v_adicionales := v_adicionales + COALESCE(v_costo.monto_usd, 0);
++            SELECT COALESCE(pc.monto_promedio_usd, 0) INTO v_prev_avg
++              FROM app_dat_producto_costo pc
++             WHERE pc.id_producto = v_id_producto
++               AND pc.id_tipo_costo = v_costo.id_tipo_costo
++             FOR UPDATE;
++            IF NOT FOUND THEN
++                v_prev_avg := 0;
++            END IF;
++            IF v_id_rp IS NOT NULL AND NOT EXISTS (
++                SELECT 1 FROM app_dat_recepcion_producto_costo x
++                 WHERE x.id_recepcion_producto = v_id_rp
++                   AND x.id_tipo_costo = v_costo.id_tipo_costo
++            ) THEN
++                INSERT INTO app_dat_recepcion_producto_costo (
++                    id_recepcion_producto, id_tipo_costo, monto_usd, monto_promedio_anterior
++                ) VALUES (
++                    v_id_rp, v_costo.id_tipo_costo, v_costo.monto_usd, v_prev_avg
++                );
++            END IF;
++            SELECT COALESCE(SUM(s.equivalente_base), 0) INTO v_saldo_base
++              FROM public.fn_stock_saldos_presentacion(v_id_producto, NULL, NULL, false) s;
++            v_saldo_base := GREATEST(v_saldo_base - v_cant_base_ln, 0);
++            IF (v_saldo_base + v_cant_base_ln) = 0 THEN
++                v_nuevo_avg := v_costo.monto_usd;
++            ELSIF v_prev_avg <= 0 OR v_saldo_base <= 0 THEN
++                v_nuevo_avg := v_costo.monto_usd;
++            ELSE
++                v_nuevo_avg := (
++                    (v_prev_avg * v_saldo_base)
++                    + (v_costo.monto_usd * v_cant_base_ln)
++                ) / (v_saldo_base + v_cant_base_ln);
++            END IF;
++            INSERT INTO app_dat_producto_costo (
++                id_producto, id_tipo_costo, monto_usd, monto_promedio_usd, activo
++            ) VALUES (
++                v_id_producto, v_costo.id_tipo_costo,
++                v_costo.monto_usd, v_nuevo_avg, true
++            )
++            ON CONFLICT (id_producto, id_tipo_costo) DO UPDATE
++              SET monto_promedio_usd = EXCLUDED.monto_promedio_usd;
++        END LOOP;
++        IF v_id_rp IS NOT NULL AND v_adicionales <> 0 THEN
++            SELECT
++                (COALESCE(rp.precio_unitario, 0) - COALESCE(rp.descuento_monto, 0))
++                - ((COALESCE(rp.precio_referencia, 0) * COALESCE(rp.descuento_porcentaje, 0)) / 100)
++              INTO v_puro_dto
++              FROM app_dat_recepcion_productos rp
++             WHERE rp.id = v_id_rp;
++            UPDATE app_dat_recepcion_productos
++               SET costo_real = COALESCE(v_puro_dto, 0) + (v_adicionales * v_factor_rel)
++             WHERE id = v_id_rp;
++        END IF;
++    END LOOP;
+@@ -64 +217,2 @@ BEGIN
+-                   (e->>'cantidad')::numeric        AS cantidad
++                   (e->>'cantidad')::numeric        AS cantidad,
++                   COALESCE(e->'costos', '[]'::jsonb) AS costos
+@@ -75 +229,21 @@ BEGIN
+-                   en.precio_unitario / NULLIF(COALESCE(f.factor_rel, 1), 0) AS costo_base
++                   (en.precio_unitario / NULLIF(COALESCE(f.factor_rel, 1), 0))
++                     + COALESCE((
++                         SELECT SUM(x.monto)
++                           FROM (
++                             SELECT (c->>'monto_usd')::numeric AS monto
++                               FROM jsonb_array_elements(en.costos) c
++                              WHERE jsonb_typeof(en.costos) = 'array'
++                                AND jsonb_array_length(en.costos) > 0
++                                AND NULLIF(c->>'id_tipo_costo','') IS NOT NULL
++                                AND NULLIF(c->>'monto_usd','') IS NOT NULL
++                             UNION ALL
++                             SELECT rpc.monto_usd
++                               FROM app_dat_recepcion_productos rp
++                               JOIN app_dat_recepcion_producto_costo rpc
++                                 ON rpc.id_recepcion_producto = rp.id
++                              WHERE (jsonb_typeof(en.costos) <> 'array'
++                                     OR jsonb_array_length(en.costos) = 0)
++                                AND rp.id_operacion = p_id_operacion
++                                AND rp.id_presentacion = en.id_pp
++                           ) x
++                       ), 0) AS costo_base
+@@ -114,2 +287,0 @@ BEGIN
+@@ -125,4 +297 @@ BEGIN
+
+##### fn_agregar_producto_orden_pendiente_v2(bigint,jsonb,uuid)
+@@ -28 +28 @@ BEGIN
++        RETURN jsonb_build_object('status','error','message','Solo se pueden editar órdenes en estado Pendiente');
+@@ -31 +31 @@ BEGIN
+@@ -41 +41 @@ BEGIN
+@@ -53 +53 @@ BEGIN
+@@ -65 +65 @@ BEGIN
+@@ -125,2 +125,2 @@ BEGIN
+@@ -131 +131 @@ BEGIN
+@@ -182 +182 @@ BEGIN
+
+##### fn_apertura_turno_offline(uuid,numeric,bigint,bigint,uuid,boolean,jsonb,text,timestamp with time zone)
+@@ -4,0 +5 @@
++ SET search_path TO 'pg_catalog'
+@@ -7,2 +8,5 @@ DECLARE
+-    v_existing bigint;
+-    v_turno_abierto bigint;
++    v_actor uuid := auth.uid();
++    v_request jsonb;
++    v_existing public.app_dat_operacion_offline_idempotencia%ROWTYPE;
++    v_store bigint;
++    v_open bigint;
+@@ -9,0 +14,2 @@ DECLARE
++    v_allowed boolean;
++    v_extra text;
+@@ -11 +17,27 @@ BEGIN
+-    SELECT id_operacion INTO v_existing
++    IF v_actor IS NULL OR p_client_uuid IS NULL
++       OR p_id_tpv IS NULL OR p_id_vendedor IS NULL THEN
++        RAISE EXCEPTION 'Solicitud no autorizada' USING ERRCODE = '42501';
++    END IF;
++    v_extra := current_setting('app.m01_caja_extra', true);
++    PERFORM set_config('app.m01_caja_extra', '', true);
++    v_request := jsonb_build_object(
++        'version', 1,
++        'efectivo_inicial', p_efectivo_inicial,
++        'id_tpv', p_id_tpv,
++        'id_vendedor', p_id_vendedor,
++        'usuario', p_usuario,
++        'maneja_inventario', p_maneja_inventario,
++        'productos', COALESCE(p_productos, '[]'::jsonb),
++        'observaciones', p_observaciones,
++        'fecha_apertura', p_fecha_apertura,
++        'extra', CASE
++            WHEN v_extra IS NULL OR btrim(v_extra) = '' THEN '{}'::jsonb
++            ELSE v_extra::jsonb
++        END
++    );
++    PERFORM pg_advisory_xact_lock(hashtextextended(p_client_uuid::text, 0));
++    PERFORM pg_advisory_xact_lock(
++        hashtextextended(format('apertura_turno:%s:%s', p_id_tpv, p_id_vendedor), 0)
++    );
++    SELECT * INTO v_existing
+@@ -13,7 +45,19 @@ BEGIN
+-    WHERE client_uuid = p_client_uuid AND tipo = 'apertura_turno';
+-    IF v_existing IS NOT NULL THEN
+-        IF EXISTS (
+-            SELECT 1 FROM app_dat_caja_turno
+-            WHERE id = v_existing AND estado = 1
++    WHERE client_uuid = p_client_uuid
++    FOR UPDATE;
++    IF FOUND THEN
++        IF v_existing.tipo IS DISTINCT FROM 'apertura_turno'
++           OR v_existing.uuid_usuario IS DISTINCT FROM v_actor
++           OR (v_existing.m01_solicitud - 'fecha_apertura') IS DISTINCT FROM (v_request - 'fecha_apertura')
++           OR v_existing.m01_id_tienda IS NULL THEN
++            RAISE EXCEPTION 'Clave no verificable o solicitud no autorizada; requiere revision'
++                USING ERRCODE = '42501';
++        END IF;
++        IF public.fn_config_tienda_puede_escribir(v_existing.m01_id_tienda) IS DISTINCT FROM true
++           AND NOT EXISTS (
++                SELECT 1
++                FROM public.app_dat_vendedor s
++                JOIN public.app_dat_trabajadores w ON w.id = s.id_trabajador
++                WHERE s.uuid = v_actor AND w.uuid = v_actor
++                  AND w.deleted_at IS NULL
++                  AND w.id_tienda = v_existing.m01_id_tienda
+@@ -20,0 +65,4 @@ BEGIN
++            RAISE EXCEPTION 'Solicitud no autorizada' USING ERRCODE = '42501';
++        END IF;
++        PERFORM public.fn_turno_alinear_fecha_apertura(v_existing.id_operacion, p_fecha_apertura);
+@@ -22 +70,3 @@ BEGIN
+-                'status', 'success', 'id_turno', v_existing, 'idempotent', true
++            'status', 'success', 'idempotent', true,
++            'id_turno', v_existing.id_operacion,
++            'message', 'Apertura ya procesada'
+@@ -26,2 +76,20 @@ BEGIN
+-        DELETE FROM public.app_dat_operacion_offline_idempotencia
+-        WHERE client_uuid = p_client_uuid AND tipo = 'apertura_turno';
++    SELECT t.id_tienda INTO v_store
++    FROM public.app_dat_tpv t
++    WHERE t.id = p_id_tpv
++    FOR SHARE;
++    IF NOT FOUND OR v_store IS NULL THEN
++        RAISE EXCEPTION 'Solicitud no autorizada' USING ERRCODE = '42501';
++    END IF;
++    v_allowed := public.fn_config_tienda_puede_escribir(v_store) IS TRUE
++        OR EXISTS (
++            SELECT 1
++            FROM public.app_dat_vendedor s
++            JOIN public.app_dat_trabajadores w ON w.id = s.id_trabajador
++            WHERE s.uuid = v_actor AND s.id_tpv = p_id_tpv
++              AND w.uuid = v_actor AND w.deleted_at IS NULL
++              AND w.id_tienda = v_store
++        );
++    IF v_allowed IS DISTINCT FROM true
++       OR (p_usuario IS NOT NULL AND p_usuario IS DISTINCT FROM v_actor
++           AND public.fn_config_tienda_puede_escribir(v_store) IS DISTINCT FROM true) THEN
++        RAISE EXCEPTION 'Solicitud no autorizada' USING ERRCODE = '42501';
+@@ -30,2 +98,2 @@ BEGIN
+-    SELECT id INTO v_turno_abierto
+-    FROM app_dat_caja_turno
++    SELECT id INTO v_open
++    FROM public.app_dat_caja_turno
+@@ -35,2 +103 @@ BEGIN
+-    IF v_turno_abierto IS NOT NULL THEN
++    IF v_open IS NOT NULL THEN
+@@ -38,4 +105,4 @@ BEGIN
+-            (client_uuid, id_operacion, tipo, uuid_usuario)
+-        VALUES (p_client_uuid, v_turno_abierto, 'apertura_turno', p_usuario)
+-        ON CONFLICT (client_uuid) DO NOTHING;
++            (client_uuid, id_operacion, tipo, uuid_usuario, m01_solicitud, m01_id_tienda)
++        VALUES (p_client_uuid, v_open, 'apertura_turno', v_actor, v_request, v_store);
++        PERFORM public.fn_turno_alinear_fecha_apertura(v_open, p_fecha_apertura);
+@@ -43 +110,2 @@ BEGIN
+-            'status', 'success', 'id_turno', v_turno_abierto, 'idempotent', true,
++            'status', 'success', 'idempotent', false,
++            'id_turno', v_open,
+@@ -52,2 +120,2 @@ BEGIN
+-        p_usuario := p_usuario,
+-        p_maneja_inventario := p_maneja_inventario,
++        p_usuario := COALESCE(p_usuario, v_actor),
++        p_maneja_inventario := COALESCE(p_maneja_inventario, false),
+@@ -57,13 +125,2 @@ BEGIN
+-    IF v_new_id IS NOT NULL THEN
+-        INSERT INTO public.app_dat_operacion_offline_idempotencia
+-            (client_uuid, id_operacion, tipo, uuid_usuario)
+-        VALUES (p_client_uuid, v_new_id, 'apertura_turno', p_usuario)
+-        ON CONFLICT (client_uuid) DO NOTHING;
+-        IF p_fecha_apertura IS NOT NULL THEN
+-            UPDATE app_dat_caja_turno
+-            SET fecha_apertura = p_fecha_apertura
+-            WHERE id = v_new_id;
+-        END IF;
++    IF v_new_id IS NULL THEN
++        RAISE EXCEPTION 'El servidor rechazó la apertura' USING ERRCODE = '42501';
+@@ -71 +128,5 @@ BEGIN
++    PERFORM public.fn_turno_alinear_fecha_apertura(v_new_id, p_fecha_apertura);
++    INSERT INTO public.app_dat_operacion_offline_idempotencia
++        (client_uuid, id_operacion, tipo, uuid_usuario, m01_solicitud, m01_id_tienda)
++    VALUES (p_client_uuid, v_new_id, 'apertura_turno', v_actor, v_request, v_store);
+
+

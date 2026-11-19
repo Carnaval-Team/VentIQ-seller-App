@@ -1,0 +1,18 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_tasa_cambio(text,text,bigint,timestamp with time zone).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_tasa_cambio(text,text,bigint,timestamp with time zone).sql"
+index d36e84ca..5f63de32 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_tasa_cambio(text,text,bigint,timestamp with time zone).sql"	
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_tasa_cambio(text,text,bigint,timestamp with time zone).sql"	
+@@ -19,5 +19,5 @@ BEGIN
+   SELECT id INTO v_id_destino FROM public.tipos_moneda WHERE codigo = v_destino;
+ 
+-  -- 1) Tasa por tienda (manual)
++  -- 1) Tasa por tienda
+   IF v_id_origen IS NOT NULL AND v_id_destino IS NOT NULL AND p_id_tienda IS NOT NULL THEN
+     SELECT valor_cambio INTO v_tasa
+@@ -47,5 +47,5 @@ BEGIN
+   END IF;
+ 
+-  -- 3) Tasa automática («el toque»)
++  -- 3) Tasa automática ("el toque")
+   v_tasa := public.fn_tasa_automatica(v_origen, v_destino);
+   IF v_tasa IS NOT NULL AND v_tasa > 0 THEN

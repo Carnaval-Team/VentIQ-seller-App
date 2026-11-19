@@ -1,0 +1,300 @@
+﻿##### fn_registrar_cambio_estado_operacion_mejorado(bigint,smallint,uuid)
+@@ -13,3 +13,2 @@ DECLARE
+-    v_rp RECORD;
+-    v_stock_actual NUMERIC;
+-    v_inv_prematuro_id BIGINT;
++    v_id_tienda BIGINT;
++    v_cambiar_fecha_creacion BOOLEAN;
+@@ -17,0 +17 @@ BEGIN
+@@ -24,0 +25 @@ BEGIN
+@@ -27,5 +28 @@ BEGIN
+-        v_response := jsonb_set(
+-          v_response,
+-          '{message}',
+-          '"Estado de operación inválido. Solo se permiten 1 (Pendiente), 2 (Completada), 3 (Devuelta), 4 (Cancelada)"'
+-        );
++        v_response := jsonb_set(v_response, '{message}', '"Estado de operación inválido. Solo se permiten 1 (Pendiente), 2 (Completada), 3 (Devuelta), 4 (Cancelada)"');
+@@ -34,0 +32 @@ BEGIN
+@@ -40,0 +39 @@ BEGIN
+@@ -47,56 +46,5 @@ BEGIN
+-    SELECT EXISTS (
+-        SELECT 1
+-        FROM app_dat_operacion_recepcion orp
+-        WHERE orp.id_operacion = p_id_operacion
+-    ) INTO v_es_recepcion;
+-    IF v_es_recepcion AND p_nuevo_estado = 2 THEN
+-        FOR v_rp IN
+-            SELECT
+-                rp.id AS id_recepcion_producto,
+-                rp.id_producto,
+-                rp.id_variante,
+-                rp.id_opcion_variante,
+-                rp.id_presentacion,
+-                rp.id_ubicacion,
+-                rp.id_proveedor,
+-                rp.cantidad,
+-                rp.sku_producto,
+-                rp.sku_ubicacion
+-            FROM app_dat_recepcion_productos rp
+-            WHERE rp.id_operacion = p_id_operacion
+-        LOOP
+-            SELECT COALESCE((
+-                SELECT ip.cantidad_final
+-                FROM app_dat_inventario_productos ip
+-                WHERE ip.id_producto = v_rp.id_producto
+-                  AND (ip.id_variante        IS NOT DISTINCT FROM v_rp.id_variante)
+-                  AND (ip.id_opcion_variante IS NOT DISTINCT FROM v_rp.id_opcion_variante)
+-                  AND (ip.id_presentacion    IS NOT DISTINCT FROM v_rp.id_presentacion)
+-                  AND (ip.id_ubicacion       IS NOT DISTINCT FROM v_rp.id_ubicacion)
+-                  AND (ip.id_recepcion IS DISTINCT FROM v_rp.id_recepcion_producto)
+-                ORDER BY ip.id DESC
+-                LIMIT 1
+-            ), 0) INTO v_stock_actual;
+-            DELETE FROM app_dat_inventario_productos
+-            WHERE id_recepcion = v_rp.id_recepcion_producto;
+-            INSERT INTO app_dat_inventario_productos (
+-                id_producto,
+-                id_variante,
+-                id_opcion_variante,
+-                id_ubicacion,
+-                id_presentacion,
+-                cantidad_inicial,
+-                cantidad_final,
+-                sku_producto,
+-                sku_ubicacion,
+-                origen_cambio,
+-                id_recepcion,
+-                id_proveedor,
++    INSERT INTO app_dat_estado_operacion (
++        id_operacion,
++        estado,
++        uuid,
+@@ -105,12 +53,3 @@ BEGIN
+-                v_rp.id_producto,
+-                v_rp.id_variante,
+-                v_rp.id_opcion_variante,
+-                v_rp.id_ubicacion,
+-                v_rp.id_presentacion,
+-                v_stock_actual,
+-                v_stock_actual + v_rp.cantidad,
+-                v_rp.sku_producto,
+-                v_rp.sku_ubicacion,
+-                1,
+-                v_rp.id_recepcion_producto,
+-                v_rp.id_proveedor,
++        p_id_operacion,
++        p_nuevo_estado,
++        p_uuid_usuario,
+@@ -119,2 +57,0 @@ BEGIN
+-        END LOOP;
+-    END IF;
+@@ -122,8 +59,20 @@ BEGIN
+-    IF v_es_recepcion AND p_nuevo_estado IN (3, 4) THEN
+-        DELETE FROM app_dat_inventario_productos ip
+-        WHERE ip.id_recepcion IN (
+-            SELECT rp.id
+-            FROM app_dat_recepcion_productos rp
+-            WHERE rp.id_operacion = p_id_operacion
+-        );
++    IF p_nuevo_estado = 2 THEN
++        SELECT id_tienda INTO v_id_tienda
++        FROM app_dat_operaciones
++        WHERE id = p_id_operacion;
++        IF v_id_tienda IS NOT NULL THEN
++            SELECT COALESCE(cambiar_fecha_creacion_operacion_al_cierre, false)
++            INTO v_cambiar_fecha_creacion
++            FROM app_dat_configuracion_tienda
++            WHERE id_tienda = v_id_tienda;
++            IF v_cambiar_fecha_creacion THEN
++                UPDATE app_dat_operaciones
++                SET created_at = NOW()
++                WHERE id = p_id_operacion;
++            END IF;
++        END IF;
+@@ -132,5 +81,7 @@ BEGIN
+-    INSERT INTO app_dat_estado_operacion (
+-        id_operacion, estado, uuid, created_at
+-    ) VALUES (
+-        p_id_operacion, p_nuevo_estado, p_uuid_usuario, NOW()
+-    );
++    SELECT EXISTS (
++        SELECT 1
++        FROM app_dat_operacion_recepcion orp
++        WHERE orp.id_operacion = p_id_operacion
++    ) INTO v_es_recepcion;
+@@ -138 +89,2 @@ BEGIN
+@@ -139,0 +92 @@ BEGIN
+@@ -152,0 +106,2 @@ BEGIN
+@@ -162,0 +118 @@ BEGIN
+@@ -166,0 +123 @@ BEGIN
+@@ -168,3 +125,11 @@ BEGIN
+-                id_producto, id_variante, id_opcion_variante, id_presentacion,
+-                id_ubicacion, cantidad_inicial, cantidad_final,
+-                sku_producto, sku_ubicacion, origen_cambio, created_at
++                id_producto,
++                id_variante,
++                id_opcion_variante,
++                id_presentacion,
++                id_ubicacion,
++                cantidad_inicial,
++                cantidad_final,
++                sku_producto,
++                sku_ubicacion,
++                origen_cambio,
++                created_at
+@@ -182,2 +147,2 @@ BEGIN
+-                    WHEN p_nuevo_estado = 3 THEN 4
+-                    WHEN p_nuevo_estado = 4 THEN 5
++                    WHEN p_nuevo_estado = 3 THEN 4  -- Devolución
++                    WHEN p_nuevo_estado = 4 THEN 5  -- Cancelación
+@@ -188,0 +154 @@ BEGIN
+@@ -190 +156,3 @@ BEGIN
+-            SELECT ep.id_producto, ep.cantidad
++            SELECT
++                ep.id_producto,
++                ep.cantidad
+@@ -195,0 +164,2 @@ BEGIN
+@@ -197 +167,3 @@ BEGIN
+-                SELECT id_ingrediente, cantidad_necesaria
++                SELECT
++                    id_ingrediente,
++                    cantidad_necesaria
+@@ -201,2 +172,0 @@ BEGIN
+-                v_cantidad_ingrediente_devolver :=
+-                    v_ingrediente.cantidad_necesaria * v_productos_extraidos.cantidad;
+@@ -203,0 +174,4 @@ BEGIN
++                v_cantidad_ingrediente_devolver := v_ingrediente.cantidad_necesaria * v_productos_extraidos.cantidad;
+@@ -209,0 +184 @@ BEGIN
+@@ -217,0 +193 @@ BEGIN
+@@ -219,3 +195,11 @@ BEGIN
+-                    id_producto, id_variante, id_opcion_variante, id_presentacion,
+-                    id_ubicacion, cantidad_inicial, cantidad_final,
+-                    sku_producto, sku_ubicacion, origen_cambio, created_at
++                    id_producto,
++                    id_variante,
++                    id_opcion_variante,
++                    id_presentacion,
++                    id_ubicacion,
++                    cantidad_inicial,
++                    cantidad_final,
++                    sku_producto,
++                    sku_ubicacion,
++                    origen_cambio,
++                    created_at
+@@ -229,2 +213 @@ BEGIN
+-                    COALESCE(v_ultimo_inventario.cantidad_final, 0)
+-                      + v_cantidad_ingrediente_devolver,
++                    COALESCE(v_ultimo_inventario.cantidad_final, 0) + v_cantidad_ingrediente_devolver,
+@@ -234,2 +217,2 @@ BEGIN
+-                        WHEN p_nuevo_estado = 3 THEN 6
+-                        WHEN p_nuevo_estado = 4 THEN 7
++                        WHEN p_nuevo_estado = 3 THEN 6  -- Devolución de ingredientes
++                        WHEN p_nuevo_estado = 4 THEN 7  -- Cancelación de ingredientes
+@@ -242,0 +226 @@ BEGIN
+
+##### fn_registrar_egreso_offline(uuid,bigint,numeric,character varying,character varying,text,smallint,uuid)
+@@ -4,0 +5 @@
++ SET search_path TO 'pg_catalog'
+@@ -7 +8,4 @@ DECLARE
+-    v_existing bigint;
++    v_actor uuid := auth.uid();
++    v_request jsonb;
++    v_existing public.app_dat_operacion_offline_idempotencia%ROWTYPE;
++    v_store bigint;
+@@ -11,2 +15,16 @@ BEGIN
+-    SELECT id_operacion INTO v_existing
++    IF v_actor IS NULL OR p_client_uuid IS NULL OR p_id_turno IS NULL THEN
++        RAISE EXCEPTION 'Solicitud no autorizada' USING ERRCODE = '42501';
++    END IF;
++    v_request := jsonb_build_object(
++        'version', 1,
++        'id_turno', p_id_turno,
++        'monto_entrega', p_monto_entrega,
++        'nombre_recibe', p_nombre_recibe,
++        'nombre_autoriza', p_nombre_autoriza,
++        'motivo_entrega', p_motivo_entrega,
++        'id_medio_pago', p_id_medio_pago,
++        'uuid_usuario', p_uuid_usuario,
++        'moneda', 'CUP'
++    );
++    PERFORM pg_advisory_xact_lock(hashtextextended(p_client_uuid::text, 0));
++    SELECT * INTO v_existing
+@@ -14,3 +32,21 @@ BEGIN
+-    WHERE client_uuid = p_client_uuid;
+-    IF v_existing IS NOT NULL THEN
++    WHERE client_uuid = p_client_uuid
++    FOR UPDATE;
++    IF FOUND THEN
++        IF v_existing.tipo IS DISTINCT FROM 'egreso'
++           OR v_existing.uuid_usuario IS DISTINCT FROM v_actor
++           OR v_existing.m01_solicitud IS DISTINCT FROM v_request
++           OR v_existing.m01_id_tienda IS NULL THEN
++            RAISE EXCEPTION 'Clave no verificable o solicitud no autorizada; requiere revision'
++                USING ERRCODE = '42501';
++        END IF;
++        IF public.fn_config_tienda_puede_escribir(v_existing.m01_id_tienda) IS DISTINCT FROM true
++           AND NOT EXISTS (
++                SELECT 1
++                FROM public.app_dat_vendedor s
++                JOIN public.app_dat_trabajadores w ON w.id = s.id_trabajador
++                WHERE s.uuid = v_actor AND w.uuid = v_actor
++                  AND w.deleted_at IS NULL
++                  AND w.id_tienda = v_existing.m01_id_tienda
++           ) THEN
++            RAISE EXCEPTION 'Solicitud no autorizada' USING ERRCODE = '42501';
++        END IF;
+@@ -18,3 +54,2 @@ BEGIN
+-            'success', true,
+-            'egreso_id', v_existing,
+-            'idempotent', true,
++            'success', true, 'idempotent', true,
++            'egreso_id', v_existing.id_operacion,
+@@ -25 +60,21 @@ BEGIN
++    SELECT t.id_tienda INTO v_store
++    FROM public.app_dat_caja_turno ct
++    JOIN public.app_dat_tpv t ON t.id = ct.id_tpv
++    WHERE ct.id = p_id_turno
++    FOR SHARE OF ct;
++    IF NOT FOUND OR v_store IS NULL THEN
++        RAISE EXCEPTION 'Solicitud no autorizada' USING ERRCODE = '42501';
++    END IF;
++    IF (p_uuid_usuario IS NOT NULL AND p_uuid_usuario IS DISTINCT FROM v_actor
++        AND public.fn_config_tienda_puede_escribir(v_store) IS DISTINCT FROM true)
++       OR (public.fn_config_tienda_puede_escribir(v_store) IS DISTINCT FROM true
++           AND NOT EXISTS (
++                SELECT 1
++                FROM public.app_dat_vendedor s
++                JOIN public.app_dat_trabajadores w ON w.id = s.id_trabajador
++                WHERE s.uuid = v_actor AND w.uuid = v_actor
++                  AND w.deleted_at IS NULL AND w.id_tienda = v_store
++           )) THEN
++        RAISE EXCEPTION 'Solicitud no autorizada' USING ERRCODE = '42501';
++    END IF;
+@@ -34,9 +89,4 @@ BEGIN
+-    IF v_result IS NOT NULL AND (v_result->>'success') = 'true' THEN
+-        v_new_id := NULLIF(v_result->>'egreso_id', '')::bigint;
+-        IF v_new_id IS NOT NULL THEN
+-            INSERT INTO public.app_dat_operacion_offline_idempotencia
+-                (client_uuid, id_operacion, tipo, uuid_usuario)
+-            VALUES (p_client_uuid, v_new_id, 'egreso', p_uuid_usuario)
+-            ON CONFLICT (client_uuid) DO NOTHING;
++    IF v_result IS NULL OR (v_result->>'success') IS DISTINCT FROM 'true' THEN
++        RETURN COALESCE(v_result, jsonb_build_object(
++            'success', false, 'message', 'El servidor rechazó el egreso'
++        ));
+@@ -44,5 +94,3 @@ BEGIN
+-        v_result := v_result || jsonb_build_object(
+-            'idempotent', false,
+-            'client_uuid', p_client_uuid
+-        );
++    v_new_id := NULLIF(v_result->>'egreso_id', '')::bigint;
++    IF v_new_id IS NULL THEN
++        RAISE EXCEPTION 'El servidor rechazó el egreso' USING ERRCODE = '42501';
+@@ -50,2 +98,4 @@ BEGIN
+-    RETURN v_result;
++    INSERT INTO public.app_dat_operacion_offline_idempotencia
++        (client_uuid, id_operacion, tipo, uuid_usuario, m01_solicitud, m01_id_tienda)
++    VALUES (p_client_uuid, v_new_id, 'egreso', v_actor, v_request, v_store);
++    RETURN v_result || jsonb_build_object('idempotent', false, 'client_uuid', p_client_uuid);
+
+

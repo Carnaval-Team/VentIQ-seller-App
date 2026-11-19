@@ -1,0 +1,18 @@
+﻿@@ -23,3 +22,0 @@ AS $function$
+@@ -32,7 +29,2 @@ AS $function$
+-  select a.moneda,
+-         a.operaciones,
+-         a.importe_nativo,
+-         a.importe_base,
+-         a.efectivo_nativo,
+-         a.digital_nativo,
+-         a.tasa_promedio,
++  select a.moneda, a.operaciones, a.importe_nativo, a.importe_base,
++         a.efectivo_nativo, a.digital_nativo, a.tasa_promedio,
+@@ -40,4 +32,2 @@ AS $function$
+-         case when a.moneda = c.moneda
+-              then a.importe_nativo            -- exacto: es la divisa que se cobró
+-              else a.importe_base * c.tasa_cup -- aproximado: cambio de hoy
+-         end::numeric
++         case when a.moneda = c.moneda then a.importe_nativo
++              else a.importe_base * c.tasa_cup end::numeric

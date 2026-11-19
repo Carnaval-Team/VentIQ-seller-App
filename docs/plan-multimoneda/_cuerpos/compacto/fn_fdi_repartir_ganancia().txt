@@ -1,0 +1,29 @@
+﻿@@ -8,0 +9 @@ DECLARE
++    v_igual  boolean;
+@@ -9,0 +11 @@ DECLARE
++    v_n      integer;
+@@ -11,0 +14 @@ DECLARE
++    v_pct    numeric;
+@@ -15 +18,2 @@ BEGIN
+-    SELECT id_tienda INTO STRICT v_tienda FROM public.fdi_dat_liquidacion WHERE id = NEW.id_liquidacion;
++    SELECT id_tienda, repartir_igual INTO STRICT v_tienda, v_igual
++    FROM public.fdi_dat_liquidacion WHERE id = NEW.id_liquidacion;
+@@ -20 +24 @@ BEGIN
+-    SELECT sum(porcentaje), max(id) INTO v_total, v_ultimo
++    SELECT sum(porcentaje), max(id), count(*) INTO v_total, v_ultimo, v_n
+@@ -22 +26,4 @@ BEGIN
+-    IF v_total IS DISTINCT FROM 100::numeric THEN
++    IF v_n IS NULL OR v_n = 0 THEN
++        RAISE EXCEPTION 'No hay inversores activos para repartir la ganancia';
++    END IF;
++    IF NOT v_igual AND v_total IS DISTINCT FROM 100::numeric THEN
+@@ -30,2 +37,6 @@ BEGIN
+-        v_monto := CASE WHEN v_i.id = v_ultimo THEN NEW.monto_ganancia_retirada - v_asignado
+-                        ELSE trunc(NEW.monto_ganancia_retirada * v_i.porcentaje / 100, 2) END;
++        v_pct := CASE WHEN v_igual THEN 100.0 / v_n ELSE v_i.porcentaje END;
++        v_monto := CASE WHEN NOT v_igual AND v_i.id = v_ultimo
++                        THEN NEW.monto_ganancia_retirada - v_asignado
++                        ELSE trunc(NEW.monto_ganancia_retirada * v_pct / 100, 2) END;
+@@ -33 +44 @@ BEGIN
+-        VALUES (v_tienda, v_i.id, NEW.id, v_i.nombre, v_i.porcentaje, NEW.moneda, v_monto);
++        VALUES (v_tienda, v_i.id, NEW.id, v_i.nombre, v_pct, NEW.moneda, v_monto);

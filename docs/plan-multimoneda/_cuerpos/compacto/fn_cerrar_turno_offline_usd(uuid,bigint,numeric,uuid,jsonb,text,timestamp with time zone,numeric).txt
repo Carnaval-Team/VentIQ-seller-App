@@ -1,0 +1,42 @@
+﻿@@ -5 +5 @@
+- SET search_path TO 'public'
++ SET search_path TO 'pg_catalog'
+@@ -8,3 +8,3 @@ DECLARE
+-  v_result JSONB;
+-  v_turno_id BIGINT;
+-  v_efectivo_esperado_usd NUMERIC := 0;
++    v_result jsonb;
++    v_turno_id bigint;
++    v_efectivo_esperado_usd numeric := 0;
+@@ -11,0 +12,7 @@ BEGIN
++    IF NULLIF(btrim(COALESCE(current_setting('app.m01_caja_extra', true), '')), '') IS NULL THEN
++        PERFORM set_config(
++            'app.m01_caja_extra',
++            jsonb_build_object('efectivo_usd', p_efectivo_real_usd)::text,
++            true
++        );
++    END IF;
+@@ -18,9 +24,0 @@ BEGIN
+-  SELECT COALESCE(SUM(pv.monto), 0) INTO v_efectivo_esperado_usd
+-  FROM public.app_dat_pago_venta pv
+-  JOIN public.app_dat_operacion_venta ov
+-    ON ov.id_operacion = pv.id_operacion_venta
+-  JOIN public.app_nom_medio_pago mp ON mp.id = pv.id_medio_pago
+-  WHERE pv.moneda = 'USD'
+-    AND mp.es_efectivo = TRUE
+-    AND ov.id_turno_apertura = v_turno_id;
+@@ -30,0 +29,10 @@ BEGIN
++    IF COALESCE((v_result->>'idempotent')::boolean, false) THEN
++        RETURN v_result;
++    END IF;
++    SELECT COALESCE(SUM(pv.monto), 0) INTO v_efectivo_esperado_usd
++    FROM public.app_dat_pago_venta pv
++    JOIN public.app_dat_operacion_venta ov ON ov.id_operacion = pv.id_operacion_venta
++    JOIN public.app_nom_medio_pago mp ON mp.id = pv.id_medio_pago
++    WHERE pv.moneda = 'USD' AND mp.es_efectivo IS TRUE
++      AND ov.id_turno_apertura = v_turno_id;
+@@ -37,2 +45,2 @@ BEGIN
+-          ELSE p_efectivo_real_usd -
+-            (COALESCE(efectivo_inicial_usd, 0) + v_efectivo_esperado_usd)
++                ELSE p_efectivo_real_usd
++                     - (COALESCE(efectivo_inicial_usd, 0) + v_efectivo_esperado_usd)

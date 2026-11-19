@@ -1,0 +1,11 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\get_productos_completos_by_tienda_optimized_v2(bigint,bigint,boolean,boolean).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\get_productos_completos_by_tienda_optimized_v2(bigint,bigint,boolean,boolean).sql"
+index 4ecae5e4..5f8d3ab9 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\get_productos_completos_by_tienda_optimized_v2(bigint,bigint,boolean,boolean).sql"
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\get_productos_completos_by_tienda_optimized_v2(bigint,bigint,boolean,boolean).sql"
+@@ -235,5 +235,5 @@ BEGIN
+         AND (fecha_hasta IS NULL OR fecha_hasta >= CURRENT_DATE)
+ 
+-        ORDER BY id_producto, id DESC
++        ORDER BY id_producto, fecha_desde DESC
+ 
+     ),

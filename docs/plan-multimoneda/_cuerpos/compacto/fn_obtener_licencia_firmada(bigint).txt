@@ -1,0 +1,2 @@
+﻿@@ -18,0 +19 @@ BEGIN
++    PERFORM public.fn_config_tienda_exigir_lectura(p_id_tienda);

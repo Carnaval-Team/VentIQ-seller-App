@@ -15,10 +15,21 @@
 --   1. fn_descontar_venta_enrutada_v2 acepta p_ruta jsonb DEFAULT NULL y la
 --      reutiliza si corresponde al mismo producto (si no, la resuelve como antes).
 --      Los llamadores que no pasan p_ruta (fn_pedir_item_cuenta_v2) no cambian.
---   2. fn_registrar_venta_v3 y fn_registrar_venta_mesa_v3 pasan p_ruta := v_ruta.
---   3. Ambas ventas: SET lock_timeout = '3s'. Si otra caja tiene bloqueado el
---      mismo producto, la venta falla rápido (sqlstate 55P03), su bloque
---      EXCEPTION revierte todo y la app muestra un mensaje para reintentar.
+--   2. Pasan p_ruta := v_ruta los cuerpos que descuentan:
+--      fn_registrar_venta_v3_impl y fn_registrar_venta_mesa_v3_impl.
+--      Las funciones públicas homónimas son la envoltura de
+--      sql_updates/fix_venta_rollback_parcial.sql: solo llaman al _impl y
+--      revierten si el resultado no es success. Por eso el ancla no está ahí.
+--      Corrida del 18/11 contra newa abortó en la envoltura y no dejó cambios.
+--   3. lock_timeout = '3s' en el _impl y en la envoltura pública. Al entrar en
+--      cualquiera de las dos, el límite vale para el candado de la entrega.
+--      Si otra caja tiene bloqueado el mismo producto, la venta falla rápido
+--      (sqlstate 55P03), su bloque EXCEPTION revierte todo y la app muestra un
+--      mensaje para reintentar.
+--
+-- El pedido de mesa y el lock_timeout de las funciones M01 van en
+-- sql_updates/m01_mesa_ruta_y_lock_timeout.sql. La venta v1, la preorden, el
+-- cierre y el ajuste no resuelven la ruta antes del descuento.
 --
 -- Las funciones se reescriben a partir de su definición VIVA
 -- (pg_get_functiondef) con reemplazos exactos y verificados: si el texto
@@ -88,19 +99,33 @@ BEGIN
 END
 $$;
 
--- ── 2 y 3. Ventas: pasar p_ruta + lock_timeout ───────────────────────────────
+-- ── 2 y 3. _impl: pasar p_ruta. Envoltura e _impl: lock_timeout ──────────────
 DO $$
 DECLARE
     v_fn   regprocedure;
     v_def  text;
+    v_sig  text;
     v_anchor constant text :=
         'p_ya_descontado_sku := (v_origen_venta = ''barra'' AND v_es_elaborado = false)';
+    -- El descuento vive en el cuerpo renombrado por fix_venta_rollback_parcial.sql.
+    v_impls constant text[] := ARRAY[
+        'public.fn_registrar_venta_v3_impl(bigint, uuid, jsonb, text, text, text, smallint, bigint)',
+        'public.fn_registrar_venta_mesa_v3_impl(bigint, uuid, jsonb, text, text, text, smallint, bigint, bigint)'
+    ];
+    -- La envoltura pública no descuenta; el límite también se pone aquí porque
+    -- es la función que entra la app y el ajuste vale para todo lo que llama.
+    v_publicas constant text[] := ARRAY[
+        'public.fn_registrar_venta_v3(bigint, uuid, jsonb, text, text, text, smallint, bigint)',
+        'public.fn_registrar_venta_mesa_v3(bigint, uuid, jsonb, text, text, text, smallint, bigint, bigint)'
+    ];
 BEGIN
-    FOREACH v_fn IN ARRAY ARRAY[
-        'public.fn_registrar_venta_v3(bigint, uuid, jsonb, text, text, text, smallint, bigint)'::regprocedure,
-        'public.fn_registrar_venta_mesa_v3(bigint, uuid, jsonb, text, text, text, smallint, bigint, bigint)'::regprocedure
-    ]
+    FOREACH v_sig IN ARRAY v_impls
     LOOP
+        v_fn := to_regprocedure(v_sig);
+        IF v_fn IS NULL THEN
+            RAISE EXCEPTION 'No existe %: la llamada al descuento tiene que estar en el _impl', v_sig;
+        END IF;
+
         v_def := pg_get_functiondef(v_fn);
 
         IF position('p_ruta              := v_ruta' IN v_def) > 0 THEN
@@ -109,7 +134,7 @@ BEGIN
             IF position(v_anchor IN v_def) = 0 THEN
                 RAISE EXCEPTION 'No se encontró la llamada a fn_descontar_venta_enrutada_v2 en %', v_fn;
             END IF;
-            -- CREATE OR REPLACE conserva permisos y la configuración SET.
+            -- CREATE OR REPLACE conserva permisos. El lock_timeout se fija debajo.
             EXECUTE replace(
                 v_def,
                 v_anchor,
@@ -118,8 +143,17 @@ BEGIN
             RAISE NOTICE '%: ahora pasa p_ruta', v_fn;
         END IF;
 
-        -- Fallar rápido si otra caja tiene bloqueado el mismo producto/ubicación.
         EXECUTE format('ALTER FUNCTION %s SET lock_timeout = %L', v_fn, '3s');
+    END LOOP;
+
+    FOREACH v_sig IN ARRAY v_publicas
+    LOOP
+        v_fn := to_regprocedure(v_sig);
+        IF v_fn IS NULL THEN
+            RAISE EXCEPTION 'No existe la envoltura %', v_sig;
+        END IF;
+        EXECUTE format('ALTER FUNCTION %s SET lock_timeout = %L', v_fn, '3s');
+        RAISE NOTICE '%: lock_timeout = 3s', v_fn;
     END LOOP;
 END
 $$;
@@ -136,5 +170,7 @@ SELECT proname,
  WHERE pronamespace = 'public'::regnamespace
    AND proname IN ('fn_descontar_venta_enrutada_v2',
                    'fn_registrar_venta_v3',
-                   'fn_registrar_venta_mesa_v3')
+                   'fn_registrar_venta_v3_impl',
+                   'fn_registrar_venta_mesa_v3',
+                   'fn_registrar_venta_mesa_v3_impl')
  ORDER BY proname;

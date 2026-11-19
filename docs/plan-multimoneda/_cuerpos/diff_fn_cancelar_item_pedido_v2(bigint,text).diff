@@ -1,0 +1,32 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_cancelar_item_pedido_v2(bigint,text).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_cancelar_item_pedido_v2(bigint,text).sql"
+index e8f3620a..060b0711 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_cancelar_item_pedido_v2(bigint,text).sql"
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_cancelar_item_pedido_v2(bigint,text).sql"
+@@ -56,5 +56,5 @@ BEGIN
+     END IF;
+ 
+-    -- â”€â”€ Estado en cocina â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
++    -- ── Estado en cocina ──────────────────────────────────────────────────
+     IF v_item.id_comanda_item IS NOT NULL THEN
+         SELECT ci.id, ci.estado, ci.id_comanda
+@@ -79,5 +79,5 @@ BEGIN
+     END IF;
+ 
+-    -- â”€â”€ Cancelar la comanda si estaba viva â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
++    -- ── Cancelar la comanda si estaba viva ────────────────────────────────
+     IF v_com_item.id IS NOT NULL AND v_com_item.estado IN (1, 2) THEN
+         UPDATE public.app_dat_comanda_item
+@@ -95,5 +95,5 @@ BEGIN
+     END IF;
+ 
+-    -- â”€â”€ Devolver stock solo si NO se sirvio â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
++    -- ── Devolver stock solo si NO se sirvio ───────────────────────────────
+     IF v_item.stock_movido AND NOT v_ya_servido THEN
+         v_id_almacen := NULLIF(v_item.inventory_data->>'id_almacen', '')::bigint;
+@@ -202,5 +202,5 @@ BEGIN
+     END IF;
+ 
+-    -- â”€â”€ Quitar la linea de la cuenta â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
++    -- ── Quitar la linea de la cuenta ──────────────────────────────────────
+     DELETE FROM public.app_dat_mesa_cuenta_item WHERE id = p_id_item;
+ 

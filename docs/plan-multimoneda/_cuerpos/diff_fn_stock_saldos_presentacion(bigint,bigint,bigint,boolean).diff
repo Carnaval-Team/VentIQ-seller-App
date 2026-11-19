@@ -1,0 +1,126 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_stock_saldos_presentacion(bigint,bigint,bigint,boolean).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_stock_saldos_presentacion(bigint,bigint,bigint,boolean).sql"
+index 4973879d..a3dc398f 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_stock_saldos_presentacion(bigint,bigint,bigint,boolean).sql"
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_stock_saldos_presentacion(bigint,bigint,bigint,boolean).sql"
+@@ -4,57 +4,13 @@
+  STABLE
+ AS $function$
+-    WITH RECURSIVE
+-    -- Usa idx_inv_prod_lote_producto (parcial): respuesta inmediata.
+-    hay_lotes AS (
+-        SELECT EXISTS (
+-            SELECT 1
+-              FROM public.app_dat_inventario_productos x
+-             WHERE x.id_producto = p_id_producto
+-               AND x.id_lote IS NOT NULL
+-        ) AS hay
+-    ),
+-    -- Sin lotes: última fila por combinación saltando por idx_inv_prod_combo.
+-    combos AS (
+-        (SELECT ip.id,
+-                COALESCE(ip.id_variante, 0)        AS v,
+-                COALESCE(ip.id_opcion_variante, 0) AS o,
+-                COALESCE(ip.id_presentacion, 0)    AS p,
+-                COALESCE(ip.id_ubicacion, 0)       AS u
+-           FROM public.app_dat_inventario_productos ip
+-          WHERE ip.id_producto = p_id_producto
+-            AND NOT (SELECT hay FROM hay_lotes)
+-          ORDER BY ip.id_producto,
++    WITH vigente_lote AS (
++        SELECT DISTINCT ON (
++                   ip.id_ubicacion,
+                    COALESCE(ip.id_variante, 0),
+                    COALESCE(ip.id_opcion_variante, 0),
+-                   COALESCE(ip.id_presentacion, 0),
+-                   COALESCE(ip.id_ubicacion, 0),
+-                   ip.id DESC
+-          LIMIT 1)
+-        UNION ALL
+-        SELECT n.id, n.v, n.o, n.p, n.u
+-          FROM combos c
+-          CROSS JOIN LATERAL (
+-              SELECT ip.id,
+-                     COALESCE(ip.id_variante, 0)        AS v,
+-                     COALESCE(ip.id_opcion_variante, 0) AS o,
+-                     COALESCE(ip.id_presentacion, 0)    AS p,
+-                     COALESCE(ip.id_ubicacion, 0)       AS u
+-                FROM public.app_dat_inventario_productos ip
+-               WHERE ip.id_producto = p_id_producto
+-                 AND (COALESCE(ip.id_variante, 0),
+-                      COALESCE(ip.id_opcion_variante, 0),
+-                      COALESCE(ip.id_presentacion, 0),
+-                      COALESCE(ip.id_ubicacion, 0)) > (c.v, c.o, c.p, c.u)
+-               ORDER BY ip.id_producto,
+-                        COALESCE(ip.id_variante, 0),
+-                        COALESCE(ip.id_opcion_variante, 0),
+-                        COALESCE(ip.id_presentacion, 0),
+-                        COALESCE(ip.id_ubicacion, 0),
+-                        ip.id DESC
+-               LIMIT 1
+-          ) n
+-    ),
+-    vigente_lote AS (
+-        SELECT ip.id_ubicacion,
++                   ip.id_presentacion,
++                   COALESCE(ip.id_lote, 0)
++               )
++               ip.id_ubicacion,
+                la.id_almacen,
+                ip.id_variante,
+@@ -65,45 +21,17 @@ AS $function$
+                ip.sku_producto,
+                ip.sku_ubicacion
+-          FROM combos c
+-          JOIN public.app_dat_inventario_productos ip ON ip.id = c.id
+-          JOIN public.app_dat_layout_almacen la      ON la.id = ip.id_ubicacion
+-         WHERE la.deleted_at IS NULL
++          FROM public.app_dat_inventario_productos ip
++          JOIN public.app_dat_layout_almacen la ON la.id = ip.id_ubicacion
++         WHERE ip.id_producto = p_id_producto
++           AND la.deleted_at IS NULL
+            AND (p_id_ubicacion IS NULL OR ip.id_ubicacion = p_id_ubicacion)
+            AND (p_id_almacen   IS NULL OR la.id_almacen   = p_id_almacen)
+-        UNION ALL
+-        -- Con lotes: consulta original, sin cambios.
+-        SELECT o.*
+-          FROM (
+-              SELECT DISTINCT ON (
+-                         ip.id_ubicacion,
+-                         COALESCE(ip.id_variante, 0),
+-                         COALESCE(ip.id_opcion_variante, 0),
+-                         ip.id_presentacion,
+-                         COALESCE(ip.id_lote, 0)
+-                     )
+-                     ip.id_ubicacion,
+-                     la.id_almacen,
+-                     ip.id_variante,
+-                     ip.id_opcion_variante,
+-                     ip.id_presentacion,
+-                     ip.id_lote,
+-                     COALESCE(ip.cantidad_final, 0) AS saldo,
+-                     ip.sku_producto,
+-                     ip.sku_ubicacion
+-                FROM public.app_dat_inventario_productos ip
+-                JOIN public.app_dat_layout_almacen la ON la.id = ip.id_ubicacion
+-               WHERE ip.id_producto = p_id_producto
+-                 AND la.deleted_at IS NULL
+-                 AND (p_id_ubicacion IS NULL OR ip.id_ubicacion = p_id_ubicacion)
+-                 AND (p_id_almacen   IS NULL OR la.id_almacen   = p_id_almacen)
+-               ORDER BY
+-                     ip.id_ubicacion,
+-                     COALESCE(ip.id_variante, 0),
+-                     COALESCE(ip.id_opcion_variante, 0),
+-                     ip.id_presentacion,
+-                     COALESCE(ip.id_lote, 0),
+-                     ip.id DESC
+-          ) o
+-         WHERE (SELECT hay FROM hay_lotes)
++         ORDER BY
++               ip.id_ubicacion,
++               COALESCE(ip.id_variante, 0),
++               COALESCE(ip.id_opcion_variante, 0),
++               ip.id_presentacion,
++               COALESCE(ip.id_lote, 0),
++               ip.id DESC
+     ),
+     vigente AS (

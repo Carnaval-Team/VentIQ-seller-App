@@ -1,0 +1,21 @@
+﻿@@ -6,3 +6 @@ AS $function$
+-declare
+-  v_moneda text;
+-  v_tasa   numeric;
++declare v_moneda text; v_tasa numeric;
+@@ -11,9 +9,2 @@ begin
+-  v_tasa := case
+-              when v_moneda = 'CUP' then 1
+-              else coalesce(new.tasa_cambio, new.tasa_usd)
+-            end;
++  v_tasa := case when v_moneda = 'CUP' then 1
++                 else coalesce(new.tasa_cambio, new.tasa_usd) end;
+@@ -25,10 +15,2 @@ begin
+-  if new.tasa_cambio is null then
+-    new.tasa_cambio := v_tasa;
+-  end if;
+-  if v_moneda = 'USD' and new.tasa_usd is null then
+-    new.tasa_usd := v_tasa;
+-  end if;
++  if new.tasa_cambio is null then new.tasa_cambio := v_tasa; end if;
++  if v_moneda = 'USD' and new.tasa_usd is null then new.tasa_usd := v_tasa; end if;

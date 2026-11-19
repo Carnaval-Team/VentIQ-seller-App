@@ -1,0 +1,11 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_guardar_denominaciones(text,jsonb).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_guardar_denominaciones(text,jsonb).sql"
+index e8e34fd3..57939562 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_guardar_denominaciones(text,jsonb).sql"
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_guardar_denominaciones(text,jsonb).sql"
+@@ -10,5 +10,5 @@ DECLARE
+   v_valor  numeric;
+   v_activo boolean;
+-  v_n       int := 0;
++  v_n      int := 0;
+ BEGIN
+   IF NOT public.fn_is_superadmin_full_access() THEN

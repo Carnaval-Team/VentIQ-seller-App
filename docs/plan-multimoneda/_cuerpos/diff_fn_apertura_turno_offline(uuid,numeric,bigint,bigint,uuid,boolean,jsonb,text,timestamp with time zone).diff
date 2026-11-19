@@ -1,0 +1,175 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_apertura_turno_offline(uuid,numeric,bigint,bigint,uuid,boolean,jsonb,text,timestamp with time zone).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_apertura_turno_offline(uuid,numeric,bigint,bigint,uuid,boolean,jsonb,text,timestamp with time zone).sql"
+index d9a72d18..43ad50db 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_apertura_turno_offline(uuid,numeric,bigint,bigint,uuid,boolean,jsonb,text,timestamp with time zone).sql"	
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_apertura_turno_offline(uuid,numeric,bigint,bigint,uuid,boolean,jsonb,text,timestamp with time zone).sql"	
+@@ -3,43 +3,111 @@
+  LANGUAGE plpgsql
+  SECURITY DEFINER
++ SET search_path TO 'pg_catalog'
+ AS $function$
+ DECLARE
+-    v_existing bigint;
+-    v_turno_abierto bigint;
++    v_actor uuid := auth.uid();
++    v_request jsonb;
++    v_existing public.app_dat_operacion_offline_idempotencia%ROWTYPE;
++    v_store bigint;
++    v_open bigint;
+     v_new_id bigint;
++    v_allowed boolean;
++    v_extra text;
+ BEGIN
+-    SELECT id_operacion INTO v_existing
++    IF v_actor IS NULL OR p_client_uuid IS NULL
++       OR p_id_tpv IS NULL OR p_id_vendedor IS NULL THEN
++        RAISE EXCEPTION 'Solicitud no autorizada' USING ERRCODE = '42501';
++    END IF;
++    v_extra := current_setting('app.m01_caja_extra', true);
++    PERFORM set_config('app.m01_caja_extra', '', true);
++    v_request := jsonb_build_object(
++        'version', 1,
++        'efectivo_inicial', p_efectivo_inicial,
++        'id_tpv', p_id_tpv,
++        'id_vendedor', p_id_vendedor,
++        'usuario', p_usuario,
++        'maneja_inventario', p_maneja_inventario,
++        'productos', COALESCE(p_productos, '[]'::jsonb),
++        'observaciones', p_observaciones,
++        'fecha_apertura', p_fecha_apertura,
++        'extra', CASE
++            WHEN v_extra IS NULL OR btrim(v_extra) = '' THEN '{}'::jsonb
++            ELSE v_extra::jsonb
++        END
++    );
++    PERFORM pg_advisory_xact_lock(hashtextextended(p_client_uuid::text, 0));
++    -- R33: dos claves distintas del mismo TPV + vendedor se serializan.
++    PERFORM pg_advisory_xact_lock(
++        hashtextextended(format('apertura_turno:%s:%s', p_id_tpv, p_id_vendedor), 0)
++    );
++    SELECT * INTO v_existing
+     FROM public.app_dat_operacion_offline_idempotencia
+-    WHERE client_uuid = p_client_uuid AND tipo = 'apertura_turno';
+-
+-    IF v_existing IS NOT NULL THEN
+-        -- Solo reutilizar si el turno sigue abierto; si ya cerró, crear uno nuevo.
+-        IF EXISTS (
+-            SELECT 1 FROM app_dat_caja_turno
+-            WHERE id = v_existing AND estado = 1
+-        ) THEN
+-            RETURN jsonb_build_object(
+-                'status', 'success', 'id_turno', v_existing, 'idempotent', true
+-            );
++    WHERE client_uuid = p_client_uuid
++    FOR UPDATE;
++    IF FOUND THEN
++        IF v_existing.tipo IS DISTINCT FROM 'apertura_turno'
++           OR v_existing.uuid_usuario IS DISTINCT FROM v_actor
++           -- R33: la fecha no entra en la comparación (ver cabecera, punto 6).
++           OR (v_existing.m01_solicitud - 'fecha_apertura') IS DISTINCT FROM (v_request - 'fecha_apertura')
++           OR v_existing.m01_id_tienda IS NULL THEN
++            RAISE EXCEPTION 'Clave no verificable o solicitud no autorizada; requiere revision'
++                USING ERRCODE = '42501';
++        END IF;
++        IF public.fn_config_tienda_puede_escribir(v_existing.m01_id_tienda) IS DISTINCT FROM true
++           AND NOT EXISTS (
++                SELECT 1
++                FROM public.app_dat_vendedor s
++                JOIN public.app_dat_trabajadores w ON w.id = s.id_trabajador
++                WHERE s.uuid = v_actor AND w.uuid = v_actor
++                  AND w.deleted_at IS NULL
++                  AND w.id_tienda = v_existing.m01_id_tienda
++           ) THEN
++            RAISE EXCEPTION 'Solicitud no autorizada' USING ERRCODE = '42501';
+         END IF;
++        -- R33: si el turno sigue abierto, recuperar la apertura real.
++        PERFORM public.fn_turno_alinear_fecha_apertura(v_existing.id_operacion, p_fecha_apertura);
++        RETURN jsonb_build_object(
++            'status', 'success', 'idempotent', true,
++            'id_turno', v_existing.id_operacion,
++            'message', 'Apertura ya procesada'
++        );
++    END IF;
+ 
+-        DELETE FROM public.app_dat_operacion_offline_idempotencia
+-        WHERE client_uuid = p_client_uuid AND tipo = 'apertura_turno';
++    SELECT t.id_tienda INTO v_store
++    FROM public.app_dat_tpv t
++    WHERE t.id = p_id_tpv
++    FOR SHARE;
++    IF NOT FOUND OR v_store IS NULL THEN
++        RAISE EXCEPTION 'Solicitud no autorizada' USING ERRCODE = '42501';
++    END IF;
++    v_allowed := public.fn_config_tienda_puede_escribir(v_store) IS TRUE
++        OR EXISTS (
++            SELECT 1
++            FROM public.app_dat_vendedor s
++            JOIN public.app_dat_trabajadores w ON w.id = s.id_trabajador
++            WHERE s.uuid = v_actor AND s.id_tpv = p_id_tpv
++              AND w.uuid = v_actor AND w.deleted_at IS NULL
++              AND w.id_tienda = v_store
++        );
++    IF v_allowed IS DISTINCT FROM true
++       OR (p_usuario IS NOT NULL AND p_usuario IS DISTINCT FROM v_actor
++           AND public.fn_config_tienda_puede_escribir(v_store) IS DISTINCT FROM true) THEN
++        RAISE EXCEPTION 'Solicitud no autorizada' USING ERRCODE = '42501';
+     END IF;
+ 
+-    SELECT id INTO v_turno_abierto
+-    FROM app_dat_caja_turno
++    SELECT id INTO v_open
++    FROM public.app_dat_caja_turno
+     WHERE id_tpv = p_id_tpv AND id_vendedor = p_id_vendedor AND estado = 1
+     ORDER BY fecha_apertura DESC NULLS LAST
+     LIMIT 1;
+-
+-    IF v_turno_abierto IS NOT NULL THEN
++    IF v_open IS NOT NULL THEN
+         INSERT INTO public.app_dat_operacion_offline_idempotencia
+-            (client_uuid, id_operacion, tipo, uuid_usuario)
+-        VALUES (p_client_uuid, v_turno_abierto, 'apertura_turno', p_usuario)
+-        ON CONFLICT (client_uuid) DO NOTHING;
+-
++            (client_uuid, id_operacion, tipo, uuid_usuario, m01_solicitud, m01_id_tienda)
++        VALUES (p_client_uuid, v_open, 'apertura_turno', v_actor, v_request, v_store);
++        -- R33: antes se reutilizaba sin fecha → apertura = hora del sync.
++        PERFORM public.fn_turno_alinear_fecha_apertura(v_open, p_fecha_apertura);
+         RETURN jsonb_build_object(
+-            'status', 'success', 'id_turno', v_turno_abierto, 'idempotent', true,
++            'status', 'success', 'idempotent', false,
++            'id_turno', v_open,
+             'message', 'Turno ya estaba abierto; reutilizado'
+         );
+@@ -50,24 +118,17 @@ BEGIN
+         p_id_tpv := p_id_tpv,
+         p_id_vendedor := p_id_vendedor,
+-        p_usuario := p_usuario,
+-        p_maneja_inventario := p_maneja_inventario,
++        p_usuario := COALESCE(p_usuario, v_actor),
++        p_maneja_inventario := COALESCE(p_maneja_inventario, false),
+         p_productos := p_productos,
+         p_observaciones := p_observaciones
+     );
+-
+-    IF v_new_id IS NOT NULL THEN
+-        INSERT INTO public.app_dat_operacion_offline_idempotencia
+-            (client_uuid, id_operacion, tipo, uuid_usuario)
+-        VALUES (p_client_uuid, v_new_id, 'apertura_turno', p_usuario)
+-        ON CONFLICT (client_uuid) DO NOTHING;
+-
+-        -- Forzar la hora real de apertura del dispositivo.
+-        IF p_fecha_apertura IS NOT NULL THEN
+-            UPDATE app_dat_caja_turno
+-            SET fecha_apertura = p_fecha_apertura
+-            WHERE id = v_new_id;
+-        END IF;
++    IF v_new_id IS NULL THEN
++        RAISE EXCEPTION 'El servidor rechazó la apertura' USING ERRCODE = '42501';
+     END IF;
+-
++    -- R33: mismos límites que al reutilizar (antes: UPDATE sin acotar).
++    PERFORM public.fn_turno_alinear_fecha_apertura(v_new_id, p_fecha_apertura);
++    INSERT INTO public.app_dat_operacion_offline_idempotencia
++        (client_uuid, id_operacion, tipo, uuid_usuario, m01_solicitud, m01_id_tienda)
++    VALUES (p_client_uuid, v_new_id, 'apertura_turno', v_actor, v_request, v_store);
+     RETURN jsonb_build_object(
+         'status', 'success', 'id_turno', v_new_id, 'idempotent', false

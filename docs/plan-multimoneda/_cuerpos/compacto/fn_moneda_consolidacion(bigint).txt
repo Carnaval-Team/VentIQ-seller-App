@@ -1,0 +1,35 @@
+﻿@@ -3 +3 @@
+- LANGUAGE sql
++ LANGUAGE plpgsql
+@@ -6,0 +7,5 @@ AS $function$
++#variable_conflict use_column
++BEGIN
++    PERFORM public.fn_config_tienda_exigir_lectura(p_id_tienda);
++    RETURN QUERY
+@@ -10,2 +15 @@ AS $function$
+-    where c.id_tienda = p_id_tienda
+-      and c.forzar_moneda_venta
++    where c.id_tienda = p_id_tienda and c.forzar_moneda_venta
+@@ -13,5 +17,2 @@ AS $function$
+-      and exists (
+-        select 1 from public.app_dat_tienda_moneda m
+-        where m.id_tienda = c.id_tienda
+-          and m.moneda = c.moneda_venta_forzada
+-          and m.activo)
++      and exists (select 1 from public.app_dat_tienda_moneda m
++                  where m.id_tienda = c.id_tienda and m.moneda = c.moneda_venta_forzada and m.activo)
+@@ -22,7 +23,2 @@ AS $function$
+-           coalesce(
+-             public.fn_tasa_cambio('CUP', cd.moneda, p_id_tienda, now()),
+-             1::numeric / nullif(
+-               public.fn_tasa_cambio(cd.moneda, 'CUP', p_id_tienda, now()), 0)
+-           ) as tasa
++           coalesce(public.fn_tasa_cambio('CUP', cd.moneda, p_id_tienda, now()),
++                    1::numeric / nullif(public.fn_tasa_cambio(cd.moneda, 'CUP', p_id_tienda, now()), 0)) as tasa
+@@ -31,4 +27 @@ AS $function$
+-  select coalesce(r.moneda, 'CUP')::text,
+-         coalesce(r.tasa, 1)::numeric,
+-         (r.moneda is null)::boolean
++  select coalesce(r.moneda, 'CUP')::text, coalesce(r.tasa, 1)::numeric, (r.moneda is null)::boolean
+@@ -36,0 +30,2 @@ AS $function$
++END;

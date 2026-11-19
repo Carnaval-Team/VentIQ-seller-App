@@ -1,0 +1,22 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\egresos_por_turno(bigint).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\egresos_por_turno(bigint).sql"
+index a5f9fe37..a2338a14 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\egresos_por_turno(bigint).sql"
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\egresos_por_turno(bigint).sql"
+@@ -5,14 +5,7 @@ AS $function$
+ BEGIN
+     RETURN QUERY
+-    SELECT
+-        epc.id,
+-        epc.monto_entrega,
+-        epc.motivo_entrega,
+-        epc.nombre_recibe,
+-        epc.nombre_autoriza,
+-        epc.fecha_entrega,
+-        epc.id_medio_pago,
+-        ct.estado,
+-        epc.moneda::character varying
++    SELECT epc.id, epc.monto_entrega, epc.motivo_entrega, epc.nombre_recibe,
++           epc.nombre_autoriza, epc.fecha_entrega, epc.id_medio_pago, ct.estado,
++           epc.moneda::character varying
+     FROM app_dat_entregas_parciales_caja epc
+     INNER JOIN app_dat_caja_turno ct ON epc.id_turno = ct.id

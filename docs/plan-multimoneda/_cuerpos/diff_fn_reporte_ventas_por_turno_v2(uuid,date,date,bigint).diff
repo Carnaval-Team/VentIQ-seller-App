@@ -1,0 +1,24 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_reporte_ventas_por_turno_v2(uuid,date,date,bigint).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_reporte_ventas_por_turno_v2(uuid,date,date,bigint).sql"
+index 40091c3e..67a107ed 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_reporte_ventas_por_turno_v2(uuid,date,date,bigint).sql"
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_reporte_ventas_por_turno_v2(uuid,date,date,bigint).sql"
+@@ -3,13 +3,13 @@
+  LANGUAGE sql
+  STABLE SECURITY DEFINER
+- SET search_path TO 'public', 'pg_temp'
++ SET search_path TO 'public'
+ AS $function$
+-      WITH base AS (
+-        SELECT * FROM public.fn_reporte_ventas_por_turno(
++      with base as (
++        select * from public.fn_reporte_ventas_por_turno(
+           p_uuid_usuario, p_fecha_desde, p_fecha_hasta, p_id_tienda)
+       )
+-      SELECT b.*, d.desglose_monedas, d.total_base
+-      FROM base b
+-      CROSS JOIN LATERAL public.fn_desglose_monedas_turno(b.id_turno, false) d;
++      select b.*, d.desglose_monedas, d.total_base
++      from base b
++      cross join lateral public.fn_desglose_monedas_turno(b.id_turno, false) d;
+     $function$
+ 

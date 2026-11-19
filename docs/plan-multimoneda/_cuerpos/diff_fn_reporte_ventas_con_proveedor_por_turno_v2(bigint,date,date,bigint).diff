@@ -1,0 +1,13 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_reporte_ventas_con_proveedor_por_turno_v2(bigint,date,date,bigint).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_reporte_ventas_con_proveedor_por_turno_v2(bigint,date,date,bigint).sql"
+index 5884a240..100a7720 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_reporte_ventas_con_proveedor_por_turno_v2(bigint,date,date,bigint).sql"
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_reporte_ventas_con_proveedor_por_turno_v2(bigint,date,date,bigint).sql"
+@@ -33,6 +33,6 @@ BEGIN
+     RETURN QUERY
+     WITH
+-
+-    -- Operaciones por ventana temporal (NO por rango de IDs).
++    -- Operaciones de venta por FECHA (sin lógica de turnos): pagadas y
++    -- completadas dentro de la ventana pedida.
+     ops AS MATERIALIZED (
+         SELECT DISTINCT

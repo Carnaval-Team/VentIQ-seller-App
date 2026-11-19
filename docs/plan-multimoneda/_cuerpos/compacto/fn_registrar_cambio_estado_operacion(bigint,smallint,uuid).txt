@@ -1,0 +1,41 @@
+﻿@@ -5 +5,3 @@
+-AS $function$DECLARE
++ SET search_path TO 'pg_catalog', 'public'
++AS $function$
++DECLARE
+@@ -14,0 +17 @@ AS $function$DECLARE
++    v_presentacion_devolver BIGINT;
+@@ -93,0 +97,14 @@ BEGIN
++            v_presentacion_devolver := COALESCE(
++                v_productos_extraidos.id_presentacion,
++                (
++                    SELECT pp.id
++                    FROM app_dat_producto_presentacion pp
++                    WHERE pp.id_producto = v_productos_extraidos.id_producto
++                      AND pp.es_base
++                    ORDER BY pp.id
++                    LIMIT 1
++                )
++            );
+@@ -100 +117 @@ BEGIN
+-              AND COALESCE(id_presentacion, 0) = COALESCE(v_productos_extraidos.id_presentacion, 0)
++              AND COALESCE(id_presentacion, 0) = COALESCE(v_presentacion_devolver, 0)
+@@ -127 +144 @@ BEGIN
+-                v_productos_extraidos.id_presentacion,
++                v_presentacion_devolver,
+@@ -171 +188,3 @@ BEGIN
+@@ -178,0 +198,10 @@ BEGIN
++                IF v_ultimo_inventario.id_presentacion IS NULL THEN
++                    v_ultimo_inventario.id_presentacion := (
++                        SELECT pp.id
++                        FROM app_dat_producto_presentacion pp
++                        WHERE pp.id_producto = v_ingrediente.id_ingrediente
++                          AND pp.es_base
++                        ORDER BY pp.id
++                        LIMIT 1
++                    );
++                END IF;
+@@ -212 +241,2 @@ BEGIN
+-END;$function$
++END;
++$function$

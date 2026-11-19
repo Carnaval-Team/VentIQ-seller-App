@@ -1,0 +1,33 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_reporte_ventas_por_moneda(bigint,date,date,bigint).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_reporte_ventas_por_moneda(bigint,date,date,bigint).sql"
+index 47fa6ce1..a6d7a8f7 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_reporte_ventas_por_moneda(bigint,date,date,bigint).sql"
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_reporte_ventas_por_moneda(bigint,date,date,bigint).sql"
+@@ -21,7 +21,4 @@ AS $function$
+       and o.created_at::date between p_desde and p_hasta
+       and (p_id_tpv is null or ov.id_tpv = p_id_tpv)
+-      -- Solo ventas COMPLETADAS. Sin esto el reporte cuenta pagos de
+-      -- operaciones abiertas (último estado <> 2) y deja de cuadrar con los
+-      -- totales del resto de informes, que sí filtran así.
+       and exists (select 1 from public.app_dat_estado_operacion eo
+                   where eo.id_operacion = o.id and eo.estado = 2
+@@ -30,16 +27,9 @@ AS $function$
+     group by 1
+   )
+-  select a.moneda,
+-         a.operaciones,
+-         a.importe_nativo,
+-         a.importe_base,
+-         a.efectivo_nativo,
+-         a.digital_nativo,
+-         a.tasa_promedio,
++  select a.moneda, a.operaciones, a.importe_nativo, a.importe_base,
++         a.efectivo_nativo, a.digital_nativo, a.tasa_promedio,
+          c.moneda::text,
+-         case when a.moneda = c.moneda
+-              then a.importe_nativo            -- exacto: es la divisa que se cobró
+-              else a.importe_base * c.tasa_cup -- aproximado: cambio de hoy
+-         end::numeric
++         case when a.moneda = c.moneda then a.importe_nativo
++              else a.importe_base * c.tasa_cup end::numeric
+   from agg a cross join cons c
+   order by a.importe_base desc;

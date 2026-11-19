@@ -1,0 +1,53 @@
+﻿CREATE OR REPLACE FUNCTION public.fn_sync_turno_moneda()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_esperado record;
+begin
+  if tg_op = 'INSERT' then
+    insert into public.app_dat_caja_turno_moneda (id_turno, moneda, efectivo_inicial)
+    values (new.id, 'CUP', coalesce(new.efectivo_inicial, 0))
+    on conflict (id_turno, moneda) do nothing;
+
+    if coalesce(new.efectivo_inicial_usd, 0) <> 0 then
+      insert into public.app_dat_caja_turno_moneda (id_turno, moneda, efectivo_inicial)
+      values (new.id, 'USD', coalesce(new.efectivo_inicial_usd, 0))
+      on conflict (id_turno, moneda) do nothing;
+    end if;
+    return new;
+  end if;
+
+  if new.estado               is distinct from old.estado
+     or new.efectivo_real     is distinct from old.efectivo_real
+     or new.efectivo_real_usd is distinct from old.efectivo_real_usd
+     or new.efectivo_inicial  is distinct from old.efectivo_inicial
+     or new.efectivo_inicial_usd is distinct from old.efectivo_inicial_usd
+     or new.fecha_cierre      is distinct from old.fecha_cierre then
+
+    for v_esperado in
+      select moneda, esperado from public.fn_esperado_turno_por_moneda(new.id)
+    loop
+      insert into public.app_dat_caja_turno_moneda
+        (id_turno, moneda, efectivo_inicial, efectivo_esperado, efectivo_real)
+      values (new.id, v_esperado.moneda,
+              case when v_esperado.moneda = 'USD'
+                   then coalesce(new.efectivo_inicial_usd, 0)
+                   else coalesce(new.efectivo_inicial, 0) end,
+              v_esperado.esperado,
+              case when v_esperado.moneda = 'USD'
+                   then new.efectivo_real_usd
+                   else new.efectivo_real end)
+      on conflict (id_turno, moneda) do update
+        set efectivo_esperado = excluded.efectivo_esperado,
+            efectivo_real     = coalesce(excluded.efectivo_real,
+                                         public.app_dat_caja_turno_moneda.efectivo_real),
+            updated_at        = now();
+    end loop;
+  end if;
+
+  return new;
+end $function$
+

@@ -1,0 +1,11 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\get_productos_completos_by_tienda_optimized_provider2(bigint,bigint,boolean,integer,boolean).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\get_productos_completos_by_tienda_optimized_provider2(bigint,bigint,boolean,integer,boolean).sql"
+index fc944041..cf4399fd 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\get_productos_completos_by_tienda_optimized_provider2(bigint,bigint,boolean,integer,boolean).sql"
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\get_productos_completos_by_tienda_optimized_provider2(bigint,bigint,boolean,integer,boolean).sql"
+@@ -123,5 +123,5 @@ BEGIN
+         WHERE (id_variante IS NULL OR id_variante = 0)
+         AND (fecha_hasta IS NULL OR fecha_hasta >= CURRENT_DATE)
+-        ORDER BY id_producto, id DESC
++        ORDER BY id_producto, fecha_desde DESC
+     ),
+     -- CTE para variantes configuradas en precios (solo las que tienen precio configurado)

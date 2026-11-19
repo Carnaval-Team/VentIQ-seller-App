@@ -1,0 +1,48 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_pedir_item_cuenta_v2(bigint,bigint,numeric,numeric,bigint,bigint,bigint,bigint,numeric,bigint,jsonb,jsonb,text,character varying,character varying,uuid,boolean).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_pedir_item_cuenta_v2(bigint,bigint,numeric,numeric,bigint,bigint,bigint,bigint,numeric,bigint,jsonb,jsonb,text,character varying,character varying,uuid,boolean).sql"
+index 1a7fa83e..b106662b 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_pedir_item_cuenta_v2(bigint,bigint,numeric,numeric,bigint,bigint,bigint,bigint,numeric,bigint,jsonb,jsonb,text,character varying,character varying,uuid,boolean).sql"	
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_pedir_item_cuenta_v2(bigint,bigint,numeric,numeric,bigint,bigint,bigint,bigint,numeric,bigint,jsonb,jsonb,text,character varying,character varying,uuid,boolean).sql"	
+@@ -28,5 +28,5 @@ BEGIN
+     END IF;
+ 
+-    -- â”€â”€ 1. Cuenta abierta â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
++    -- ── 1. Cuenta abierta ─────────────────────────────────────────────────
+     SELECT c.id, c.id_tienda, c.id_tpv, c.id_mesa, c.estado
+       INTO v_cuenta
+@@ -64,5 +64,5 @@ BEGIN
+     END IF;
+ 
+-    -- â”€â”€ 2. Clasificar (y validar enrutamiento) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
++    -- ── 2. Clasificar (y validar enrutamiento) ────────────────────────────
+     v_ruta := public.fn_resolver_origen_venta(p_id_producto, v_cuenta.id_tpv);
+ 
+@@ -85,6 +85,6 @@ BEGIN
+     END;
+ 
+-    -- â”€â”€ 3. Mover inventario AHORA (esto es "pedir != cobrar") â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-    -- p_ya_descontado_sku := false porque aqui NADIE descontÃ³ antes: no hay
++    -- ── 3. Mover inventario AHORA (esto es "pedir != cobrar") ─────────────
++    -- p_ya_descontado_sku := false porque aqui NADIE descontó antes: no hay
+     -- INSERT de venta previo como en fn_registrar_venta.
+     --
+@@ -115,5 +115,5 @@ BEGIN
+     END IF;
+ 
+-    -- â”€â”€ 4. Agregar la linea a la cuenta (delegando en la funcion existente) â”€â”€
++    -- ── 4. Agregar la linea a la cuenta (delegando en la funcion existente) ──
+     -- La LINEA guarda la cantidad en la presentacion vendida: la app y el
+     -- importe no cambian.
+@@ -139,5 +139,5 @@ BEGIN
+     );
+ 
+-    -- â”€â”€ 5. Disparar comanda si el plato va a cocina â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
++    -- ── 5. Disparar comanda si el plato va a cocina ───────────────────────
+     -- Un producto de barra o un servicio no genera comanda: el plan lo dice
+     -- explicito ("Cocina solo ve comandas de su estacion, no bebidas del bar").
+@@ -176,5 +176,5 @@ BEGIN
+     END IF;
+ 
+-    -- â”€â”€ 6. Marcar la linea con lo que paso â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
++    -- ── 6. Marcar la linea con lo que paso ────────────────────────────────
+     UPDATE public.app_dat_mesa_cuenta_item
+        SET origen_stock    = v_origen_stock,

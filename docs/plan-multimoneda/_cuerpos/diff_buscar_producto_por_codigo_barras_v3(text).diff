@@ -1,0 +1,11 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\buscar_producto_por_codigo_barras_v3(text).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\buscar_producto_por_codigo_barras_v3(text).sql"
+index 7887f61d..604a5aa5 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\buscar_producto_por_codigo_barras_v3(text).sql"
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\buscar_producto_por_codigo_barras_v3(text).sql"
+@@ -107,5 +107,5 @@ BEGIN
+         WHERE (id_variante IS NULL OR id_variante = 0)
+           AND (fecha_hasta IS NULL OR fecha_hasta >= CURRENT_DATE)
+-        ORDER BY id_producto, id DESC
++        ORDER BY id_producto, fecha_desde DESC
+     ),
+     -- Producto exacto encontrado

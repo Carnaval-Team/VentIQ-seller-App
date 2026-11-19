@@ -1,0 +1,16 @@
+﻿@@ -5 +4,0 @@
+- SET search_path TO 'public', 'pg_temp'
+@@ -8 +7 @@ BEGIN
+@@ -13 +12,13 @@ BEGIN
++    IF NOT EXISTS (
++        SELECT 1 FROM app_dat_almacenero WHERE uuid = auth.uid()
++        UNION
++        SELECT 1 FROM app_dat_supervisor WHERE uuid = auth.uid()
++        UNION
++        SELECT 1 FROM app_dat_gerente WHERE uuid = auth.uid()
++    ) THEN
++        RAISE EXCEPTION 'No tienes permisos para listar motivos de extracción';
++    END IF;
+@@ -19 +30 @@ BEGIN
+-        (me.created_at IS NOT NULL) AS es_activo,
++        (me.created_at IS NOT NULL) AS es_activo,  -- Asumimos que todos son activos (o puedes agregar un campo `activo`)

@@ -1,0 +1,17 @@
+﻿@@ -19,7 +19,4 @@ BEGIN
+-    IF TG_OP = 'UPDATE'
+-       AND NEW.precio_venta_cup IS NOT DISTINCT FROM OLD.precio_venta_cup
+-       AND NEW.precio_venta_usd IS NOT DISTINCT FROM OLD.precio_venta_usd
+-       AND NEW.precio_descuento IS NOT DISTINCT FROM OLD.precio_descuento
+-    THEN
++    v_base_price := NEW.precio_venta_cup;
++    IF v_base_price IS NULL OR v_base_price <= 0 THEN
+@@ -33,0 +31 @@ BEGIN
+@@ -38,7 +36 @@ BEGIN
+-    v_base_price := public.fn_carnaval_precio_base_vigente(NEW.id_producto);
+-    IF v_base_price IS NULL OR v_base_price <= 0 THEN
+-        RETURN NEW;
+-    END IF;
+@@ -48,0 +41,3 @@ BEGIN
+@@ -52,0 +48,3 @@ BEGIN
+@@ -55,0 +54,3 @@ BEGIN

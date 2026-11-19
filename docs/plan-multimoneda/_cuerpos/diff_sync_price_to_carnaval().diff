@@ -1,0 +1,58 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\sync_price_to_carnaval().sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\sync_price_to_carnaval().sql"
+index c768beed..c463f1a7 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\sync_price_to_carnaval().sql"
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\sync_price_to_carnaval().sql"
+@@ -17,11 +17,8 @@ BEGIN
+     END IF;
+ 
+-    -- Cerrar/reabrir fechas (u otros metadatos) NO debe
+-    -- reescribir Carnaval con el precio de esa fila.
+-    IF TG_OP = 'UPDATE'
+-       AND NEW.precio_venta_cup IS NOT DISTINCT FROM OLD.precio_venta_cup
+-       AND NEW.precio_venta_usd IS NOT DISTINCT FROM OLD.precio_venta_usd
+-       AND NEW.precio_descuento IS NOT DISTINCT FROM OLD.precio_descuento
+-    THEN
++    v_base_price := NEW.precio_venta_cup;
++
++    -- Sin precio base no hay nada que sincronizar.
++    IF v_base_price IS NULL OR v_base_price <= 0 THEN
+         RETURN NEW;
+     END IF;
+@@ -32,26 +29,30 @@ BEGIN
+      WHERE p.id = NEW.id_producto;
+ 
++    -- El producto no esta publicado en Carnaval.
+     IF v_id_vendedor_app IS NULL THEN
+         RETURN NEW;
+     END IF;
+ 
+-    -- Siempre el vigente mas reciente por id (no NEW a ciegas).
+-    v_base_price := public.fn_carnaval_precio_base_vigente(NEW.id_producto);
+-
+-    IF v_base_price IS NULL OR v_base_price <= 0 THEN
+-        RETURN NEW;
+-    END IF;
+-
++    -- Porcientos configurados a la tienda (o los historicos).
+     SELECT o_pct_efectivo, o_pct_transferencia
+       INTO v_pct_efectivo, v_pct_transferencia
+       FROM public.fn_carnaval_porcientos_tienda(v_id_tienda);
+ 
++    -- Cinturon de seguridad: nunca escribir un precio nulo en
++    -- Carnaval. Si por lo que sea no hay porcientos, se deja el
++    -- precio de Carnaval como estaba.
+     IF v_pct_efectivo IS NULL OR v_pct_transferencia IS NULL THEN
+         RETURN NEW;
+     END IF;
+ 
++    -- Misma formula que rpc_apply_global_price_change y
++    -- rpc_apply_selected_price_change, para que el trigger y el
++    -- cambio de precios desde la app coincidan.
+     v_precio_descuento := ROUND(v_base_price * (1 + v_pct_efectivo      / 100));
+     v_precio_oficial   := ROUND(v_base_price * (1 + v_pct_transferencia / 100));
+ 
++    -- proveedor = 3 esta bloqueado por
++    -- carnavalapp.productos_block_proveedor_3 (RAISE EXCEPTION).
++    -- Excluirlo evita abortar la transaccion del precio local.
+     UPDATE carnavalapp."Productos"
+        SET price            = v_precio_oficial,

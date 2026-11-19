@@ -4014,7 +4014,10 @@ class _SyncDialogState extends State<_SyncDialog> {
     {'name': 'Reautenticando usuario', 'key': 'reauth'},
     {'name': 'Sincronizando métodos de pago', 'key': 'payment_methods'},
     {'name': 'Procesando operaciones pendientes', 'key': 'pending_operations'},
-    {'name': 'Sincronizando órdenes pendientes', 'key': 'pending_orders'},
+    {
+      'name': 'Sincronizando turnos, ventas y cierres',
+      'key': 'sync_turno_queue',
+    },
     {'name': 'Guardando credenciales', 'key': 'credentials'},
     {'name': 'Sincronizando turno abierto', 'key': 'turno'},
     {'name': 'Sincronizando egresos', 'key': 'egresos'},
@@ -4057,8 +4060,11 @@ class _SyncDialogState extends State<_SyncDialog> {
               await _processPendingOperations();
               successfulSteps.add(task['name']!);
               break;
-            case 'pending_orders':
-              await _processPendingOrders();
+            case 'sync_turno_queue':
+              // Cola offline_turnos en orden: apertura (idempotente) → ventas
+              // → egresos → cierre, y luego baja las órdenes del turno. Antes
+              // se subían las ventas una a una antes de abrir el turno.
+              await AutoSyncService().forceSyncPendingOrders();
               successfulSteps.add(task['name']!);
               break;
             case 'credentials':
@@ -4787,32 +4793,6 @@ class _SyncDialogState extends State<_SyncDialog> {
     }
   }
 
-  /// Procesar órdenes pendientes de sincronización
-  Future<void> _processPendingOrders() async {
-    try {
-      final pendingOrders =
-          await widget.userPreferencesService.getPendingOrders();
-      print('🔄 Procesando ${pendingOrders.length} órdenes pendientes...');
-
-      for (var orderData in pendingOrders) {
-        if (orderData['synced'] == true) continue;
-        final orderId = orderData['id']?.toString();
-        if (orderId == null || orderId.isEmpty) {
-          throw Exception('Orden offline sin ID');
-        }
-        print('  - Sincronizando orden: $orderId');
-        final ok = await AutoSyncService().syncSinglePendingOrder(orderId);
-        if (!ok) {
-          throw Exception('No se pudo sincronizar la orden $orderId');
-        }
-      }
-
-      print('✅ Órdenes pendientes procesadas');
-    } catch (e) {
-      print('❌ Error procesando órdenes pendientes: $e');
-      throw e;
-    }
-  }
 
 
   /// Procesar cambio de estado de orden por la cola con clave.

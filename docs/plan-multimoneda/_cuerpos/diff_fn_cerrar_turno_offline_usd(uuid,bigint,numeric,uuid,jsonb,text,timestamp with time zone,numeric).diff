@@ -1,0 +1,88 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_cerrar_turno_offline_usd(uuid,bigint,numeric,uuid,jsonb,text,timestamp with time zone,numeric).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_cerrar_turno_offline_usd(uuid,bigint,numeric,uuid,jsonb,text,timestamp with time zone,numeric).sql"
+index 13cfbd2d..6866adaf 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_cerrar_turno_offline_usd(uuid,bigint,numeric,uuid,jsonb,text,timestamp with time zone,numeric).sql"	
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_cerrar_turno_offline_usd(uuid,bigint,numeric,uuid,jsonb,text,timestamp with time zone,numeric).sql"	
+@@ -3,43 +3,50 @@
+  LANGUAGE plpgsql
+  SECURITY DEFINER
+- SET search_path TO 'public'
++ SET search_path TO 'pg_catalog'
+ AS $function$
+ DECLARE
+-  v_result JSONB;
+-  v_turno_id BIGINT;
+-  v_efectivo_esperado_usd NUMERIC := 0;
++    v_result jsonb;
++    v_turno_id bigint;
++    v_efectivo_esperado_usd numeric := 0;
+ BEGIN
+-  SELECT id INTO v_turno_id
+-  FROM public.app_dat_caja_turno
+-  WHERE id_tpv = p_id_tpv AND estado = 1
+-  ORDER BY fecha_apertura DESC NULLS LAST
+-  LIMIT 1;
++    IF NULLIF(btrim(COALESCE(current_setting('app.m01_caja_extra', true), '')), '') IS NULL THEN
++        PERFORM set_config(
++            'app.m01_caja_extra',
++            jsonb_build_object('efectivo_usd', p_efectivo_real_usd)::text,
++            true
++        );
++    END IF;
++    SELECT id INTO v_turno_id
++    FROM public.app_dat_caja_turno
++    WHERE id_tpv = p_id_tpv AND estado = 1
++    ORDER BY fecha_apertura DESC NULLS LAST
++    LIMIT 1;
+ 
+-  SELECT COALESCE(SUM(pv.monto), 0) INTO v_efectivo_esperado_usd
+-  FROM public.app_dat_pago_venta pv
+-  JOIN public.app_dat_operacion_venta ov
+-    ON ov.id_operacion = pv.id_operacion_venta
+-  JOIN public.app_nom_medio_pago mp ON mp.id = pv.id_medio_pago
+-  WHERE pv.moneda = 'USD'
+-    AND mp.es_efectivo = TRUE
+-    AND ov.id_turno_apertura = v_turno_id;
++    v_result := public.fn_cerrar_turno_offline(
++        p_client_uuid, p_id_tpv, p_efectivo_real, p_usuario,
++        p_productos, p_observaciones, p_fecha_cierre
++    );
++    IF COALESCE((v_result->>'idempotent')::boolean, false) THEN
++        RETURN v_result;
++    END IF;
+ 
+-  v_result := public.fn_cerrar_turno_offline(
+-    p_client_uuid, p_id_tpv, p_efectivo_real, p_usuario,
+-    p_productos, p_observaciones, p_fecha_cierre
+-  );
++    SELECT COALESCE(SUM(pv.monto), 0) INTO v_efectivo_esperado_usd
++    FROM public.app_dat_pago_venta pv
++    JOIN public.app_dat_operacion_venta ov ON ov.id_operacion = pv.id_operacion_venta
++    JOIN public.app_nom_medio_pago mp ON mp.id = pv.id_medio_pago
++    WHERE pv.moneda = 'USD' AND mp.es_efectivo IS TRUE
++      AND ov.id_turno_apertura = v_turno_id;
+ 
+-  IF v_turno_id IS NOT NULL AND (v_result->>'status') = 'success' THEN
+-    UPDATE public.app_dat_caja_turno
+-    SET efectivo_real_usd = p_efectivo_real_usd,
+-        diferencia_usd = CASE
+-          WHEN p_efectivo_real_usd IS NULL THEN NULL
+-          ELSE p_efectivo_real_usd -
+-            (COALESCE(efectivo_inicial_usd, 0) + v_efectivo_esperado_usd)
+-        END
+-    WHERE id = v_turno_id;
+-  END IF;
+-
+-  RETURN v_result;
++    IF v_turno_id IS NOT NULL AND (v_result->>'status') = 'success' THEN
++        UPDATE public.app_dat_caja_turno
++        SET efectivo_real_usd = p_efectivo_real_usd,
++            diferencia_usd = CASE
++                WHEN p_efectivo_real_usd IS NULL THEN NULL
++                ELSE p_efectivo_real_usd
++                     - (COALESCE(efectivo_inicial_usd, 0) + v_efectivo_esperado_usd)
++            END
++        WHERE id = v_turno_id;
++    END IF;
++    RETURN v_result;
+ END;
+ $function$

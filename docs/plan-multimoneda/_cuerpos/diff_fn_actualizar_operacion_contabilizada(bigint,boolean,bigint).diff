@@ -1,0 +1,19 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_actualizar_operacion_contabilizada(bigint,boolean,bigint).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_actualizar_operacion_contabilizada(bigint,boolean,bigint).sql"
+index 720a0920..2858b84a 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_actualizar_operacion_contabilizada(bigint,boolean,bigint).sql"
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_actualizar_operacion_contabilizada(bigint,boolean,bigint).sql"
+@@ -11,6 +11,6 @@ BEGIN
+ 
+     IF p_id_tienda IS NOT NULL THEN
+-        -- Nueva lógica: permiso basado en la tienda Inventtia actual (desde
+-        -- donde se está contabilizando la orden de Carnaval).
++        -- Permiso contra la tienda desde la que se contabiliza (Carnaval),
++        -- no contra la tienda propietaria de la operación.
+         IF NOT EXISTS (
+             SELECT 1
+@@ -26,5 +26,4 @@ BEGIN
+         END IF;
+     ELSE
+-        -- Lógica legacy: permiso basado en la tienda propietaria de la operación.
+         IF NOT EXISTS (
+             SELECT 1

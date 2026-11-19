@@ -1,0 +1,10 @@
+﻿@@ -21 +20,0 @@ BEGIN
+@@ -26,2 +25 @@ BEGIN
+-    SELECT count(*) INTO v_pagos
+-    FROM public.app_dat_pago_venta WHERE moneda = v_codigo;
++    SELECT count(*) INTO v_pagos FROM public.app_dat_pago_venta WHERE moneda = v_codigo;
+@@ -29,2 +27 @@ BEGIN
+-      RAISE EXCEPTION 'No se puede desactivar %: tiene % pagos registrados',
+-        v_codigo, v_pagos;
++      RAISE EXCEPTION 'No se puede desactivar %: tiene % pagos registrados', v_codigo, v_pagos;
+@@ -44 +40,0 @@ BEGIN

@@ -1,0 +1,10 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_obtener_licencia_firmada(bigint).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_obtener_licencia_firmada(bigint).sql"
+index 14b2b1ce..fddc0a0b 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_obtener_licencia_firmada(bigint).sql"
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_obtener_licencia_firmada(bigint).sql"
+@@ -17,4 +17,5 @@ DECLARE
+     v_firma text;
+ BEGIN
++    PERFORM public.fn_config_tienda_exigir_lectura(p_id_tienda);
+     SELECT secreto INTO v_secreto
+     FROM app_dat_licencia_offline_secreto

@@ -1,0 +1,64 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_actualizar_cantidad_producto_orden_v2(bigint,numeric,uuid).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_actualizar_cantidad_producto_orden_v2(bigint,numeric,uuid).sql"
+index 7b261e88..df53e189 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_actualizar_cantidad_producto_orden_v2(bigint,numeric,uuid).sql"
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_actualizar_cantidad_producto_orden_v2(bigint,numeric,uuid).sql"
+@@ -17,5 +17,5 @@ DECLARE
+     v_bom               JSONB;
+ BEGIN
+-    -- 1. Obtener datos actuales de la extracciÃ³n
++    -- 1. Obtener datos actuales de la extracción
+     SELECT e.*, o.id AS op_id
+       INTO v_extraccion
+@@ -25,8 +25,8 @@ BEGIN
+ 
+     IF NOT FOUND THEN
+-        RETURN jsonb_build_object('status','error','message','ExtracciÃ³n no encontrada');
++        RETURN jsonb_build_object('status','error','message','Extracción no encontrada');
+     END IF;
+ 
+-    -- 2. Verificar que la orden estÃ© en estado Pendiente (estado = 1)
++    -- 2. Verificar que la orden esté en estado Pendiente (estado = 1)
+     SELECT eo.estado INTO v_operacion
+       FROM public.app_dat_estado_operacion eo
+@@ -36,5 +36,5 @@ BEGIN
+ 
+     IF v_operacion.estado IS DISTINCT FROM 1 THEN
+-        RETURN jsonb_build_object('status','error','message','Solo se pueden editar Ã³rdenes en estado Pendiente');
++        RETURN jsonb_build_object('status','error','message','Solo se pueden editar órdenes en estado Pendiente');
+     END IF;
+ 
+@@ -102,10 +102,10 @@ BEGIN
+         ) ip;
+     ELSE
+-        -- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+-        -- FASE 2 / C5 Â· Ajuste de materia prima por EQUIVALENTE BASE.
++        -- ══════════════════════════════════════════════════════════════════
++        -- FASE 2 / C5 · Ajuste de materia prima por EQUIVALENTE BASE.
+         -- `v_delta` viene en la presentacion vendida; se convierte con
+         -- fn_cantidad_en_base(id_presentacion de la linea, delta) y el consumo
+         -- y la devolucion son simetricos (ambos `_v2`).
+-        -- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
++        -- ══════════════════════════════════════════════════════════════════
+         v_id_almacen := public.fn_almacen_de_extraccion(p_id_extraccion);
+ 
+@@ -122,5 +122,5 @@ BEGIN
+ 
+         IF v_delta > 0 THEN
+-            -- Aumentar cantidad â†’ descontar mÃ¡s ingredientes (en base)
++            -- Aumentar cantidad → descontar más ingredientes (en base)
+             v_bom := public.fn_descontar_ingredientes_elaborado_v2(
+                 p_id_producto_elaborado := v_extraccion.id_producto,
+@@ -131,5 +131,5 @@ BEGIN
+             );
+         ELSIF v_delta < 0 THEN
+-            -- Disminuir cantidad â†’ devolver ingredientes a la presentacion BASE
++            -- Disminuir cantidad → devolver ingredientes a la presentacion BASE
+             v_bom := public.fn_devolver_ingredientes_elaborado_v2(
+                 p_id_producto_elaborado := v_extraccion.id_producto,
+@@ -159,5 +159,5 @@ BEGIN
+     END IF;
+ 
+-    -- 6. Actualizar extracciÃ³n (la LINEA sigue en la presentacion vendida)
++    -- 6. Actualizar extracción (la LINEA sigue en la presentacion vendida)
+     v_nuevo_importe := p_nueva_cantidad * v_extraccion.precio_unitario;
+ 

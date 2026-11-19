@@ -1,0 +1,3 @@
+﻿@@ -95 +95 @@ BEGIN
+-                WHERE id_producto = p.id
++                WHERE id_producto = p.id AND COALESCE(id_variante, 0) = 0

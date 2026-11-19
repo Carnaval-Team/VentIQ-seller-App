@@ -2587,12 +2587,20 @@ class OrderService extends ChangeNotifier {
     }
 
     final pending = await userPrefs.getSellerVisiblePendingOrders();
-    if (pending.isNotEmpty) {
+    // Las copias locales ya sincronizadas se conservan hasta el cierre: no
+    // repetir las que ya vinieron del servidor en el cache (ORD-{id}).
+    final yaListadas = _orders.map((o) => o.id).toSet();
+    final nuevas =
+        pending.where((p) {
+          final op = p['id_operacion'];
+          return op is! num || !yaListadas.contains('ORD-${op.toInt()}');
+        }).toList();
+    if (nuevas.isNotEmpty) {
       addPendingOrdersToList(
-        pending,
+        nuevas,
         nombresMedios: await _nombresMediosPagoOffline(),
       );
-      print('⏳ Pendientes del turno abierto: ${pending.length}');
+      print('⏳ Pendientes del turno abierto: ${nuevas.length}');
     }
   }
 

@@ -1,0 +1,9 @@
+﻿@@ -7,3 +7 @@ AS $function$
+-  with base as (
+-    select * from public.fn_resumen_turno_por_id(p_turno_id)
+-  )
++  with base as (select * from public.fn_resumen_turno_por_id(p_turno_id))
+@@ -11,2 +9 @@ AS $function$
+-  from base b
+-  cross join lateral public.fn_desglose_monedas_turno(b.turno_id, true) d;
++  from base b cross join lateral public.fn_desglose_monedas_turno(b.turno_id, true) d;

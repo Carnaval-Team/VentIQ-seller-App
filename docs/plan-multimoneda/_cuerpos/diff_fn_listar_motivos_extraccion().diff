@@ -1,0 +1,39 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_listar_motivos_extraccion().sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_listar_motivos_extraccion().sql"
+index 75bfd949..29a271a3 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_listar_motivos_extraccion().sql"
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_listar_motivos_extraccion().sql"
+@@ -3,13 +3,24 @@
+  LANGUAGE plpgsql
+  SECURITY DEFINER
+- SET search_path TO 'public', 'pg_temp'
+ AS $function$
+ BEGIN
+-    -- Solo se exige que el usuario este autenticado.
++    -- Verificar que el usuario esté autenticado
+     IF auth.uid() IS NULL THEN
+         RAISE EXCEPTION 'Usuario no autenticado';
+     END IF;
+ 
+-    -- Devolver los motivos (catalogo global de solo lectura).
++    -- Validar que el usuario tenga un rol que permita ver motivos de extracción
++    -- Roles permitidos: almacenero, supervisor, gerente
++    IF NOT EXISTS (
++        SELECT 1 FROM app_dat_almacenero WHERE uuid = auth.uid()
++        UNION
++        SELECT 1 FROM app_dat_supervisor WHERE uuid = auth.uid()
++        UNION
++        SELECT 1 FROM app_dat_gerente WHERE uuid = auth.uid()
++    ) THEN
++        RAISE EXCEPTION 'No tienes permisos para listar motivos de extracción';
++    END IF;
++
++    -- Devolver los motivos activos
+     RETURN QUERY
+     SELECT
+@@ -17,5 +28,5 @@ BEGIN
+         me.denominacion,
+         me.descripcion,
+-        (me.created_at IS NOT NULL) AS es_activo,
++        (me.created_at IS NOT NULL) AS es_activo,  -- Asumimos que todos son activos (o puedes agregar un campo `activo`)
+         me.created_at
+     FROM public.app_nom_motivo_extraccion me

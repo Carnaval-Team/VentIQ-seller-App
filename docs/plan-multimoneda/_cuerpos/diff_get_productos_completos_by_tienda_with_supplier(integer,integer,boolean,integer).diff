@@ -1,0 +1,11 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\get_productos_completos_by_tienda_with_supplier(integer,integer,boolean,integer).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\get_productos_completos_by_tienda_with_supplier(integer,integer,boolean,integer).sql"
+index 5d93c227..24be0b89 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\get_productos_completos_by_tienda_with_supplier(integer,integer,boolean,integer).sql"
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\get_productos_completos_by_tienda_with_supplier(integer,integer,boolean,integer).sql"
+@@ -113,5 +113,5 @@ BEGIN
+         WHERE (id_variante IS NULL OR id_variante = 0)
+         AND (fecha_hasta IS NULL OR fecha_hasta >= CURRENT_DATE)
+-        ORDER BY id_producto, id DESC
++        ORDER BY id_producto, fecha_desde DESC
+     )
+     SELECT jsonb_build_object(

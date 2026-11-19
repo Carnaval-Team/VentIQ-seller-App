@@ -1,0 +1,63 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_registrar_pago_venta_v3(bigint,jsonb).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_registrar_pago_venta_v3(bigint,jsonb).sql"
+index 2fec86cd..b7768a30 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_registrar_pago_venta_v3(bigint,jsonb).sql"
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_registrar_pago_venta_v3(bigint,jsonb).sql"
+@@ -3,17 +3,17 @@
+  LANGUAGE plpgsql
+  SECURITY DEFINER
+- SET search_path TO 'public'
++ SET search_path TO 'pg_catalog', 'public'
+ AS $function$
+ DECLARE
+-  v_pago            JSONB;
+-  v_importe_total   NUMERIC;
++  v_pago           JSONB;
++  v_importe_total  NUMERIC;
+   v_total_pagos_cup NUMERIC := 0;
+-  v_uuid_usuario    UUID;
+-  v_id_tienda       BIGINT;
+-  v_id_medio_pago   SMALLINT;
+-  v_moneda          TEXT;
+-  v_tasa            NUMERIC;
+-  v_monto           NUMERIC;
+-  v_monto_cup       NUMERIC;
++  v_uuid_usuario   UUID;
++  v_id_tienda      BIGINT;
++  v_id_medio_pago  SMALLINT;
++  v_moneda         TEXT;
++  v_tasa           NUMERIC;
++  v_monto          NUMERIC;
++  v_monto_cup      NUMERIC;
+ BEGIN
+   SELECT ov.importe_total, o.uuid, o.id_tienda
+@@ -36,4 +36,6 @@ BEGIN
+   END IF;
+ 
++  -- Idempotencia: borrar pagos previos no liquidados. Los que tienen
++  -- id_liquidacion pertenecen a un recibo de CxC y no se tocan.
+   DELETE FROM public.app_dat_pago_venta
+   WHERE id_operacion_venta = p_id_operacion_venta
+@@ -54,4 +56,5 @@ BEGIN
+     END IF;
+ 
++    -- Catálogo: la moneda debe existir y estar activa.
+     IF NOT EXISTS (SELECT 1 FROM public.monedas
+                    WHERE codigo = v_moneda AND activo) THEN
+@@ -59,4 +62,5 @@ BEGIN
+     END IF;
+ 
++    -- Tienda: solo si se conoce, debe aceptar esa moneda.
+     IF v_id_tienda IS NOT NULL THEN
+       IF NOT EXISTS (SELECT 1 FROM public.app_dat_tienda_moneda
+@@ -68,4 +72,5 @@ BEGIN
+     END IF;
+ 
++    -- Tasa: tasa_cambio, con tasa_usd como alias de compatibilidad.
+     IF v_moneda = 'CUP' THEN
+       v_tasa := 1;
+@@ -80,4 +85,5 @@ BEGIN
+     END IF;
+ 
++    -- Sin redondeo a propósito (ver cabecera).
+     v_monto_cup := v_monto * v_tasa;
+     v_total_pagos_cup := v_total_pagos_cup + v_monto_cup;

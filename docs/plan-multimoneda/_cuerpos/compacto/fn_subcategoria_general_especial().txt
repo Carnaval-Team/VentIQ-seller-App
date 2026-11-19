@@ -1,0 +1,28 @@
+﻿@@ -7,3 +7 @@ AS $function$
+-declare
+-  v_denom constant text := 'General';
+-  v_sku   text;
++declare v_denom constant text := 'General'; v_sku text;
+@@ -11,11 +9,3 @@ begin
+-  if not new.especial or new.id_categoria is null then
+-    return new;
+-  end if;
+-  if tg_op = 'UPDATE' and coalesce(old.especial, false) then
+-    return new;
+-  end if;
+-  if exists (
+-    select 1 from public.app_dat_subcategorias s
++  if not new.especial or new.id_categoria is null then return new; end if;
++  if tg_op = 'UPDATE' and coalesce(old.especial, false) then return new; end if;
++  if exists (select 1 from public.app_dat_subcategorias s
+@@ -23,2 +13 @@ begin
+-      and lower(trim(s.denominacion)) = lower(v_denom)
+-  ) then
++               and lower(trim(s.denominacion)) = lower(v_denom)) then
+@@ -27,2 +15,0 @@ begin
+@@ -30,4 +17 @@ begin
+-  into v_sku
+-  from public.app_dat_categoria
+-  where id = new.id_categoria;
++  into v_sku from public.app_dat_categoria where id = new.id_categoria;
+@@ -35,2 +18,0 @@ begin

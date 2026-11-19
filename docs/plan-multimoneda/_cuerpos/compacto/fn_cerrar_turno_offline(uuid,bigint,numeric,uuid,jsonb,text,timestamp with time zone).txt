@@ -1,0 +1,120 @@
+﻿@@ -4,0 +5 @@
++ SET search_path TO 'pg_catalog'
+@@ -7 +8,5 @@ DECLARE
+-    v_existing bigint;
++    v_actor uuid := auth.uid();
++    v_request jsonb;
++    v_existing public.app_dat_operacion_offline_idempotencia%ROWTYPE;
++    v_store bigint;
++    v_open bigint;
+@@ -9 +14,2 @@ DECLARE
+-    v_turno_abierto bigint;
++    v_extra text;
++    v_fecha_apertura timestamptz;
+@@ -11 +17,20 @@ BEGIN
+-    SELECT id_operacion INTO v_existing
++    IF v_actor IS NULL OR p_client_uuid IS NULL OR p_id_tpv IS NULL OR p_usuario IS NULL THEN
++        RAISE EXCEPTION 'Solicitud no autorizada' USING ERRCODE = '42501';
++    END IF;
++    v_extra := current_setting('app.m01_caja_extra', true);
++    PERFORM set_config('app.m01_caja_extra', '', true);
++    v_request := jsonb_build_object(
++        'version', 1,
++        'id_tpv', p_id_tpv,
++        'efectivo_real', p_efectivo_real,
++        'usuario', p_usuario,
++        'productos', COALESCE(p_productos, '[]'::jsonb),
++        'observaciones', p_observaciones,
++        'fecha_cierre', p_fecha_cierre,
++        'extra', CASE
++            WHEN v_extra IS NULL OR btrim(v_extra) = '' THEN '{}'::jsonb
++            ELSE v_extra::jsonb
++        END
++    );
++    PERFORM pg_advisory_xact_lock(hashtextextended(p_client_uuid::text, 0));
++    SELECT * INTO v_existing
+@@ -13,3 +38,22 @@ BEGIN
+-    WHERE client_uuid = p_client_uuid AND tipo = 'cierre_turno';
+-    IF v_existing IS NOT NULL THEN
++    WHERE client_uuid = p_client_uuid
++    FOR UPDATE;
++    IF FOUND THEN
++        IF v_existing.tipo IS DISTINCT FROM 'cierre_turno'
++           OR v_existing.uuid_usuario IS DISTINCT FROM v_actor
++           OR (v_existing.m01_solicitud - 'fecha_cierre') IS DISTINCT FROM (v_request - 'fecha_cierre')
++           OR v_existing.m01_id_tienda IS NULL THEN
++            RAISE EXCEPTION 'Clave no verificable o solicitud no autorizada; requiere revision'
++                USING ERRCODE = '42501';
++        END IF;
++        IF public.fn_config_tienda_puede_escribir(v_existing.m01_id_tienda) IS DISTINCT FROM true
++           AND NOT EXISTS (
++                SELECT 1
++                FROM public.app_dat_vendedor s
++                JOIN public.app_dat_trabajadores w ON w.id = s.id_trabajador
++                WHERE s.uuid = v_actor AND w.uuid = v_actor
++                  AND w.deleted_at IS NULL
++                  AND w.id_tienda = v_existing.m01_id_tienda
++           ) THEN
++            RAISE EXCEPTION 'Solicitud no autorizada' USING ERRCODE = '42501';
++        END IF;
+@@ -22,4 +66,7 @@ BEGIN
+-    SELECT id INTO v_turno_abierto
+-    FROM app_dat_caja_turno
+-    WHERE id_tpv = p_id_tpv AND estado = 1
+-    ORDER BY fecha_apertura DESC NULLS LAST
++    SELECT t.id_tienda, ct.id
++    INTO v_store, v_open
++    FROM public.app_dat_tpv t
++    LEFT JOIN public.app_dat_caja_turno ct
++      ON ct.id_tpv = t.id AND ct.estado = 1 AND ct.creado_por = p_usuario
++    WHERE t.id = p_id_tpv
++    ORDER BY ct.fecha_apertura DESC NULLS LAST
+@@ -27,2 +74,15 @@ BEGIN
+-    IF v_turno_abierto IS NULL THEN
++    IF v_store IS NULL THEN
++        RAISE EXCEPTION 'Solicitud no autorizada' USING ERRCODE = '42501';
++    END IF;
++    IF public.fn_config_tienda_puede_escribir(v_store) IS DISTINCT FROM true
++       AND NOT EXISTS (
++            SELECT 1
++            FROM public.app_dat_vendedor s
++            JOIN public.app_dat_trabajadores w ON w.id = s.id_trabajador
++            WHERE s.uuid = v_actor AND s.id_tpv = p_id_tpv
++              AND w.uuid = v_actor AND w.deleted_at IS NULL
++              AND w.id_tienda = v_store
++       ) THEN
++        RAISE EXCEPTION 'Solicitud no autorizada' USING ERRCODE = '42501';
++    END IF;
++    IF v_open IS NULL THEN
+@@ -33,0 +94,3 @@ BEGIN
++    SELECT fecha_apertura INTO v_fecha_apertura
++    FROM public.app_dat_caja_turno
++    WHERE id = v_open;
+@@ -42,7 +105,6 @@ BEGIN
+-    IF v_ok THEN
+-        INSERT INTO public.app_dat_operacion_offline_idempotencia
+-            (client_uuid, id_operacion, tipo, uuid_usuario)
+-        VALUES (p_client_uuid, v_turno_abierto, 'cierre_turno', p_usuario)
+-        ON CONFLICT (client_uuid) DO NOTHING;
++    IF v_ok IS DISTINCT FROM true THEN
++        RETURN jsonb_build_object(
++            'status', 'error',
++            'message', 'El servidor rechazó el cierre del turno'
++        );
++    END IF;
+@@ -50,3 +112,4 @@ BEGIN
+-            UPDATE app_dat_caja_turno
+-            SET fecha_cierre = p_fecha_cierre
+-            WHERE id = v_turno_abierto;
++        UPDATE public.app_dat_caja_turno
++        SET fecha_cierre = GREATEST(v_fecha_apertura, LEAST(p_fecha_cierre, now()))
++        WHERE id = v_open;
+@@ -54 +117,3 @@ BEGIN
++    INSERT INTO public.app_dat_operacion_offline_idempotencia
++        (client_uuid, id_operacion, tipo, uuid_usuario, m01_solicitud, m01_id_tienda)
++    VALUES (p_client_uuid, v_open, 'cierre_turno', v_actor, v_request, v_store);
+@@ -56,5 +120,0 @@ BEGIN
+-    END IF;
+-    RETURN jsonb_build_object(
+-        'status', 'error', 'message', 'El servidor rechazó el cierre del turno'
+-    );

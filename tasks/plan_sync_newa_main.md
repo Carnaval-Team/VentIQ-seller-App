@@ -22,7 +22,7 @@ Medido el 2026-11-14 leyendo `pg_proc`, tablas y políticas. 922 funciones públ
 
 ## Qué va de main a newa
 
-1. `fn_descontar_venta_enrutada_v2` con el argumento `p_ruta`. Newa conserva la firma anterior. Si `p_ruta` ya trae éxito para el mismo producto, no se vuelve a resolver el origen.
+1. `fn_descontar_venta_enrutada_v2` con el argumento `p_ruta`, y `lock_timeout = '3s'` en la venta v3. Si `p_ruta` ya trae éxito para el mismo producto, no se vuelve a resolver el origen. El script es `sql_updates/optimizar_venta_v3_ruta_y_lock_timeout.sql`: parchea `fn_registrar_venta_v3_impl` y `fn_registrar_venta_mesa_v3_impl` (la función pública es solo la envoltura de `fix_venta_rollback_parcial.sql`) y pone el límite de bloqueo en el `_impl` y en la envoltura. Aplicado en newa el 18/11. La primera corrida abortó porque el ancla se buscaba en la envoltura; la segunda, ya sobre los `_impl`, dejó `p_ruta` en el descuento y en los dos `_impl`, y `lock_timeout=3s` en `_impl` y envolturas. `usa_p_ruta = false` en las envolturas es lo correcto.
 2. La columna `app_dat_configuracion_tienda.reporte_tpvs_modo_turno`.
 3. Tablas de aviso de agotado WAPI (`app_wapi_agotado_config`, `app_wapi_agotado_destinatario`, `app_wapi_agotado_estado`, `app_wapi_agotado_log`) y sus funciones (`fn_wapi_agotado_check`, `fn_wapi_agotado_stock_total`).
 4. Referidos: `referral_capture_config`, `referral_user_attributions`, `referral_visits` y las funciones `fn_referral_*`.
@@ -63,12 +63,23 @@ Medido el 2026-11-14 leyendo `pg_proc`, tablas y políticas. 922 funciones públ
 
 ### Phase 3: Main hacia newa
 
-- [ ] Task 5: Sustituir en newa `fn_descontar_venta_enrutada_v2` por la firma de main que recibe `p_ruta`, y recompilar las llamadas que la usan
-  - Acceptance: la firma de newa incluye `p_ruta`; una llamada sin ese argumento sigue resolviendo el origen
-  - Verify: `pg_get_function_identity_arguments` igual en los dos proyectos; una venta de prueba en newa descuenta una línea
-  - Files: script SQL tomado del cuerpo de main
+- [x] Task 5: Correr en newa `sql_updates/optimizar_venta_v3_ruta_y_lock_timeout.sql`
+  - Acceptance: `fn_descontar_venta_enrutada_v2` acepta `p_ruta` y, si no viene, resuelve el origen; `fn_registrar_venta_v3_impl` y `fn_registrar_venta_mesa_v3_impl` pasan `p_ruta := v_ruta`; esas dos y sus envolturas públicas tienen `lock_timeout = 3s`
+  - Verify: la consulta final del script muestra `usa_p_ruta` en el descuento y en los `_impl`, y `proconfig` con `lock_timeout=3s` en `_impl` y envoltura. Una venta de prueba en newa descuenta una línea
+  - Files: `sql_updates/optimizar_venta_v3_ruta_y_lock_timeout.sql`
+  - La venta v1, la preorden, el cierre y el ajuste no resuelven la ruta antes, así que no se les agrega una consulta. El pedido de mesa y el `lock_timeout` de las cuatro funciones M01 están en la tarea 5b
 
-- [ ] Task 6: Añadir en newa `reporte_tpvs_modo_turno` y las tablas y funciones de WAPI agotado y de referidos que están en main
+- [x] Task 5b: Correr en newa `sql_updates/m01_mesa_ruta_y_lock_timeout.sql`
+  - Acceptance: `fn_m01_pedir_item_mesa_v1` pasa `p_ruta := v_origen` al descuento; `fn_m01_registrar_venta_v1`, `fn_m01_pedir_item_mesa_v1`, `fn_m01_finalizar_cuenta_v1` y `fn_m01_ajustar_linea_v1` tienen `lock_timeout=3s`. Las otras tres no ganan una llamada nueva a `fn_resolver_origen_venta`
+  - Verify: la consulta final del script muestra `pasa_ruta` solo en el pedido de mesa y `proconfig` con `lock_timeout=3s` en las cuatro
+  - Files: `sql_updates/m01_mesa_ruta_y_lock_timeout.sql`
+
+- [x] Task 6b: Correr en newa `sql_updates/newa_contabilizacion_firmas.sql`
+  - Acceptance: una sola firma de `fn_actualizar_operacion_contabilizada(bigint, boolean, bigint)`, y una sola de 2 parámetros en info e historial. anon sin EXECUTE
+  - Verify: la consulta final del script devuelve 3 filas
+  - Files: `sql_updates/newa_contabilizacion_firmas.sql`
+
+- [x] Task 6: Añadir en newa `reporte_tpvs_modo_turno` y las tablas y funciones de WAPI agotado y de referidos que están en main
   - Acceptance: newa tiene la columna y los cuatro objetos `app_wapi_agotado_*` más las tres tablas `referral_*`
   - Verify: lista de relaciones de `pg_class` en newa contiene esos nombres
   - Files: script SQL tomado del esquema de main
@@ -79,7 +90,13 @@ Medido el 2026-11-14 leyendo `pg_proc`, tablas y políticas. 922 funciones públ
 
 ### Phase 4: Cuerpos que no coinciden
 
-- [ ] Task 7: Revisar las funciones que el TPV llama y cuyo `md5(prosrc)` difiere, y quedarse con el cuerpo más nuevo de cada una
+- [~] Task 7 y 8 (decididas el 19/11/2026; ver `docs/plan-multimoneda/comparacion_funciones_newa_main.md` y `analisis_8_funciones_pendientes.md`). Lo que falta es **aplicar** los scripts:
+  - [ ] Correr en newa `sql_updates/newa_traer_funciones_main.sql` (índice parcial + 4 cuerpos de main)
+  - [ ] Correr en newa y luego en main `sql_updates/fix_reporte_ventas_por_turno_sin_cierre.sql`
+  - [ ] Correr en newa y luego en main `sql_updates/fix_cambio_estado_operacion_mejorado_recepcion.sql` y publicar el admin con el aviso de recepción
+  - [ ] Llevar a main las 21 funciones "newa más nueva" y corregir antes `fn_listar_ordenes` (`'tipo_paago'` → `'tipo_pago'`)
+  - [ ] Traer a newa las otras 12 de main: `fn_check_update`, `fn_listar_motivos_extraccion`, las 2 de Carnaval de precios y las 8 de `get_productos_completos…`/`buscar_producto_por_codigo_barras_v3`
+- Texto original de la tarea 7 (superado por lo anterior): Revisar las funciones que el TPV llama y cuyo `md5(prosrc)` difiere, y quedarse con el cuerpo más nuevo de cada una
   - Acceptance: cada función de la lista queda anotada con el lado que manda y, si hace falta, aplicada al otro lado
   - Verify: `md5(prosrc)` igual en los dos proyectos para las que se decidieron
   - Files: lista en `tasks/todo_sync_newa_main.md`
@@ -97,7 +114,7 @@ Medido el 2026-11-14 leyendo `pg_proc`, tablas y políticas. 922 funciones públ
 ## Risks
 
 - Activar RLS de configuración en main puede dejar al TPV sin flags si la política no cubre al vendedor o si el cliente lee con un rol que newa no probó. La tarea 2 no cierra sin esa lectura.
-- Reemplazar `fn_descontar_venta_enrutada_v2` en newa rompe cualquier llamada que no acepte el argumento nuevo. Hay que actualizar los llamadores en el mismo script.
+- Reemplazar `fn_descontar_venta_enrutada_v2` en newa rompe cualquier llamada que no acepte el argumento nuevo. El script dropea la firma de 6 parámetros y deja la de 7 con `p_ruta` por defecto, así que una llamada posicional de 6 argumentos sigue resolviendo el origen. No dejar las dos firmas.
 - Copiar referidos o WAPI desde main mete datos de producción si el script incluye `INSERT`. El pase es solo de esquema y funciones.
 - Las 72 diferencias pueden incluir hotfixes de main que newa no tiene y experimentos de newa que no deben subir. Por eso la fase 4 es revisión, no un volcado.
 

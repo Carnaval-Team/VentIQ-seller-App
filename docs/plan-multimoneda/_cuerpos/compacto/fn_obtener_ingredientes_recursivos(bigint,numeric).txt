@@ -1,0 +1,56 @@
+﻿@@ -4 +3,0 @@
+- SET search_path TO 'public', 'pg_catalog'
+@@ -6,3 +5,3 @@ AS $function$
+-begin
+-  return query
+-  with recursive ingredientes_recursivos as (
++BEGIN
++  RETURN QUERY
++  WITH RECURSIVE ingredientes_recursivos AS (
+@@ -10 +9 @@ begin
+-    select
++    SELECT 
+@@ -14,3 +13,3 @@ begin
+-      array[p_id_producto_elaborado] as ruta_productos
+-    from public.app_dat_producto_ingredientes pi
+-    where pi.id_producto_elaborado = p_id_producto_elaborado
++      ARRAY[p_id_producto_elaborado] as ruta_productos
++    FROM app_dat_producto_ingredientes pi
++    WHERE pi.id_producto_elaborado = p_id_producto_elaborado
+@@ -18 +17 @@ begin
+-    union all
++    UNION ALL
+@@ -20,2 +19,2 @@ begin
+-    select
++    SELECT 
+@@ -26,6 +25,6 @@ begin
+-    from public.app_dat_producto_ingredientes pi
+-    inner join ingredientes_recursivos ir on pi.id_producto_elaborado = ir.id_ingrediente
+-    inner join public.app_dat_producto p on p.id = pi.id_producto_elaborado
+-    where p.es_elaborado = true
+-      and not (pi.id_producto_elaborado = any(ir.ruta_productos)) -- evitar ciclos
+-      and ir.nivel < 10                                            -- limite de seguridad
++    FROM app_dat_producto_ingredientes pi
++    INNER JOIN ingredientes_recursivos ir ON pi.id_producto_elaborado = ir.id_ingrediente
++    INNER JOIN app_dat_producto p ON p.id = pi.id_producto_elaborado
++    WHERE p.es_elaborado = true
++      AND NOT (pi.id_producto_elaborado = ANY(ir.ruta_productos)) -- Evitar ciclos infinitos
++      AND ir.nivel < 10 -- Límite de seguridad
+@@ -34 +33 @@ begin
+-  select
++  SELECT 
+@@ -36,7 +35,7 @@ begin
+-    sum(ir.cantidad_total) as cantidad_total_necesaria,
+-    max(ir.nivel) as nivel_recursion
+-  from ingredientes_recursivos ir
+-  inner join public.app_dat_producto p on p.id = ir.id_ingrediente
+-  where p.es_elaborado = false -- solo ingredientes finales (no elaborados)
+-  group by ir.id_ingrediente;
+-end;
++    SUM(ir.cantidad_total) as cantidad_total_necesaria,
++    MAX(ir.nivel) as nivel_recursion
++  FROM ingredientes_recursivos ir
++  INNER JOIN app_dat_producto p ON p.id = ir.id_ingrediente
++  WHERE p.es_elaborado = false -- Solo ingredientes finales (no elaborados)
++  GROUP BY ir.id_ingrediente;
++END;

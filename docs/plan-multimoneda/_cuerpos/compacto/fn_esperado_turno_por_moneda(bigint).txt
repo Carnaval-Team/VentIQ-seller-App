@@ -1,0 +1,43 @@
+﻿@@ -12,2 +12 @@ AS $function$
+-    from public.app_dat_caja_turno
+-    where id = p_id_turno
++    from public.app_dat_caja_turno where id = p_id_turno
+@@ -19 +18,2 @@ AS $function$
+-  ),  pagos as (
++  ),
++  pagos as (
+@@ -23,5 +23,2 @@ AS $function$
+-      on o.uuid = t.creado_por
+-     and o.created_at >= t.fecha_apertura
+-     and o.created_at <= t.fecha_fin
+-    join public.app_dat_operacion_venta ov
+-      on ov.id_operacion = o.id and ov.id_tpv = t.id_tpv
++      on o.uuid = t.creado_por and o.created_at >= t.fecha_apertura and o.created_at <= t.fecha_fin
++    join public.app_dat_operacion_venta ov on ov.id_operacion = o.id and ov.id_tpv = t.id_tpv
+@@ -33,2 +30 @@ AS $function$
+-                    and eo.id = (select max(eo2.id) from public.app_dat_estado_operacion eo2
+-                                 where eo2.id_operacion = o.id))
++                    and eo.id = (select max(eo2.id) from public.app_dat_estado_operacion eo2 where eo2.id_operacion = o.id))
+@@ -38,2 +34 @@ AS $function$
+-    select 'CUP'::text as moneda,
+-           coalesce((select a.efectivo_inicial from arqueo a where a.moneda = 'CUP'),
++    select 'CUP'::text as moneda, coalesce((select a.efectivo_inicial from arqueo a where a.moneda='CUP'),
+@@ -42,2 +37 @@ AS $function$
+-    select 'USD',
+-           coalesce((select a.efectivo_inicial from arqueo a where a.moneda = 'USD'),
++    select 'USD', coalesce((select a.efectivo_inicial from arqueo a where a.moneda='USD'),
+@@ -49,2 +43 @@ AS $function$
+-    from arqueo a
+-    where a.moneda not in ('CUP','USD')
++    from arqueo a where a.moneda not in ('CUP','USD')
+@@ -52,4 +45,2 @@ AS $function$
+-  select b.moneda,
+-         b.inicial + coalesce(p.efectivo_nativo, 0)
+-  from base b
+-  left join pagos p on p.moneda = b.moneda
++  select b.moneda, b.inicial + coalesce(p.efectivo_nativo, 0)
++  from base b left join pagos p on p.moneda = b.moneda
+@@ -58,2 +49 @@ AS $function$
+-  from pagos p
+-  where not exists (select 1 from base b where b.moneda = p.moneda);
++  from pagos p where not exists (select 1 from base b where b.moneda = p.moneda);

@@ -1,0 +1,6 @@
+﻿@@ -16 +16 @@ BEGIN
+@@ -24 +24 @@ BEGIN
++        RETURN jsonb_build_object('status','error','message','Extracción no encontrada');
+@@ -35 +35 @@ BEGIN
++        RETURN jsonb_build_object('status','error','message','Solo se pueden editar órdenes en estado Pendiente');
+@@ -107 +107 @@ BEGIN

@@ -1,0 +1,50 @@
+﻿diff --git "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_apertura_turno_offline_usd(uuid,numeric,bigint,bigint,uuid,boolean,jsonb,text,timestamp with time zone,numeric).sql" "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_apertura_turno_offline_usd(uuid,numeric,bigint,bigint,uuid,boolean,jsonb,text,timestamp with time zone,numeric).sql"
+index df43ab28..31ed667f 100644
+--- "a/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\main\\fn_apertura_turno_offline_usd(uuid,numeric,bigint,bigint,uuid,boolean,jsonb,text,timestamp with time zone,numeric).sql"	
++++ "b/d:\\dev\\VentIQ-seller-App\\docs\\plan-multimoneda\\_cuerpos\\newa\\fn_apertura_turno_offline_usd(uuid,numeric,bigint,bigint,uuid,boolean,jsonb,text,timestamp with time zone,numeric).sql"	
+@@ -3,21 +3,31 @@
+  LANGUAGE plpgsql
+  SECURITY DEFINER
+- SET search_path TO 'public'
++ SET search_path TO 'pg_catalog'
+ AS $function$
+ DECLARE
+-  v_result JSONB;
+-  v_turno_id BIGINT;
++    v_result jsonb;
++    v_turno_id bigint;
+ BEGIN
+-  v_result := public.fn_apertura_turno_offline(
+-    p_client_uuid, p_efectivo_inicial, p_id_tpv, p_id_vendedor, p_usuario,
+-    p_maneja_inventario, p_productos, p_observaciones, p_fecha_apertura
+-  );
+-  v_turno_id := NULLIF(v_result->>'id_turno', '')::BIGINT;
+-  IF v_turno_id IS NOT NULL THEN
+-    UPDATE public.app_dat_caja_turno
+-    SET efectivo_inicial_usd = COALESCE(p_efectivo_inicial_usd, 0)
+-    WHERE id = v_turno_id;
+-  END IF;
+-  RETURN v_result;
++    IF NULLIF(btrim(COALESCE(current_setting('app.m01_caja_extra', true), '')), '') IS NULL THEN
++        PERFORM set_config(
++            'app.m01_caja_extra',
++            jsonb_build_object('efectivo_usd', p_efectivo_inicial_usd)::text,
++            true
++        );
++    END IF;
++    v_result := public.fn_apertura_turno_offline(
++        p_client_uuid, p_efectivo_inicial, p_id_tpv, p_id_vendedor, p_usuario,
++        p_maneja_inventario, p_productos, p_observaciones, p_fecha_apertura
++    );
++    IF COALESCE((v_result->>'idempotent')::boolean, false) THEN
++        RETURN v_result;
++    END IF;
++    v_turno_id := NULLIF(v_result->>'id_turno', '')::bigint;
++    IF v_turno_id IS NOT NULL THEN
++        UPDATE public.app_dat_caja_turno
++        SET efectivo_inicial_usd = COALESCE(p_efectivo_inicial_usd, 0)
++        WHERE id = v_turno_id;
++    END IF;
++    RETURN v_result;
+ END;
+ $function$
