@@ -123,7 +123,9 @@ ventiq_admin_app/android/app/build.gradle.kts
 # Muevete · mapa offline: Planetiler deja aqui los auxiliares que descarga
 # (~1,4 GB) y los temporales. El .mbtiles ya se ignora en la linea anterior.
 /data/
-/dist/*.layerstats.tsv.gz
+# /dist/: salidas generadas del mapa offline (.mbtiles y auxiliares de
+# Planetiler). ~190 MB por archivo y regenerables: no van al repo.
+/dist/
 tools/web_cache_killer
 
 # DSH: estado local del agente dentro del workspace (telemetría del CLI de Dart,
