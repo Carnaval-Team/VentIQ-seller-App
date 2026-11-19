@@ -30,14 +30,14 @@ cambiados". Sin que el Harness esté al frente.
 
 | Phase | Status |
 |---|---|
-| 0. Spike de viabilidad (headless resume · feed · coste) | in progress |
+| 0. Spike de viabilidad (headless resume · feed · coste) | done (resume no viable) |
 | 1. Esqueleto modular, tema y presupuesto de CPU | done |
 | 2. Panel futurista + asistente de espacios y conversaciones | done |
 | 3. Vida autónoma (comportamientos y estados de ánimo) | done |
 | 4. Burbujas flotantes + feed en vivo | done |
-| 5. Continuar conversación end-to-end y pulido | in progress |
+| 5. Pulido | done · "retomar conversación" bloqueado por la fase 0 |
 
-Current phase: 5 · Recommended next: 5 (probar la ejecución real)
+Current phase: ninguna. Plan cerrado el 2026-11-18 salvo "retomar conversación", que depende de la API del host.
 
 > Executing agent: update this table at the end of your run and note any
 > deviation from the plan in one line each, below this block.
@@ -83,7 +83,7 @@ Lo que **no** está verificado todavía, y no debe darse por hecho:
   en `~/.dsh`). Es la fase 0 pendiente.
 - No hay medición de CPU después del refactor: `-Bench` no se implementó.
 - El feed en vivo de herramientas (burbujas con "Leyendo X") necesita el plugin `@local/dsh-orb-hub`,
-  que tampoco existe aún. Hoy las burbujas cubren lanzamiento y fin de tarea.
+  que ya existe (`dsh-plugins/orb-hub`). Las burbujas siguen cubriendo lanzamiento y fin de tarea: el feed en vivo por herramienta de otras sesiones sigue pendiente.
 
 Desviación nueva: el determinismo de la vida se comprueba con `scripts/test-life.ps1` (secuencia
 de gestos con semilla) y no con el hash del PNG, como proponía la fase 3. El PNG depende del
@@ -697,3 +697,534 @@ Ninguna bloqueante. Las dos decisiones de producto que había quedaron cerradas:
 continuar se ejecuta invisible y la vida es discreta. Si la fase 0 demuestra que las
 sesiones de la GUI no se dejan adoptar, el fallback ya está decidido arriba y no requiere
 volver a preguntar.
+---
+
+## Cara viva y estados (2026-11-18)
+
+Encargo: que el orbe tenga la vida y las funciones del sistema de avatar de Grok
+Bot descrito en `Qwen_markdown_20261117_vgrgz9cuh.md` (§2 y §3 de ese documento).
+No se copia código ni datos del original: se copian las **ideas** que se pueden
+verificar (catálogo de expresiones, estados con significado propio, parpadeo como
+evento, clips con fecha límite, decoración sobre la superficie).
+
+### Lo construido
+
+| Pieza | Qué es |
+|---|---|
+| `lib/Face.ps1` | 19 expresiones como vectores de 10 canales, springs a 120 Hz, parpadeo de 0,26 s, decoración con dos springs y crossfade, máquina de estados de ánimo |
+| `lib/Clip.ps1` | cubic-bezier con overshoot (Newton + respaldo), pistas con clave por tiempo, tres clips de reposo barajados con semilla y continuidad de offset |
+| `lib/Orb3D.cs` | el renderizador sale del inline de `widget.ps1`: ahora pinta cejas, párpados, boca con curva y apertura, rubor, brillo y siete decoraciones sobre la superficie |
+| `widget.ps1` | tick reescrito: estado de ánimo → cara/deco/aviso; clips de reposo; hover con la acción actual; `dragging`; aviso ámbar de `blocked`; captura a demanda |
+| `scripts/test-face.ps1` | 38 comprobaciones sin abrir ventana |
+| `scripts/snapshot-orb.ps1` + `capture-orb.ps1` | foto del orbe **vivo** (se rasteriza él mismo) y diagnóstico de la ventana real |
+| `scripts/shot-faces.ps1` | hojas de contactos `docs/caras.png` y `docs/estados.png` |
+
+### Estados: los seis del original, más los ecos
+
+`idle · thinking · reading · writing · executing · waiting · blocked · done ·
+waking · sleeping · dragging`. `blocked` deja de fundirse con `waiting`: antes el
+orbe decía "esperando" cuando en realidad te estaba pidiendo permiso, y ese es
+justo el fallo que el original reprochaba a los tres puntos genéricos.
+
+### Desviaciones (a propósito, con motivo)
+
+- **La expresión se mezcla con springs, no con un clip de 0,28 s.** El original
+  puede permitirse un morph con fecha límite porque su cara no depende del estado
+  del agente en cada frame; aquí la cara cambia por sucesos impredecibles y un
+  spring acepta un objetivo nuevo a mitad de camino sin romper la velocidad. El
+  through-blink se conserva: cierra, cambia y abre.
+- **`waking` dura 0,7 s, no 1,6 s.** En el original `waking` vuelve a `idle`; aquí
+  vuelve a trabajar, y 1,6 s de sorpresa se comían la cara de concentración.
+- **La decoración se pinta DEBAJO de la cara.** Encima, la línea de barrido
+  cruzaba las pupilas y el anillo parecía un monóculo. Se comprobó en capturas.
+- **No hay morph de silueta** (círculo → estrella → gota). El cuerpo es una esfera
+  con luz fija; deformar el contorno rompe el sombreado que hace que se lea como
+  objeto. La personalidad se cambia con el chasis.
+- **Los tres puntos y el cursor salen del XAML.** Eran elementos WPF flotando por
+  delante del orbe; ahora son decoración de superficie y giran con él.
+- Se añade `-MutexName` para poder levantar un orbe de pruebas junto al real.
+
+### Lecciones técnicas (no repetir)
+
+- **`[string]$Param = $null` no queda nulo: PowerShell lo convierte en `''`.**
+  `if ($null -ne $Kind)` era cierto siempre y `Update-Deco` reiniciaba la
+  decoración en cada frame (amount se quedaba en 0). Comparar contra `''`.
+- **PowerShell no distingue mayúsculas en variables.** En la prueba, `$clips = @{}`
+  y `$idle = Update-Idle` machacaban `$script:Clips` y `$script:Idle`. En
+  `test-face.ps1` se renombraron a `$clipCounts` y `$pose`; en el tick del widget a
+  `$faceCh`, `$decoCh`, `$moodNow`, `$idlePose` para que nadie vuelva a caer.
+- **`$pid` es automática y de solo lectura.** Usarla como salida de
+  `GetWindowThreadProcessId` lanza `SessionStateUnauthorizedAccessException` dentro
+  del delegado. La búsqueda de ventana se hace en C#.
+- **La ventana del orbe no se puede capturar desde otro proceso.** `PrintWindow`
+  devuelve `true` con el bitmap en blanco y `CopyFromScreen` devuelve blanco en una
+  sesión sin escritorio accesible. La única foto honesta es que el orbe se
+  rasterice a sí mismo (`snapshot-orb.ps1`), y sale con alfa, que es lo que hace
+  falta para compararla con `-Selftest`.
+- **`Add-Type -Path lib\Orb3D.cs`** funciona y evita 280 líneas de C# dentro del
+  `.ps1`; a cambio, `parse-check.ps1` no lo revisa: un error de compilación solo
+  aparece al ejecutar.
+
+### Verificado
+
+- `scripts\parse-check.ps1`: 29 archivos, 0 fallos.
+- `scripts\test-face.ps1`: 38 comprobaciones en verde.
+- `docs\caras.png` (19 expresiones) y `docs\estados.png` (8 estados) renderizados.
+- Captura del orbe vivo: PNG + JSON con `activity`, `expression`, `deco`, `yaw`,
+  `tilt`, `roll`, `gaze`, `face[10]`, `decoCh[6]` y `clip` (`tmp\live.png`).
+- `-BenchFrames 200`: **2,03 ms/frame** de media, p95 2,55 ms (antes 1,71 ms).
+
+### Sin verificar (no darlo por hecho)
+
+- El **hover real con ratón** y el arrastre con la cara de sorpresa: se han probado
+  las funciones, no el gesto físico.
+- El estado **`blocked` con una aprobación de verdad** delante: se ha comprobado
+  con actividad simulada, no con el agente pidiendo permiso.
+- El **retiro a los 8 s** tras cerrar el Harness: el `finally` que lo rompía está
+  arreglado, pero no se ha reproducido el cierre.
+- El coste del render **dentro del proceso real** con la ventana visible (el bench
+  mide el render aislado).
+### Sin giro axial al trabajar, y movimiento reducido (2026-11-18)
+
+Cambio de producto pedido por el usuario: `executing` ya no hace girar el orbe
+sobre su eje. El motivo es técnico, no estético: girando 6°/frame (una vuelta cada
+~2 s) la cara se iba al limbo y la mitad del tiempo se veía el dorso con el aro
+grabado, justo cuando el orbe tiene algo que contar. Con el sistema de caras eso
+pasó de "raro" a "pierde información": **la cara es el estado**.
+
+Lo que hace en su lugar:
+
+- se mece ±2,2° con periodo más corto que en reposo (insistencia, sin perder la
+  cara de vista);
+- los anillos exteriores tienen **su propio reloj** (antes derivaban del ángulo de
+  giro, que ya no avanza, así que se habrían quedado clavados);
+- el resto lo cuentan el visor (anillo orbitando) y el pulso del aura.
+
+El giro axial sigue disponible como anulación manual: Ctrl+clic derecho →
+*Movimiento* → *Giro axial 3D*.
+
+Añadido también, del §3.11 del documento de referencia ("ingeniería invisible"):
+**movimiento reducido**. Con las animaciones de Windows desactivadas
+(`SystemParameters.ClientAreaAnimation`), el orbe queda estático: la cara salta al
+objetivo sin springs, no parpadea, no respira, no se mece y la decoración se
+congela. Queda anotado en el log al arrancar. Cubierto con 4 comprobaciones nuevas
+en `test-face.ps1` (42 en total).
+
+Verificado en vivo sobre el orbe instalado: con `activity: executing`, dos
+capturas separadas 3 s dan `yaw -2,13°` y `yaw +1,82°`. Antes, en esos 3 s habría
+avanzado unos 540°.
+### Cierre del plan (2026-11-18)
+
+Estado de las fases, con lo que falta dicho sin adornos:
+
+| Fase | Estado |
+|---|---|
+| 0. Spike de viabilidad | **cerrada**: `dsh headless --session-id` rechaza las sesiones de la GUI (`assertAdoptable`), medido 0 de 8 adoptables. No es un bug a arreglar: es un límite del runner one-shot |
+| 1. Esqueleto, tema y coste | cerrada. `-BenchFrames 200`: 2,03 ms/frame con cara y decoración (antes 1,71 ms sin cara) |
+| 2. Panel y asistente | cerrada. Panel verificado con `test-panel.ps1` y captura `docs/panel.png` |
+| 3. Vida autónoma | cerrada. `test-life.ps1` en verde y **render determinista** (ver abajo) |
+| 4. Burbujas y feed | cerrada para tareas lanzadas desde el orbe; el feed de sesiones de la GUI se limita al `detail` del endpoint de estado (sin argumentos) |
+| 5. Pulido | cerrada **salvo "retomar conversación"**, que queda bloqueada por la fase 0 |
+
+### El render ahora es determinista de verdad (criterio de la fase 3)
+
+El plan pedía que dos `-Selftest` con la misma semilla dieran el mismo SHA-256.
+No lo cumplía, y el motivo importa: el tick seguía vivo durante la captura.
+Cuatro fuentes de azar, cada una arreglada:
+
+1. **La mirada se sorteaba con `Get-Random`** (sin semilla) → las pupilas caían
+   distintas en cada ejecución. Con `$script:FrozenMs` puesto, el bloque de mirada
+   no se ejecuta y la mirada va a un valor fijo.
+2. **La fase de la decoración dependía del reloj real.** El reloj congelado la
+   fija (`1600 % 1400`).
+3. **Los springs de decoración no habían terminado de asentarse** cuando se
+   congelaba: el primer tick congelado metía un paso de decenas de milisegundos y
+   movía `amount` una milésima distinta. `Settle-Deco -NowMs` los deja en reposo y
+   pone el reloj del integrador al mismo instante.
+4. **El parpadeo y el through-blink** dependían de `[DateTime]::Now`. Congelado,
+   no se disparan.
+
+Verificado: `thinking`, `idle`, `executing`, `blocked`, `waiting`, `reading` y
+`writing` dan **el mismo hash en dos ejecuciones** (7 de 7).
+
+Comprobaciones que acompañan al cierre:
+
+- `check-error-event.ps1`: un fallo del runner produce burbuja legible
+  (`kind=error`, "session no existe"), que era el checklist pendiente de la fase 5.
+- Regla permanente 4 cumplida: `0` coincidencias de `C:\Users\` en el código.
+- Capturas: `docs/caras.png`, `docs/estados.png`, `docs/panel.png`,
+  `docs/bubbles.png`, `docs/life.png` (gesto de dormitar).
+
+### Lo que sigue, y no es "más de lo mismo"
+
+El catálogo de 19 expresiones **no es un menú**: en marcha nadie elige la cara. El
+orbe la deduce de la actividad del agente y de la vida, y los springs la mezclan.
+Lo que falta para que se sienta natural no es otra cara, es:
+
+- **micro-expresiones**: miradas cortas sin motivo, ceja que se mueve una vez,
+  medio parpadeo asimétrico (un ojo antes que el otro);
+- **asimetría**: hoy las dos mitades de la cara son idénticas y eso es lo que más
+  "dibujo" se ve; el original también es simétrico, pero en un ser vivo la
+  simetría perfecta delata;
+- **respiración facial**: la boca y el párpado con una deriva lenta propia, no
+  solo el cuerpo.
+
+Eso es una capa nueva (`lib/Micro.ps1`), no un rediseño: se enchufa al mismo
+vector de 10 canales con un sumando pequeño y deja todo lo demás igual.
+### Lo que el orbe cuenta mientras trabaja (2026-11-18)
+
+Pedido del usuario, literal: "cuando mando a hacer una tarea se pone a hacerla,
+eso sí, pero no lo veo trabajando; que me diga qué está haciendo en todo momento,
+flotante, bonito y elegante como burbuja de chat, con voz".
+
+**Tarjeta de progreso** (`lib/Progress.ps1`). Una burbuja dura 2,6 s y se va; si
+te ausentas treinta segundos no sabes si la tarea sigue viva. La tarjeta se queda:
+
+- paso actual, cronómetro y punto que late;
+- **el texto del modelo se acumula** según llega del NDJSON (es el stream, no un
+  resumen), con scroll y tope de 6.000 caracteres;
+- **dos tamaños decididos por el estado del Harness**: compacta si está a la vista
+  (ya puedes seguir el chat), completa si está minimizado o en la bandeja;
+- se retira sola 9 s después de terminar, con su propio `DispatcherTimer` (el
+  visor de la tarea deja de leer en cuanto acaba, así que no se puede colgar de él);
+- no roba el foco: `WS_EX_NOACTIVATE`.
+
+**Voz** (`lib/Voice.ps1`), sobre el TTS neuronal que el perfil ya tiene. Freno
+deliberado: una frase cada 6,5 s, se descarta lo corto y no se encola nada
+mientras suena otra. Si el endpoint falla, se apaga sola en vez de reintentar en
+cada paso. Interruptor en Ctrl+clic derecho → *Voz al trabajar*.
+
+**Micro-expresiones** (`lib/Micro.ps1`). Un sumando pequeño y continuo sobre el
+vector de cara, con tres canales asimétricos (ojo y ceja desiguales, boca
+torcida, medio parpadeo), alimentado por dos deriva lentas con periodos primos y
+por eventos cada 4-14 s. No es otra capa de expresiones: es lo que evita que una
+pose exacta se lea como un dibujo.
+
+### Contratos medidos (no hay que volver a adivinarlos)
+
+- **TTS**: `POST /dsh-tts-api/speak { text, voice }` → `200 application/json`
+  `{"url":"/dsh-tts-audio/<id>"}` (1,7 s); el MP3 se descarga de esa url relativa
+  (`scripts\probe-tts.ps1`). No devuelve audio directo, aunque el README del
+  perfil lo diera a entender.
+- **La tarjeta y el visor comparten alcance**: `Invoke-OrbTask` corre en el hilo
+  de interfaz del orbe, así que la tarjeta puede ser WPF sin runspaces; la voz no
+  (bloquearía el tick), y va en un runspace con `BeginInvoke` + espera máxima.
+
+### Registro de la tarea como conversación del proyecto: NO resuelto, y por qué
+
+El usuario lo pidió dos veces: lo que manda el orbe debería quedar como chat del
+proyecto. Lo medido hoy:
+
+- Las 320 proyecciones de `session_projcache` son **todas** `preset=standard`, es
+  decir, creadas por la GUI. `dsh headless` **no deja conversación visible**.
+- No hay ruta de envío en los plugins instalados (`dsh-grok-buddy` expone estado,
+  espacios, ajustes, colores y script; nada de escribir en una sesión).
+- La GUI responde **401** sin token, así que no se puede replicar su llamada.
+- El host vive dentro de `app.asar` (209 MB); leer su API exige inspeccionar el
+  archivo, no basta un `grep`.
+
+Conclusión: hace falta un **plugin de host** propio (`@local/dsh-orb-hub`, que el
+plan ya contemplaba) que, usando la API de sesiones del host, cree una
+conversación real y le envíe el mensaje; el orbe le hablaría por una ruta HTTP
+sin token, como ya hace con `state.json`. Es la única vía que produce un chat de
+verdad y no una proyección falsificada a mano. Queda como trabajo siguiente, y no
+se implementa a ciegas: primero hay que leer la API del host.
+
+### Lección: una función que devuelve basura
+
+`Invoke-OrbTask` devolvía el `DispatcherTimer` **dentro de un array**, porque
+nueve llamadas a `Show-Bubble` no estaban silenciadas y su valor de retorno se
+colaba en el flujo de salida de la función. El síntoma no fue un error: fue que
+la prueba de punta a punta esperó 120 s a que el visor se parase, porque
+`$poll.IsEnabled` sobre un array no es lo que parece. Arreglo: `[void](Show-Bubble ...)`.
+Regla: en una función que devuelve un objeto, todo lo que se llame dentro y no
+sea el resultado va con `[void]` o asignado.
+
+### Verificado tras esta tanda
+
+- `parse-check`: 38 archivos, 0 fallos.
+- `test-face`: 42 en verde · `test-progress`: 10 en verde · `test-voice`: MP3 real
+  de 27 KB en 2,7 s · `probe-tts`: contrato documentado.
+- `test-task-e2e`: tarea real (prompt "responde solo HUD_OK_2"), 31,9 s, tarjeta
+  creada en modo compacto, respuesta correcta y resumen guardado.
+- Render determinista con micro-expresiones: mismo hash con la misma semilla.
+- `-BenchFrames 200` con micro: 2,42 ms/frame (antes 2,03 sin micro).
+
+Sin verificar: el **modo completo** de la tarjeta (Harness minimizado, que desde
+aquí no se puede provocar), el hover y el arrastre con ratón real. El registro de
+conversaciones ya no está bloqueado: ver el anexo de conversaciones al final.
+
+---
+
+### Conversaciones: leer, escribir y crear desde el orbe (2026-11-18)
+
+Pedido del usuario, literal: "intenta que pueda leer las secciones (cuando hablo
+de secciones me refiero a chat dentro de los workspace) pueda escribir en una
+activa con append a lo que ya está, crear nuevas que se reflejen al abrir el
+harness".
+
+Esto cierra el pendiente que el plan dejó abierto: **registrar el trabajo como
+conversación del proyecto**. Hasta ahora el orbe veía títulos en disco y lanzaba
+`dsh headless` en un hilo aparte — trabajo que no quedaba en ningún chat. Ahora
+escribe en el chat real.
+
+#### Por qué hacía falta un plugin de host
+
+La GUI del Harness responde **401** sin token y `dsh headless` no deja
+conversación visible. Los datos están en `~/.dsh/storages`, pero son de solo
+lectura: el log de una sesión es `session.v4.jsonl.zst` y reconstruirlo a mano
+significa inventar proyecciones, lo que produce chats vacíos o rotos. La única
+vía honesta es la API de sesiones del host, y para eso hace falta un plugin.
+
+`@local/dsh-orb-hub` (nuevo, en `dsh-plugins/orb-hub`) expone cinco rutas
+loopback:
+
+| Ruta | Qué hace |
+|---|---|
+| `GET /dsh-orb-hub/ping.json` | ¿está? + capacidades |
+| `GET /dsh-orb-hub/state.json` | Workspaces + conversaciones del activo |
+| `GET /dsh-orb-hub/messages.json?id=` | últimos mensajes |
+| `POST /dsh-orb-hub/send.json` | anexar a un hilo existente |
+| `POST /dsh-orb-hub/create.json` | crear hilo en un Workspace |
+
+Todas usan métodos públicos de `sessionController` (`list`, `projections`,
+`events`, `prompt`, `create`) y de `workspaceRegistry` (`list`,
+`archivedSessionIds`, `pinnedSessionIds`). No se escribe ni un evento de sesión a
+mano.
+
+#### Lo que se midió (no hay que volver a adivinarlo)
+
+- **Crear**: `create` + primer mensaje = **236 ms**; el agente contestó `HUB_OK`,
+  el hilo quedó titulado solo («Prueba del orbe HUB_OK») y **adjunto al
+  Workspace** (`attachSession`), o sea que sale en la barra lateral como
+  cualquier otro.
+- **Anexar**: `prompt` = **75–100 ms**, `accepted: true`; la respuesta llega
+  después y se lee con `events`.
+- **Leer**: `state.json` completo en **309 ms** con 12 espacios y 113 sesiones.
+  Antes tardaba **8,6 s** porque pedía las proyecciones de las 240 sesiones
+  declaradas; leer el título es una proyección en frío por sesión.
+- **Unicode**: «Prueba UTF-8 numero dos: ñ á é í ó ú ¿qué tal?» llega intacto
+  (verificado en el log del host, no solo en la respuesta HTTP).
+- **Paginación**: `maxMessages: N` devuelve como mucho N mensajes, a veces N-1
+  por dónde cae el corte; nunca de más.
+
+#### Decisiones que no son obvias
+
+- **El catálogo se detalla de a un Workspace.** `state.json` devuelve el
+  catálogo completo (con `count` por espacio) y los mensajes/títulos **solo del
+  Workspace activo**. El panel enseña uno a la vez, así que leer todos era gastar
+  8 s para pintar 6 filas.
+- **`running`, `blank` y `cwd` vienen del host**, no del disco: es el único sitio
+  donde "en curso" significa algo.
+- **El disco sigue siendo respaldo.** Sin el plugin, `lib/Workspaces.ps1` hace lo
+  de antes: lista, y el cuadro de *Tarea* lanza `dsh headless`. El panel no
+  muestra el cuadro de chat ni el botón de crear si no puede cumplirlos.
+- **`Continuable` se sigue leyendo del disco** (una sesión con *agent preset*
+  explícito no la adopta `dsh headless`). El puente no lo sabe y no debe
+  adivinarlo.
+- **El faro.** `Get-NetTCPConnection` pide elevación: sin admin responde "Acceso
+  denegado" y devuelve vacío, que es lo mismo que "no hay nada escuchando". Eso
+  dejaba al orbe en `phase: unknown` (comprobado en `-Selftest`). El plugin
+  escribe `%LOCALAPPDATA%\GrokBotOrb\hub.json` con su puerto y el orbe lo lee;
+  `netstat -ano` queda como respaldo. De regalo, el estado del agente y la voz
+  vuelven a encontrar el servidor: `Find-StateUrl` prueba la base del faro antes
+  de escanear puertos.
+- **`send` no espera la respuesta.** Es un `prompt` encolado; el orbe relee con
+  un temporizador (1,2 s tras enviar, 2,5 s al abrir). Bloquear ahí sería colgar
+  la interfaz del orbe durante toda la respuesta del modelo.
+- **Los mensajes inyectados se filtran** por `source.kind`: notas de ficheros,
+  skills y avisos de cron no son conversación y en una burbuja serían ruido.
+
+#### Un fallo real que salió de este trabajo
+
+`Get-NetTCPConnection` sin elevación. Estaba en `Find-StateUrl` desde el primer
+día y solo se notó al probar el puente: el orbe llevaba tiempo leyendo
+`phase: unknown` sin quejarse (el estado se atenúa y ya). Ahora se prueba la base
+conocida → el faro → `netstat`, y `-Selftest` pasó de `phase: unknown` a
+`phase: working`.
+
+Y uno mío, de laboratorio: en `probe-hub.ps1` la variable del bucle se llamaba
+`$text` y **pisaba el parámetro `-Text`** (PowerShell no distingue mayúsculas),
+así que el mensaje enviado era el último leído, no el escrito. Es la tercera vez
+que esta trampa aparece en el proyecto; de ahí el comentario en el archivo.
+
+#### Cómo se comprueba
+
+```powershell
+# núcleo del plugin, sin Harness
+cd dsh-plugins\orb-hub; node test/run.mjs            # 31 comprobaciones
+
+# vista de conversación + puente vivo
+cd dsh-plugins\grok-desktop
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\test-chat.ps1   # 28
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\probe-hub.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\probe-hub.ps1 -SendTo session-<id> -Text "hola"
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\probe-hub.ps1 -NewChatIn <workspaceId> -Text "primer mensaje"
+
+# capturas
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\shot-panel.ps1 -OutFile docs\panel.png
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\shot-chat.ps1  -OutFile docs\chat.png
+```
+
+#### Límites que quedan
+
+- El chat del orbe muestra **16 mensajes** y recorta cada uno a 700 caracteres.
+- El refresco automático depende del temporizador: si cierras el Harness, no hay
+  refresco ni escritura (el puente vive en el host).
+- Las rutas no piden token: cualquier proceso del mismo usuario podría escribir.
+  Es el mismo trato que `dsh-grok-buddy` y no amplía lo que ya puede hacer un
+  proceso local.
+- **Reiniciar el orbe** para que cargue `lib/Hub.ps1` y la vista nueva: el orbe
+  que estaba en pantalla se lanzó antes de este cambio y no se recarga solo.
+
+---
+
+### La luciérnaga: el punto de estado se suelta y vuela (2026-11-19)
+
+Pedido del usuario, literal: "viste esa bolita que tiene el bot a la izquierda
+arriba, quiero que se mueva de vez en cuando a direcciones aleatorias y que el
+bot la siga con la vista, todo bien fluido y elegante y relajante, y otras
+animaciones relacionadas con esa bolita".
+
+Se preguntó cuál era la bolita (el LED de estado del orbe o el punto de la
+cabecera del panel): **es el LED de estado**. Así que el LED deja de ser un punto
+fijo y se convierte en una luciérnaga que ronda el avatar.
+
+#### Por qué una ventana aparte
+
+La ventana del orbe mide 92 px y la esfera los ocupa enteros: dentro no hay un
+píxel libre donde volar. Agrandar la ventana del orbe habría creado un cuadrado
+transparente que **captura clics** alrededor del avatar, que es peor que el
+problema. La luciérnaga vive en su propia ventana de 220 px, transparente y
+*click-through* (`WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`, el
+mismo truco que las burbujas): se ve y no existe para el ratón.
+
+La ventana es grande y **se mueve el punto dentro, no la ventana**. Mover una
+ventana 30 veces por segundo se nota; mover un `Canvas.Left` no.
+
+#### Vuelo
+
+- Muelle sub-amortiguado (k 0,013 paseo / 0,055 flechazo) más un **rizo
+  perpendicular** al avance: eso es lo que convierte la recta en un arco. El rizo
+  se apaga al llegar al destino, o el punto no se quedaría quieto nunca.
+- **Corona de 50–100 px** alrededor del centro, con rebote en los dos bordes: se
+  anula la componente radial de la velocidad y se conserva la tangencial, así el
+  rebote se lee como un giro. El borde interior es la esfera: una luciérnaga
+  cruzando por delante taparía los ojos, que es lo único que no se puede tapar.
+- Velocidad con techo (2,6 px/frame paseando, 7,2 en flechazo) para que nunca
+  cruce la caja de golpe.
+- Cuatro comportamientos: **pasear** (destino cada 1,5–3,8 s en reposo),
+  **flechazo** (26 % de los destinos, viaje rápido y corto), **posarse** en el
+  borde de la esfera (8 %, 2,6–5,2 s) y **desaparecer** para reaparecer en otro
+  sitio (cada 26–52 s).
+
+#### Seguimiento
+
+`Update-OrbFirefly` devuelve la posición normalizada a `[-1,1]` respecto del
+centro del orbe, y esa es la que entra en el canal de mirada (que ya tenía su
+propio suavizado a 0,16 por frame). La mezcla vive en `Get-FireflyGazeTarget`
+para poder probarla: peso **0,92 en reposo** y **0,40 trabajando** (trabajando
+manda la cara de concentración, que es información de estado).
+
+Extra: un **flechazo** abre un poco los ojos y sube las cejas durante 0,42 s
+(suma aditiva sobre `eyeOpen`/`eyeWide`/`browRaise`), y la cabeza gira hasta 5°
+hacia el lado donde está el bicho — seguir con las pupilas un punto que se va al
+extremo se lee como ojos saltones.
+
+#### Lo demás que trae
+
+- **Estela** de cinco puntos que se apaga con la velocidad.
+- **Pulso** del halo, más rápido cuando el agente pide atención.
+- **El color es el estado**: ámbar (necesita tu OK), verde (terminó), acento del
+  chasis el resto. El LED de la esfera baja al 34 % de opacidad y queda como el
+  zócalo del que salió: un punto tenue que explica de dónde viene el que vuela.
+- **Accesibilidad**: con las animaciones del sistema desactivadas se queda quieta
+  en su sitio fijo, sin sorpresa. Y en `-Selftest` también, para que la captura
+  siga siendo determinista (mismo sha256 en dos pasadas).
+
+#### Un fallo real de la integración
+
+El primer intento pasaba `-Reduced $rm` **antes** de que `$rm` existiera en el
+tick (se asigna más abajo, en la sección de respiración). Pasar `$null` a un
+parámetro `[bool]` lanza una excepción de enlace, así que **el tick entero
+reventaba en cada frame** y el error solo se veía como `ERROR tick fallo (1)` en
+el log. Se descubrió porque el selftest dejó de cambiar de hash y la luciérnaga
+no se movía. Corregido usando `$script:ReduceMotion` directamente.
+
+#### Recarga sin privilegios
+
+El avatar lo lanza el Harness y, desde una terminal normal, ese proceso **no se
+ve ni se puede cerrar** (mismo muro que `Get-NetTCPConnection` sin elevación). Se
+añadió un vigilante: si aparece `%LOCALAPPDATA%\GrokBotOrb\reload.now`, el orbe se
+cierra solo. `scripts\reload-orb.ps1` escribe el marcador, espera a que el latido
+pare y lo relanza con `launch.vbs`. Un orbe anterior a esta versión no lo tiene.
+
+#### Comprobado
+
+```
+scripts\test-firefly.ps1      34 comprobaciones (ventana, corona, velocidad,
+                              destinos, estela, sorpresa, mirada, accesibilidad)
+```
+
+- Coste: **0,6 ms/frame** de los 33 ms de presupuesto.
+- `-Selftest` determinista: `4166a409…` en dos pasadas seguidas.
+- Orbe real: log `luciernaga: ventana creada en 1356,732`, sin errores de tick.
+- `docs/firefly.png`: tres instantes del vuelo, renderizados del canvas real
+  (mismos nodos y opacidades). No es captura de pantalla: `CopyFromScreen`
+  devuelve negro en este entorno.
+
+#### Sin verificar
+
+- Cómo se ve **en el escritorio real** con el orbe al lado: mi terminal no puede
+  capturar la pantalla ni cerrar el proceso vivo, así que la comprobación visual
+  final la tiene que hacer el usuario.
+- Que el remolino no moleste con el orbe pegado a un borde de la pantalla: la
+  ventana de 220 px se sale del área de trabajo y el punto puede quedar
+  parcialmente fuera. Está acotado por la corona, pero con el orbe en una esquina
+  el vuelo se ve a medias.
+
+#### Segunda vuelta (mismo día): menos nervio y paso por delante
+
+Feedback del usuario, literal: "me gustó como quedó, ta elegante eso, pero se está
+moviendo constantemente; que sea cada ratos aleatorios y vuelva a su sitio un rato
+aleatorio también. Y que de ser posible no choque contra él sino que le pase por
+delante".
+
+El primer diseño volaba sin parar (destino nuevo cada 1,5–3,8 s). Se cambió por
+**excursiones con regreso**:
+
+- **Descanso 9–22 s** en su zócalo (donde estaba el LED), quieta del todo.
+- **Excursión de 2–3 puntos** con pausas de 0,5–1,6 s entre ellos.
+- **Vuelta a casa** siempre, y otro descanso aleatorio.
+- Medido en 10 minutos simulados: **un vuelo cada ~20 s**, **5,5 s** de duración,
+  **27 % del tiempo fuera** (antes: 100 %).
+
+Y para que **pase por delante** en vez de chocar:
+
+- Se eliminó el tope interior de la corona (era eso lo que se leía como choque:
+  rebotaba en el borde de la esfera).
+- Al entrar en el disco se agranda hasta un 42 % y brilla más. Sin profundidad
+  real, ese cambio de tamaño es lo que hace que se lea "por delante" y no
+  "dentro".
+- El único tope que queda es el exterior (96 px), para que el orbe no tenga que
+  forzar la mirada al máximo.
+
+Y la mirada: **0,92** de excursión, **0,40** trabajando, **0,22** descansando (en
+su zócalo ya forma parte del orbe, así que la mirada vuelve a ser la de siempre).
+
+**Dos fallos que salieron de aquí:**
+
+1. **El rizo impedía llegar.** Con el rizo a tope la velocidad gira 13° por frame
+   y el punto se queda **orbitando** el destino en vez de alcanzarlo: la excursión
+   no terminaba nunca y la luciérnaga no volvía a casa. Se escala el rizo con la
+   distancia (`min(1, dist/45)`) y se añadió un tope de 5 s por tramo como red.
+2. **`Canvas.Left/Top` no se aplica hasta organizar.** En los scripts de captura
+   el punto salía pegado a la esquina (0,0) aunque sus coordenadas fueran
+   correctas: `RenderTargetBitmap.Render` de un árbol que no ha pasado por
+   `UpdateLayout` usa las posiciones viejas. En el orbe vivo no pasa (la ventana
+   organiza cada frame), pero costó un rato verlo.
+
+**Comprobado:** 36 aserciones (`test-firefly.ps1`), `-Selftest` determinista, y en
+el orbe real la recarga por marcador funcionó de punta a punta: `reload-orb.ps1`
+→ el orbe se cerró solo → `launch.vbs` → nuevo proceso con
+`luciernaga: ventana creada` y sin errores de tick (10:30).
