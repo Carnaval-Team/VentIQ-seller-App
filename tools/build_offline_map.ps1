@@ -87,12 +87,72 @@ if (-not (Test-Path $Pbf)) {
 $pbfSizeMb = [math]::Round((Get-Item $Pbf).Length / 1MB, 1)
 Write-Host "Tamano del .pbf: $pbfSizeMb MB"
 
+# ── Preflight de la cache de fuentes de Planetiler ──────────────────────────
+# Planetiler guarda los auxiliares (Natural Earth, water polygons, lake
+# centerlines) en .\data\sources y NO los vuelve a descargar si el archivo
+# existe, aunque este a medias. Una descarga cortada deja un ZIP cuyo final son
+# ceros, y la fase que lo usa revienta con "zip END header not found" (asi murio
+# water_polygons tras 18 min de descarga). Aqui se detecta leyendo el EOCD del
+# final del archivo y se borra para que se vuelva a descargar.
+function Test-ZipCompleto {
+    param([string] $Ruta)
+    $fs = $null
+    try {
+        $fs = [System.IO.File]::OpenRead($Ruta)
+        # El EOCD son 22 bytes; con comentario puede quedar algo mas atras.
+        # Con 4 KB de cola sobra para estos archivos, que no llevan comentario.
+        $n = [int][Math]::Min(4096, $fs.Length)
+        if ($n -lt 22) { return $false }
+        $fs.Seek(-$n, 'End') | Out-Null
+        $buf = New-Object byte[] $n
+        [void]$fs.Read($buf, 0, $n)
+        for ($i = 0; $i -le $n - 4; $i++) {
+            if ($buf[$i] -eq 0x50 -and $buf[$i + 1] -eq 0x4B -and
+                $buf[$i + 2] -eq 0x05 -and $buf[$i + 3] -eq 0x06) { return $true }
+        }
+        return $false
+    } catch {
+        return $false
+    } finally {
+        if ($fs) { $fs.Dispose() }
+    }
+}
+
+$candidatos = @(
+    (Join-Path (Get-Location).Path 'data\sources'),
+    (Join-Path $repoRoot 'data\sources')
+) | Select-Object -Unique
+
+foreach ($dirFuentes in $candidatos) {
+    if (-not (Test-Path $dirFuentes)) { continue }
+    foreach ($zip in Get-ChildItem $dirFuentes -Filter *.zip -File) {
+        if (-not (Test-ZipCompleto $zip.FullName)) {
+            $aviso = 'Cache de Planetiler corrupta: {0} ({1} MB, sin EOCD). Se borra para que se vuelva a descargar.' -f `
+                $zip.Name, [math]::Round($zip.Length / 1MB, 1)
+            Write-Warning $aviso
+            Remove-Item -Force $zip.FullName
+        } else {
+            Write-Host "Cache OK: $($zip.Name)"
+        }
+    }
+}
+
 # ── Java ────────────────────────────────────────────────────────────────────
 $java = Get-Command java -ErrorAction SilentlyContinue
 if (-not $java) {
     throw 'Java no esta en el PATH. Planetiler (jar) pide Java 25 o superior.'
 }
-Write-Host "Java: $(& java -version 2>&1 | Select-Object -First 1)"
+# `java -version` escribe en stderr. Al redirigirlo con `2>&1` PowerShell lo
+# convierte en ErrorRecord y, con $ErrorActionPreference='Stop', en un error
+# terminante (NativeCommandError): el script moria justo aqui. Se baja el EA
+# solo para leer la linea y se restaura de inmediato.
+$eaPrevio = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+$javaVersion = & java -version 2>&1 |
+    Select-Object -First 1 |
+    ForEach-Object { "$_" }
+$ErrorActionPreference = $eaPrevio
+Write-Host "Java: $javaVersion"
 
 # ── planetiler.jar ──────────────────────────────────────────────────────────
 $toolsDir = Join-Path $env:LOCALAPPDATA 'planetiler'
@@ -143,8 +203,35 @@ $sizeMb = [math]::Round((Get-Item $Output).Length / 1MB, 1)
 Write-Host ''
 Write-Host "Listo en $([math]::Round($sw.Elapsed.TotalMinutes, 1)) min · $sizeMb MB" -ForegroundColor Green
 
-# ── Verificacion rapida ─────────────────────────────────────────────────────
+# ── Normalizacion de metadata.version ──────────────────────────────────────
+# La app valida el .mbtiles con el paquete `mbtiles`, que hace
+# `double.parse(metadata.version)`. Planetiler escribe la version del esquema
+# OpenMapTiles ("3.16.0"), que NO es un double: el parseo lanza FormatException
+# y la app rechaza el mapa con "no es un .mbtiles valido" (bug verificado
+# tambien en mbtiles 0.5.1). Se deja en dos componentes ("3.16").
 $sqlite = Get-Command sqlite3 -ErrorAction SilentlyContinue
+if (-not $sqlite) {
+    $aviso = 'sqlite3 no esta en el PATH: no se puede normalizar metadata.version. ' +
+        'Planetiler escribe "3.16.0" y la app rechazara el mapa. ' +
+        'Instala sqlite3 o sube el archivo corregido a mano.'
+    Write-Warning $aviso
+} else {
+    $versionRaw = & $sqlite.Source $Output "select value from metadata where name='version';"
+    $versionRaw = "$versionRaw".Trim()
+    if ([string]::IsNullOrWhiteSpace($versionRaw)) {
+        Write-Host 'metadata.version: no existe la fila, nada que normalizar'
+    } elseif ($versionRaw -match '^\d+\.\d+\.\d+') {
+        $versionOk = (($versionRaw -split '\.')[0..1]) -join '.'
+        & $sqlite.Source $Output "update metadata set value='$versionOk' where name='version';" | Out-Null
+        Write-Host "metadata.version: '$versionRaw' -> '$versionOk' (la app hace double.parse)"
+    } elseif ($versionRaw -as [double] -ne $null) {
+        Write-Host "metadata.version: '$versionRaw' ya es parseable"
+    } else {
+        Write-Warning "metadata.version='$versionRaw' no es numerico: la app lo rechazara"
+    }
+}
+
+# ── Verificacion rapida ─────────────────────────────────────────────────────
 if ($sqlite) {
     $meta = & $sqlite.Source $Output "select name||'='||value from metadata where name in ('format','minzoom','maxzoom','scheme','name') order by name;"
     Write-Host 'Metadata:'
