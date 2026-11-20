@@ -153,4 +153,83 @@ class CompraService {
     );
     return _asMap(resp);
   }
+
+  // ==========================================================================
+  // Liquidación: reserva y pago con el fondo
+  // ==========================================================================
+
+  /// Cuentas y medios con saldo para financiar compras de la tienda
+  /// (`fn_fdi_disponible`). Devuelve el array jsonb ya tipado.
+  ///
+  /// `disponible` descuenta lo reservado por otras compras vivas; por eso hay
+  /// que releerlo antes de cada reserva y no cachearlo.
+  Future<List<DisponibleFondo>> disponible(int idTienda) async {
+    final resp = await _supabase.rpc(
+      'fn_fdi_disponible',
+      params: {'p_id_tienda': idTienda},
+    );
+    return ((resp as List?) ?? [])
+        .map(
+          (e) => DisponibleFondo.fromJson(Map<String, dynamic>.from(e as Map)),
+        )
+        .toList();
+  }
+
+  /// Reserva el total en las [fuentes] indicadas y deja la compra en
+  /// `reservada`. Devuelve `{status, id_compra, estado, cubierto,
+  /// total_financiado}`.
+  ///
+  /// Cada fuente va en la moneda nativa de su cuenta; [FuenteReserva.tasaATotal]
+  /// la convierte a la moneda del total. La suma de equivalentes redondeados
+  /// debe cubrir exacto o la RPC rechaza. Reutiliza la misma [idempotencyKey]
+  /// en los reintentos del mismo formulario (`newIdempotencyKey()`).
+  Future<Map<String, dynamic>> reservar({
+    required int idCompra,
+    required List<FuenteReserva> fuentes,
+    String? idempotencyKey,
+  }) async {
+    final resp = await _supabase.rpc(
+      'fn_fdi_compra_reservar',
+      params: {
+        'p_id_compra': idCompra,
+        'p_fuentes': fuentes.map((f) => f.toJson()).toList(),
+        'p_idempotency_key': idempotencyKey,
+      },
+    );
+    return _asMap(resp);
+  }
+
+  /// Paga al proveedor la compra reservada y la deja en `pagada`. Devuelve
+  /// `{status, id_compra, estado, pagado}` o `{status:'ok', duplicada:true}`.
+  ///
+  /// [tasaPago] solo hace falta cuando el pago y el total no están en la misma
+  /// moneda; si se omite la RPC usa su valor por defecto.
+  Future<Map<String, dynamic>> pagar(int idCompra, {double? tasaPago}) async {
+    final resp = await _supabase.rpc(
+      'fn_fdi_compra_pagar',
+      params: {'p_id_compra': idCompra, 'p_tasa_pago': tasaPago},
+    );
+    return _asMap(resp);
+  }
+
+  /// Libera las reservas de la compra sin pagarla. Devuelve `{status,
+  /// id_compra, liberadas, estado}`.
+  Future<Map<String, dynamic>> liberar(int idCompra, String motivo) async {
+    final resp = await _supabase.rpc(
+      'fn_fdi_compra_liberar',
+      params: {'p_id_compra': idCompra, 'p_motivo': motivo},
+    );
+    return _asMap(resp);
+  }
+
+  /// Anula la compra y devuelve al fondo lo reservado o pagado. Devuelve
+  /// `{status, id_compra, estado, devuelto}` o
+  /// `{status:'ok', duplicada:true, devuelto:0}`.
+  Future<Map<String, dynamic>> anular(int idCompra, String motivo) async {
+    final resp = await _supabase.rpc(
+      'fn_fdi_compra_anular',
+      params: {'p_id_compra': idCompra, 'p_motivo': motivo},
+    );
+    return _asMap(resp);
+  }
 }

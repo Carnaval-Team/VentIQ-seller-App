@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../config/app_colors.dart';
 import '../../models/compra.dart';
 import '../../services/compra_service.dart';
 import '../../widgets/admin_drawer.dart';
 import 'compra_form_screen.dart';
+import 'compra_liquidacion_screen.dart';
 import 'compras_widgets.dart';
 
 /// Detalle de una compra (`fn_fdi_compra_detalle`).
@@ -52,10 +54,7 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
     }
   }
 
-  String _mensajeDe(Object e) {
-    final texto = e.toString().replaceFirst('Exception: ', '');
-    return texto.isEmpty ? 'No se pudo completar la operación.' : texto;
-  }
+  String _mensajeDe(Object e) => _mensajeError(e);
 
   void _snack(String texto, {bool error = false}) {
     if (!mounted) return;
@@ -79,6 +78,97 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
       MaterialPageRoute(builder: (_) => CompraFormScreen(detalle: detalle)),
     );
     if (cambio == true && mounted) _cargar();
+  }
+
+  /// Abre el asistente de liquidación. El resultado es el mensaje a mostrar:
+  /// `null` = se cerró sin reservar.
+  Future<void> _reservar() async {
+    final detalle = _detalle;
+    if (detalle == null) return;
+    final mensaje = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CompraLiquidacionScreen(compra: detalle.compra),
+      ),
+    );
+    if (!mounted || mensaje == null) return;
+    _snack(mensaje);
+    await _cargar();
+  }
+
+  Future<void> _pagar() async {
+    final detalle = _detalle;
+    if (detalle == null) return;
+    final r = await showDialog<Map<String, dynamic>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _DialogoPago(compra: detalle.compra),
+    );
+    if (r == null || !mounted) return;
+    _snack(
+      r['duplicada'] == true
+          ? 'La compra ya estaba pagada: no se descontó dos veces.'
+          : 'Compra pagada: el dinero salió del fondo.',
+    );
+    await _cargar();
+  }
+
+  Future<void> _liberar() async {
+    final detalle = _detalle;
+    if (detalle == null) return;
+    final c = detalle.compra;
+    final r = await showDialog<Map<String, dynamic>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _DialogoMotivo(
+        titulo: 'Liberar reserva',
+        descripcion:
+            'Se liberan las reservas de la compra #${c.numeroCompra} '
+            '(${formatearImporteMoneda(c.totalFinanciado, c.monedaTotal)}) y la '
+            'compra vuelve a «Creada». El disponible regresa a las cuentas del '
+            'fondo y no se paga nada.',
+        etiquetaConfirmar: 'Liberar reserva',
+        colorConfirmar: AppColors.warning,
+        pista: 'Escribe el motivo de la liberación.',
+        accion: (motivo) => _service.liberar(widget.idCompra, motivo),
+      ),
+    );
+    if (r == null || !mounted) return;
+    _snack('Reserva liberada: la compra volvió a «Creada».');
+    await _cargar();
+  }
+
+  Future<void> _anular() async {
+    final detalle = _detalle;
+    if (detalle == null) return;
+    final c = detalle.compra;
+    final r = await showDialog<Map<String, dynamic>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _DialogoMotivo(
+        titulo: 'Anular compra',
+        descripcion:
+            'Se anula la compra #${c.numeroCompra} y el importe pagado vuelve '
+            'al fondo. La anulación queda en el historial con el motivo.',
+        etiquetaConfirmar: 'Anular compra',
+        colorConfirmar: AppColors.error,
+        pista: 'Escribe el motivo de la anulación.',
+        accion: (motivo) => _service.anular(widget.idCompra, motivo),
+      ),
+    );
+    if (r == null || !mounted) return;
+    if (r['duplicada'] == true) {
+      _snack('La compra ya estaba anulada.');
+    } else {
+      final devuelto = (r['devuelto'] as num?)?.toDouble() ?? 0;
+      _snack(
+        devuelto > 0
+            ? 'Compra anulada: '
+                  '${formatearImporteMoneda(devuelto, c.monedaTotal)} volvió al fondo.'
+            : 'Compra anulada.',
+      );
+    }
+    await _cargar();
   }
 
   Future<void> _cancelar() async {
@@ -964,14 +1054,67 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
 
   Widget _panelAcciones(CompraDetalle detalle) {
     final c = detalle.compra;
-    final puedeEditar = c.esEditable;
-    final puedeCancelar = c.esCancelable;
+    final acciones = <Widget>[];
 
-    if (!puedeEditar && !puedeCancelar) {
+    if (c.estado == 'creada') {
+      acciones.add(
+        _botonAccion(
+          icono: Icons.lock_open_outlined,
+          etiqueta: 'Reservar del fondo',
+          onPressed: _reservar,
+        ),
+      );
+      acciones.add(
+        _botonAccion(
+          icono: Icons.edit_outlined,
+          etiqueta: 'Editar compra',
+          onPressed: _editar,
+          outlined: true,
+        ),
+      );
+      acciones.add(
+        _botonAccion(
+          icono: Icons.cancel_outlined,
+          etiqueta: 'Cancelar compra',
+          onPressed: _cancelando ? null : _cancelar,
+          outlined: true,
+          color: AppColors.error,
+        ),
+      );
+    } else if (c.estado == 'reservada') {
+      acciones.add(
+        _botonAccion(
+          icono: Icons.payments_outlined,
+          etiqueta: 'Pagar al proveedor',
+          onPressed: _pagar,
+        ),
+      );
+      acciones.add(
+        _botonAccion(
+          icono: Icons.lock_open_outlined,
+          etiqueta: 'Liberar reserva',
+          onPressed: _liberar,
+          outlined: true,
+          color: AppColors.warning,
+        ),
+      );
+    } else if (c.estado == 'pagada') {
+      acciones.add(
+        _botonAccion(
+          icono: Icons.block,
+          etiqueta: 'Anular compra',
+          onPressed: _anular,
+          outlined: true,
+          color: AppColors.error,
+        ),
+      );
+    }
+
+    if (acciones.isEmpty) {
       return panelCompras(
         children: [
           avisoCompras(
-            'Compra «${c.estadoLegible}»: no admite edición ni cancelación.',
+            'Compra «${c.estadoLegible}»: no admite acciones en este estado.',
             icono: Icons.lock_outline,
             color: AppColors.secondary,
           ),
@@ -990,42 +1133,70 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
           ),
         ),
         const SizedBox(height: 10),
-        if (puedeEditar)
-          SizedBox(
-            height: 44,
-            child: FilledButton.icon(
-              onPressed: _cancelando ? null : _editar,
-              icon: const Icon(Icons.edit_outlined, size: 18),
-              label: const Text('Editar compra'),
-            ),
-          ),
-        if (puedeEditar && puedeCancelar) const SizedBox(height: 8),
-        if (puedeCancelar)
-          SizedBox(
-            height: 44,
-            child: OutlinedButton.icon(
-              onPressed: _cancelando ? null : _cancelar,
-              icon: _cancelando
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.cancel_outlined, size: 18),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.error,
-                side: const BorderSide(color: AppColors.error),
-              ),
-              label: const Text('Cancelar compra'),
-            ),
-          ),
+        for (var i = 0; i < acciones.length; i++) ...[
+          if (i > 0) const SizedBox(height: 8),
+          acciones[i],
+        ],
         const SizedBox(height: 8),
-        textoMetaCompras(
-          'Solo se edita y se cancela una compra en estado «Creada» y sin '
-          'recepciones. El servidor es quien valida ambas cosas.',
-        ),
+        textoMetaCompras(_notaAcciones(c.estado)),
       ],
     );
+  }
+
+  Widget _botonAccion({
+    required IconData icono,
+    required String etiqueta,
+    required VoidCallback? onPressed,
+    bool outlined = false,
+    Color? color,
+  }) {
+    if (outlined) {
+      return SizedBox(
+        height: 44,
+        child: OutlinedButton.icon(
+          onPressed: onPressed,
+          icon: Icon(icono, size: 18),
+          label: Text(etiqueta),
+          style: color == null
+              ? null
+              : OutlinedButton.styleFrom(
+                  foregroundColor: color,
+                  side: BorderSide(color: color),
+                ),
+        ),
+      );
+    }
+    return SizedBox(
+      height: 44,
+      child: FilledButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icono, size: 18),
+        label: Text(etiqueta),
+        style: color == null
+            ? null
+            : FilledButton.styleFrom(backgroundColor: color),
+      ),
+    );
+  }
+
+  /// Qué hace cada acción, en una línea. No se explica el «¿seguro?»: se
+  /// explica la consecuencia.
+  String _notaAcciones(String estado) {
+    switch (estado) {
+      case 'creada':
+        return 'Reservar congela el disponible del fondo según las fuentes que '
+            'elijas. Solo se edita y se cancela en «Creada» y sin recepciones; '
+            'el servidor valida ambas cosas.';
+      case 'reservada':
+        return 'Pagar descuenta el dinero del fondo y deja la compra en '
+            '«Pagada». Liberar devuelve el disponible sin pagar y la compra '
+            'vuelve a «Creada»; ambas exigen confirmación.';
+      case 'pagada':
+        return 'Anular devuelve al fondo lo pagado y exige motivo. Queda en el '
+            'historial y no se puede deshacer.';
+      default:
+        return 'El servidor decide qué transiciones están permitidas.';
+    }
   }
 }
 
@@ -1034,3 +1205,238 @@ const TextStyle _estiloCabeceraDetalle = TextStyle(
   fontWeight: FontWeight.w700,
   color: AppColors.textSecondary,
 );
+
+/// Las RPC lanzan `RAISE EXCEPTION` con texto útil en español: se muestra tal
+/// cual, sin el envoltorio `PostgrestException(...)`.
+String _mensajeError(Object e) {
+  if (e is PostgrestException && e.message.trim().isNotEmpty) return e.message;
+  final texto = e.toString().replaceFirst('Exception: ', '');
+  return texto.isEmpty ? 'No se pudo completar la operación.' : texto;
+}
+
+// ===========================================================================
+// Diálogos de dinero
+// ===========================================================================
+
+/// Confirmación del pago: el dinero sale del fondo.
+///
+/// La llamada la hace el diálogo, no la pantalla: si el servidor falla, el
+/// diálogo se queda abierto con el mensaje a la vista en vez de cerrarse y
+/// tragarse el error.
+class _DialogoPago extends StatefulWidget {
+  const _DialogoPago({required this.compra});
+
+  final Compra compra;
+
+  @override
+  State<_DialogoPago> createState() => _DialogoPagoState();
+}
+
+class _DialogoPagoState extends State<_DialogoPago> {
+  final _service = CompraService();
+  bool _enviando = false;
+  String? _error;
+
+  Future<void> _confirmar() async {
+    setState(() {
+      _enviando = true;
+      _error = null;
+    });
+    try {
+      final r = await _service.pagar(widget.compra.id);
+      if (!mounted) return;
+      Navigator.pop(context, r);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _enviando = false;
+        _error = _mensajeError(e);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.compra;
+    return AlertDialog(
+      title: const Text('Pagar la compra'),
+      content: SizedBox(
+        width: 460,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'El dinero sale del fondo: se descuentan '
+                '${formatearImporteMoneda(c.totalFinanciado, c.monedaTotal)} de '
+                'las cuentas reservadas y la compra #${c.numeroCompra} pasa a '
+                '«Pagada».',
+                style: const TextStyle(fontSize: 13, height: 1.35),
+              ),
+              const SizedBox(height: 10),
+              avisoCompras(
+                'La reserva deja de estar congelada y se convierte en pago. '
+                'Esta acción no se deshace: para revertirla hay que anular la '
+                'compra, y el importe vuelve al fondo.',
+                icono: Icons.account_balance,
+                color: AppColors.warning,
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 10),
+                avisoCompras(
+                  _error!,
+                  icono: Icons.error_outline,
+                  color: AppColors.error,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _enviando ? null : () => Navigator.pop(context),
+          child: const Text('Volver'),
+        ),
+        FilledButton.icon(
+          onPressed: _enviando ? null : _confirmar,
+          icon: _enviando
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Icon(Icons.payments, size: 18),
+          label: Text(_enviando ? 'Pagando…' : 'Pagar y descontar del fondo'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Liberar y anular: exigen motivo y no dejan confirmar en blanco. Igual que
+/// el pago, la llamada vive aquí para no cerrarse ante un error del servidor.
+class _DialogoMotivo extends StatefulWidget {
+  const _DialogoMotivo({
+    required this.titulo,
+    required this.descripcion,
+    required this.etiquetaConfirmar,
+    required this.colorConfirmar,
+    required this.pista,
+    required this.accion,
+  });
+
+  final String titulo;
+  final String descripcion;
+  final String etiquetaConfirmar;
+  final Color colorConfirmar;
+  final String pista;
+  final Future<Map<String, dynamic>> Function(String motivo) accion;
+
+  @override
+  State<_DialogoMotivo> createState() => _DialogoMotivoState();
+}
+
+class _DialogoMotivoState extends State<_DialogoMotivo> {
+  final _ctrl = TextEditingController();
+  bool _enviando = false;
+  String? _errorLocal;
+  String? _errorServidor;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _confirmar() async {
+    final motivo = _ctrl.text.trim();
+    if (motivo.isEmpty) {
+      setState(() => _errorLocal = widget.pista);
+      return;
+    }
+    setState(() {
+      _enviando = true;
+      _errorLocal = null;
+      _errorServidor = null;
+    });
+    try {
+      final r = await widget.accion(motivo);
+      if (!mounted) return;
+      Navigator.pop(context, r);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _enviando = false;
+        _errorServidor = _mensajeError(e);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.titulo),
+      content: SizedBox(
+        width: 460,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                widget.descripcion,
+                style: const TextStyle(fontSize: 13, height: 1.35),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _ctrl,
+                autofocus: true,
+                minLines: 2,
+                maxLines: 4,
+                enabled: !_enviando,
+                onChanged: (_) {
+                  if (_errorLocal != null) {
+                    setState(() => _errorLocal = null);
+                  }
+                },
+                decoration: InputDecoration(
+                  labelText: 'Motivo *',
+                  errorText: _errorLocal,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+              if (_errorServidor != null) ...[
+                const SizedBox(height: 10),
+                avisoCompras(
+                  _errorServidor!,
+                  icono: Icons.error_outline,
+                  color: AppColors.error,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _enviando ? null : () => Navigator.pop(context),
+          child: const Text('Volver'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: widget.colorConfirmar,
+          ),
+          onPressed: _enviando ? null : _confirmar,
+          child: Text(_enviando ? 'Procesando…' : widget.etiquetaConfirmar),
+        ),
+      ],
+    );
+  }
+}

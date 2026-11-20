@@ -207,8 +207,12 @@ BEGIN
     END IF;
 
     WITH s AS (
-        SELECT id_cuenta, id_medio_pago, moneda, saldo
-        FROM public.fdi_dat_saldo WHERE id_tienda = p_id_tienda
+        SELECT s.id_cuenta, s.id_medio_pago, s.moneda, s.saldo,
+               c.nombre AS cuenta, mp.denominacion AS medio_pago
+        FROM public.fdi_dat_saldo s
+        JOIN public.fdi_dat_cuenta c ON c.id = s.id_cuenta
+        JOIN public.app_nom_medio_pago mp ON mp.id = s.id_medio_pago
+        WHERE s.id_tienda = p_id_tienda
     ), r AS (
         SELECT id_cuenta, id_medio_pago, moneda, sum(monto) AS reservado
         FROM public.fdi_dat_compra_reserva
@@ -217,7 +221,9 @@ BEGIN
     )
     SELECT COALESCE(jsonb_agg(jsonb_build_object(
                 'id_cuenta', s.id_cuenta,
+                'cuenta', s.cuenta,
                 'id_medio_pago', s.id_medio_pago,
+                'medio_pago', s.medio_pago,
                 'moneda', s.moneda,
                 'saldo', s.saldo,
                 'reservado', COALESCE(r.reservado, 0),

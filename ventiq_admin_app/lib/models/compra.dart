@@ -512,3 +512,150 @@ class CompraDetalle {
         .toList(),
   );
 }
+
+// ==========================================================================
+// Liquidación (reserva y pago con el fondo)
+// ==========================================================================
+
+/// Una cuenta/medio con saldo para financiar la compra.
+///
+/// Es una fila de `fn_fdi_disponible(p_id_tienda)`, cuyo jsonb trae
+/// `{id_cuenta, cuenta, id_medio_pago, medio_pago, moneda, saldo, reservado,
+/// disponible}`. `reservado` es lo comprometido por reservas vivas y
+/// `disponible` lo que la RPC acepta como máximo para esa cuenta.
+class DisponibleFondo {
+  final int idCuenta;
+  final String cuenta;
+  final int idMedioPago;
+  final String medioPago;
+  final String moneda;
+  final double saldo;
+  final double reservado;
+  final double disponible;
+
+  const DisponibleFondo({
+    required this.idCuenta,
+    required this.cuenta,
+    required this.idMedioPago,
+    required this.medioPago,
+    required this.moneda,
+    this.saldo = 0,
+    this.reservado = 0,
+    this.disponible = 0,
+  });
+
+  /// El método de pago con `disponible == 0` sigue en la lista para poder
+  /// mostrarlo deshabilitado; quien pinta decide, aquí solo se informa.
+  bool get tieneDisponible => disponible > 0;
+
+  /// Texto para el selector: `cuenta · medio · moneda`.
+  String get etiqueta => '$cuenta · $medioPago · $moneda';
+
+  factory DisponibleFondo.fromJson(Map<String, dynamic> j) => DisponibleFondo(
+    idCuenta: (j['id_cuenta'] as num?)?.toInt() ?? 0,
+    cuenta: j['cuenta']?.toString() ?? '',
+    idMedioPago: (j['id_medio_pago'] as num?)?.toInt() ?? 0,
+    medioPago: j['medio_pago']?.toString() ?? '',
+    moneda: j['moneda']?.toString() ?? '',
+    saldo: (j['saldo'] as num?)?.toDouble() ?? 0,
+    reservado: (j['reservado'] as num?)?.toDouble() ?? 0,
+    disponible: (j['disponible'] as num?)?.toDouble() ?? 0,
+  );
+}
+
+/// Una fuente de financiación enviada a `fn_fdi_compra_reservar` en
+/// `p_fuentes`.
+///
+/// Ojo con las unidades: [monto] está en la moneda **nativa** de la cuenta
+/// ([moneda]) y [tasaATotal] la lleva a la moneda del total de la compra. El
+/// equivalente que compara la RPC —y el que suma [ResumenCobertura]— es
+/// [montoEqTotal], ya redondeado a 2 decimales por fuente.
+class FuenteReserva {
+  final int idCuenta;
+  final int idMedioPago;
+  final String moneda;
+  final double monto;
+  final double tasaATotal;
+
+  const FuenteReserva({
+    required this.idCuenta,
+    required this.idMedioPago,
+    required this.moneda,
+    required this.monto,
+    this.tasaATotal = 1,
+  });
+
+  /// `round(monto * tasaATotal, 2)`; la RPC suma los equivalentes ya
+  /// redondeados, no el total redondeado al final.
+  double get montoEqTotal => _redondear2(monto * tasaATotal);
+
+  factory FuenteReserva.fromJson(Map<String, dynamic> j) => FuenteReserva(
+    idCuenta: (j['id_cuenta'] as num?)?.toInt() ?? 0,
+    idMedioPago: (j['id_medio_pago'] as num?)?.toInt() ?? 0,
+    moneda: j['moneda']?.toString() ?? '',
+    monto: (j['monto'] as num?)?.toDouble() ?? 0,
+    tasaATotal: (j['tasa_a_total'] as num?)?.toDouble() ?? 1,
+  );
+
+  /// Claves exactas que espera `p_fuentes`.
+  Map<String, dynamic> toJson() => {
+    'id_cuenta': idCuenta,
+    'id_medio_pago': idMedioPago,
+    'moneda': moneda,
+    'monto': monto,
+    'tasa_a_total': tasaATotal,
+  };
+}
+
+/// Aritmética de cobertura en cliente: lo que decide, antes de llamar a la
+/// RPC, si las fuentes propuestas cubren el total de la compra.
+///
+/// Se calcula en centavos enteros sobre el equivalente redondeado de cada
+/// fuente ([FuenteReserva.montoEqTotal]), igual que valida el servidor; así
+/// `0.1 + 0.2` no convierte una cobertura exacta en un falso faltante.
+/// [total] es el total de la compra en su moneda (normalmente
+/// `Compra.totalFinanciado`). Es pura y no toca la red.
+class ResumenCobertura {
+  final List<FuenteReserva> fuentes;
+  final double total;
+
+  const ResumenCobertura({this.fuentes = const [], this.total = 0});
+
+  int get _centavosFinanciado => fuentes.fold<int>(
+    0,
+    (acc, f) => acc + (f.montoEqTotal * 100).round(),
+  );
+
+  int get _centavosTotal => (total * 100).round();
+
+  /// Suma de los equivalentes en la moneda del total.
+  double get totalFinanciado => _centavosFinanciado / 100;
+
+  /// Lo que de verdad se aplica al total: el financiado sin el excedente.
+  double get aportado {
+    final f = _centavosFinanciado;
+    final t = _centavosTotal;
+    return (f < t ? f : t) / 100;
+  }
+
+  /// Cuánto falta para cubrir el total (0 si ya cubre o sobra).
+  double get faltante {
+    final f = _centavosFinanciado;
+    final t = _centavosTotal;
+    return (f >= t ? 0 : t - f) / 100;
+  }
+
+  /// Excedente financiado por encima del total (0 si falta o cubre exacto).
+  double get sobra {
+    final f = _centavosFinanciado;
+    final t = _centavosTotal;
+    return (f > t ? f - t : 0) / 100;
+  }
+
+  /// Cubre exacto, sin faltante **ni** excedente: es la única condición que
+  /// acepta la reserva.
+  bool get cubreExacto => _centavosFinanciado == _centavosTotal;
+
+  /// Cubre al menos el total (incluye el caso con excedente).
+  bool get cubre => _centavosFinanciado >= _centavosTotal;
+}

@@ -113,7 +113,7 @@ combinada de cambio de estado.
 | 1. Motor de dinero I: integridad, escala y conciliación | **done** — 11/11 verificaciones y E2E del dueño aprobado |
 | 2. Motor de dinero II: idempotencia, tasa y gasto vinculado | **done** — 2a, 2b, cliente a v2 y E2E del dueño aprobado |
 | 3. Compra como documento | **done** — esquema, RPC, UI, verify 13/13 y E2E del dueño aprobado |
-| 4. Reserva y liquidación (carril A, solo `al_pagar`) | **in progress** — backend aplicado y probado; falta UI, `verify/04` y rollback |
+| 4. Reserva y liquidación (carril A, solo `al_pagar`) | **in progress** — backend, datos, pantalla, verify 19/19 y rollback; falta E2E del dueño |
 | 5. Recepción: carril A y carril B | not started |
 | 6. Costo aterrizado sobre el módulo existente | not started |
 | 7. Inversores aportantes (100%) | not started |
@@ -214,6 +214,19 @@ Current phase: 0 · Recommended next: 0
   desde `reservada`. Prueba real sobre la compra #2: reserva de 1 USD → `reservada`; pago → `pagada`, saldo
   488.000 → **487.999**, reserva `consumida`, movimiento `pago_compra -1,00` con `id_compra` y `tasa`, y
   conciliación en **0 descuadres**.
+- **Fase 4 · UI de liquidación (2026-11-20).** Pantallas Stitch `f245be0f…` (desktop) y `a967540a…`
+  (móvil) + `compra_liquidacion_screen.dart`: fuentes con saldo/reservado/**disponible**, monto nativo,
+  tasa con par explícito, y **faltante en rojo que bloquea el botón** (`ResumenCobertura.cubreExacto`).
+  El detalle gana las acciones por estado: **Reservar** (`creada`), **Pagar** y **Liberar** (`reservada`),
+  **Anular** (`pagada`), todas con motivo obligatorio donde aplica y mostrando el error del servidor.
+  `analyze` **sin errores** en los 4 archivos.
+- **Fase 4 · verificación y rollback.** `verify/04_liquidacion.sql` → **19 ok · 0 falla · 2 info** en
+  `newa`, con **control negativo** (inflar total, inflar reservado, sumar saldo: las tres cazan la
+  violación, así que no pasan por vacío). El rollback tuvo que restaurar dos funciones que no estaban en
+  el encargo: `fn_fdi_compra_cancelar` (el 04 la reescribió) y `_fdi_aplicar_movimiento` a **11 args /
+  `RETURNS void`**, o quedaban apuntando a tablas borradas.
+- **Fase 4 · defecto documental.** El comentario del 04 aplicado dice «12 args» donde la función quedó con
+  **13**. El catálogo manda; el verify comprueba 13 y el rollback borra la firma de 13.
 
 ---
 
