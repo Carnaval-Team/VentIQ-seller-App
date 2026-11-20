@@ -12,6 +12,29 @@ import 'admin_access_service.dart';
 import 'order_service.dart';
 import 'offline_database_service.dart';
 
+/// El dispositivo guarda datos offline sin subir de otra tienda. Borrarlos para
+/// abrir la nueva tienda los perdería: hay que volver a entrar con la tienda
+/// original y sincronizar primero.
+class PendientesOtraTiendaException implements Exception {
+  final int tiendaAnterior;
+  final int tiendaNueva;
+  final String detalle;
+
+  const PendientesOtraTiendaException({
+    required this.tiendaAnterior,
+    required this.tiendaNueva,
+    required this.detalle,
+  });
+
+  String get mensaje =>
+      'Este dispositivo tiene datos sin sincronizar de la tienda '
+      '#$tiendaAnterior ($detalle). Inicia sesión con un usuario de esa '
+      'tienda y sincroniza antes de entrar a la tienda #$tiendaNueva.';
+
+  @override
+  String toString() => mensaje;
+}
+
 class UserPreferencesService {
   static final UserPreferencesService _instance =
       UserPreferencesService._internal();
@@ -203,6 +226,21 @@ class UserPreferencesService {
     final previousStore = prefs.getInt(_offlineInventoryStoreKey);
 
     if (previousStore != null && previousStore != idTienda) {
+      // Nunca borrar lo que aún no llegó al servidor: sin esas colas la
+      // información no existiría en ninguna parte.
+      final pendientes = await getUnsyncedOfflineCounts();
+      if ((pendientes['total'] ?? 0) > 0) {
+        final detalle = describirPendientesOffline(pendientes);
+        print(
+          '🛑 Cambio de tienda ($previousStore → $idTienda) bloqueado: '
+          'hay datos sin sincronizar ($detalle)',
+        );
+        throw PendientesOtraTiendaException(
+          tiendaAnterior: previousStore,
+          tiendaNueva: idTienda,
+          detalle: detalle,
+        );
+      }
       print(
         '🏪 Cambio de tienda offline ($previousStore → $idTienda): '
         'limpiando inventario y colas del dispositivo',
@@ -672,7 +710,20 @@ class UserPreferencesService {
     await _clearOrdersOnLogout();
   }
 
-  Future<void> clearAllCachedDataForOnlineLogout() async {
+  /// Cierre de sesión online. Solo borra la caché completa si no queda nada
+  /// sin sincronizar; con pendientes (o si no se puede comprobar) cierra la
+  /// sesión conservando colas, inventario y turnos para subirlos después.
+  ///
+  /// Devuelve `true` si borró todo y `false` si conservó los datos locales.
+  Future<bool> clearAllCachedDataForOnlineLogout() async {
+    if (await hasUnsyncedOfflineData()) {
+      print(
+        '🛟 Cierre de sesión online con datos sin sincronizar: se conservan '
+        'los datos locales',
+      );
+      await clearSessionKeepingStoreOffline();
+      return false;
+    }
     final prefs = await SharedPreferences.getInstance();
     OrderService().clearAllOrders();
     await OfflineDatabaseService().clearAll();
@@ -680,6 +731,7 @@ class UserPreferencesService {
     _cachedShowSkuEnabled = false;
     _skuCacheLoaded = false;
     print('🗑️ Caché local eliminada completamente al cerrar sesión online');
+    return true;
   }
 
   // Método privado para limpiar órdenes durante logout
@@ -2138,6 +2190,7 @@ class UserPreferencesService {
 
     // Agregar timestamp
     operation['created_at'] = DateTime.now().toIso8601String();
+    operation['op_id'] ??= UuidGenerator.v4();
     operation['offline_user_id'] ??= prefs.getString(_userIdKey);
     operation['offline_store_id'] ??= prefs.getInt(_offlineInventoryStoreKey);
     operations.add(operation);
@@ -2199,6 +2252,29 @@ class UserPreferencesService {
     } else {
       await prefs.setString(_pendingOperationsKey, jsonEncode(operations));
     }
+  }
+
+  /// Identidad estable de una operación pendiente. Las antiguas no traen
+  /// `op_id`; su `created_at` por tipo las distingue.
+  static String claveOperacion(Map<String, dynamic> operation) =>
+      operation['op_id']?.toString() ??
+      '${operation['type']}|${operation['created_at']}';
+
+  /// Sustituye en la cola solo las operaciones con clave en [procesadas] por
+  /// [pendientes] (las que siguen sin subir). Las operaciones guardadas
+  /// mientras tanto se conservan: reescribir la instantánea leída al inicio
+  /// de una subida las borraba. [pendientes] van primero porque son más
+  /// antiguas que cualquier operación agregada durante la subida.
+  Future<void> reemplazarPendingOperations({
+    required Set<String> procesadas,
+    required List<Map<String, dynamic>> pendientes,
+  }) async {
+    final actuales = await getPendingOperations();
+    final resultado = [
+      ...pendientes,
+      ...actuales.where((op) => !procesadas.contains(claveOperacion(op))),
+    ];
+    await savePendingOperations(resultado);
   }
 
   /// Obtener todas las operaciones pendientes
@@ -3773,6 +3849,80 @@ class UserPreferencesService {
     }
   }
 
+  /// Cuántos datos locales siguen sin llegar al servidor, por categoría.
+  ///
+  /// Claves: `ventas`, `cambiosEstado`, `trabajadores`, `otrasOperaciones`,
+  /// `aperturas`, `cierres`, `egresos`, `adminOps` y `total`. Si no se puede
+  /// comprobar, `sinVerificar` vale 1 y cuenta en el total: ante la duda se
+  /// asume que hay datos.
+  Future<Map<String, int>> getUnsyncedOfflineCounts() async {
+    try {
+      final orders = await getPendingOrders();
+      final ventas = orders.where((o) => o['synced'] != true).length;
+
+      const tiposTrabajador = {'add_shift_worker', 'register_worker_exit'};
+      final ops =
+          (await getPendingOperations())
+              .where((o) => o['synced'] != true)
+              .toList();
+      final cambiosEstado =
+          ops.where((o) => o['type'] == 'order_status_change').length;
+      final trabajadores =
+          ops.where((o) => tiposTrabajador.contains(o['type'])).length;
+      final otrasOperaciones = ops.length - cambiosEstado - trabajadores;
+
+      final cola = await getOfflineTurnosPendingSync();
+      final cierres =
+          cola.where((t) => t['status'] == offlineTurnoStatusClosedPending);
+      final aperturas = cola.where(
+        (t) =>
+            t['status'] != offlineTurnoStatusClosedPending &&
+            t['server_id_turno'] == null,
+      );
+
+      final egresos = (await getEgresosOffline()).length;
+      final adminOps = await OfflineDatabaseService().countPendingAdminOps();
+
+      final counts = <String, int>{
+        'ventas': ventas,
+        'cambiosEstado': cambiosEstado,
+        'trabajadores': trabajadores,
+        'otrasOperaciones': otrasOperaciones,
+        'aperturas': aperturas.length,
+        'cierres': cierres.length,
+        'egresos': egresos,
+        'adminOps': adminOps,
+      };
+      counts['total'] = counts.values.fold<int>(0, (a, b) => a + b);
+      return counts;
+    } catch (e) {
+      print('⚠️ Error contando datos sin sincronizar: $e');
+      return {'sinVerificar': 1, 'total': 1};
+    }
+  }
+
+  /// Texto corto con lo que devuelve [getUnsyncedOfflineCounts].
+  static String describirPendientesOffline(Map<String, int> counts) {
+    String n(String clave, String texto) {
+      final v = counts[clave] ?? 0;
+      return v > 0 ? '$v $texto' : '';
+    }
+
+    final partes =
+        [
+          n('ventas', 'venta(s)'),
+          n('aperturas', 'apertura(s) de turno'),
+          n('cierres', 'cierre(s) de turno'),
+          n('egresos', 'egreso(s)'),
+          n('cambiosEstado', 'cambio(s) de estado'),
+          n('trabajadores', 'cambio(s) de trabajadores'),
+          n('otrasOperaciones', 'otra(s) operación(es)'),
+          n('adminOps', 'operación(es) de inventario/productos'),
+          (counts['sinVerificar'] ?? 0) > 0 ? 'no se pudo verificar' : '',
+        ].where((p) => p.isNotEmpty).toList();
+    return partes.isEmpty ? 'nada pendiente' : partes.join(', ');
+  }
+
   /// ¿Hay datos offline sin sincronizar que se perderían al hacer logout?
   /// Considera órdenes pendientes, operaciones pendientes y turnos offline.
   ///
@@ -3851,6 +4001,16 @@ class UserPreferencesService {
   /// Limpiar preferencias offline al abrir una nueva versión
   Future<void> clearOfflinePreferencesForNewVersion() async {
     try {
+      // Una actualización no justifica perder ventas, turnos o egresos que
+      // aún no llegaron al servidor: con pendientes (o sin poder comprobarlo)
+      // no se borra nada.
+      if (await hasUnsyncedOfflineData()) {
+        print(
+          '🛟 Nueva versión: hay datos sin sincronizar, se conserva todo lo '
+          'offline',
+        );
+        return;
+      }
       await clearPendingOrders();
       await clearPendingOperations();
       await clearAllOfflineTurnos();

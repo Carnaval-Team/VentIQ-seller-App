@@ -498,12 +498,15 @@ class ShiftWorkersService {
 
       final pendingOps = await _userPrefs.getPendingOperations();
       int syncedCount = 0;
-      // Operaciones que se conservan: todas las que NO son de trabajador, más
-      // las de trabajador que fallaron en este intento.
+      final procesadas = <String>{};
+      // Operaciones de trabajador que fallaron en este intento.
       final List<Map<String, dynamic>> remaining = [];
 
       for (final op in pendingOps) {
         final type = op['type'] as String?;
+        if (type == 'add_shift_worker' || type == 'register_worker_exit') {
+          procesadas.add(UserPreferencesService.claveOperacion(op));
+        }
 
         if (type == 'add_shift_worker') {
           final data = Map<String, dynamic>.from(
@@ -591,17 +594,16 @@ class ShiftWorkersService {
               remaining.add(op);
             }
           }
-        } else {
-          // Otros tipos (apertura/cierre/cambio estado) NO los gestiona este
-          // servicio: conservarlos intactos.
-          remaining.add(op);
         }
       }
 
-      // Persistir la lista resultante solo si cambió el número de operaciones
-      // de trabajador procesadas con éxito.
-      if (remaining.length != pendingOps.length) {
-        await _userPrefs.savePendingOperations(remaining);
+      // Las que fallaron se guardan con su client_uuid para reintentar con
+      // la misma clave.
+      if (procesadas.isNotEmpty) {
+        await _userPrefs.reemplazarPendingOperations(
+          procesadas: procesadas,
+          pendientes: remaining,
+        );
         print(
           '  🔖 Operaciones de trabajador sincronizadas removidas de pendientes',
         );

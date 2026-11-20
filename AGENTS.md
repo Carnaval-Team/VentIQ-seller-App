@@ -20,6 +20,12 @@ Desde `ventiq_app`:
 
 Las pruebas de contrato SQL inspeccionan el archivo de migración; no sustituyen su validación de ejecución en PostgreSQL.
 
+## Sincronización del TPV
+
+- Toda subida o escritura de la cola local en `AutoSyncService` pasa por `_enExclusiva`, que espera a la sincronización activa en vez de descartarla. No reintroducir un `_isSyncing` asignable ni vías que llamen a los `_sync*` privados sin el bloqueo. Las pantallas piden `subirPendientes()` y consultan `contarPendientesSubida()`.
+- El cierre de un turno de la cola solo se envía cuando sus ventas y egresos ya subieron; un estado de turno ilegible nunca cuenta como cerrado; las ventas de turnos sin apertura en el servidor solo las sube la cola. Escribir `pending_operations` con `reemplazarPendingOperations`, no con la lista leída al inicio.
+- Verificación desde `ventiq_app`: `flutter test --no-pub test/sync_unificado_test.dart test/offline_sale_sync_contract_test.dart test/home/app_compile_test.dart`.
+
 ## Cobro por líneas multimoneda
 
 - El checkout permite distribuir pagos independientemente de los medios asignados a los productos; redistribuir el cobro no recalcula sus precios. Con desglose editado, usar las mismas líneas en `Order.pagos` online y `desglose_pagos` offline, no reconstruirlas desde los ítems.

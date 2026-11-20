@@ -30,9 +30,13 @@ class TicketV1 {
     return order.items.fold(0.0, (sum, item) => sum + equivalenteCupItem(item));
   }
 
-  static List<String> lineas(Order order) {
+  /// Una entrada por línea de la orden, en su moneda nativa. El ticket imprime
+  /// «cantidad x nombre» a la izquierda y [subtotal] debajo, a la derecha.
+  static List<({String cantidad, String nombre, String subtotal})> detalle(
+    Order order,
+  ) {
     if (order.versionMonetaria != 'producto-v1') return const [];
-    final salida = <String>[];
+    final salida = <({String cantidad, String nombre, String subtotal})>[];
     for (final item in order.items) {
       final seleccion = item.seleccion;
       if (seleccion == null) {
@@ -42,14 +46,23 @@ class TicketV1 {
       if (cobro == null || !cobro.tasaDisponible) {
         throw StateError('Falta la tasa de la linea');
       }
-      final nombre = item.producto.denominacion;
       final marca = cobro.pendiente ? ' pendiente' : '';
-      salida.add('${seleccion.cantidad}x $nombre  ${cobro.neto} ${cobro.moneda}$marca');
+      salida.add((
+        cantidad: seleccion.cantidad,
+        nombre: item.producto.denominacion,
+        subtotal: '${cobro.neto} ${cobro.moneda}$marca',
+      ));
     }
     return salida;
   }
 
-  static List<String> totales(Order order) {
+  static List<String> lineas(Order order) => [
+    for (final l in detalle(order))
+      '${l.cantidad}x ${l.nombre}  ${l.subtotal}',
+  ];
+
+  /// Total por moneda, sin mezclar divisas ni contar líneas pendientes.
+  static List<({String moneda, String monto})> totalesPorMoneda(Order order) {
     final grupos = <String, String>{};
     for (final item in order.items) {
       final cobro = item.seleccion == null
@@ -59,9 +72,13 @@ class TicketV1 {
       grupos[cobro.moneda] = _sumar(grupos[cobro.moneda], cobro.neto);
     }
     return [
-      for (final moneda in grupos.keys) 'TOTAL $moneda ${grupos[moneda]}',
+      for (final moneda in grupos.keys) (moneda: moneda, monto: grupos[moneda]!),
     ];
   }
+
+  static List<String> totales(Order order) => [
+    for (final t in totalesPorMoneda(order)) 'TOTAL ${t.moneda} ${t.monto}',
+  ];
 
   static String _sumar(String? actual, String neto) {
     final lineas = [

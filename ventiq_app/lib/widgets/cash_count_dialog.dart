@@ -1,5 +1,6 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../money/arqueo_moneda.dart';
 import '../services/currency_service.dart';
 import '../services/user_preferences_service.dart';
 import '../utils/price_utils.dart';
@@ -15,8 +16,15 @@ import '../theme/ventiq_home_theme.dart';
 class CashCountDialog extends StatefulWidget {
   final UserPreferencesService userPreferencesService;
 
-  const CashCountDialog({Key? key, required this.userPreferencesService})
-    : super(key: key);
+  /// Efectivo que debe haber por moneda (importe nativo). Con él cada moneda se
+  /// verifica por separado; sin él solo se muestra lo contado.
+  final Map<String, double> esperado;
+
+  const CashCountDialog({
+    Key? key,
+    required this.userPreferencesService,
+    this.esperado = const {},
+  }) : super(key: key);
 
   @override
   State<CashCountDialog> createState() => _CashCountDialogState();
@@ -163,11 +171,6 @@ class _CashCountDialogState extends State<CashCountDialog> {
     return (rates ?? _rates)[divisa] ?? 0;
   }
 
-  /// Divisas distintas de la base con tasa conocida, para el aviso de cambio.
-  List<MapEntry<String, double>> get _conversiones => _rates.entries
-      .where((e) => e.key != PriceUtils.baseCurrency && e.value > 0)
-      .toList();
-
   List<Map<String, dynamic>> _defaultCupDenominations() {
     const values = [1000, 500, 200, 100, 50, 20, 10, 5, 3, 1];
     return values
@@ -227,12 +230,6 @@ class _CashCountDialogState extends State<CashCountDialog> {
       ..addAll(_contarNativo());
   }
 
-  /// Consolidado en moneda base, **solo para mostrar**: no es lo que se devuelve.
-  double get _totalEnBase => _nativeTotals.entries.fold(
-    0.0,
-    (total, e) => total + e.value * _rateToBase(e.key),
-  );
-
   void _useTotal() {
     // Contrato con el arqueo: importes nativos por divisa, sin convertir.
     Navigator.pop<Map<String, double>>(
@@ -290,38 +287,20 @@ class _CashCountDialogState extends State<CashCountDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Tasas de la tienda. Una tienda de una sola divisa —el caso
-            // mayoritario— no ve este aviso.
-            if (_conversiones.isNotEmpty) _buildRatePanel(),
-            const SizedBox(height: 12),
-
-            // Selector de moneda
-            if (_currencies.length > 1) ...[
-              Row(
-                children:
-                    _currencies.map((currency) {
-                      final selected = _selectedCurrency == currency;
-                      return Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          child: ChoiceChip(
-                            label: Text(currency),
-                            selected: selected,
-                            onSelected: (_) {
-                              setState(() => _selectedCurrency = currency);
-                            },
-                            selectedColor: VentiqHomeTheme.primary,
-                            labelStyle: TextStyle(
-                              color: selected ? Colors.white : Colors.black87,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      );
-                    }).toList(),
+            // Un registro por moneda: contado, lo que debe haber y su
+            // diferencia. Tocar uno elige la planilla de billetes que se edita.
+            // Cada moneda se verifica sola: no se suman ni se compensan.
+            for (final arqueo in _arqueos) _buildArqueoCard(arqueo),
+            const SizedBox(height: 4),
+            Text(
+              'Billetes de $_selectedCurrency',
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: VentiqHomeTheme.textSecondary,
               ),
-              const SizedBox(height: 12),
-            ],
+            ),
+            const SizedBox(height: 4),
 
             // Lista de denominaciones
             Flexible(
@@ -401,40 +380,6 @@ class _CashCountDialogState extends State<CashCountDialog> {
               ),
             ),
 
-            const Divider(height: 24),
-
-            // Un renglón por divisa: el importe nativo es el dato que se
-            // persiste, y el equivalente solo orienta al cajero.
-            for (final divisa in _currencies) _buildNativeTotalRow(divisa),
-
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: VentiqHomeTheme.primary.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Total ${PriceUtils.baseCurrency}:',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  Text(
-                    '\$${_totalEnBase.toMoneyString(2)}',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: VentiqHomeTheme.textPrimary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
           ],
         ),
       ),
@@ -455,66 +400,105 @@ class _CashCountDialogState extends State<CashCountDialog> {
     );
   }
 
-  Widget _buildRatePanel() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.amber[50],
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.amber[200]!),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          for (final tasa in _conversiones)
-            Text(
-              '1 ${tasa.key} = '
-              '${tasa.value.toMoneyString(2)} ${PriceUtils.baseCurrency}',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: Colors.amber[800],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
+  /// Un arqueo por moneda, en el orden de las divisas contables.
+  List<ArqueoMoneda> get _arqueos => ArqueoMoneda.lista(
+    monedas: _currencies,
+    contado: _nativeTotals,
+    esperado: widget.esperado,
+  );
 
-  Widget _buildNativeTotalRow(String divisa) {
-    final nativo = _nativeTotals[divisa] ?? 0;
-    final esBase = divisa == PriceUtils.baseCurrency;
+  /// Registro de UNA moneda: contado, debe haber y diferencia, todo en su
+  /// importe nativo. Sirve también de selector de la planilla de billetes.
+  Widget _buildArqueoCard(ArqueoMoneda arqueo) {
+    final seleccionada = arqueo.moneda == _selectedCurrency;
+    final estado = arqueo.estado;
+    final color = switch (estado) {
+      EstadoArqueo.cuadra => VentiqHomeTheme.success,
+      EstadoArqueo.falta => VentiqHomeTheme.danger,
+      EstadoArqueo.sobra => VentiqHomeTheme.warning,
+      EstadoArqueo.sinEsperado => VentiqHomeTheme.textSecondary,
+    };
+    final diferencia = arqueo.diferencia;
+    final textoEstado = switch (estado) {
+      EstadoArqueo.cuadra => 'Cuadra',
+      EstadoArqueo.falta =>
+        'Falta \$${(-diferencia!).toMoneyString(2)} ${arqueo.moneda}',
+      EstadoArqueo.sobra =>
+        'Sobra \$${diferencia!.toMoneyString(2)} ${arqueo.moneda}',
+      EstadoArqueo.sinEsperado => '',
+    };
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '$divisa:',
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+      padding: const EdgeInsets.only(bottom: 8),
+      child: InkWell(
+        key: ValueKey('arqueo-${arqueo.moneda}'),
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => setState(() => _selectedCurrency = arqueo.moneda),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color:
+                seleccionada
+                    ? VentiqHomeTheme.primary.withValues(alpha: 0.08)
+                    : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color:
+                  seleccionada
+                      ? VentiqHomeTheme.primary
+                      : VentiqHomeTheme.border,
+              width: seleccionada ? 1.6 : 1,
+            ),
           ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                '\$${nativo.toMoneyString(2)}',
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    arqueo.moneda,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  Text(
+                    '\$${arqueo.contado.toMoneyString(2)}',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
               ),
-              if (!esBase)
-                Text(
-                  '≈ \$${(nativo * _rateToBase(divisa)).toMoneyString(2)} '
-                  '${PriceUtils.baseCurrency}',
-                  style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+              if (arqueo.esperado != null) ...[
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Debe haber: \$${arqueo.esperado!.toMoneyString(2)}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: VentiqHomeTheme.textSecondary,
+                      ),
+                    ),
+                    Text(
+                      textoEstado,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: color,
+                      ),
+                    ),
+                  ],
                 ),
+              ],
             ],
           ),
-        ],
+        ),
       ),
     );
   }

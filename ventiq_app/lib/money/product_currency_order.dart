@@ -56,6 +56,28 @@ class ProductCurrencySeleccion {
     );
   }
 
+  /// Misma selección con otra cantidad. El importe de la línea (`neto`, `cup`)
+  /// se calcula desde `cantidad`: si el carrito cambia la cantidad del ítem y
+  /// la selección conserva la anterior, el ticket y la sincronización cobran
+  /// la cantidad vieja (5 x diesel salía como 1 x diesel).
+  ProductCurrencySeleccion conCantidad(double nuevaCantidad) {
+    var texto = nuevaCantidad.toStringAsFixed(3);
+    texto = texto.replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
+    return ProductCurrencySeleccion(
+      idLineaCliente: idLineaCliente,
+      idProducto: idProducto,
+      cantidad: texto,
+      monedaVenta: monedaVenta,
+      tipoCobro: tipoCobro,
+      idMedioPago: idMedioPago,
+      precioUnitarioNativo: precioUnitarioNativo,
+      descuentoManualUnitario: descuentoManualUnitario,
+      snapshotPrecio: snapshotPrecio,
+      snapshotTasa: snapshotTasa,
+      ajustesAutomaticos: ajustesAutomaticos,
+    );
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'id_linea_cliente': idLineaCliente,

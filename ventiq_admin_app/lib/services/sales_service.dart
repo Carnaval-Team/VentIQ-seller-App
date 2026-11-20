@@ -1258,6 +1258,30 @@ class SalesService {
   /// Permisos, red y contrato no entran aquí.
   static bool rpcAusente(Object error) => _esFuncionInexistente(error);
 
+  /// Ids de operación de apertura y cierre del turno. `null` si no se pudieron
+  /// leer: el llamador cae entonces a la ventana de fechas.
+  static Future<RangoOperacionesTurno?> getRangoOperacionesTurno(
+    int idTurno,
+  ) async {
+    try {
+      final fila = await _supabase
+          .from('app_dat_caja_turno')
+          .select('id_operacion_apertura, id_operacion_cierre')
+          .eq('id', idTurno)
+          .maybeSingle();
+      if (fila == null) return null;
+      int? entero(dynamic v) =>
+          v == null ? null : (v is num ? v.toInt() : int.tryParse('$v'));
+      return RangoOperacionesTurno(
+        apertura: entero(fila['id_operacion_apertura']),
+        cierre: entero(fila['id_operacion_cierre']),
+      );
+    } catch (e) {
+      print('Error leyendo rango de operaciones del turno $idTurno: $e');
+      return null;
+    }
+  }
+
   static Future<List<VendorOrder>> getVendorOrders({
     required DateTime fechaDesde,
     required DateTime fechaHasta,

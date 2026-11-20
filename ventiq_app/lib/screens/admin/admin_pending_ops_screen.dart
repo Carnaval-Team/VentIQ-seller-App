@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../services/admin_inventory_service.dart';
+import '../../services/auto_sync_service.dart';
 import '../../services/offline_database_service.dart';
 import '../../theme/ventiq_home_theme.dart';
 
@@ -14,7 +15,6 @@ class AdminPendingOpsScreen extends StatefulWidget {
 
 class _AdminPendingOpsScreenState extends State<AdminPendingOpsScreen> {
   final _db = OfflineDatabaseService();
-  final _service = AdminInventoryService();
 
   List<Map<String, dynamic>> _ops = [];
   bool _loading = true;
@@ -42,7 +42,14 @@ class _AdminPendingOpsScreenState extends State<AdminPendingOpsScreen> {
   Future<void> _syncNow() async {
     setState(() => _syncing = true);
     try {
-      final n = await _service.syncPendingOps();
+      final antes = await _db.countPendingAdminOps();
+      final result = await AutoSyncService().subirPendientes(
+        modulos: {SyncModule.uploadAdminOps},
+      );
+      if (!result.success && result.errors.isNotEmpty) {
+        throw Exception(result.errors.join('; '));
+      }
+      final n = antes - await _db.countPendingAdminOps();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

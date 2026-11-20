@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
@@ -10,13 +10,16 @@ import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/order.dart';
-import '../money/ticket_v1.dart';
 import '../services/currency_service.dart';
 import '../services/servicentro_service.dart';
 import '../services/store_config_service.dart';
 import '../services/user_preferences_service.dart';
+import '../utils/bt_chunks.dart';
 import '../utils/price_utils.dart';
 import '../utils/receipt_options.dart';
+import '../utils/ticket_data.dart';
+import '../utils/ticket_layout.dart';
+import '../utils/ticket_plan.dart';
 
 class _SunmiTicketGenerator extends Generator {
   _SunmiTicketGenerator(CapabilityProfile profile) : super(PaperSize.mm58, profile);
@@ -657,6 +660,8 @@ class BluetoothPrinterService {
     final usdRate = await _getUsdRateForPrint();
     final showPaymentMethod = await _shouldShowPaymentMethodOnTicket();
     final vendorName = await _getLoggedInUserName();
+    final storeConfig =
+        customerOnly ? null : await StoreConfigService.getStoreConfigForSession();
     for (final order in orders) {
       Future<void> receipt(String title) => send([
         ..._escPosInit(),
@@ -670,21 +675,33 @@ class BluetoothPrinterService {
         ),
         ...generator.feed(4),
       ]);
-      await receipt('FACTURA');
-      if (customerOnly) continue;
-      final options = ReceiptOptions(
-        order,
-        restaurantMode: StoreConfigService.modoRestauranteSync,
-      );
-      if (options.includeWarehouseSlip) {
-        await send([
-          ..._escPosInit(),
-          0x1b, 0x45, 0x01,
-          ..._addWarehousePickingSlip(generator, order, storeInfo, usdRate: usdRate),
-          ...generator.feed(4),
-        ]);
+      // Impresión explícita de facturas (lote): siempre la factura.
+      if (customerOnly) {
+        await receipt('FACTURA');
+        continue;
       }
-      await receipt('RECIBO CAJA');
+      // Venta: los tickets que pida la configuración de la tienda.
+      final plan = await TicketPlan.cargar(order, config: storeConfig);
+      for (final tipo in plan.secuencia) {
+        switch (tipo) {
+          case TicketTipo.factura:
+            await receipt('FACTURA');
+          case TicketTipo.almacen:
+            await send([
+              ..._escPosInit(),
+              0x1b, 0x45, 0x01,
+              ..._addWarehousePickingSlip(
+                generator,
+                order,
+                storeInfo,
+                usdRate: usdRate,
+              ),
+              ...generator.feed(4),
+            ]);
+          case TicketTipo.caja:
+            await receipt('RECIBO CAJA');
+        }
+      }
     }
   }
 
@@ -704,72 +721,58 @@ class BluetoothPrinterService {
       final generator = Generator(PaperSize.mm58, profile);
       final storeInfo = await _getStorePrintInfo();
 
-      // ========== PRINT CUSTOMER RECEIPT FIRST ==========
-      debugPrint('📄 Printing customer receipt...');
-      bool customerResult = await _printCustomerReceipt(
-        generator,
-        order,
-        storeInfo,
-        settleAfter: false,
+      // Tickets según la configuración de la tienda (`tickets_a_imprimir`).
+      final plan = await TicketPlan.cargar(order);
+      debugPrint(
+        '🧾 Tickets a imprimir: ${plan.secuencia.map((t) => t.clave).join(', ')}',
       );
-
-      if (!customerResult) {
-        debugPrint('❌ Customer receipt failed to print');
-        return false;
+      if (plan.vacio) {
+        debugPrint('ℹ️ La tienda no tiene tickets configurados para imprimir');
+        return true;
       }
 
-      final receiptOptions = ReceiptOptions(
-        order,
-        restaurantMode: StoreConfigService.modoRestauranteSync,
-      );
-      if (!receiptOptions.includeWarehouseSlip) {
-        await Future.delayed(const Duration(seconds: 3));
-        return _printCustomerReceipt(
-          generator,
-          order,
-          storeInfo,
-          title: 'RECIBO CAJA',
-          settleAfter: true,
-        );
-      }
+      for (var i = 0; i < plan.secuencia.length; i++) {
+        final tipo = plan.secuencia[i];
+        final ultimo = i == plan.secuencia.length - 1;
+        debugPrint('🖨️ Imprimiendo ${tipo.clave} (${i + 1}/${plan.secuencia.length})');
 
-      // Wait between prints to avoid buffer issues
-      debugPrint('⏳ Waiting 3 seconds before warehouse slip...');
-      await Future.delayed(const Duration(seconds: 3));
+        final bool ok;
+        switch (tipo) {
+          case TicketTipo.factura:
+            ok = await _printCustomerReceipt(
+              generator,
+              order,
+              storeInfo,
+              settleAfter: ultimo,
+            );
+          case TicketTipo.almacen:
+            ok = await _printWarehouseSlip(
+              generator,
+              order,
+              storeInfo,
+              settleAfter: ultimo,
+            );
+          case TicketTipo.caja:
+            ok = await _printCustomerReceipt(
+              generator,
+              order,
+              storeInfo,
+              title: 'RECIBO CAJA',
+              settleAfter: ultimo,
+            );
+        }
 
-      // ========== PRINT WAREHOUSE PICKING SLIP SEPARATELY ==========
-      debugPrint('🏭 Printing warehouse picking slip...');
-      bool warehouseResult = await _printWarehouseSlip(
-        generator,
-        order,
-        storeInfo,
-        settleAfter: false,
-      );
+        if (!ok) {
+          debugPrint('❌ ${tipo.clave} failed to print');
+          // El recibo de caja es la copia: si falla, la venta ya salió.
+          if (tipo != TicketTipo.caja) return false;
+        }
 
-      if (!warehouseResult) {
-        debugPrint('❌ Warehouse slip failed to print');
-        return false;
-      }
-
-      debugPrint('✅ Both receipts printed successfully');
-
-      // Wait between prints
-      debugPrint('⏳ Waiting 3 seconds before seller receipt...');
-      await Future.delayed(const Duration(seconds: 3));
-
-      // ========== PRINT SELLER RECEIPT ==========
-      debugPrint('👤 Printing seller receipt...');
-      bool sellerResult = await _printCustomerReceipt(
-        generator,
-        order,
-        storeInfo,
-        title: 'RECIBO CAJA',
-        settleAfter: true,
-      );
-
-      if (!sellerResult) {
-        debugPrint('❌ Seller receipt failed to print');
-        // We don't return false here as the main receipts were printed
+        // Pausa entre tickets para no saturar el buffer de la impresora.
+        if (!ultimo) {
+          debugPrint('⏳ Waiting 3 seconds before next ticket...');
+          await Future.delayed(const Duration(seconds: 3));
+        }
       }
 
       return true;
@@ -858,19 +861,22 @@ class BluetoothPrinterService {
   Future<bool> _writeBytesChunked(List<int> bytes) async {
     if (bytes.isEmpty) return true;
 
-    for (var offset = 0; offset < bytes.length; offset += _btChunkSize) {
-      final end = (offset + _btChunkSize > bytes.length)
-          ? bytes.length
-          : offset + _btChunkSize;
-      final chunk = bytes.sublist(offset, end);
+    // Los trozos terminan en salto de línea: la impresora imprime lo que tiene
+    // en el buffer cuando la transmisión se pausa, y un trozo cortado a mitad
+    // de línea salía partido («50x Di» / «esel»).
+    final trozos = trocearEnLineas(bytes, maximo: _btChunkSize);
+    var enviados = 0;
+    for (var i = 0; i < trozos.length; i++) {
+      final chunk = trozos[i];
       final ok = await PrintBluetoothThermal.writeBytes(chunk);
       if (!ok) {
         debugPrint(
-          '❌ BT chunk write failed at $offset/${bytes.length} bytes',
+          '❌ BT chunk write failed at $enviados/${bytes.length} bytes',
         );
         return false;
       }
-      if (end < bytes.length) {
+      enviados += chunk.length;
+      if (i < trozos.length - 1) {
         await Future.delayed(_btChunkDelay);
       }
     }
@@ -1230,55 +1236,48 @@ class BluetoothPrinterService {
     );
 
     // Products compactos (servicentro: 1 ítem → cantidad/nombre grandes y separados)
-    if (order.versionMonetaria == 'producto-v1') {
-      for (final linea in TicketV1.lineas(order)) {
-        bytes += generator.text(linea, styles: const PosStyles(align: PosAlign.left));
-      }
-    }
-    double subtotal = 0;
-    final servicentroTicket = ServicentroService.modoServicentroSync &&
+    final servicentroTicket = order.versionMonetaria != 'producto-v1' &&
+        ServicentroService.modoServicentroSync &&
         order.items.length == 1;
-    if (order.versionMonetaria != 'producto-v1')
-    for (var item in order.items) {
-      double itemTotal = item.cantidad * item.precioUnitario;
-      subtotal += itemTotal;
-
-      String prodName = item.producto.denominacion;
-      if (servicentroTicket) {
-        bytes += generator.emptyLines(1);
-        bytes += generator.text(
-          PriceUtils.formatQuantity(item.cantidad),
-          styles: const PosStyles(
-            align: PosAlign.center,
-            bold: true,
-            height: PosTextSize.size2,
-            width: PosTextSize.size2,
-          ),
-        );
-        bytes += generator.emptyLines(1);
-        bytes += generator.text(
-          prodName,
-          styles: const PosStyles(
-            align: PosAlign.center,
-            bold: true,
-            height: PosTextSize.size2,
-            width: PosTextSize.size1,
-          ),
-        );
-        bytes += generator.emptyLines(1);
-        bytes += generator.text(
-          ticketMoney(itemTotal),
-          styles: const PosStyles(align: PosAlign.center),
-        );
-      } else {
-        if (prodName.length > 28) prodName = '${prodName.substring(0, 25)}...';
-        bytes += generator.text(
-          '${PriceUtils.formatQuantity(item.cantidad)}x $prodName',
-          styles: const PosStyles(align: PosAlign.left),
-        );
-        bytes += generator.text(
-          '  ${ticketMoney(item.precioUnitario)} = ${ticketMoney(itemTotal)}',
-          styles: const PosStyles(align: PosAlign.right),
+    if (servicentroTicket) {
+      final item = order.items.first;
+      bytes += generator.emptyLines(1);
+      bytes += generator.text(
+        PriceUtils.formatQuantity(item.cantidad),
+        styles: const PosStyles(
+          align: PosAlign.center,
+          bold: true,
+          height: PosTextSize.size2,
+          width: PosTextSize.size2,
+        ),
+      );
+      bytes += generator.emptyLines(1);
+      bytes += generator.text(
+        item.producto.denominacion,
+        styles: const PosStyles(
+          align: PosAlign.center,
+          bold: true,
+          height: PosTextSize.size2,
+          width: PosTextSize.size1,
+        ),
+      );
+      bytes += generator.emptyLines(1);
+      bytes += generator.text(
+        ticketMoney(item.cantidad * item.precioUnitario),
+        styles: const PosStyles(align: PosAlign.center),
+      );
+    } else {
+      // Todos los productos: «cantidad x nombre» a la izquierda y el subtotal
+      // debajo, a la derecha.
+      for (final linea in TicketData.productos(
+        order,
+        dineroLegacy: ticketMoney,
+      )) {
+        bytes += TicketLayout.productoBytes(
+          generator,
+          cantidad: linea.cantidad,
+          nombre: linea.nombre,
+          subtotal: linea.subtotal,
         );
       }
     }
@@ -1305,17 +1304,16 @@ class BluetoothPrinterService {
       }
     }
 
-    if (order.versionMonetaria == 'producto-v1') {
-      for (final total in TicketV1.totales(order)) {
-        bytes += generator.text(
-          total,
-          styles: PosStyles(align: PosAlign.right, bold: true),
-        );
-      }
-    } else {
-      bytes += generator.text(
-        'TOTAL: ${ticketMoney(order.total)}',
-        styles: PosStyles(align: PosAlign.right, bold: true),
+    // Totales por moneda: «TOTAL MONEDA» a la izquierda, monto a la derecha.
+    for (final total in TicketData.totales(
+      order,
+      pagos: ticketPayments,
+      usdRate: usdRate,
+    )) {
+      bytes += TicketLayout.totalBytes(
+        generator,
+        moneda: total.moneda,
+        monto: total.monto,
       );
     }
 
@@ -1324,18 +1322,17 @@ class BluetoothPrinterService {
       bytes += _addPaymentMethodSummary(generator, order);
     }
 
-    // Footer: solo en la factura del cliente.
-    // `row()` (forma de pago) deja un área de impresión estrecha y el
-    // siguiente texto se parte a mitad de palabra. ESC @ restaura el ancho.
-    if (title == 'FACTURA') {
-      bytes += generator.reset();
-      // Centrado + texto + LF, sin ESC $ (posición absoluta). Ese comando
-      // hereda el área estrecha de `row()` y parte "Gracias por su compra".
-      bytes += const <int>[0x1B, 0x61, 0x01];
-      bytes += <int>[...receiptOptions.thanksMessage.codeUnits, 0x0A];
-      bytes += <int>[...'Con la tecnologia de'.codeUnits, 0x0A];
-      bytes += <int>[...'Inventtia S.R.L.'.codeUnits, 0x0A];
-    }
+    // Footer: igual en la factura y en el recibo de caja (solo cambia el
+    // título). `row()` (totales y forma de pago) deja un área de impresión
+    // estrecha y el siguiente texto se parte a mitad de palabra. ESC @
+    // restaura el ancho.
+    bytes += generator.reset();
+    // Centrado + texto + LF, sin ESC $ (posición absoluta). Ese comando
+    // hereda el área estrecha de `row()` y parte "Gracias por su compra".
+    bytes += const <int>[0x1B, 0x61, 0x01];
+    bytes += <int>[...receiptOptions.thanksMessage.codeUnits, 0x0A];
+    bytes += <int>[...'Con la tecnologia de'.codeUnits, 0x0A];
+    bytes += <int>[...'Inventtia S.R.L.'.codeUnits, 0x0A];
 
     bytes += generator.emptyLines(1);
 
@@ -1475,21 +1472,20 @@ class BluetoothPrinterService {
     debugPrint('📦 Adding ${order.items.length} products to warehouse slip');
     for (int i = 0; i < order.items.length; i++) {
       var item = order.items[i];
-      String ubicacion = item.ubicacionAlmacen ?? 'N/A';
-      String productName = item.producto.denominacion;
+      final ubicacion =
+          item.ubicacionAlmacen.trim().isEmpty ? 'N/A' : item.ubicacionAlmacen;
+      final productName = item.producto.denominacion;
 
       debugPrint(
         '📋 Product ${i + 1}: ${PriceUtils.formatQuantity(item.cantidad)}x $productName @ $ubicacion',
       );
 
-      // Mostrar cantidad y nombre completo del producto
-      bytes += generator.text(
-        '${PriceUtils.formatQuantity(item.cantidad)}x $productName',
-        styles: PosStyles(align: PosAlign.left, bold: true),
-      );
-      bytes += generator.text(
-        '   Ubic: $ubicacion',
-        styles: PosStyles(align: PosAlign.left),
+      // Solo cantidad, nombre completo y ubicación: sin importes.
+      bytes += TicketLayout.almacenProductoBytes(
+        generator,
+        cantidad: PriceUtils.formatQuantity(item.cantidad),
+        nombre: productName,
+        ubicacion: ubicacion,
       );
       // Agregar linea de separacion entre productos
       if (i < order.items.length - 1) {
@@ -1507,7 +1503,7 @@ class BluetoothPrinterService {
       styles: PosStyles(align: PosAlign.center),
     );
     bytes += generator.text(
-      'TOT: ${order.distinctItemCount} prod - \$${order.total.toStringAsFixed(0)}',
+      TicketData.almacenResumen(order.distinctItemCount),
       styles: PosStyles(align: PosAlign.left, bold: true),
     );
 

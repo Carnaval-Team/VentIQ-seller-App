@@ -2175,8 +2175,12 @@ class _InventoryExtractionBySaleScreenState
       }
 
       // Imprimir según configuración de tienda
+      // 'caja' (recibo de caja) es un ticket de la venta del TPV; la extracción
+      // solo tiene ticket de cliente y de almacén.
+      final ticketsExtraccion =
+          _ticketsAImprimir.where((t) => t != 'caja').toList();
       final ticketsToPrint =
-          _ticketsAImprimir.isNotEmpty ? _ticketsAImprimir : ['cliente'];
+          ticketsExtraccion.isNotEmpty ? ticketsExtraccion : ['cliente'];
       var allPrinted = true;
 
       for (var t = 0; t < ticketsToPrint.length; t++) {
@@ -2384,8 +2388,12 @@ class _InventoryExtractionBySaleScreenState
         }
       }
 
+      // 'caja' (recibo de caja) es un ticket de la venta del TPV; la extracción
+      // solo tiene ticket de cliente y de almacén.
+      final ticketsExtraccion =
+          _ticketsAImprimir.where((t) => t != 'caja').toList();
       final ticketsToPrint =
-          _ticketsAImprimir.isNotEmpty ? _ticketsAImprimir : ['cliente'];
+          ticketsExtraccion.isNotEmpty ? ticketsExtraccion : ['cliente'];
       var allPrinted = true;
 
       for (var t = 0; t < ticketsToPrint.length; t++) {

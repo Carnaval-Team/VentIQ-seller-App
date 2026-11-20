@@ -17,6 +17,7 @@ import 'user_preferences_service.dart';
 import 'mesa_cuenta_service.dart';
 import 'sales_mode_service.dart';
 import 'store_config_service.dart';
+import 'auto_sync_service.dart';
 import 'turno_service.dart'; // Import TurnoService
 import 'connectivity_service.dart';
 
@@ -50,6 +51,25 @@ class OrderService extends ChangeNotifier {
         item.seleccion!.idMedioPago == seleccion.idMedioPago;
   }
   List<Order> get orders => List.from(_orders);
+
+  /// Identidad de una fila de `detalles.items` de `fn_listar_ordenes`.
+  ///
+  /// El join con inventario puede repetir una extracción, pero dos
+  /// extracciones del mismo producto (otra moneda, ubicación o presentación)
+  /// son líneas distintas y ninguna se puede descartar.
+  static String claveLineaServidor(Map<String, dynamic> item) {
+    final extraccion = item['id_extraccion'];
+    if (extraccion != null) return 'ext_$extraccion';
+    final linea = item['id_linea_cliente']?.toString() ?? '';
+    if (linea.isNotEmpty) return 'lin_$linea';
+    return [
+      item['id_producto'],
+      item['variante']?['id'] ?? 'no_variant',
+      item['id_presentacion'] ?? 'no_presentacion',
+      item['id_ubicacion'] ?? 'no_ubicacion',
+      item['moneda_venta'] ?? 'no_moneda',
+    ].join('_');
+  }
 
   /// Mutates the in-memory list. Do not assign into [orders] (it is a copy).
   bool applyLocalOrderStatus(String orderId, OrderStatus newStatus) {
@@ -1677,6 +1697,20 @@ class OrderService extends ChangeNotifier {
         };
       }
 
+      // Una venta online se apoya en lo que ya tiene el servidor (turno,
+      // stock, estados): lo registrado offline sube antes y, si algo no sube,
+      // la venta no se hace.
+      final faltan = await AutoSyncService().asegurarSubidaPendientes();
+      if (!faltan.vacio) {
+        return {
+          'success': false,
+          'error':
+              'No se puede registrar la venta online: quedan ${faltan.describir()} '
+              'sin sincronizar. Revisa la conexión y los datos pendientes en '
+              'Ajustes > Almacenamiento.',
+        };
+      }
+
       final userPrefs = UserPreferencesService();
       final userData = await userPrefs.getUserData();
 
@@ -2722,19 +2756,11 @@ class OrderService extends ChangeNotifier {
         if (detalles != null && detalles['items'] != null) {
           final items = detalles['items'] as List<dynamic>;
 
-          // Agrupar items por producto para evitar duplicados
+          // Quitar filas repetidas de una misma extracción
           Map<String, Map<String, dynamic>> groupedItems = {};
 
           for (var item in items) {
-            final productId = item['id_producto'].toString();
-            final variantId =
-                item['variante']?['id']?.toString() ?? 'no_variant';
-            // La presentación forma parte de la identidad de la línea: el
-            // mismo producto puede entrar en varias presentaciones y cada
-            // fila de extracción debe seguir siendo una línea distinta.
-            final presentacionId =
-                item['id_presentacion']?.toString() ?? 'no_presentacion';
-            final key = '${productId}_${variantId}_$presentacionId';
+            final key = claveLineaServidor(Map<String, dynamic>.from(item));
 
             if (!groupedItems.containsKey(key)) {
               // Primera vez que vemos este producto/variante
@@ -2873,7 +2899,7 @@ class OrderService extends ChangeNotifier {
             }
             final orderItem = OrderItem(
               id:
-                  'ITEM-${item['id_producto']}-${DateTime.now().millisecondsSinceEpoch}',
+                  'ITEM-${item['id_producto']}-${item['id_extraccion'] ?? DateTime.now().microsecondsSinceEpoch}',
               producto: product,
               variante: variant,
               cantidad: cantidadLinea,
@@ -3045,6 +3071,18 @@ class OrderService extends ChangeNotifier {
       );
 
       for (var orderData in pendingOrders) {
+        // Nombres de medio de pago guardados en la propia orden: el cache de
+        // medios puede no tener el id (o estar vacío) y el desglose caía a
+        // la etiqueta genérica «Pago».
+        final nombresOrden = <int, String>{...nombresMedios};
+        for (final raw in (orderData['items'] as List<dynamic>)) {
+          if (raw is! Map) continue;
+          final idMedio = (raw['id_medio_pago'] as num?)?.toInt();
+          final nombre = raw['metodo_pago']?.toString().trim();
+          if (idMedio != null && nombre != null && nombre.isNotEmpty) {
+            nombresOrden.putIfAbsent(idMedio, () => nombre);
+          }
+        }
         // Crear items de la orden
         final items =
             (orderData['items'] as List<dynamic>).map((itemData) {
@@ -3109,6 +3147,26 @@ class OrderService extends ChangeNotifier {
                   precioNativo = bruto - (manual ?? 0);
                 }
               }
+              // El medio de pago elegido en el checkout: sin él el detalle
+              // offline no sabe cómo se cobró la línea.
+              final idMedioLinea =
+                  (itemData['id_medio_pago'] as num?)?.toInt() ??
+                  seleccion?.idMedioPago;
+              PaymentMethod? medioLinea;
+              if (idMedioLinea != null) {
+                final nombreMedio = nombresOrden[idMedioLinea];
+                if (nombreMedio != null) {
+                  medioLinea = PaymentMethod(
+                    id: idMedioLinea,
+                    denominacion: nombreMedio,
+                    esDigital: itemData['medio_pago_es_digital'] == true,
+                    esEfectivo:
+                        itemData['medio_pago_es_efectivo'] == true ||
+                        idMedioLinea == 1,
+                    esActivo: true,
+                  );
+                }
+              }
               // Crear OrderItem
               return OrderItem(
                 id: '${orderData['id']}_${itemData['id_producto']}',
@@ -3121,7 +3179,7 @@ class OrderService extends ChangeNotifier {
                     0.0,
                 ubicacionAlmacen: ubicacionAlmacen,
                 inventoryData: inventoryMetadata,
-                paymentMethod: null, // Se reconstruirá si es necesario
+                paymentMethod: medioLinea,
                 ingredientes: ingredientes,
                 seleccion: seleccion,
                 // FASE 4: reconstruir la presentación al releer la orden
@@ -3184,8 +3242,8 @@ class OrderService extends ChangeNotifier {
                 ).map(
                   (g) => <String, dynamic>{
                     'id_medio_pago': g.medio,
-                    if (nombresMedios[g.medio] != null)
-                      'denominacion': nombresMedios[g.medio],
+                    if (nombresOrden[g.medio] != null)
+                      'denominacion': nombresOrden[g.medio],
                     'moneda': g.moneda,
                     'monto': double.tryParse(g.neto) ?? 0.0,
                     'monto_cup_equivalente': double.tryParse(g.cup) ?? 0.0,

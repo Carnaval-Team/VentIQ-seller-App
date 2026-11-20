@@ -42,6 +42,39 @@ void _goAfterLogout(String routeName) {
   }
 }
 
+/// Sube lo pendiente antes de cerrar la sesión online, con un diálogo de
+/// progreso. Un fallo no impide salir: lo que no suba se conserva localmente.
+Future<void> _subirPendientesAntesDeSalir(BuildContext dialogContext) async {
+  showDialog<void>(
+    context: dialogContext,
+    barrierDismissible: false,
+    builder:
+        (_) => const PopScope(
+          canPop: false,
+          child: AlertDialog(
+            content: Row(
+              children: [
+                SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 16),
+                Expanded(child: Text('Sincronizando datos pendientes...')),
+              ],
+            ),
+          ),
+        ),
+  );
+  try {
+    await AutoSyncService().subirPendientes();
+  } catch (e) {
+    print('⚠️ No se pudo subir lo pendiente antes de cerrar sesión: $e');
+  } finally {
+    globalNavigatorKey.currentState?.pop();
+  }
+}
+
 Future<void> _promptLogoutOrSwitchUser(BuildContext context) async {
   try {
     final prefs = UserPreferencesService();
@@ -128,7 +161,8 @@ Future<void> _promptLogoutOrSwitchUser(BuildContext context) async {
           content: Text(
             online
                 ? hasUnsynced
-                    ? 'Hay ventas u operaciones sin sincronizar. Al cerrar sesión online se eliminarán todos los datos locales y la caché. ¿Continuar?'
+                    ? 'Hay datos sin sincronizar. Se intentarán subir antes de cerrar la sesión; '
+                        'lo que no se pueda subir se conserva en este dispositivo. ¿Continuar?'
                     : '¿Cerrar sesión? Se eliminarán todos los datos locales y la caché de este dispositivo.'
                 : hasUnsynced
                 ? 'Hay ventas u operaciones sin sincronizar y se conservarán localmente. ¿Cerrar sesión?'
@@ -151,6 +185,12 @@ Future<void> _promptLogoutOrSwitchUser(BuildContext context) async {
 
     if (confirm != true) return;
 
+    // Con conexión, lo pendiente se sube mientras la sesión sigue activa:
+    // después del signOut ya no hay con qué autenticar la subida.
+    if (online && hasUnsynced) {
+      await _subirPendientesAntesDeSalir(dialogContext);
+    }
+
     // Cierre real online: siempre signOut de Supabase.
     try {
       await AuthService().signOut();
@@ -160,9 +200,26 @@ Future<void> _promptLogoutOrSwitchUser(BuildContext context) async {
     }
 
     if (online) {
-      await prefs.clearAllCachedDataForOnlineLogout();
-      print('🔓 Sesión online cerrada y caché eliminada → login');
-      _goAfterLogout('/login');
+      final pendientes = await prefs.getUnsyncedOfflineCounts();
+      final borroTodo = await prefs.clearAllCachedDataForOnlineLogout();
+      if (borroTodo) {
+        print('🔓 Sesión online cerrada y caché eliminada → login');
+        _goAfterLogout('/login');
+      } else {
+        print('🔓 Sesión cerrada; datos sin sincronizar conservados');
+        globalScaffoldMessengerKey.currentState?.showSnackBar(
+          SnackBar(
+            duration: const Duration(seconds: 8),
+            content: Text(
+              'Sesión cerrada. Quedan sin sincronizar: '
+              '${UserPreferencesService.describirPendientesOffline(pendientes)}. '
+              'Se conservan en este dispositivo; inicia sesión con un usuario '
+              'de la tienda para subirlos.',
+            ),
+          ),
+        );
+        _goAfterLogout(fullOfflineReady ? '/offline-user-switch' : '/login');
+      }
     } else if (fullOfflineReady) {
       await prefs.clearSessionKeepingStoreOffline();
       print('🔓 Sesión cerrada → selector local de usuarios');

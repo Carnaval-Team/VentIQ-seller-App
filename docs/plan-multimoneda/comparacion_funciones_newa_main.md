@@ -112,6 +112,8 @@ Casos con matiz:
 
 Acción: corregir las 8 funciones de precio en newa para que usen `id DESC`, y volver a traer los
 cuerpos de main de `fn_check_update`, `fn_listar_motivos_extraccion` y las dos de Carnaval.
+**Hecho en newa el 20/11/2026** con `sql_updates/newa_traer_12_funciones_main.sql`: las 12 tienen el mismo
+`md5(prosrc)` que main.
 
 ## D. Hay que combinar a mano (8)
 
@@ -137,8 +139,8 @@ cuerpos de main de `fn_check_update`, `fn_listar_motivos_extraccion` y las dos d
 
 ## Hay que corregir antes de promover
 
-1. `fn_listar_ordenes` en newa: `'tipo_paago'` → `'tipo_pago'`.
-2. 8 funciones de newa con `fecha_desde DESC`: pasar a `id DESC` (regla de AGENTS.md).
+1. ~~`fn_listar_ordenes` en newa: `'tipo_paago'` → `'tipo_pago'`.~~ Hecho.
+2. ~~8 funciones de newa con `fecha_desde DESC`: pasar a `id DESC` (regla de AGENTS.md).~~ Hecho el 20/11.
 3. Un solo criterio de turno en `fn_reporte_ventas_por_turno` y `fn_reporte_ventas_con_proveedor_por_turno`.
 4. Decidir `fn_registrar_cambio_estado_operacion_mejorado` (reversión de inventario de recepción).
 5. Decidir `fn_dashboard_carnaval_proveedor` (total con o sin filtro de estado).

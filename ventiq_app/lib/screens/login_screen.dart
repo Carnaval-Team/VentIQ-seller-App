@@ -457,7 +457,10 @@ class _LoginScreenState extends State<LoginScreen> {
             await _authService.signOut();
 
             setState(() {
-              _errorMessage = 'Acceso denegado: $e';
+              _errorMessage =
+                  e is PendientesOtraTiendaException
+                      ? e.mensaje
+                      : 'Acceso denegado: $e';
               _isLoading = false;
             });
             return;

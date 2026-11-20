@@ -61,6 +61,58 @@ void main() {
     expect(del3524.map((e) => e.id), [2410]);
   });
 
+  test('los egresos se agrupan por divisa y sin divisa cuentan como base', () {
+    final lista = [
+      _entrega(id: 1, idTurno: 21, fecha: '2026-11-20T14:06:47-05:00', monto: 750),
+      _entrega(id: 2, idTurno: 21, fecha: '2026-11-20T14:07:00-05:00', monto: 5),
+      CashDelivery.fromJson({
+        'id': 3,
+        'monto_entrega': 2,
+        'id_turno': 21,
+        'moneda': 'usd',
+        'fecha_entrega': '2026-11-20T14:08:00-05:00',
+      }),
+    ];
+    final porMoneda = egresosPorMoneda(lista, monedaBase: 'CUP');
+    expect(porMoneda['CUP'], 755);
+    expect(porMoneda['USD'], 2);
+  });
+
+  test('cada egreso se resta del efectivo de su propia divisa', () {
+    final filas = [
+      VentasPorMoneda(
+        moneda: 'CUP',
+        operaciones: 3,
+        importeNativo: 15200,
+        importeBase: 15200,
+        efectivoNativo: 15200,
+        digitalNativo: 0,
+        tasaPromedio: 1,
+        monedaConsolidacion: '',
+        importeConsolidado: 0,
+      ),
+      VentasPorMoneda(
+        moneda: 'USD',
+        operaciones: 3,
+        importeNativo: 23.1,
+        importeBase: 0,
+        efectivoNativo: 23.1,
+        digitalNativo: 0,
+        tasaPromedio: 0,
+        monedaConsolidacion: '',
+        importeConsolidado: 0,
+      ),
+    ];
+    final lineas = efectivoCobradoPorDivisa(
+      filas,
+      egresos: 0,
+      monedaBase: 'CUP',
+      egresosPorMoneda: const {'CUP': 750},
+    );
+    expect(lineas.firstWhere((l) => l.moneda == 'CUP').importe, 14450);
+    expect(lineas.firstWhere((l) => l.moneda == 'USD').importe, 23.1);
+  });
+
   test('sin turno se conserva el período completo', () {
     expect(filtrarEntregasPorTurno(entregas, null), entregas);
   });

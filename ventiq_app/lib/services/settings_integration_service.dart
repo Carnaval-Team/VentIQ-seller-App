@@ -195,35 +195,6 @@ class SettingsIntegrationService {
     }
   }
 
-  /// Forzar sincronización inmediata
-  Future<void> forceSyncNow() async {
-    try {
-      final autoSyncService = AutoSyncService();
-      await autoSyncService.forceSyncNow();
-
-      _eventController.add(
-        SettingsIntegrationEvent(
-          type: SettingsIntegrationEventType.syncForced,
-          timestamp: DateTime.now(),
-          message: 'Sincronización forzada iniciada',
-        ),
-      );
-    } catch (e) {
-      print('❌ Error forzando sincronización: $e');
-
-      _eventController.add(
-        SettingsIntegrationEvent(
-          type: SettingsIntegrationEventType.error,
-          timestamp: DateTime.now(),
-          message: 'Error forzando sincronización: $e',
-          error: e.toString(),
-        ),
-      );
-
-      throw e;
-    }
-  }
-
   /// Esperar a que NO haya ninguna sincronización en curso.
   ///
   /// Drena cualquier pase (automático o forzado) antes de que el usuario cambie

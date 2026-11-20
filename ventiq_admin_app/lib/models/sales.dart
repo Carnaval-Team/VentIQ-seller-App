@@ -94,28 +94,37 @@ class ImporteEnDivisa {
 
 /// Efectivo cobrado, una fila por divisa.
 ///
-/// [egresos] no trae divisa (la entrega de caja es un solo monto) y se resta
-/// solo del efectivo en [monedaBase]. Restarlo del total nativo cruzado
-/// volvería a mezclar divisas.
+/// Cada egreso en [egresosPorMoneda] se resta del efectivo de su propia
+/// divisa. Sin ese mapa, [egresos] (un solo monto sin divisa) se resta solo del
+/// efectivo en [monedaBase]. Restarlo del total nativo cruzado volvería a
+/// mezclar divisas.
 List<ImporteEnDivisa> efectivoCobradoPorDivisa(
   List<VentasPorMoneda> filas, {
   required double egresos,
   required String monedaBase,
+  Map<String, double> egresosPorMoneda = const {},
 }) {
   final base = monedaBase.trim().toUpperCase();
+  final porMoneda = egresosPorMoneda.isNotEmpty
+      ? {
+          for (final e in egresosPorMoneda.entries)
+            e.key.trim().toUpperCase(): e.value,
+        }
+      : <String, double>{if (egresos != 0) base: egresos};
   final lineas = <ImporteEnDivisa>[];
-  var descontoEgresos = false;
+  final descontadas = <String>{};
   for (final fila in filas) {
     final moneda = fila.moneda.trim().toUpperCase();
     if (moneda.isEmpty) continue;
-    final esBase = moneda == base;
-    final importe = esBase ? fila.efectivoNativo - egresos : fila.efectivoNativo;
-    if (esBase) descontoEgresos = true;
+    final egreso = porMoneda[moneda] ?? 0;
+    descontadas.add(moneda);
+    final importe = fila.efectivoNativo - egreso;
     if (importe == 0) continue;
     lineas.add(ImporteEnDivisa(moneda: moneda, importe: importe));
   }
-  if (!descontoEgresos && egresos != 0) {
-    lineas.add(ImporteEnDivisa(moneda: base, importe: -egresos));
+  for (final e in porMoneda.entries) {
+    if (descontadas.contains(e.key) || e.value == 0) continue;
+    lineas.add(ImporteEnDivisa(moneda: e.key, importe: -e.value));
   }
   return lineas;
 }
@@ -370,6 +379,10 @@ class CashDelivery {
   final int idTurno;
   final String creadoPor;
 
+  /// Divisa del egreso (`app_dat_entregas_parciales_caja.moneda`). Vacía en un
+  /// backend sin la columna: se trata como moneda base.
+  final String moneda;
+
   CashDelivery({
     required this.id,
     required this.montoEntrega,
@@ -380,6 +393,7 @@ class CashDelivery {
     required this.estado,
     required this.idTurno,
     required this.creadoPor,
+    this.moneda = '',
   });
 
   factory CashDelivery.fromJson(Map<String, dynamic> json) {
@@ -393,8 +407,23 @@ class CashDelivery {
       estado: json['estado'] ?? 1,
       idTurno: json['id_turno'] ?? 0,
       creadoPor: json['creado_por'] ?? '',
+      moneda: (json['moneda'] ?? '').toString().trim().toUpperCase(),
     );
   }
+}
+
+/// Suma los egresos por divisa; sin divisa cuentan en [monedaBase].
+Map<String, double> egresosPorMoneda(
+  Iterable<CashDelivery> entregas, {
+  required String monedaBase,
+}) {
+  final base = monedaBase.trim().toUpperCase();
+  final totales = <String, double>{};
+  for (final entrega in entregas) {
+    final moneda = entrega.moneda.isEmpty ? base : entrega.moneda;
+    totales[moneda] = (totales[moneda] ?? 0) + entrega.montoEntrega;
+  }
+  return totales;
 }
 
 /// Egresos de un solo turno.
@@ -429,6 +458,46 @@ String instanteEntregaParaRpc(DateTime value) {
   return '$reloj$signo$horas:$minutos';
 }
 
+/// Ids de operación que delimitan un turno de caja.
+///
+/// Una venta hecha sin conexión se sube al reconectar: el servidor le pone la
+/// fecha de la subida, que puede ser posterior al cierre del turno (incluso de
+/// otro día). Por eso la pertenencia al turno se decide por id de operación y no
+/// por fecha, igual que `fn_operacion_en_turno` en el servidor.
+class RangoOperacionesTurno {
+  final int? apertura;
+  final int? cierre;
+
+  const RangoOperacionesTurno({this.apertura, this.cierre});
+
+  /// Con apertura y (cierre o turno abierto) el rango es fiable. Sin ellos hay
+  /// que volver a la ventana de fechas.
+  bool utilizable({required bool turnoAbierto}) =>
+      apertura != null && (cierre != null || turnoAbierto);
+
+  /// `true` si la operación [idOperacion] cae dentro del turno.
+  bool contiene(int idOperacion) =>
+      apertura != null &&
+      idOperacion > apertura! &&
+      (cierre == null || idOperacion < cierre!);
+}
+
+/// ¿La orden pertenece al turno? Con rango de ids fiable manda el id; si no,
+/// la ventana de fechas del turno.
+bool ordenPerteneceATurno({
+  required int idOperacion,
+  required DateTime fechaOperacion,
+  required DateTime inicio,
+  required DateTime fin,
+  required bool turnoAbierto,
+  RangoOperacionesTurno? rango,
+}) {
+  if (rango != null && rango.utilizable(turnoAbierto: turnoAbierto)) {
+    return rango.contiene(idOperacion);
+  }
+  return !fechaOperacion.isBefore(inicio) && !fechaOperacion.isAfter(fin);
+}
+
 class SalesVendorReport {
   final String uuidUsuario;
   final String nombres;
@@ -444,6 +513,9 @@ class SalesVendorReport {
   final DateTime primeraVenta;
   final DateTime ultimaVenta;
   final double totalEgresos;
+
+  /// Egresos del turno por divisa. Vacío si no se calcularon.
+  final Map<String, double> egresosPorMoneda;
 
   /// Presente cuando el reporte viene de `fn_reporte_ventas_por_turno`.
   final int? idTurno;
@@ -477,6 +549,7 @@ class SalesVendorReport {
     required this.primeraVenta,
     required this.ultimaVenta,
     this.totalEgresos = 0.0,
+    this.egresosPorMoneda = const {},
     this.idTurno,
     this.idTpv,
     this.tpvNombre,
@@ -565,7 +638,10 @@ class SalesVendorReport {
     );
   }
 
-  SalesVendorReport copyWith({double? totalEgresos}) {
+  SalesVendorReport copyWith({
+    double? totalEgresos,
+    Map<String, double>? egresosPorMoneda,
+  }) {
     return SalesVendorReport(
       uuidUsuario: uuidUsuario,
       nombres: nombres,
@@ -581,6 +657,7 @@ class SalesVendorReport {
       primeraVenta: primeraVenta,
       ultimaVenta: ultimaVenta,
       totalEgresos: totalEgresos ?? this.totalEgresos,
+      egresosPorMoneda: egresosPorMoneda ?? this.egresosPorMoneda,
       idTurno: idTurno,
       idTpv: idTpv,
       tpvNombre: tpvNombre,

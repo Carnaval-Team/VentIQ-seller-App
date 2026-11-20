@@ -37,7 +37,7 @@ class StoreConfigService {
                   'need_all_orders_completed_to_continue': false,
                   'metodo_redondeo_precio_venta': 'NO_REDONDEAR',
                   'guardar_impresora_por_defecto': false,
-                  'tickets_a_imprimir': ['cliente', 'almacen'],
+                  'tickets_a_imprimir': ['cliente', 'almacen', 'caja'],
                   'copias_por_ticket': {'cliente': 1, 'almacen': 1},
                   'autocompletar_cantidad_real_conteo': false,
                   'vendedores_pueden_crear_cxc': false,
