@@ -641,6 +641,39 @@ class _AdminDrawerState extends State<AdminDrawer> {
                   },
                 ),
 
+                // Compras (solo gerente): documento que precede al pago a
+                // proveedores y que puede financiar el Fondo de Inversión.
+                FutureBuilder<bool>(
+                  future: NavigationGuard.canNavigate(
+                    '/compras',
+                    context,
+                    showDialog: false,
+                  ),
+                  builder: (context, snapshot) {
+                    if (snapshot.data == true) {
+                      return Column(
+                        children: [
+                          _buildDrawerItem(
+                            context,
+                            icon: Icons.shopping_cart_outlined,
+                            title: 'Compras',
+                            subtitle: 'Facturas, ajustes y costo aterrizado',
+                            onTap: () {
+                              Navigator.pop(context);
+                              NavigationGuard.navigateWithPermission(
+                                context,
+                                '/compras',
+                              );
+                            },
+                          ),
+                          const Divider(height: 1),
+                        ],
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  },
+                ),
+
                 // Notificación a Clientes — Difusión WhatsApp.
                 // Visible para todos los clientes; el acceso real se valida
                 // dentro de la pantalla contra la licencia WAPI específica.

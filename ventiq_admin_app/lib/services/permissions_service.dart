@@ -731,6 +731,7 @@ class PermissionsService {
     // Cuentas por Cobrar (solo gerente/supervisor)
     '/cuentas-por-cobrar': [UserRole.gerente, UserRole.supervisor],
     '/fondo-inversion': [UserRole.dueno, UserRole.gerente],
+    '/compras': [UserRole.dueno, UserRole.gerente],
 
     // Dispositivos
     '/wifi-printers': [UserRole.gerente, UserRole.auditor],

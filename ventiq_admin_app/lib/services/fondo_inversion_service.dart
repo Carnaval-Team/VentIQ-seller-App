@@ -24,6 +24,21 @@ class FondoInversionService {
     return '${h(8)}-${h(4)}-4${h(3)}-${(8 + r.nextInt(4)).toRadixString(16)}${h(3)}-${h(12)}';
   }
 
+  /// Adapta lo que captura la UI (monto en moneda destino + T(destino→origen))
+  /// al contrato de `fn_fdi_transferir_v2`, que exige `monto_origen` y
+  /// T(origen→destino).
+  ///
+  /// Pura y estática a propósito: es la aritmética que decide cuánto sale del
+  /// fondo, así que se prueba sin red ni Supabase.
+  static ({double montoOrigen, double tasaOrigenADestino}) adaptarTransferenciaV2({
+    required double montoDestino,
+    required double tasa,
+  }) {
+    final t = (!tasa.isFinite || tasa <= 0) ? 1.0 : tasa;
+    final monto = double.parse((montoDestino * t).toStringAsFixed(2));
+    return (montoOrigen: monto, tasaOrigenADestino: 1 / t);
+  }
+
   Map<String, dynamic> _asMap(dynamic resp) =>
       resp is Map ? Map<String, dynamic>.from(resp) : <String, dynamic>{};
 
@@ -385,8 +400,18 @@ class FondoInversionService {
     String? observacion,
     String? idempotencyKey,
   }) async {
+    // v2 exige el par explícito T(origen→destino) = unidades de destino por 1
+    // unidad de origen. La UI sigue hablando en monto destino y tasa
+    // T(destino→origen); el adaptador hace la conversión y es una función pura
+    // con su propio test.
+    // Ventaja sobre la v1: la v2 valida la tasa contra la última transferencia
+    // del mismo par (±20 %) y guarda la inversa desnormalizada.
+    final adaptada = adaptarTransferenciaV2(
+      montoDestino: montoDestino,
+      tasa: tasa,
+    );
     final resp = await _supabase.rpc(
-      'fn_fdi_transferir',
+      'fn_fdi_transferir_v2',
       params: {
         'p_id_tienda': idTienda,
         'p_id_cuenta_origen': idCuentaOrigen,
@@ -395,8 +420,8 @@ class FondoInversionService {
         'p_id_cuenta_destino': idCuentaDestino,
         'p_id_medio_pago_destino': idMedioPagoDestino,
         'p_moneda_destino': monedaDestino,
-        'p_monto_destino': montoDestino,
-        'p_tasa': tasa,
+        'p_monto_origen': adaptada.montoOrigen,
+        'p_tasa_origen_a_destino': adaptada.tasaOrigenADestino,
         'p_porcentaje_costo': porcentajeCosto,
         'p_id_transferencia_corregida': idTransferenciaCorregida,
         'p_observacion': observacion,

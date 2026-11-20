@@ -1,24 +1,41 @@
 # Fondo de Inversión → Compras → Recepción → Consumo — plan de implementación
 
-**Versión 6** · 2026-11-20 · Re-basado contra la rama **`multimoneda`**, `newa` (desarrollo) y Main
-(producción). Las 8 decisiones del dueño siguen cerradas.
+**Versión 6.1** · 2026-11-20 · Re-basado contra la rama **`multimoneda`**, `newa` (desarrollo) y Main
+(producción). Restaura el detalle operativo que la v6 comprimió (`11-diff-v4-v6.md`) sin perder ninguna de
+sus correcciones. Las 8 decisiones del dueño siguen cerradas.
 
 ## Correcciones de la v6 (rama `multimoneda`)
-
-La rama `multimoneda` (commit `2bff5b18`, 2026-11-20) adelanta trabajo que la v5 no conocía. Cuatro
-cosas cambian:
 
 | # | La v5 decía | La realidad en `multimoneda` |
 |---|---|---|
 | A | No existía forma de financiar una recepción desde el fondo | Existe `fn_fdi_registrar_recepcion` (`fondo_inversion_financiar_recepcion.sql`): N fuentes cuenta/medio/moneda, idempotencia y **debita al recibir**. El cliente ya la llama (`inventory_service.dart:1382`) |
-| B | "No tocar `fn_fdi_crear_liquidacion`, preservar la firma del entorno" | **Al revés.** La regla del equipo es que quede **solo con 11 parámetros**. Main tiene únicamente la de 10 y no tiene `repartir_igual`: "preservar" deja Main roto |
-| C | Deprecar `fn_registrar_cambio_estado_operacion_mejorado` en el botón "Completar" | **Prohibido.** Es la función combinada main+newa del 19/11 (compensatorio `origen_cambio` 4/5, `RECEPCION_INVENTARIO_USADO`), con su fix pendiente en Main |
-| D | Crear un pase propio `newa → Main` (fase 0b) con `DROP EXPRESSION` y backfill antes que nada | El equipo tiene un pase formal (`tasks/plan_promocion_main.md`, `_m01`, expansión aditiva, baselines `md5`). **La fase 0b no puede inventar otro**; se integra a las Tasks 3/4 |
+| B | "No tocar `fn_fdi_crear_liquidacion`, preservar la firma del entorno" | **Al revés.** Debe quedar **solo con 11 parámetros**. Main tiene únicamente la de 10 y no tiene `repartir_igual`: "preservar" deja Main roto |
+| C | Deprecar `fn_registrar_cambio_estado_operacion_mejorado` en "Completar" | **Prohibido.** Es la función combinada main+newa del 19/11 (compensatorio `origen_cambio` 4/5, `RECEPCION_INVENTARIO_USADO`), con su fix pendiente en Main |
+| D | Pase propio `newa → Main` (fase 0b) con `DROP EXPRESSION` y backfill antes que nada | El equipo tiene un pase formal (`tasks/plan_promocion_main.md`, `_m01`, expansión aditiva, baselines `md5`). **La 0b no inventa otro**; se integra a las Tasks 3/4 |
 
-Y un bloqueante operativo inmediato: **el cliente llama a una RPC que no existe en ninguna base**.
-`fn_fdi_registrar_recepcion` está en el repo pero **no está aplicada ni en `newa` ni en Main**
-(verificado con `to_regprocedure`), igual que las columnas `fdi_idempotency_key` / `fdi_solicitud`. La
-ruta "financiar recepción" revienta en runtime hasta que se aplique esa migración.
+**Bloqueante operativo:** el cliente llama a `fn_fdi_registrar_recepcion` y esa función **no existe ni en
+`newa` ni en Main** (verificado con `to_regprocedure`), igual que las columnas `fdi_idempotency_key` /
+`fdi_solicitud`. La ruta "financiar recepción" falla en runtime hasta aplicar esa migración.
+
+## Restaurado en la v6.1
+
+La v6 comprimió el plan y perdió detalle operativo (`11-diff-v4-v6.md`). Recuperado:
+
+- **A1** `p_origen text DEFAULT 'externa'` con la regla de derivación de `motivo` y la nota de
+  compatibilidad (fase 5).
+- **A2** fórmula del backfill `= precio_unitario − descuentos` y rollback que restaura la expresión (0b).
+- **A3** Exit criteria y **E2E integral de 8 pasos** de la fase 8.
+- **A4** inmutabilidad de `total_financiado` tras reservar.
+- **A5-A24** (gravedad media): definición de tasa y no-regresión de v1, redondeo, ajustes `por_financiar`,
+  **protocolo E2E por fase**, E2E numéricos de la fase 5, grano de la conciliación, alcance de R1 y de la
+  idempotencia, cordura de `_v2`, contrato de X9, comportamiento de liberar/anular, fórmula y constraints
+  de la fase 3, RLS/GRANT y contrato de RPC, matriz de permisos, ventana de edición del cargo de
+  importadora, filtro `pendiente > 0`, selector multi-compra, desvío de importadora, exclusividad del
+  aporte y E2E con cifras de las fases 1, 2 y 7.
+- **A25-A34** (gravedad baja): `DROP` de overloads, RPC que propaga el lote, efecto de `cerrar_corto`,
+  descuadre declarado, detalle del panel de pendientes, pantallas Stitch, regla de parada, checks de
+  `verify/00`, caso fondo del reparto, quién declara el descuadre.
+- **Contradicción resuelta:** quién aplica el stock con lote (ver "El lote en el camino que se conserva").
 
 ---
 
@@ -36,43 +53,54 @@ ruta "financiar recepción" revienta en runtime hasta que se aplique esa migraci
 | Importadora / proveedor | 0 facturas | 26 + 48 |
 | `app_cont_tipo_costo` | 0 filas | 0 filas |
 
-**Regla:** se desarrolla y valida en `newa`; Main recibe por el **pase formal del equipo**, no por un
-camino paralelo.
+**Regla:** se desarrolla y valida en `newa`; Main recibe por el **pase formal del equipo**.
 
-> El `pull` de `multimoneda` **no se pudo hacer**: no hay credenciales de git (`SEC_E_NO_CREDENTIALS`).
-> Se trabaja con lo que ya estaba descargado (`2bff5b18`, hace una hora). Si hay commits más nuevos en
-> el remoto, no están aquí.
+> El `pull` de `multimoneda` no se pudo hacer desde el agente (sin credenciales). El dueño lo hizo y
+> fusionó `main` (`bab9725b`). Base actual: `multimoneda` al día con `main`.
 
 ---
 
 ## Piezas existentes que este plan respeta
 
-No se rediseñan. Se usan como están o se extienden de forma aditiva.
-
 | Pieza | Qué hace | Cómo la usa el plan |
 |---|---|---|
-| `fn_fdi_registrar_recepcion(jsonb, jsonb, uuid)` | **Carril B**: recibe y debita en la misma transacción, con N fuentes y cobertura exacta al centavo | Carril de "recepción directa" (sin compra). **Nunca** para una recepción con compra |
-| `fn_fdi_crear_inversion` | Crea el sobre y **debita** inmediatamente | Base del carril B; en el carril A no se usa tal cual |
-| `fn_fdi_crear_liquidacion` | Liquidación de ganancia, **11 args** (`p_repartir_igual`) | No se toca en `newa`; en Main se **completa** (Task 4: columna + 11 args + `DROP` de la de 10) |
-| `fn_registrar_cambio_estado_operacion_mejorado` | Cambio de estado con compensatorio `origen_cambio` 4/5 y `RECEPCION_INVENTARIO_USADO` | **No se depreca.** Es el camino de cancelación/devolución |
-| `fn_actualizar_precio_promedio_recepcion_v2` | Pondera con stock previo; la de `newa` además suma `monto_usd` de adicionales | Se **promueve el cuerpo de `newa`** a Main, nunca al revés |
+| `fn_fdi_registrar_recepcion(jsonb, jsonb, uuid)` | **Carril B**: recibe y debita en la misma transacción, N fuentes, cobertura exacta al centavo | Carril "recepción directa" (sin compra). **Nunca** con compra |
+| `fn_fdi_crear_inversion` | Crea el sobre y **debita** inmediatamente | Base del carril B; el carril A no la usa |
+| `fn_fdi_crear_liquidacion` | Liquidación de ganancia, **11 args** (`p_repartir_igual`) | No se toca en `newa`; en Main se **completa** (Task 4) |
+| `fn_registrar_cambio_estado_operacion_mejorado` | Cambio de estado con compensatorio `origen_cambio` 4/5 y `RECEPCION_INVENTARIO_USADO` | **No se depreca**: es el camino de cancelación/devolución |
+| `fn_contabilizar_recepcion_inventario` | Aplica stock **propagando `id_lote`**; idempotente por recepción | Es el que aplica stock en ambos carriles |
+| `fn_actualizar_precio_promedio_recepcion_v2` | Pondera con stock previo; la de `newa` además suma `monto_usd` | Se **promueve el cuerpo de `newa`** a Main, nunca al revés |
 | `trg_recepcion_productos_costo_real` | Rellena `costo_real` **solo si es NULL** | Molde del costo aterrizado; se replica en Main |
-| Pase `newa → main` (`tasks/plan_promocion_main.md`) | Nombre `_m01`, expansión aditiva → clientes → contrato, baselines `md5` | El plan se **subordina** a él |
+| Pase `newa → main` | `_m01`, expansión aditiva → clientes → contrato, baselines `md5` | El plan se **subordina** a él |
+
+### El lote en el camino que se conserva
+
+La v4 avisaba de que `fn_registrar_cambio_estado_operacion_mejorado` "completa sin lote y rompe FEFO", y la
+v6 prohibía deprecarla sin explicar por dónde entra el lote. **Regla de la v6.1:** "Completar" hace **dos
+cosas**, no una:
+
+1. **Estado**: `fn_registrar_cambio_estado_operacion_mejorado` (necesaria para cancelar/devolver con
+   compensatorio y `RECEPCION_INVENTARIO_USADO`).
+2. **Stock**: `fn_contabilizar_recepcion_inventario`, que es la única que propaga `id_lote` e es idempotente
+   por recepción.
+
+Si el botón solo ejecuta la primera, R9 **no** está cubierto. La verificación de la fase 5 incluye
+comprobarlo: recibir un producto por lotes y confirmar que el stock resultante conserva `id_lote`.
 
 ---
 
 ## Objetivo
 
-Al terminar, el admin puede: registrar una **compra** con proveedor, factura, líneas y total;
-**financiarla con una sola fuente** — saldo del Fondo repartido en varias cuentas y monedas, **o**
-aportes de inversores al 100% — sin gastar dos veces el mismo dinero; **recepcionar** (total o parcial,
-una o varias facturas en la misma carga) capturando el **cargo variable de importadora** con su % y sus
-reembolsos, más costos adicionales por producto; ver **disponible, comprometido, ejecutado y pendiente**;
-y tener recordatorios de facturas con productos faltantes.
+Al terminar, el admin puede: registrar una **compra** con proveedor, factura, líneas y total; **financiarla
+con una sola fuente** — saldo del Fondo repartido en varias cuentas y monedas, **o** aportes de inversores
+al 100% — sin gastar dos veces el mismo dinero; **recepcionar** (total o parcial, una o varias facturas en
+la misma carga) capturando el **cargo variable de importadora** con su % y sus reembolsos, más costos
+adicionales por producto; ver **disponible, comprometido, ejecutado y pendiente**; y tener recordatorios de
+facturas con productos faltantes.
 
 **No-goals:** reescribir `imp_*`, devoluciones/notas de crédito, caducidad de reservas, pago mixto,
-reescribir el histórico de `fdi_dat_inversion`, inventar un pase a producción paralelo, deprecar la
-función combinada de cambio de estado.
+reescribir el histórico de `fdi_dat_inversion`, inventar un pase a producción paralelo, deprecar la función
+combinada de cambio de estado.
 
 ---
 
@@ -80,15 +108,15 @@ función combinada de cambio de estado.
 
 | Fase | Estado |
 |---|---|
-| 0. Cimientos: rama, migraciones pendientes de la rama, baseline | not started |
-| 0b. Integrar el delta de esquema al pase formal (no un pase propio) | not started |
-| 1. Motor de dinero I: integridad, escala y conciliación | not started |
-| 2. Motor de dinero II: idempotencia, tasa y gasto vinculado | not started |
-| 3. Compra como documento | not started |
-| 4. Reserva y liquidación (carril A, solo `al_pagar`) | not started |
-| 5. Recepción: carril A (contra compra) y carril B (directa) | not started |
+| 0. Cimientos y desbloqueo de la rama | **done** — migración aplicada, semáforo 7 ok / 0 falla / 1 info, E2E del dueño aprobado |
+| 0b. Integrar el delta de esquema al pase formal | not started |
+| 1. Motor de dinero I: integridad, escala y conciliación | **done** — 11/11 verificaciones y E2E del dueño aprobado |
+| 2. Motor de dinero II: idempotencia, tasa y gasto vinculado | **done** — 2a, 2b, cliente a v2 y E2E del dueño aprobado |
+| 3. Compra como documento | **done** — esquema, RPC, UI, verify 13/13 y E2E del dueño aprobado |
+| 4. Reserva y liquidación (carril A, solo `al_pagar`) | **in progress** — backend aplicado y probado; falta UI, `verify/04` y rollback |
+| 5. Recepción: carril A y carril B | not started |
 | 6. Costo aterrizado sobre el módulo existente | not started |
-| 7. Inversores aportantes (100% de la compra) | not started |
+| 7. Inversores aportantes (100%) | not started |
 | 8. Reportes, conciliación en UI y cierre | not started |
 | 9. Pendientes, recordatorios y registro de faltantes | not started |
 
@@ -100,29 +128,120 @@ Current phase: 0 · Recommended next: 0
 ### Bitácora de desviaciones
 <!-- fase · qué cambió · por qué -->
 
+- **Fase 0 · sin rama nueva.** El dueño decidió trabajar directamente en `multimoneda`; se eliminó la
+  rama `feat/compras` del plan y de los protocolos.
+- **Fase 0 · el agente aplica en `newa`.** Cambio de regla: el agente aplica el SQL en `newa`; para Main
+  solo entrega scripts. Antes rezaba que el agente no aplicaba nunca.
+- **Fase 0 · `verify/00_linea_base.sql` v1 estaba roto.** Tenía dos sentencias y un CTE no sobrevive
+  entre ellas (`ERROR: 42P01: relation "base" does not exist`). Corregido a una sola sentencia con el
+  resumen como fila `UNION ALL` (`n = 99`). Se añadió al README la regla de validar el script exacto.
+- **Fase 0 · aprobada por el dueño (2026-11-20).** Semáforo `7 ok · 0 falla · 1 info`; recepción
+  financiada creada (operación 127, inversión 1, 10.000 USD, tienda 9); saldo USD 500.000 → 490.000;
+  Σ saldos = Σ movimientos exacto.
+- **Fase 1 · aplicada en `newa` (2026-11-20).** Escala 2 del ledger **sin mover un centavo**: Σ saldos =
+  Σ movimientos = `679755075.15`, 19 movimientos intactos, 0 descuadres en 12 claves de 3 tiendas.
+  R1 valida tienda y dos decimales (probado en vivo: rechaza cuenta ajena y `-0.001`); R3 con
+  `FOR UPDATE`; R7 ya no exige inversores activos; R2 con tipo `devolucion_inversion`; nueva
+  `fn_fdi_conciliacion`.
+- **Fase 1 · dos guardias relajadas a propósito.** `fn_fdi_inversion_anular` y `fn_fdi_conciliacion`
+  permiten contexto de servicio (`auth.uid() IS NULL`) para poder probarse desde el editor SQL; con
+  sesión siguen exigiendo permiso. Sin esto no eran verificables hasta la fase 8.
+- **Fase 1 · guardia de anulación probada.** Anular la inversión 1 (con la recepción 127 vinculada)
+  devuelve `22023: tiene recepciones vinculadas; desvincúlelas antes de anular`.
+- **Fase 1 · aprobada por el dueño (2026-11-20).** `verify/01` 11 ok · 0 falla; conciliación 0
+  descuadres antes y después; cancelar la recepción dejó la inversión pendiente con el saldo debitado;
+  `fn_fdi_inversion_anular` devolvió 10.000 y el saldo USD volvió a 500.000; repetirla dio
+  `duplicada: true`. Los datos de prueba quedaron limpios.
+- **Fase 2a · aplicada en `newa` (2026-11-20).** Columna `idempotency_key` + índice único parcial
+  `(tipo, idempotency_key)`; backfill de **13 movimientos** con `idem:` en la observación (0 quedaron
+  sin clave); `_fdi_aplicar_movimiento` pasa a **11 args con una sola firma** (se eliminó la de 10 para
+  no dejar overload); las tres RPC atrapan `23505` y devuelven `duplicada: true`. Probado: el índice
+  corta el duplicado y la transacción revierte sin residuo (0 movimientos de prueba).
+- **Fase 2a · bug real encontrado.** `fn_fdi_ingreso_manual` comparaba
+  `observacion = 'idem:<uuid>'`, pero el movimiento se escribe como `motivo · fecha · idem:<uuid>`:
+  **la comprobación nunca coincidía** y el reintento duplicaba el ingreso. El índice lo cierra.
+- **Fase 2 · desviación de alcance (justificada).** `fn_fdi_gasto(p_id_compra)` se pospone a la fase 3/4
+  porque `fdi_dat_compra` aún no existe, y **X9** (tasa resuelta en servidor) a la fase 4 porque los
+  pagos de compra tampoco. Quedan para 2b: `fn_fdi_transferir_v2` y **X11** (motivo estructurado y
+  umbral en `fn_fdi_ajuste`).
+- **Fase 2b · aplicada en `newa` (2026-11-20).** `fn_fdi_transferir_v2` con `T(origen→destino)` explícito,
+  **cordura ±20 %** contra la última transferencia del mismo par y tasa inversa desnormalizada. La v1
+  sigue intacta con sus 13 args. `fn_fdi_ajuste` suma `p_motivo_codigo` validado y umbral
+  `fdi_dat_config.umbral_ajuste`: por encima, solo el dueño. Se borró la firma de 7 args para no dejar
+  overload vivo.
+- **Fase 2 · X11 simplificado a propósito.** "Doble aprobación" se implementó como **umbral que exige al
+  dueño**, no como dos personas. La aprobación de dos usuarios necesita pantalla y notificación: queda
+  como deuda documentada, no como algo que el plan diga que ya está.
+- **Fase 2 · la cordura de tasa se apoya en datos propios.** En `newa`, `tasas_conversion` está **vacía**
+  y `tasa_cambio_extraoficial` tiene 3 filas sin mapeo claro a códigos de moneda, así que la referencia es
+  la **última transferencia del mismo par**. Cuando haya historial, el chequeo se vuelve efectivo solo.
+- **Fase 2 · el cliente ya llama a v2.** `fondo_inversion_service.transferir` usa `fn_fdi_transferir_v2`;
+  la conversión UI→v2 vive en `FondoInversionService.adaptarTransferenciaV2` (función **pura y estática**)
+  con 5 tests en `test/fdi_transferencia_adaptador_test.dart`. `flutter analyze` limpio sobre los dos
+  archivos y **5/5 tests en verde**. Sin este cambio, X2 seguía vivo aunque v2 existiera.
+- **Deuda previa del repo, no de este plan.** `flutter test` completo da **7 archivos que no compilan**:
+  llaman `Supabase.initialize(publishableKey:)` y `supabase_flutter 2.9.1` ya no acepta ese nombre. No lo
+  toca este plan; queda registrado para que nadie lo confunda con una regresión de la fase 2.
+- **Fase 2 · aprobada por el dueño (2026-11-20).** Transferencia 5 creada por la UI con
+  `tasa_origen_a_destino` y `tasa_destino_a_origen` persistidas; la segunda transferencia con la tasa
+  recíproca fue **rechazada** por la cordura; conciliación 0 descuadres en 3 claves.
+- **Nota operativa.** `flutter test` lanzado por shell se cuelga en este entorno (0 bytes, sin proceso).
+  Usar el MCP de Dart (`run_tests`, `analyze_files`) con el root `ventiq_admin_app` registrado.
+- **Fase 3 · backend aplicado y probado en `newa` (2026-11-20).** 6 tablas con RLS, índice único de
+  factura por proveedor, dos triggers de recálculo y las 5 RPC (`crear`, `editar`, `listar`, `detalle`,
+  `cancelar`). Prueba real: compra #1 de la tienda 9 con 2 líneas (10×5 + 4×12,5 = 100) y 2 ajustes
+  (15 % de importadora con `origen_pago='wallet_importadora'` = 15, más 30 con `origen_pago='fondo'`).
+  Totales exactos: mercancía **100**, ajustes **45**, financiado **130**, aterrizado **145**. El cargo de
+  la wallet capitaliza sin financiarse, que era el objetivo.
+- **Datos de prueba creados.** Proveedores `1` y `2` en la tienda 9 (`PRV-TEST-001/002`) y la compra
+  `#1` (`FT-PRUEBA-001`) en estado `creada`, para el E2E manual.
+- **Fase 3 · UI cableada (2026-11-20).** 3 pantallas Stitch (`699b3ed3…` listado, `a52d5367…` alta,
+  `c26e5148…` detalle) y 4 archivos Flutter: listado con filtros y tabla/tarjeta según ancho, alta/edición
+  con líneas y ajustes, detalle con historial y cancelación con motivo. Ruta `/compras`, entrada en el
+  drawer y permiso dueño/gerente. `analyze` **sin errores** en los 9 archivos tocados.
+- **Fase 3 · verificación y rollbacks.** `verify/03_compra.sql` da **13 ok · 0 falla** en `newa`; existen
+  `03a_compra_esquema_rollback.sql` y `03b_compra_rpcs_rollback.sql` (validados contra el catálogo, no
+  ejecutados).
+- **Fase 3 · hueco de permisos cerrado.** `fn_fdi_compra_recalcular` y `trg_fdi_compra_recalcular` nacían
+  con `EXECUTE` a `PUBLIC`: `anon` podía invocarlas por PostgREST. Cerrado a `postgres`/`service_role`, y
+  el recálculo verificado después (línea de prueba: mercancía 100 → 101, con `ROLLBACK`).
+- **Fase 3 · aprobada por el dueño (2026-11-20).** Quedaron dos compras: #1 `cancelada` (100 mercancía /
+  45 ajustes / 130 financiado / 145 aterrizado, 2 líneas, 2 hitos) y #2 `creada` (`45-054`, 1 línea).
+- **Fase 4 · backend aplicado y probado en `newa` (2026-11-20).** Tablas `fdi_dat_compra_reserva` y
+  `fdi_dat_compra_pago`; `fdi_dat_movimiento` gana `id_compra` y `tasa`; tipos `pago_compra` y
+  `devolucion_compra`; `_fdi_aplicar_movimiento` pasa a 13 args y **devuelve el id del movimiento**.
+  RPC: `fn_fdi_disponible`, `_reservar`, `_pagar`, `_liberar`, `_anular`; `_cancelar` ahora también libera
+  desde `reservada`. Prueba real sobre la compra #2: reserva de 1 USD → `reservada`; pago → `pagada`, saldo
+  488.000 → **487.999**, reserva `consumida`, movimiento `pago_compra -1,00` con `id_compra` y `tasa`, y
+  conciliación en **0 descuadres**.
+
 ---
 
 ## Decisiones cerradas
 
-- ✔ **PD1 — En la compra el dinero se compromete al crear y sale al pagar.** `politica_pago =
-  al_pagar`. **Matiz importante (v6):** conviven **dos carriles** de pago y una recepción pertenece a
-  **uno solo**:
-  - **Carril A (compra):** reserva al crear → pago explícito → recepción que **no mueve dinero**.
-  - **Carril B (recepción directa):** sin compra; `fn_fdi_registrar_recepcion` debita **al recibir**.
+- ✔ **PD1 — En la compra el dinero se compromete al crear y sale al pagar.** `politica_pago = al_pagar`.
+  `por_recepcion` queda documentada como deuda futura, no se implementa. **Dos carriles, una recepción
+  pertenece a uno solo**:
+  - **Carril A (compra):** reserva → pago explícito → recepción que **no mueve dinero**.
+  - **Carril B (recepción directa):** sin compra; debita **al recibir**.
   Una recepción con `id_compra` **no puede** usar el carril B. Se impone en la RPC, no en la UI.
-- ✔ **PD2 — Manda la suma de líneas.** `total_mercancia = Σ(cantidad × costo unitario)`. Descuadre con
-  la factura → no se puede reservar hasta declarar motivo. Nunca se recalcula el costo unitario.
+- ✔ **PD2 — Manda la suma de líneas.** `total_mercancia = Σ(cantidad × costo unitario)`. Si el total de
+  factura no cuadra, la compra se guarda pero **no se puede reservar** hasta que **dueño/gerente declare el
+  motivo** (queda en historial). Nunca se recalcula el costo unitario para "cuadrar".
 - ✔ **PD3 — El cargo de importadora es variable y SUMA al valor de la factura.** Componente del costo,
-  capturado en la recepción, **% editable y distinto en cada recepción**, con reembolso. La wallet de
-  importadora se queda como está.
+  capturado en la recepción, **% editable y distinto en cada recepción**, con reembolso. La wallet se queda
+  como está.
 - ✔ **PD4 — El pago exclusivo es 100% de los inversores.** Nada del fondo en modo inversores; nunca mixto.
 - ✔ **PD5 — 7 estados:** `creada, reservada, pagada, entrega_parcial, completada, cancelada, anulada`.
-- ✔ **PD6 — En recepción de compra solo aparecen los productos de esa compra.** No se bloquea catálogo
-  ni stock.
-- ✔ **PD7 — Sin IVA ni descuentos por línea.** Costo neto unitario. Si el IVA fuese acreditable, sería
-  componente con `afecta_inventario = false`.
+  `reservada` existe para colgar el dinero comprometido; `anulada` para revertir con contramovimiento.
+- ✔ **PD6 — En recepción de compra solo aparecen los productos de esa compra.** No se bloquea catálogo ni
+  stock.
+- ✔ **PD7 — Sin IVA ni descuentos por línea.** Costo neto unitario. Si el IVA fuese acreditable sería
+  componente con `afecta_inventario = false`; lo no recuperable (aduana, flete, seguro, importadora) sí
+  capitaliza.
 - ✔ **PD8 — El fondo NO paga el cargo de importadora.** `origen_pago = wallet_importadora`: capitaliza y
-  nadie lo vuelve a desembolsar.
+  nadie lo vuelve a desembolsar. La fase 6 **muestra el desvío** (`Σ cargos` vs `Σ valores de factura
+  vinculados`) sin corregirlo sola.
 - ✔ **Los aportes de inversores no se acumulan en el fondo**: viven atados a su compra, no entran en
   `fdi_dat_saldo` y no se mezclan con el porcentaje de utilidad.
 
@@ -132,34 +251,40 @@ Current phase: 0 · Recommended next: 0
 
 - ✔ **La compra es entidad nueva** (`fdi_dat_compra*` + `fn_fdi_compra_*`). `fdi_dat_inversion` queda
   **congelada como legado del carril B**: el carril A no la usa.
-- ✔ **El fondo es `fdi_dat_saldo`**, grano **(cuenta × medio × moneda)**. La compra reutiliza ese libro.
-- ✔ **Un solo sentido de tasa: `T(A→B)`** con par explícito. `fn_fdi_transferir` no se toca; se crea
-  `fn_fdi_transferir_v2`.
-- ✔ **La reserva no es un movimiento.** `disponible = saldo − reservado`, en moneda nativa, validado por
-  (cuenta, medio, moneda).
+- ✔ **El fondo es `fdi_dat_saldo`**, grano **(cuenta × medio × moneda)**.
+- ✔ **Un solo sentido de tasa: `T(A→B)` = unidades de B por 1 de A**, con el par explícito en todo registro.
+  `fn_fdi_transferir` no se toca; se crea `fn_fdi_transferir_v2`. **Cambiar la semántica de la v1 sin
+  cambiar su firma rompería el cliente desplegado (`fondo_inversion_service.dart:389`) con un factor de 10³
+  en dinero real.**
+- ✔ **La reserva no es un movimiento.** `disponible = saldo − reservado`, en moneda nativa por (cuenta,
+  medio, moneda).
 - ✔ **Dos tasas congeladas por documento**: factura (costo) y pago (salida). Diferencia cambiaria a
   resultado financiero, nunca al inventario.
-- ✔ **Tres cifras**: `total_mercancia`, `total_financiado` y `costo_aterrizado`.
+- ✔ **Tres cifras**: `total_mercancia` (Σ líneas), `total_financiado` (lo que paga el fondo o los
+  inversores) y `costo_aterrizado` (todo lo que capitaliza, incluido lo que pagó la wallet).
+  **`total_financiado` es inmutable tras reservar; `costo_aterrizado` crece con documentos de ajuste.**
 - ✔ **`origen_pago ∈ {fondo, wallet_importadora, wallet_proveedor, externo}`** por componente de costo.
   Capitaliza siempre; solo se financia si su origen es `fondo`.
 - ✔ **El costo se valoriza al recibir.** Recepción parcial: el costo global se reparte **solo sobre lo
-  recibido**; el resto queda por asignar. Reparto por **valor**.
-- ✔ **Parámetros nuevos con `DEFAULT`**, nunca cambio de semántica sobre una RPC viva.
-- ✔ **El plan se subordina al pase formal del equipo.** Cambio de contrato = nombre `_m01`, expansión
-  aditiva primero, clientes después, contrato al final.
+  recibido**; el resto queda por asignar. Reparto por **valor** por defecto (cantidad o peso como excepción
+  configurable justificada).
+- ✔ **Redondeo:** en servidor, una sola vez al escribir el asiento; **residuo a la línea de mayor base**
+  (empate → menor `id`).
+- ✔ **Parámetros nuevos con `DEFAULT`**; cambio de semántica = RPC nueva.
+- ✔ **El plan se subordina al pase formal.** Cambio de contrato = `_m01`, expansión aditiva → clientes →
+  contrato.
 
 ### Los dos carriles
 
 | | Carril A — compra | Carril B — recepción directa |
 |---|---|---|
 | Punto de partida | Orden de compra | Recepción sin compra |
-| ¿Existe hoy? | **No** (se construye) | **Sí** (`fn_fdi_registrar_recepcion`) |
+| ¿Existe hoy? | **No** (se construye) | **Sí**, pero **sin desplegar** |
 | Momento del débito | Al **pagar** | **Al recibir** |
 | Reserva | Sí | No |
 | Fuentes múltiples | Sí | Sí (exactitud al centavo) |
-| Tabla de dinero | `fdi_dat_saldo` | `fdi_dat_saldo` |
-| Tabla de sobre | `fdi_dat_compra*` | `fdi_dat_inversion` |
-| Regla | Una recepción con `id_compra` **jamás** entra por B | Una recepción con `p_id_compra` debe **rechazarse** en B |
+| Sobre de dinero | `fdi_dat_compra*` | `fdi_dat_inversion` |
+| Regla | Una recepción con `id_compra` **jamás** entra por B | `p_id_compra` informado → **rechazar** |
 
 ### Dinero: eventos del carril A
 
@@ -170,7 +295,8 @@ Current phase: 0 · Recommended next: 0
 | Se confirma el pago | `pagada` cuando `Σ pagos = total_financiado` | Sí | consume reserva + `pago_compra` |
 | Llega mercancía parcial | `entrega_parcial` | No | valoriza inventario |
 | Llega todo | `completada` | No | valoriza inventario |
-| Se ajusta el % de importadora | no cambia | Solo si origen `fondo` | ajuste o reembolso |
+| Se ajusta el % de importadora al recepcionar | no cambia | Solo si origen `fondo` | ajuste o reembolso |
+| **Llega un costo después de pagar** | no cambia | Solo si origen `fondo` | **reserva + pago del ajuste + documento de costo; nunca muta `total_financiado`** |
 | Se abandona sin pagos | `cancelada` | No | libera reservas |
 | Se abandona con pagos | `anulada` | Sí (reversa) | contramovimiento |
 
@@ -179,28 +305,26 @@ Current phase: 0 · Recommended next: 0
 ### Multi-factura en una carga
 
 Una operación de recepción cubre N compras: `fdi_dat_compra_recepcion` con
-**`UNIQUE(id_operacion, id_compra)`**. Cada línea sabe su compra; cada compra lleva su `pct_importadora`
-y su reembolso; el estado se calcula **por compra**.
+**`UNIQUE(id_operacion, id_compra)`**. Cada línea sabe su compra; cada compra lleva su `pct_importadora` y
+su reembolso; el estado se calcula **por compra**.
 
 ### Modelo de importadora
 
 | Concepto | Dónde | Regla |
 |---|---|---|
-| `pct_importadora` | por compra dentro de la recepción | editable, distinto por recepción |
+| `pct_importadora` | por compra dentro de la recepción | editable **antes de confirmar**, con historial de quién cambió qué; distinto por recepción |
+| `base_importadora` | valor de la factura | explícita, congelada |
 | `monto_importadora` | `base × pct` | capitaliza |
 | `reembolso_importadora` | negativo, opcional | "reembólsame la mitad" |
-| `origen_pago` | wallet \| fondo | wallet → solo capitaliza |
+| `origen_pago` | `wallet_importadora` \| `fondo` | wallet → solo capitaliza |
 
-Ejemplo: 2.000 USD + 15% (300) − 50% reembolso (150) → cargo efectivo 150, aterrizado **2.150**, fondo
-financia **2.000**.
+Ejemplo: mercancía **2.000 USD**, 15% → **300**; reembolso de la mitad → **−150**; cargo efectivo **150**;
+aterrizado **2.150**; el fondo financia **2.000** (si el origen es wallet) o **2.150** (si es fondo).
 
 ### Restricciones del entorno
 
-- **No hay rama `dev`** en git; se trabaja en `multimoneda`. El plan original pedía crear `dev`; ahora
-  **la base es `multimoneda`** y la rama de trabajo se crea desde ella (`git switch -c feat/compras
-  origin/multimoneda`) para no ensuciar la rama compartida.
-- **Sin credenciales de git**: no se puede `fetch`/`pull`. Todo lo que se afirme de la rama vale para
-  `2bff5b18`.
+- **Rama de trabajo:** `multimoneda`, al día con `main` tras `bab9725b`. **No se crean ramas nuevas**
+  (decisión del dueño, 2026-11-20). Commits directos sobre `multimoneda`.
 - **No hay convención de migración**: la vía real es pegar SQL a mano. El equipo usa `_m01` y baselines
   `md5` para el pase; el plan se alinea.
 - **`fdi_dat_movimiento` en `newa`**: acepta `'gasto'`, **sin `idempotency_key`**, `monto/saldo_*` sin
@@ -209,12 +333,12 @@ financia **2.000**.
   `contabilizada_at`, `contabilizada_por`.
 - **Solo lectura es convención, no capacidad**: el agente no aplica SQL por regla.
 
-### Stack
+### Stack y convenciones
 
 Flutter 3.44 / Dart 3.12; `provider` + `ChangeNotifier`; `ventiq_admin_app` con `sdk: ^3.10.0`.
-Shell: `$env:APPDATA = '...\.dsh\dart-tool'` antes de `flutter`. Rutas `'/kebab-case'` en `main.dart`;
-permisos en `permissions_service.dart`. UI: molde "saldo de tercero", chip de estado del nomenclador,
-panel plano FDI; prompts en `04-diseno-ux.md`.
+Shell: `$env:APPDATA = 'C:\Users\cesar\Documents\VentIQ-seller-App\.dsh\dart-tool'` antes de `flutter`.
+Rutas `'/kebab-case'` en `main.dart`; permisos por ruta en `permissions_service.dart`. UI: molde "saldo de
+tercero", chip de estado con color del nomenclador, panel plano FDI; prompts en `04-diseno-ux.md`.
 
 ### Documentos
 
@@ -222,7 +346,7 @@ panel plano FDI; prompts en `04-diseno-ux.md`.
 |---|---|
 | `00-auditoria-programador.md` | contrato de tablas/RPCs y riesgos R1-R9 (auditado contra Main) |
 | `01-analisis-funcional.md` | dominio, invariantes I1-I15, estados |
-| `02-contabilidad.md` | fórmulas de costo, reserva, tasas, redondeo, X1-X11 |
+| `02-contabilidad.md` | fórmulas de costo, reserva, tasas, redondeo (X1-X11), reportes R1-R7 (§6.3) |
 | `03-almacen.md` | recepción real, lotes, huecos operativos |
 | `04-diseno-ux.md` | pantallas, responsive, prompts de Stitch |
 | `05-referencia-industria.md` | práctica estándar y fuentes |
@@ -231,11 +355,11 @@ panel plano FDI; prompts en `04-diseno-ux.md`.
 | `08-costos-newa.md` | módulo de costos real en `newa` |
 | `09-financiacion-recepcion-existente.md` | `fn_fdi_registrar_recepcion`: contrato, riesgos, convivencia |
 | `10-estado-equipo-y-contradicciones.md` | pase newa→main, reglas vigentes, contradicciones |
+| `11-diff-v4-v6.md` | auditoría de pérdida de información que originó esta v6.1 |
 | `tasks/plan_promocion_main.md` | **el pase oficial**; manda sobre este plan |
-| `tasks/plan_sync_newa_main.md`, `tasks/hallazgos_pruebas_newa.md` | estado y pendientes |
 
 > Los anexos `00`-`06` se escribieron contra Main. Cuando contradigan este archivo, mandan este archivo,
-> `07`, `08`, `09` y `10`.
+> `07`-`11`.
 
 ---
 
@@ -252,12 +376,15 @@ panel plano FDI; prompts en `04-diseno-ux.md`.
 9. **Nada se valida primero en Main.** `newa` primero.
 10. **No se inventa un pase a producción**: se integra a `tasks/plan_promocion_main.md`.
 11. **Cada fase deja el repo verde**: `flutter analyze` sin errores nuevos + tests de la fase.
+12. **Regla de parada:** si una suposición se cae, **para, actualiza este archivo y dilo**; no improvises en
+    silencio.
 
 ---
 
 ## Protocolo de entrega
 
-**Código:** rama de trabajo desde `multimoneda`, commits por fase, sin push sin OK.
+**Código:** commits directos sobre `multimoneda`, uno por fase, sin push sin OK. Reportar
+`git diff --stat`.
 
 **SQL:** cada fase entrega en `ventiq_admin_app/lib/sql/`:
 - `NN_descripcion.sql` — idempotente, transaccional, con verificación final que hace `RAISE`.
@@ -265,8 +392,12 @@ panel plano FDI; prompts en `04-diseno-ux.md`.
 - `verify/NN_verificacion.sql` — solo `SELECT`, `ok|falla` por comprobación.
 - Encabezado `-- REQUIERE: NN, NN`.
 
-**Promoción:** `newa` → verificación → E2E del dueño → **pase formal del equipo** hacia Main. Ningún
-script de este plan se aplica a Main por fuera de ese pase.
+**E2E por fase (obligatorio).** Cada fase entrega una lista numerada de pasos literales en la app apuntando
+a `newa`: **qué hacer, qué debe verse, qué haría fallar**. Sin el OK del dueño **no se abre la fase
+siguiente**. Las listas están escritas en cada fase de este documento.
+
+**Promoción:** `newa` → verificación → E2E del dueño → **pase formal** hacia Main. Nada se aplica a Main por
+fuera de ese pase.
 
 ---
 
@@ -276,181 +407,310 @@ script de este plan se aplica a Main por fuera de ese pase.
 
 ## Fase 0 — Cimientos y desbloqueo de la rama
 
-**Objetivo:** dejar `newa` en un estado donde el código de `multimoneda` **funcione**, y tener red de
-seguridad.
-
-**El bloqueante actual:** el cliente llama a `fn_fdi_registrar_recepcion` (`inventory_service.dart:1382`)
-y esa función **no existe** en `newa` ni en Main. Cualquier E2E de recepción financiada falla hoy.
+**Objetivo:** dejar `newa` en un estado donde el código de `multimoneda` funcione, y tener red de seguridad.
 
 **Build:**
-- Crear rama de trabajo desde `multimoneda` (`git switch -c feat/compras`). No ensuciar la compartida.
+- **Trabajar directamente en `multimoneda`** (decisión del dueño, 2026-11-20: **no se crean ramas
+  nuevas**). El agente aplica el SQL en `newa`; para Main solo entrega scripts.
+- ✅ **Aplicada el 2026-11-20:** `fondo_inversion_financiar_recepcion.sql` en `newa`, verificada
+  (función, dos columnas, índice, `SECURITY DEFINER`, cuerpo con `financiada_fondo`). Baseline en
+  `baseline/00_esquema_newa.md`.
 - **Inventario de migraciones pendientes de la rama**: recorrer `tasks/plan_sync_newa_main.md` y
-  `tasks/hallazgos_pruebas_newa.md`, y listar qué `.sql` de la rama **no** están aplicados en `newa`.
-  Empezar por `ventiq_admin_app/lib/sql/fondo_inversion_financiar_recepcion.sql`.
-- Aplicar esas migraciones **en `newa`** (las aplica el dueño), en el orden que declare el equipo.
-- Decidir y documentar el **fix del carril B** antes de aplicarlo (ver fase 5, riesgo de re-vinculación).
+  `tasks/hallazgos_pruebas_newa.md`, listar qué `.sql` de la rama **no** están aplicados en `newa`.
+  Empezar por `fondo_inversion_financiar_recepcion.sql`, **con el fix de cancelación incluido** (fase 5).
+- Aplicar esas migraciones en `newa` (las aplica el dueño), en el orden que declare el equipo.
 - Baseline de `newa` en `docs/planes/fondo-inversion/baseline/`: columnas y `pg_get_functiondef` de
   `fdi_*`, `app_dat_recepcion_productos`, `app_dat_recepcion_producto_costo`, `app_dat_producto_costo`,
-  `app_dat_operacion_recepcion`, `app_dat_operaciones`, `imp_*`, `prv_*`.
-- Respaldo de los datos de prueba del fondo en `newa` (16 movimientos, 10 saldos, 3 liquidaciones).
-- `verify/00_linea_base.sql` contra `newa`: (a) 15 tablas `fdi_*`; (b) tipos del CHECK de
-  `fdi_dat_movimiento`; (c) `fn_registrar_recepcion_con_inventario` = 12 args y **1 sola firma**;
-  (d) `fn_fdi_registrar_recepcion` existe y las columnas `fdi_idempotency_key`/`fdi_solicitud`;
-  (e) `costo_real.is_generated`; (f) tablas de costos adicionales; (g) filas de `app_cont_tipo_costo`;
+  `app_cont_tipo_costo`, `app_dat_operacion_recepcion`, `app_dat_operaciones`, `imp_*`, `prv_*`.
+- Respaldo de los datos de prueba del fondo en `newa`: 16 movimientos, 10 saldos, 3 liquidaciones.
+- `verify/00_linea_base.sql` contra `newa`:
+  (a) 15 tablas `fdi_*`;
+  (b) tipos del CHECK de `fdi_dat_movimiento`;
+  (c) `fn_registrar_recepcion_con_inventario` = 12 args y **1 sola firma**;
+  (d) `fn_fdi_registrar_recepcion` existe y las columnas `fdi_idempotency_key` / `fdi_solicitud`;
+  (e) `costo_real.is_generated`;
+  (f) tablas de costos adicionales **y filas de `app_cont_tipo_costo`**;
+  (g) `imp_dat_factura` y `prv_dat_factura`: columnas de moneda y de compra;
   (h) `fn_fdi_crear_liquidacion` con 11 args.
 
 **Checklist:**
-- [ ] Rama de trabajo creada desde `multimoneda`
-- [ ] Lista de migraciones pendientes de la rama, con orden
-- [ ] `fondo_inversion_financiar_recepcion.sql` aplicada en `newa`
+- [x] Se trabaja en `multimoneda` (sin rama nueva)
+- [ ] Lista de migraciones pendientes, con orden
+- [ ] `fondo_inversion_financiar_recepcion.sql` aplicada en `newa` (con el fix)
 - [ ] Baseline y respaldo de datos
 - [ ] `verify/00_linea_base.sql` con 8 comprobaciones
 
 **Exit criteria:**
-- `git branch --show-current` → rama de trabajo
-- `flutter analyze` sin errores (warnings preexistentes listados)
-- `verify/00_linea_base.sql` en `newa` devuelve `ok` en las 8
-- La ruta de recepción financiada **deja de fallar** en `newa` (prueba manual mínima)
+- Se trabaja en `multimoneda` (sin rama nueva, decisión del dueño)
+- `flutter analyze` sin errores nuevos (warnings preexistentes listados)
+- `verify/00_linea_base.sql` en `newa` → `ok` en las 8
+
+**E2E del dueño:**
+1. Correr `verify/00_linea_base.sql` → todo `ok`.
+2. Abrir la app contra `newa` y recepcionar con fuentes del fondo → **ya no falla**.
+3. Confirmar que los 16 movimientos históricos del fondo siguen visibles e intactos.
 
 ---
 
 ## Fase 0b — Integrar el delta de esquema al pase formal
 
-**Objetivo:** que Main reciba lo que `newa` ya tiene, **por el pase del equipo**, sin inventar un camino
-paralelo.
-
-**Por qué cambió (v6):** la v5 proponía un script propio con `DROP EXPRESSION` + backfill antes que
-cualquier otro. Eso choca con el pase oficial (`_m01`, expansión aditiva, baselines `md5`) y con que las
-Tasks 3/4 ya son dueñas de esos objetos.
+**Objetivo:** que Main reciba lo que `newa` ya tiene, **por el pase del equipo**.
 
 **Build:**
-- Revisar `tasks/plan_promocion_main.md` y ubicar las **Tasks 3 y 4**: son las que llevan el módulo de
-  costos y el arreglo de `costo_real` a Main. **Este plan no las duplica**: aporta lo que falte y se
-  coordina.
+- Revisar `tasks/plan_promocion_main.md` y ubicar las **Tasks 3 y 4**: llevan el módulo de costos y el
+  arreglo de `costo_real` a Main. Este plan **no las duplica**: aporta lo que falte.
 - Aportar al pase, como items aditivos:
-  1. Crear `app_dat_producto_costo` y `app_dat_recepcion_producto_costo` con el DDL **extraído de
-     `newa`**, no del script del repo.
-  2. `DROP EXPRESSION` de `costo_real` + trigger NULL-safe (`COALESCE` sobre `precio_referencia`).
-  3. **Backfill de las 30.038 filas NULL** de Main, con respaldo previo de la columna. El `DO $$` del
-     script original no lo contempla.
-  4. `'gasto'` en el CHECK de `fdi_dat_movimiento` + `fn_fdi_gasto` (8 args).
-  5. **`fn_actualizar_precio_promedio_recepcion_v2`**: promover el **cuerpo de `newa`**, nunca el de Main.
-  6. **`fn_fdi_crear_liquidacion`**: dejarla **solo con 11 args** en Main (columna `repartir_igual` +
-     `DROP` de la de 10 + `CREATE` de la de 11). Regla del equipo, verificada: Main hoy tiene solo la de 10.
-- **Prohibido**: reescribir en sitio funciones que el pase tiene marcadas, o alterar los baselines `md5`
-  sin regenerarlos contra Main.
+  1. Crear `app_dat_producto_costo` y `app_dat_recepcion_producto_costo` con el DDL **extraído de `newa`**,
+     no del script del repo.
+  2. `ALTER TABLE app_dat_recepcion_productos ALTER COLUMN costo_real DROP EXPRESSION`.
+  3. Crear el trigger NULL-safe (`COALESCE` sobre `precio_referencia` y descuentos).
+  4. **Backfill de las 30.038 filas NULL** de `costo_real` con
+     **`= precio_unitario − descuentos`**, con **respaldo previo de la columna** y **rollback que restaura
+     la expresión**. El `DO $$` del script original no contempla el backfill.
+  5. `'gasto'` en el CHECK de `fdi_dat_movimiento` + `fn_fdi_gasto` (8 args).
+  6. **`fn_actualizar_precio_promedio_recepcion_v2`**: promover el **cuerpo de `newa`**, nunca el de Main.
+  7. **`fn_fdi_crear_liquidacion`**: dejarla **solo con 11 args** en Main (columna `repartir_igual` +
+     `DROP` de la de 10 + `CREATE` de la de 11).
+- **Prohibido**: reescribir en sitio funciones que el pase tiene marcadas, o alterar baselines `md5` sin
+  regenerarlos contra Main.
+- `verify/00b_delta.sql`: compara `newa` vs Main → 0 diferencias en la lista y `costo_real` NULL = 0.
 
 **Checklist:**
-- [ ] Tasks 3/4 del pase revisadas y mapeadas
-- [ ] Items aditivos aportados al pase (no duplicados)
-- [ ] Backfill con respaldo previo
+- [ ] Tasks 3/4 revisadas y mapeadas
+- [ ] Items aditivos aportados (no duplicados)
+- [ ] Backfill con respaldo previo y rollback
 - [ ] `fn_fdi_crear_liquidacion` 11 args en Main
 - [ ] `v2` con el cuerpo de `newa`
 - [ ] Baselines `md5` regenerados
 
 **Exit criteria:**
-- El pase del equipo incluye estos items y su verificación pasa en `newa`
-- `verify/00b_delta.sql` compara `newa` vs Main: 0 diferencias en la lista, `costo_real` NULL = 0
-- Nada se aplica a Main fuera del pase
+- El pase incluye estos items y su verificación pasa en `newa`
+- `verify/00b_delta.sql` en Main: 0 diferencias, `costo_real` NULL = 0
+- Nada aplicado a Main fuera del pase
+
+**E2E del dueño:**
+1. `verify/00b_delta.sql` en `newa` → `ok`.
+2. Respaldar, aplicar por el pase en Main, mismo script → `ok`.
+3. Abrir un producto con recepciones históricas → el costo ya no está vacío.
 
 ---
 
 ## Fase 1 — Motor de dinero I: integridad, escala y conciliación
 
-**Build:**
-- `_fdi_aplicar_movimiento`: validar que `p_id_tienda` corresponda a la cuenta (R1).
-- `fn_fdi_vincular_recepcion`: `FOR UPDATE` antes de decidir el exceso (R3).
-- `fn_fdi_inversion_anular`: devuelve lo no consumido con contramovimiento y estado `anulado` (R2).
-- **Escala del ledger** (R6/A10): `fdi_dat_saldo.saldo` y `fdi_dat_movimiento.monto/saldo_*` a `numeric`
-  con escala por `monedas.decimales`. `newa` tiene 16 movimientos reales: la migración los toca y debe
-  verificarlos.
-- **R7**: `fn_fdi_repartir_ganancia` no debe reventar sin inversores activos ni sobrescribir lo pedido.
-- `fn_fdi_conciliacion(p_id_tienda)`: `saldo`, `Σ movimientos`, `último saldo_nuevo`, diferencia = 0,00.
+**Objetivo:** que el fondo no pueda descuadrar por los caminos que ya existen, y poder probarlo.
 
-**Checklist / Exit criteria / E2E:** conciliación 0,00 sobre los datos existentes y tras crear→anular una
-inversión de prueba; `verify/01_motor_dinero.sql` en verde; `flutter analyze` limpio; los 16 movimientos
-históricos intactos.
+**Build:**
+- `_fdi_aplicar_movimiento`: validar que `p_id_tienda` **corresponda a la cuenta** y que **medio/moneda
+  sean coherentes con la tienda** (R1).
+- `fn_fdi_vincular_recepcion`: `FOR UPDATE` sobre la inversión antes de decidir el exceso (R3).
+- `fn_fdi_inversion_anular(p_id_inversion, p_motivo)`: devuelve lo no consumido con contramovimiento,
+  historial y estado `anulado` (R2).
+- **Escala del ledger** (R6/A10): `fdi_dat_saldo.saldo` y `fdi_dat_movimiento.monto/saldo_*` a `numeric` con
+  escala por `monedas.decimales`; **redondeo en servidor, residuo a la línea de mayor base**. `newa` tiene
+  16 movimientos reales: la migración los toca y debe verificarlos.
+- **R7**: `fn_fdi_repartir_ganancia` no debe reventar sin inversores activos ni sobrescribir
+  `monto_ganancia_retirada`.
+- `fn_fdi_conciliacion(p_id_tienda)`: **por (cuenta, medio, moneda)** devuelve `saldo`, `Σ movimientos`,
+  `último saldo_nuevo` y la diferencia. Debe dar **0,00** siempre.
+
+**Checklist:**
+- [ ] R1 cerrado con test de regresión
+- [ ] R2: anulación con devolución
+- [ ] R3: `FOR UPDATE`
+- [ ] R6/A10: escala migrada sin alterar los 16 movimientos
+- [ ] R7 corregido contra los 3 inversores reales
+- [ ] `fn_fdi_conciliacion` con grano (cuenta, medio, moneda)
+
+**Exit criteria:**
+- `verify/01_motor_dinero.sql` en `newa`: conciliación **0,00 sobre los datos existentes** y 0,00 tras
+  crear→anular una inversión de prueba
+- `flutter analyze` sin errores nuevos; `flutter test` del módulo fondo sin regresiones
+
+**E2E del dueño:**
+1. Abrir la conciliación **antes** de tocar nada → 0,00 en todas las líneas.
+2. Crear una inversión de **1.000 USD** y anularla con motivo → el saldo vuelve al inicial.
+3. Conciliación de nuevo → 0,00.
+4. Verificar que los 16 movimientos históricos siguen con sus importes intactos.
 
 ---
 
 ## Fase 2 — Motor de dinero II: idempotencia, tasa y gasto vinculado
 
-**Build:**
-- **Idempotencia real** (R5): `idempotency_key uuid UNIQUE` en `fdi_dat_movimiento`, con migración de los
-  16 movimientos de `newa` que hoy usan `observacion LIKE '%idem:%'`.
-- **`fn_fdi_transferir_v2`** con par explícito y validación de cordura (>20% → rechazo). La v1 intacta.
-- **`fn_fdi_gasto` con `p_id_compra`**: rechazar si la compra tiene reserva o pago vivo (R4/A5). Ya existe
-  en `newa`: se **extiende**, no se crea.
-- **X9**: tasa de pagos resuelta en servidor.
-- **X11**: `fn_fdi_ajuste` con motivo estructurado y doble aprobación sobre umbral.
-- **`fn_fdi_crear_liquidacion`**: no se toca en `newa` (ya tiene 11 args). Su arreglo en Main es de la
-  fase 0b.
+**Objetivo:** cerrar los caminos de duplicación y el descuadre aritmético.
 
-**Exit criteria:** `verify/02_idempotencia_tasa.sql` en verde; doble llamada concurrente = un movimiento;
-la v1 se comporta igual; conciliación 0,00.
+**Build:**
+- **Idempotencia real** (R5): `idempotency_key uuid UNIQUE` en `fdi_dat_movimiento` con **índice único
+  parcial por `tipo`**, migrando los 16 movimientos de `newa` que hoy usan `observacion LIKE '%idem:%'`.
+  Aplicar a **`fn_fdi_ingreso_manual`, `fn_fdi_ajuste` y `fn_fdi_gasto`**.
+- **`fn_fdi_transferir_v2`** con par explícito y validación de cordura (**rechazar si la tasa se aparta
+  >20 % de la última conocida del mismo par**) e **inversa desnormalizada**. **La v1 no se modifica.**
+- **`fn_fdi_gasto` con `p_id_compra`**: rechazar si la compra tiene reserva o pago vivo (R4/A5). Ya existe
+  en `newa`: se **extiende**.
+- **X9**: tasa de pagos resuelta **en servidor, desde el histórico por fecha; el cliente no la provee**.
+- **X11**: `fn_fdi_ajuste` con motivo estructurado y doble aprobación sobre umbral.
+- **`fn_fdi_crear_liquidacion`**: no se toca en `newa` (ya tiene 11 args). Su arreglo en Main es de la 0b.
+
+**Checklist:**
+- [ ] Idempotencia UUID con índice parcial por `tipo`, migrando los 16
+- [ ] `fn_fdi_transferir_v2` + v1 intacta
+- [ ] `id_compra` en gasto con rechazo
+- [ ] Tasa resuelta en servidor
+- [ ] Ajuste con motivo y umbral
+
+**Exit criteria:**
+- `verify/02_idempotencia_tasa.sql` en verde
+- Doble llamada concurrente con la misma key → **un** movimiento
+- La v1 se comporta igual; la v2 rechaza tasa fuera de cordura
+- Conciliación 0,00
+
+**E2E del dueño:**
+1. Doble clic en "Ingreso" → un solo movimiento.
+2. Transferencia con la tasa tecleada al revés → rechazo con mensaje, no descuadre.
+3. Gasto del fondo apuntando a una compra ya reservada → rechazo.
+4. Conciliación sigue en 0,00.
 
 ---
 
 ## Fase 3 — Compra como documento
 
-**Build:**
-- `fdi_dat_compra`: `id_tienda, numero_compra, id_proveedor, numero_factura, fecha_factura,
-  moneda_total, tasa_factura, total_mercancia, total_ajustes, total_financiado, costo_aterrizado,
-  modo_liquidacion, politica_pago, estado, observacion, idempotency_key, created_by`.
-- `fdi_dat_compra_linea`: `... id_almacen, id_ubicacion, costo_linea GENERATED`.
-- `fdi_dat_compra_ajuste`: `base, valor, reparto, monto_capitalizado, afecta_inventario, origen_pago,
-  estado ∈ {declarado, por_financiar, financiado}`.
-- `fdi_hist_estado_compra`; `fdi_dat_compra_recepcion` y `_linea`.
-- Restricciones: único parcial de factura por proveedor; `cantidad > 0`; numeración sin huecos;
-  `total_financiado` por trigger.
-- RLS en las 5 tablas; escritura solo por RPC.
-- RPCs `fn_fdi_compra_crear/_editar/_listar/_detalle/_cancelar`.
-- UI: listado, alta y detalle. Stitch: `COMPRAS — listado`, `COMPRA — alta`, `COMPRA — detalle`.
+**Objetivo:** que exista la compra con proveedor, factura, líneas, cargo de importadora declarado, total,
+numeración y permisos.
 
-**Exit criteria:** `verify/03_compra.sql` en verde (factura duplicada rechaza, `costo_linea` no se escribe
-a mano, totales cuadran, numeración concurrente no repite); tests en verde; responsive en 3 tamaños.
+**Build:**
+- `fdi_dat_compra`: `id_tienda, numero_compra, id_proveedor, numero_factura, fecha_factura, moneda_total,
+  tasa_factura, total_mercancia, total_ajustes, total_financiado, costo_aterrizado, modo_liquidacion,
+  politica_pago, estado, observacion, idempotency_key, created_by`.
+- `fdi_dat_compra_linea`: `id_compra, id_producto, id_variante, id_presentacion, cantidad, costo_unitario,
+  costo_linea GENERATED, id_almacen, id_ubicacion`.
+- `fdi_dat_compra_ajuste`: `id_compra, id_tipo_costo, base ∈ {global, unidad, porcentaje}, valor,
+  reparto ∈ {valor, peso, cantidad}, monto_capitalizado, afecta_inventario, origen_pago, estado ∈
+  {declarado, por_financiar, financiado}`. El cargo de importadora declarado entra aquí con su
+  `pct_importadora` estimado.
+- `fdi_hist_estado_compra` append-only; `fdi_dat_compra_recepcion` y `_linea` (vacías hasta fase 5).
+- Restricciones:
+  - índice único **parcial** en `(id_tienda, id_proveedor, numero_factura) WHERE numero_factura IS NOT NULL`;
+  - `CHECK(cantidad > 0)` y **`CHECK(costo_unitario >= 0)`**;
+  - **`origen_pago` NOT NULL con default `fondo`** en ajustes de mercancía;
+  - **`total_financiado` recalculado por trigger desde líneas + ajustes con `origen_pago = fondo`**;
+  - numeración `numero_compra` por tienda con secuencia sin huecos por concurrencia.
+- RLS en las 5 tablas **+ `GRANT SELECT` a `authenticated`**; escritura **solo** por RPC.
+- RPCs: `fn_fdi_compra_crear`, **`fn_fdi_compra_editar` (solo en `creada`)**, `fn_fdi_compra_listar`,
+  `fn_fdi_compra_detalle`, `fn_fdi_compra_cancelar`. **Todas con idempotencia y validación de tienda.**
+- UI: listado, alta y detalle. **Ruta `/compras`, entrada en `admin_drawer.dart`, permisos
+  dueño/gerente.** Stitch: `COMPRAS — listado`, `COMPRA — alta`, `COMPRA — detalle`.
+
+**Checklist:**
+- [ ] 5 tablas + constraints + trigger + numeración
+- [ ] RLS, `GRANT SELECT` y permisos
+- [ ] Cargo de importadora declarado con `origen_pago`
+- [ ] 5 RPCs con idempotencia; `_editar` solo en `creada`
+- [ ] Stitch aprobado antes de implementar
+- [ ] Listado con filtros; alta con cálculo revalidado en servidor
+- [ ] Responsive en 3 tamaños
+
+**Exit criteria:**
+- `verify/03_compra.sql` en verde: factura duplicada rechaza; `costo_linea` no se escribe a mano;
+  `total_financiado = total_mercancia + ajustes con origen fondo`; dos altas concurrentes no repiten
+  `numero_compra`
+- `flutter test` de modelos/servicio en verde; `flutter analyze` limpio
+
+**E2E del dueño:**
+1. Compra con 3 productos y 15% de importadora → el total coincide con la suma a mano.
+2. Cantidad 0 → rechazo con mensaje claro.
+3. Duplicar número de factura del mismo proveedor → rechazo.
+4. Abrir en móvil, tablet y PC → legible en los tres; en PC todas las columnas.
+5. Cancelar sin pagos → `cancelada`, sin rastro de dinero.
 
 ---
 
 ## Fase 4 — Reserva y liquidación (carril A, solo `al_pagar`)
 
-**Build:**
-- `fdi_dat_compra_reserva` + `fn_fdi_disponible` → `saldo`, `reservado`, `disponible`.
-- `fdi_dat_compra_pago` (`origen ∈ {fondo, aporte}`). `modo_liquidacion` **inmutable** tras `reservada`.
-- `fn_fdi_compra_reservar`: valida `Σ disponible ≥ 0` **por (cuenta, medio, moneda)**; dice cuánto falta.
-- `fn_fdi_compra_pagar` con orden fijo: valida → consume reserva → debita.
-- `fn_fdi_compra_liberar` y `fn_fdi_compra_anular`.
-- `fdi_dat_movimiento` + `id_compra` + `tasa`.
-- UI: asistente multimoneda con faltante bloqueante y tasa visible.
+**Objetivo:** financiar la compra con una sola fuente, sin gastar dos veces el mismo dinero, con el faltante
+bloqueando.
 
-**Exit criteria:** dos compras que juntas exceden el disponible → la segunda se rechaza **antes** de
-reservar; tasa fuera de cordura rechaza; conciliación 0,00 tras reservar→pagar→anular; E2E con el caso
-2.000 USD / 1.000 USD + 20.000 CUP (tasa 1.000) → faltan 980 USD.
+**Build:**
+- `fdi_dat_compra_reserva` + `fn_fdi_disponible(p_id_tienda)` → `saldo`, `reservado`, `disponible` por
+  (cuenta, medio, moneda).
+- `fdi_dat_compra_pago` (`origen ∈ {fondo, aporte}`). `modo_liquidacion` **inmutable** tras `reservada`,
+  por constraint.
+- `fn_fdi_compra_reservar`: valida `Σ disponible ≥ 0` **por (cuenta, medio, moneda)**; si no cubre, dice
+  **cuánto falta en cada moneda**.
+- `fn_fdi_compra_pagar` con **orden fijo**: 1) valida disponible con la reserva viva, 2) consume la reserva,
+  3) debita con `_fdi_aplicar_movimiento` tipo `pago_compra`.
+- `fn_fdi_compra_liberar` (cancelación, **motivo obligatorio + usuario**) y `fn_fdi_compra_anular`
+  (**contramovimiento de lo pagado no consumido + liberación**).
+- `fdi_dat_movimiento` + `id_compra` + `tasa`.
+- UI: asistente multimoneda con faltante en vivo y bloqueante, tasa visible y confirmación explícita.
+  Stitch: `LIQUIDACIÓN — multimoneda (desktop)` y `(móvil)`.
+
+**Checklist:**
+- [ ] Reservas por (cuenta, medio, moneda) + `fn_fdi_disponible`
+- [ ] `modo_liquidacion` inmutable
+- [ ] Reservar valida por cuenta y dice el faltante
+- [ ] Pagar con orden fijo y atómico
+- [ ] Liberar con motivo/usuario; anular con contramovimiento
+- [ ] `id_compra` + `tasa` en el ledger
+- [ ] Asistente con faltante bloqueante
+
+**Exit criteria:**
+- `verify/04_liquidacion.sql` en verde: dos compras que juntas exceden el disponible → la segunda se rechaza
+  **antes** de reservar; tasa fuera de cordura rechaza; `modo_liquidacion` no cambia tras `reservada`;
+  conciliación 0,00 tras reservar → pagar → anular
+- `flutter analyze` limpio
+
+**E2E del dueño:**
+1. Compra de **2.000 USD**. Cuenta suiza USD con **1.000**; cuenta Venezuela CUP con **20.000**. Tasa
+   **1 USD = 1.000 CUP** → los 20.000 CUP son **20 USD**. Cubierto: 1.020 USD.
+2. Reservar → muestra **faltan 980 USD** y **no deja cerrar**.
+3. Añadir otra fuente hasta cubrir → `reservada`; el **disponible** de cada cuenta baja aunque el saldo no.
+4. Pagar → `pagada`; saldo debitado; disponible y saldo vuelven a coincidir.
+5. Cancelar otra compra reservada → el disponible vuelve **exactamente** al valor previo.
+6. Crear una segunda compra con el dinero ya reservado por la primera → rechazo.
 
 ---
 
 ## Fase 5 — Recepción: carril A y carril B
 
-**Objetivo:** que la mercancía entre contra la compra (carril A) **sin romper** la recepción financiada
-directa (carril B).
+**Objetivo:** que la mercancía entre contra la compra sin romper la recepción financiada directa.
 
 **Carril A (nuevo):**
-- `fdi_dat_compra_recepcion` con `UNIQUE(id_operacion, id_compra)` y `_linea`.
-- Cargo de importadora por recepción (`pct`, `base`, `monto`, `reembolso`, `origen_pago`) por compra.
-- **Solo productos de la compra** (PD6); producto no previsto → recepción externa enlazada.
-- Pendiente por recibir por línea; sobre-recepción con confirmación que no aumenta lo pagado.
-- Idempotencia de la operación; atomicidad (quitar el `EXCEPTION WHEN OTHERS` que devuelve JSON).
-- `fecha_operacion` (no existe columna de fecha; solo `created_at`).
-- Regla de N recepciones por compra (ver abajo).
-- **No se depreca** `fn_registrar_cambio_estado_operacion_mejorado`: se usa para cancelar/devolver.
+- `fdi_dat_compra_recepcion` con **`UNIQUE(id_operacion, id_compra)`** y `fdi_dat_compra_recepcion_linea`
+  (`id_compra_linea, cantidad_recibida, costo_unitario_aplicado, id_recepcion_producto`).
+- Cargo de importadora por recepción (`pct`, `base`, `monto`, `reembolso`, `origen_pago`) por compra:
+  **editables antes de confirmar, con historial de quién cambió qué**.
+- **Solo productos de la compra** (PD6): se elige compra y **solo se ofrecen sus productos con
+  pendiente > 0**. Producto no previsto → **recepción externa enlazada**, nunca dentro de la compra.
+- **`p_origen text DEFAULT 'externa'`** en la operación de recepción (`compra` | `externa`). Con DEFAULT
+  **no rompe** a `ventiq_app` (offline y fallback), ni a los RPC de transferencia entre layouts, ni a los
+  egresos con rebalanceo. **No añadir un eje que contradiga `motivo`**: `origen` se **deriva** de `motivo`;
+  `motivo` sigue siendo la fuente.
+- **Firma única verificada**: `fn_registrar_recepcion_con_inventario` = 12 args y **1 sola firma** en `newa`
+  y Main. Los **overloads de 9 args solo viven en dos `.sql` viejos del repo**
+  (`presentaciones_inventario/06_recepcion_sin_conversion.sql:61`,
+  `sql_updates/fix_recepcion_inventario_al_completar.sql:100`): el riesgo es **aplicarlos**, no borrarlos.
+  Si alguna vez existieran en una base, se hace `DROP` y se verifica `pronargs` + ausencia de sobrecargas.
+- **Idempotencia de recepción**: `app_dat_operaciones.uuid` es el usuario, no la operación. Añadir
+  `idempotency_key` a la operación y a la RPC; test de doble submit.
+- **Atomicidad**: quitar el `EXCEPTION WHEN OTHERS` que devuelve JSON
+  (`fondo_inversion_recepcion_patch.sql:287-303`): hoy un fallo posterior al INSERT deja una recepción
+  fantasma y el almacenero reintenta duplicando.
+- Pendiente por recibir: `fn_fdi_compra_recepcion_pendiente(p_id_compra)`. Sobre-recepción: confirmación
+  explícita, **no** aumenta lo pagado.
+- **Stock**: usar **`fn_contabilizar_recepcion_inventario`** (la única que propaga `id_lote`) **además** de
+  `fn_registrar_cambio_estado_operacion_mejorado` para el estado. Ver "El lote en el camino que se conserva".
+  Apoyarse en `app_dat_operaciones.contabilizada` / `contabilizada_at` como semáforo.
+- `fecha_operacion` opcional (no hay columna de fecha; solo `created_at`).
+- **Selector de carga**: al abrir la recepción, marcar **varias compras** (la rastra con 4 facturas); cada
+  bloque muestra su factura, proveedor y su % de importadora.
+- UI: Stitch `RECEPCIÓN — carga multi-factura (desktop)` y `(móvil)`.
 
 **Carril B (existente, se extiende):**
-- Extender `fn_fdi_registrar_recepcion` con **`p_id_compra bigint DEFAULT NULL`** (aditivo, sin romper).
+- Extender `fn_fdi_registrar_recepcion` con **`p_id_compra bigint DEFAULT NULL`** (aditivo).
 - Si `p_id_compra` viene informado → **rechazar**: una recepción con compra pertenece al carril A.
-- **Corregir el doble uso del desembolso** (riesgo del anexo 09): hoy, al cancelar una recepción
-  financiada, la inversión queda `pendiente` con el saldo ya debitado y **puede re-vincularse a otra
-  recepción** desde el desplegable; además, reintentar con la misma clave devuelve `duplicada: true`
-  sobre una operación cancelada y la UI lo muestra como éxito. El fix va **con la migración**, no después.
+- **Corregir el doble uso del desembolso**: al cancelar una recepción financiada, la inversión queda
+  `pendiente` con el saldo ya debitado y **puede re-vincularse a otra recepción** desde el desplegable;
+  además, reintentar con la misma clave devuelve `duplicada: true` sobre una operación cancelada y la UI lo
+  muestra como éxito. **El fix va con la migración**, no después.
 
 #### Recepciones múltiples por compra
 
@@ -460,80 +720,218 @@ directa (carril B).
 | > 0 y < comprado | `entrega_parcial` |
 | = comprado en todas las líneas | `completada` |
 
-`recibido(linea)` = suma de todas las recepciones; `pendiente = comprado − recibido`. Cancelar una
-recepción devuelve el pendiente sin tocar la compra. `completada` solo se revierte por reapertura
-explícita con motivo. **Cierre corto**: `fn_fdi_compra_cerrar_corto` para cuando el proveedor no manda el
-resto. El pendiente es **de mercancía, no de dinero**.
+`recibido(linea)` = suma de todas las recepciones; `pendiente = comprado − recibido`. Cancelar una recepción
+devuelve el pendiente sin tocar la compra. `completada` solo se revierte por reapertura explícita con motivo
+y usuario. **Cierre corto**: `fn_fdi_compra_cerrar_corto(p_id_compra, p_motivo)` **registra la diferencia,
+libera lo no usado y no reescribe el dinero ya pagado**. El pendiente es **de mercancía, no de dinero**.
 
-**Exit criteria:** `verify/05_recepcion.sql`: `fn_registrar_recepcion_con_inventario` = 12 args y 1 firma;
-`fn_fdi_registrar_recepcion` rechaza `p_id_compra`; 3 recepciones parciales suman y el pendiente baja línea
-a línea; 4 compras en una operación → 4 estados independientes; cancelar una recepción financiada **no**
-permite re-vincular; reintento sobre cancelada **no** devuelve éxito; el lote sobrevive; doble submit = una
-operación.
+**Checklist:**
+- [ ] Vínculo por cantidades + `UNIQUE(id_operacion, id_compra)`
+- [ ] Cargo de importadora editable antes de confirmar, con historial
+- [ ] Solo productos de la compra con `pendiente > 0`; camino para el no previsto
+- [ ] `p_origen` con DEFAULT, derivado de `motivo`
+- [ ] Firma única verificada (12 args, sin sobrecargas)
+- [ ] Idempotencia y atomicidad
+- [ ] Pendiente y sobre-recepción con confirmación
+- [ ] `fn_contabilizar_recepcion_inventario` aplica stock con lote
+- [ ] `fecha_operacion`, selector multi-compra
+- [ ] Carril B rechaza `p_id_compra` y corrige cancelación/reintento
+
+**Exit criteria:**
+- `verify/05_recepcion.sql`: `pronargs = 12` y **1 sola firma**; `fn_fdi_registrar_recepcion` rechaza
+  `p_id_compra`; **tres recepciones parciales suman y el pendiente baja línea a línea**; una operación con 4
+  compras genera 4 vínculos y 4 estados independientes; **el lote sobrevive**; doble submit = una operación;
+  cancelar devuelve el pendiente exacto; **cancelar una recepción financiada no permite re-vincular**;
+  reintento sobre cancelada **no** devuelve éxito
+- `flutter test` de modelos de recepción en verde; `flutter analyze` limpio
+
+**E2E del dueño:**
+1. Compra de **100** → recibir **60** (pendiente 40) → recibir **25** (pendiente 15) → recibir **15** →
+   `completada`. Una cuarta recepción se rechaza.
+2. Compra con 3 líneas: una al 100% y dos a medias → no cierra hasta que las tres terminen.
+3. Cancelar la recepción de 25 → pendiente vuelve a 40.
+4. Compra de 10, recibir 12 → exige confirmación y no cambia el total pagado.
+5. **Carga multi-factura**: 4 compras en una recepción, cada bloque con su factura y su %; confirmar → 4
+   estados independientes.
+6. Añadir un producto que no está en la compra → bloqueado.
+7. Producto no previsto → se registra como recepción externa enlazada.
+8. Producto por lotes → el stock conserva el lote tras completar.
+9. **Atomicidad**: `verify/05_forzar_fallo.sql` hace `RAISE` en la segunda línea → **la operación no debe
+   quedar creada**.
+10. **Idempotencia**: doble clic en "Guardar recepción" → una sola operación.
+11. Cancelar una recepción financiada del carril B → no reaparece en el desplegable y el reintento con la
+    misma clave no reporta éxito.
 
 ---
 
 ## Fase 6 — Costo aterrizado sobre el módulo existente
 
+**Objetivo:** que el costo real incluya importadora y adicionales reutilizando lo que `newa` ya tiene.
+
 **Estado real:** en `newa` el módulo funciona (`costo_real` no generada, trigger NULL-safe, `v2` con
-`costos[]`); pero **no suma adicionales** porque el catálogo tiene 0 filas. En Main no existe (fase 0b).
+`costos[]`); **no suma adicionales** porque el catálogo tiene 0 filas. En Main no existe (fase 0b).
 
 **Build:**
 - **Sembrar `app_cont_tipo_costo`** (0 filas en ambos). Columnas reales: `id, denominacion, descripcion,
   naturaleza, afecta_margen, created_at` — **sin moneda**. Tipos: importadora, flete, aduana, seguro.
-  **Alcance:** el nomenclador se administra desde **superadmin**, no desde el admin. Sembrarlo es tarea de
-  datos + pantalla de superadmin. Gestionarlo desde admin es un cambio de alcance a aprobar.
+  **Alcance:** el nomenclador se administra desde **superadmin**, no desde admin. Sembrarlo es tarea de datos
+  + pantalla de superadmin. Gestionarlo desde admin es un cambio de alcance a aprobar.
 - **Extender `app_dat_recepcion_producto_costo`** con `origen_pago` y los campos de importadora.
 - **Reparto por valor** y remanente "por asignar". Hoy solo hay monto fijo por unidad base y producto.
+- **Ajustes `por_financiar`**: cada uno crea **su propia reserva y pago** (nunca mutan `total_financiado`) y
+  genera un **documento de ajuste de costo** que actualiza la valoración sin reescribir el histórico.
 - **Sacar el persistido de costos de fuera de la transacción** (`inventory_service.dart:1409-1414`, en
   `catch { print }` después de la RPC).
-- Aprovechar `trg_recepcion_productos_costo_real` (rellena **solo si NULL**): la RPC puede escribir el
-  aterrizado sin que el trigger lo pise.
+- Aprovechar `trg_recepcion_productos_costo_real` (rellena **solo si NULL**).
 - **Reutilizar**: `fn_calcular_costo_promedio`, `fn_corregir_costo_recepcion`, `obtener_precio_promedio_presentacion`,
   `fn_es_operacion_sin_actualizar_precio_costo`, `bulk_update_precios_costo`.
 - Documentar y borrar `fn_actualizar_precio_promedio_recepcion_v3` (código muerto).
 - Reversión de costo al cancelar recepción, como documento propio.
 - `id_compra` + `moneda` en `imp_dat_factura` / `prv_dat_factura`.
-- UI: captura de importadora y reembolso en la recepción + catálogo de costos (superadmin).
+- **Mostrar el desvío de importadora** (`Σ cargos` vs `Σ valores de factura vinculados`) sin corregirlo solo.
+- UI: captura de importadora y reembolso + catálogo de costos (superadmin). Stitch:
+  `RECEPCIÓN — importadora y adicionales`, `CONFIG — costos adicionales`.
 
-**Exit criteria:** `verify/06_costo.sql`: 2.000 + 15% − 50% reembolso = **2.150** exacto; si el origen es
-wallet, `Σ pagos del fondo = 2.000`; flete 100.000 / 100 u con 60 recibidas → 60.000 aplicados, 40.000 por
-asignar; `costo_real` NULL = 0 en recepciones nuevas; una fila del catálogo basta para que `v2` sume.
+**Checklist:**
+- [ ] Catálogo sembrado
+- [ ] `origen_pago` y campos de importadora en la línea de costo
+- [ ] Reparto por valor + remanente por asignar
+- [ ] Ajustes `por_financiar` con reserva y pago propios
+- [ ] Persistido dentro de la transacción
+- [ ] `costo_real` suma adicionales
+- [ ] `_v3` borrada
+- [ ] Reversión de costo al cancelar
+- [ ] `id_compra` + `moneda` en facturas
+- [ ] Desvío visible
+
+**Exit criteria:**
+- `verify/06_costo.sql`: 2.000 + 15% − 50% reembolso = **2.150** exacto; si el origen es wallet,
+  `Σ pagos del fondo = 2.000`; **si es fondo, `= 2.150`**; flete 100.000 / 100 u con 60 recibidas →
+  60.000 aplicados y 40.000 por asignar; `costo_real` NULL = 0 en recepciones nuevas; `precio_promedio`
+  ponderado por stock previo
+- `flutter analyze` limpio
+
+**E2E del dueño:**
+1. Sembrar un tipo de costo y recepcionar con 15% de importadora y flete.
+2. El producto muestra el costo **aterrizado**, no el de factura.
+3. Pedir reembolso de la mitad del cargo → el costo baja exactamente la mitad del cargo.
+4. Segunda recepción de la misma compra con **otro %** → cada recepción conserva el suyo.
+5. Recepción parcial con costo global → el costo unitario de lo recibido no se infla.
+6. Inventario valorado coincide con el aterrizado aplicado.
+7. Si el cargo es de la wallet → el fondo **no** aparece pagándolo.
 
 ---
 
 ## Fase 7 — Inversores aportantes (100%)
 
+**Objetivo:** que los inversores cubran una compra al 100%, sin que ese dinero se acumule en el fondo.
+
+**Build:**
 - `fdi_dat_compra_aporte` (`id_compra, id_inversor, moneda, monto, tasa_a_total, monto_eq_total,
   naturaleza ∈ {anticipo, pasivo, capital}, estado, comprobante, idempotency_key`).
-- Aislamiento: no entra en `fdi_dat_saldo`, no genera saldo del inversor, no se mezcla con
-  `fdi_dat_inversor.porcentaje`. `newa` tiene 3 inversores y 12 repartos: no se tocan.
-- Exclusividad 100% en BD; `Σ aportes = total_financiado` antes de `pagada`.
-- `fn_fdi_compra_aporte_registrar` / `_devolver`; `naturaleza` por defecto `anticipo`.
-- UI: aportes por compra con restante en vivo.
+- **Aislamiento**: no entra en `fdi_dat_saldo`, no genera saldo del inversor, no se mezcla con
+  `fdi_dat_inversor.porcentaje`. `newa` tiene 3 inversores y 12 repartos: **no se tocan**.
+- **Exclusividad 100% en BD**: en modo inversores **no puede existir pago ni reserva con `origen = fondo`**,
+  y `Σ aportes recibidos = total_financiado` antes de `pagada`.
+- `fn_fdi_compra_aporte_registrar` (no excede el faltante) y `_devolver` (**devolución = cancelación de
+  pasivo; solo el interés es gasto si `naturaleza = pasivo`**). `naturaleza` por defecto `anticipo`.
+- UI: aportes por compra con restante en vivo. Stitch: `COMPRA — aportes de inversores`.
 
-**Exit criteria:** aportes suman y la compra pasa a `pagada`; un exceso se rechaza; **ningún movimiento en
-`fdi_dat_saldo` originado por un aporte**; no coexisten reserva de fondo y aporte.
+**Checklist:**
+- [ ] Entidad aislada del % y del libro del fondo
+- [ ] Validación de faltante
+- [ ] Exclusividad 100% en BD
+- [ ] Devolución como cancelación de pasivo
+- [ ] UI con restante bloqueante
+
+**Exit criteria:**
+- `verify/07_aportes.sql`: los aportes suman y la compra pasa a `pagada`; un exceso se rechaza; **ningún
+  movimiento en `fdi_dat_saldo` originado por un aporte**; no coexisten reserva de fondo y aporte; la
+  devolución deja el saldo de aportes en cero
+- `flutter analyze` limpio
+
+**E2E del dueño:**
+1. Compra 2.000 en modo inversores: **X aporta 800, Y aporta 700** → restante **500** y **no deja pagar**.
+2. Aportar los 500 → `pagada`.
+3. Aportar 100 de más → rechazo.
+4. Abrir el módulo de fondo → **ningún saldo nuevo** ni acumulado para X ni Y.
+5. Devolver el aporte de X → consistente.
+6. Intentar reservar del fondo la misma compra → rechazo por exclusividad.
 
 ---
 
 ## Fase 8 — Reportes, conciliación en UI y cierre
 
-Reportes R2-R7; conciliación R1 con alarma y job; aging de reservas; retirar el alta de
-`fdi_dat_inversion` de la UI (legado del carril B); alinear `precio_promedio` con `ventiq_app` (su sync
-hace `.update()` sin ponderar) y probar con las dos apps; decisión explícita sobre devoluciones; índice
-documental; revisión final de responsive.
+**Objetivo:** poder probar en cinco minutos que el dinero cuadra, y dejar documentación que sobreviva.
+
+**Build:**
+- Reportes **R2-R7** de `02-contabilidad.md` **§6.3**: saldo/reservado/disponible por cuenta y moneda;
+  compras por estado con facturado vs aterrizado vs pagado; costo real vs factura con % de desvío;
+  diferencias cambiarias por documento; movimientos por usuario y día; inversores (aportes vs devoluciones
+  vs utilidad vs pendiente).
+- **Conciliación R1 en UI** con alarma visible y ejecución programada.
+- Aging de reservas y **listado de compras con descuadre declarado**.
+- **Retirar el alta de `fdi_dat_inversion`** de la UI y **marcar el módulo como legado de solo lectura**.
+- Alinear `precio_promedio` con `ventiq_app` (su sync hace `.update()` sin ponderar): decidir guardia en BD
+  o parche acotado, y probar con **las dos apps**.
+- Devoluciones/notas de crédito: decisión explícita (fase futura documentada o implementación).
+- Cierre documental: índice en `docs/planes/fondo-inversion/README.md`, `CAPABILITY-MAP.md`.
+- Revisión final de responsive.
+
+**Checklist:**
+- [ ] R2-R7 implementados y enlazados
+- [ ] Conciliación en UI con alarma y job
+- [ ] Aging y descuadre declarado
+- [ ] Alta de inversión retirada; legado de solo lectura
+- [ ] `precio_promedio` decidido y probado con las dos apps
+- [ ] Devoluciones: decisión explícita
+- [ ] Índice documental
+
+**Exit criteria:**
+- **Todos los reportes cuadran con los datos de prueba de las fases 3-7**
+- **Conciliación 0,00 en todas las líneas**
+- `flutter analyze` sin errores; **`flutter test` completo del app en verde**
+
+**E2E integral del dueño (aceptación del proyecto):**
+1. Ingresar saldo al fondo en dos monedas.
+2. Crear compra multimoneda con 3 líneas, cargo de importadora y factura.
+3. Reservar con dos cuentas; ver faltante; completar; pagar.
+4. Recepcionar parcial con % de importadora, reembolso y flete.
+5. Recepcionar el resto; verificar `completada` y costo aterrizado en el producto.
+6. Conciliación → 0,00. Reporte de compras → `pagado = total_financiado` y
+   `aterrizado = mercancía + importadora + adicionales`.
+7. Repetir el flujo en modo inversores y comprobar que el fondo **no** se movió.
+8. Abrir todo en móvil, tablet y PC.
 
 ---
 
 ## Fase 9 — Pendientes, recordatorios y registro de faltantes
 
-Panel `/compras/pendientes` con factura, proveedor, antigüedad (desde `created_at`), % recibido y monto;
-detalle de faltantes por producto y línea; alerta en home y notificación programada con umbral; registro
-exportable; vista de facturas con estado; permisos por rol.
+**Build:**
+- **Panel de pendientes** (`/compras/pendientes`): por compra abierta, factura, proveedor, fecha, antigüedad
+  (desde `created_at`: no hay columna de fecha), % recibido, monto pendiente y estado. **Ordenable por
+  antigüedad y por monto.**
+- **Detalle de faltantes por producto y línea**: comprado, recibido, pendiente, **última recepción, días sin
+  movimiento**.
+- **Recordatorios**: alerta en home y notificación programada (reutilizar `local_notification_service.dart`
+  / `notification_service.dart`) con umbral configurable (ej. avisar a los N días sin recepción completa).
+- **Registro exportable** (Excel/PDF) de pendientes **y del histórico de recepciones**, con
+  `export_service.dart`.
+- **Vista de facturas** con su estado, enlazando compra y recepciones.
+- **Permisos: el almacenero ve pendientes y recepciones; el dueño/gerente ve montos y exporta.**
+- Stitch: `PENDIENTES — panel (desktop)`, `(móvil)`, `PENDIENTES — detalle`.
 
-**Exit criteria:** pendiente por línea = comprado − recibido; una compra `completada` no aparece; el monto
-pendiente cuadra; exportación coincide con pantalla.
+**Exit criteria:**
+- `verify/09_pendientes.sql`: pendiente por línea = comprado − recibido; una compra `completada` **no**
+  aparece; el monto pendiente cuadra
+- `flutter test` de los servicios en verde; `flutter analyze` limpio
+
+**E2E del dueño:**
+1. Dejar una compra con 40 de 100 → aparece en el panel con su antigüedad.
+2. Completarla → desaparece.
+3. Forzar el umbral de días → llega la notificación.
+4. Exportar → el archivo abre y los totales coinciden con la pantalla.
+5. Abrir el detalle por producto → coincide con el pendiente por línea.
 
 ---
 
@@ -541,23 +939,24 @@ pendiente cuadra; exportación coincide con pantalla.
 
 | Riesgo | Fase | Estado |
 |---|---|---|
-| **Cliente llama a `fn_fdi_registrar_recepcion` y no existe en ninguna base** | 0 | **bloqueante actual**, se resuelve aplicando la migración en `newa` |
-| **Doble uso del desembolso al cancelar una recepción financiada** | 5 | cubierto: fix incluido en la migración |
-| **Reintento sobre operación cancelada devuelve `duplicada: true`** | 5 | cubierto: el fix lo distingue |
-| **Dos carriles pagando la misma recepción** | 5 | cubierto: `p_id_compra` rechazado en el carril B |
-| **`fn_fdi_crear_liquidacion` 10 vs 11 args** | 0b | cubierto: Main se completa a 11 |
-| **Deprecar la función combinada de cambio de estado** | 5 | **evitado**: no se depreca |
-| **Fase 0b chocando con el pase oficial** | 0b | cubierto: se integra a Tasks 3/4 |
-| `v2` de promedio distinta por entorno | 0b | cubierto: se promueve el cuerpo de `newa` |
+| **Cliente llama a `fn_fdi_registrar_recepcion` y no existe en ninguna base** | 0 | **bloqueante actual** |
+| **Doble uso del desembolso al cancelar una recepción financiada** | 5 | fix incluido en la migración |
+| **Reintento sobre operación cancelada devuelve `duplicada: true`** | 5 | el fix lo distingue |
+| **Dos carriles pagando la misma recepción** | 5 | `p_id_compra` rechazado en B |
+| **FEFO sin dueño en "Completar"** | 5 | resuelto: `fn_contabilizar_recepcion_inventario` aplica el stock |
+| **`fn_fdi_crear_liquidacion` 10 vs 11 args** | 0b | Main se completa a 11 |
+| **Deprecar la función combinada de estado** | 5 | evitado: no se depreca |
+| **Fase 0b chocando con el pase oficial** | 0b | se integra a Tasks 3/4 |
+| `v2` de promedio distinta por entorno | 0b | se promueve el cuerpo de `newa` |
 | R1 movimiento en tienda equivocada | 1 | cubierto |
 | R2 dinero irrecuperable | 1 | cubierto |
 | R3 sobre-recepción por carrera | 1 | cubierto |
 | R5 duplicado por reintento | 2 | cubierto |
-| R6 escala y redondeo | 1 | cubierto, migrando 16 movimientos |
-| R7 reparto bloqueante | 1 | cubierto contra 3 inversores reales |
+| R6 escala y redondeo | 1 | cubierto |
+| R7 reparto bloqueante | 1 | cubierto |
 | R4/A5 doble financiamiento vía `fn_fdi_gasto` | 2+7 | cubierto |
 | R8 totales por moneda | 8 | cubierto |
-| R9 stock y billete divergen | 5 | cubierto con el camino único con lote |
+| R9 stock y billete divergen | 5 | cubierto (dos pasos en "Completar") |
 | X1 doble uso del dinero | 4 | cubierto |
 | X2 tasa invertida | 2 | cubierto |
 | X3 doble costo de importadora | 6 | cubierto |
@@ -571,8 +970,11 @@ pendiente cuadra; exportación coincide con pantalla.
 | X11 ajuste como válvula | 2 | cubierto |
 | 30.038 `costo_real` NULL en Main | 0b | cubierto vía pase + backfill |
 | `app_cont_tipo_costo` vacío | 6 | cubierto al sembrarlo |
-| Datos de prueba del fondo en `newa` | 1-2 | cubierto: respaldo + verificación |
-| **Sin credenciales de git: no hay `fetch`/`pull`** | 0 | **abierto**: hay que configurar credenciales o el dueño debe traer los commits |
+| Datos de prueba del fondo en `newa` | 1-2 | respaldo + verificación |
+| Rastra con 4 facturas | 5 | `UNIQUE(id_operacion, id_compra)` |
+| % de importadora distinto por recepción | 5-6 | por compra y por recepción, con historial |
+| Recordatorio de faltantes | 9 | cubierto |
+| Multi-almacén / ubicación destino | 3 | `id_almacen`/`id_ubicacion` por línea |
 | No hay migraciones versionadas | todas | mitigado, no resuelto |
 | Devoluciones / notas de crédito | 8 | decisión pendiente |
 | Offline / borrador local en compras | — | fuera de alcance |
@@ -581,10 +983,15 @@ pendiente cuadra; exportación coincide con pantalla.
 
 ## Preguntas al dueño
 
-Ninguna bloqueante. Una operativa:
+**Ninguna bloqueante.** Dos decisiones que no frenan la fase 0 pero hay que tomar antes de la 3:
 
-- **Credenciales de git**: sin ellas no se puede `pull` de `multimoneda`. O las configuras, o me pasas los
-  commits. Mientras tanto, todo lo verificado vale para `2bff5b18`.
+- **42 RPC que el cliente llama y no existen en ninguna base** (`12-inventario-migraciones.md` §1). Solo
+  `fn_fdi_registrar_recepcion` era de esta rama y ya está aplicada. Las otras 42 son **código muerto
+  previo**: pantallas que fallarán si se abren. No se arreglan con SQL. Decisión: **retirar esas
+  pantallas o implementarlas**; no entra en este plan salvo que el dueño lo pida.
+- **`SQL_OPTIMIZATION/mapeo_categorias_consignacion.sql`** (4 RPC de consignación). No está en `newa` ni
+  en Main: ese módulo nunca se desplegó. Decisión: **aplicarlo en ambos entornos o retirar la pantalla**;
+  aplicarlo solo en `newa` crea deriva en sentido contrario.
 
 ---
 
