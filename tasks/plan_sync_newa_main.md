@@ -1,10 +1,14 @@
 # Plan: sincronizar newa con main
 
+> Cómo y en qué orden aplicar esto en main sin romper a clientes sin actualizar: `tasks/plan_promocion_main.md` (nombres nuevos `_m01`, expansión → clientes → contrato).
+
 ## Overview
 
 Igualar `qhprswhhfasrikhawjoz` (newa) y `vsieeihstajlrdvpuooh` (main) cuando se cierre el trabajo que está en curso. No se aplica ahora. No se copia un proyecto entero encima del otro: en cada diferencia manda la versión más nueva, y hay cambios en las dos direcciones.
 
 Medido el 2026-11-14 leyendo `pg_proc`, tablas y políticas. 922 funciones públicas en main, 894 en newa. 72 comparten firma y tienen el cuerpo distinto.
+
+Actualizado el 2026-11-19: 922 en main y 1005 en newa en `public` (887 y 970 sin las de extensiones); 880 comparten firma y **81** tienen el cuerpo distinto; 90 existen solo en newa y 7 solo en main. Clasificación: 21 newa más nueva, 42 sin cambio lógico, 16 main más nueva y 2 combinadas a mano. Detalle en `docs/plan-multimoneda/comparacion_funciones_newa_main.md`. newa usa `America/Havana` desde el 18/11, como main. Estado de cada tarea abajo, verificado por lectura de `prosrc` en las dos bases.
 
 ## Architecture Decisions
 
@@ -90,12 +94,14 @@ Medido el 2026-11-14 leyendo `pg_proc`, tablas y políticas. 922 funciones públ
 
 ### Phase 4: Cuerpos que no coinciden
 
-- [~] Task 7 y 8 (decididas el 19/11/2026; ver `docs/plan-multimoneda/comparacion_funciones_newa_main.md` y `analisis_8_funciones_pendientes.md`). Lo que falta es **aplicar** los scripts:
-  - [ ] Correr en newa `sql_updates/newa_traer_funciones_main.sql` (índice parcial + 4 cuerpos de main)
-  - [ ] Correr en newa y luego en main `sql_updates/fix_reporte_ventas_por_turno_sin_cierre.sql`
-  - [ ] Correr en newa y luego en main `sql_updates/fix_cambio_estado_operacion_mejorado_recepcion.sql` y publicar el admin con el aviso de recepción
-  - [ ] Llevar a main las 21 funciones "newa más nueva" y corregir antes `fn_listar_ordenes` (`'tipo_paago'` → `'tipo_pago'`)
-  - [ ] Traer a newa las otras 12 de main: `fn_check_update`, `fn_listar_motivos_extraccion`, las 2 de Carnaval de precios y las 8 de `get_productos_completos…`/`buscar_producto_por_codigo_barras_v3`
+- [~] Task 7 y 8 (decididas el 19/11/2026; ver `docs/plan-multimoneda/comparacion_funciones_newa_main.md` y `analisis_8_funciones_pendientes.md`). Estado verificado el 19/11 comparando `prosrc` en newa y en main:
+  - [x] Newa: `sql_updates/newa_traer_funciones_main.sql` aplicado (índice parcial `idx_inv_prod_lote_producto` y 4 cuerpos con el mismo hash que main: `8734944d`, `1f2ef38a`, `8005bbfa`, `f6f60db6`). En main ya existía el índice
+  - [x] Newa: `sql_updates/fix_reporte_ventas_por_turno_sin_cierre.sql` aplicado (`op_siguiente_apertura` presente). [ ] Main pendiente
+  - [x] Newa: `sql_updates/fix_cambio_estado_operacion_mejorado_recepcion.sql` aplicado (`RECEPCION_INVENTARIO_USADO` presente). [ ] Main pendiente, y publicar Admin con el aviso de recepción solo después
+  - [ ] Newa: correr `sql_updates/fix_listar_ordenes_tipo_pago.sql` (la fuente `m01_r29_listar_ordenes_v1_propuesta.sql` ya está corregida; newa aún emite `'tipo_paago'`). Es condición para llevar `fn_listar_ordenes` a main. Main ya emite `'tipo_pago'`
+  - [ ] Llevar a main las 21 funciones "newa más nueva"
+  - [ ] Traer a newa las otras 12 de main: `fn_check_update`, `fn_listar_motivos_extraccion`, `fn_update_carnaval_product_prices`, `sync_price_to_carnaval`, las 7 `get_productos_completos_by_tienda_*` y `buscar_producto_por_codigo_barras_v3` (las cinco con nombre propio se recomprobaron el 19/11 y siguen con hash distinto; las siete `get_productos_completos_by_tienda_*` no se recomprobaron)
+  - Contrato estático de los scripts: `ventiq_admin_app/test/sync_newa_main_sql_contract_test.dart` (15 casos, pasan). No sustituye correrlos en PostgreSQL
 - Texto original de la tarea 7 (superado por lo anterior): Revisar las funciones que el TPV llama y cuyo `md5(prosrc)` difiere, y quedarse con el cuerpo más nuevo de cada una
   - Acceptance: cada función de la lista queda anotada con el lado que manda y, si hace falta, aplicada al otro lado
   - Verify: `md5(prosrc)` igual en los dos proyectos para las que se decidieron
@@ -110,6 +116,8 @@ Medido el 2026-11-14 leyendo `pg_proc`, tablas y políticas. 922 funciones públ
 ### Checkpoint: los dos proyectos coinciden en lo decidido
 
 - [ ] Un inventario de firmas del TPV devuelve el mismo `md5(prosrc)` en main y en newa
+- [ ] En main: contabilización con una sola firma por función (con `p_id_tienda DEFAULT NULL`) y sin EXECUTE para `anon`; `fn_fdi_crear_liquidacion` solo con la firma de 11 parámetros; `trg_bloquear_operaciones_maria` intacto; `fn_desvincular_usuario_trabajador` sustituida por la de M01 al promover M01
+- [ ] Baselines `md5` de los preflight M01 14, 17 y 56 regenerados contra main antes de aplicarlos allí
 
 ## Risks
 

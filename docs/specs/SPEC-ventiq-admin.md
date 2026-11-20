@@ -8,7 +8,7 @@ Línea base as-built de `ventiq_admin_app` solamente. Describe lo que la adminis
 
 Esta app configura la tienda, el catálogo y el inventario. No cobra en el mostrador: eso es `ventiq_app`. El Admin Lite que existe dentro de Caja está cerrado y no forma parte de esta spec.
 
-El contrato de moneda de producto que cruza las dos apps sigue en `tasks/SPEC-product-currency-*.md`. Cuando se cierre, se actualizan esta spec y la del TPV con lo implementado en cada una. El pase newa ↔ main está en `tasks/plan_sync_newa_main.md` y no se aplica todavía.
+El contrato de moneda de producto que cruza las dos apps sigue en `tasks/SPEC-product-currency-*.md`. Cuando se cierre, se actualizan esta spec y la del TPV con lo implementado en cada una. El pase newa ↔ main está en `tasks/plan_sync_newa_main.md` y no se aplica todavía a main. Revisada el 2026-11-19 contra newa y main (solo lectura): los cambios de esa fecha están marcados «Actualizado el 2026-11-19».
 
 ## Objective
 
@@ -57,7 +57,10 @@ Pruebas de esta línea base:
 ```
 flutter test --no-pub test/precio_venta_contract_test.dart test/precio_venta_sql_contract_test.dart test/app_compile_test.dart test/sales_totals_summary_test.dart
 flutter test --no-pub test/service_inventory_test.dart test/app_compile_test.dart
+flutter test --no-pub test/sync_newa_main_sql_contract_test.dart
 ```
+
+La suite completa (`flutter test`) del 19/11: 344 casos pasan, más los 15 de `sync_newa_main_sql_contract_test.dart`. Falla solo `widget_test.dart`, la plantilla de contador de Flutter, que no depende de esta app.
 
 Los tests `m01_*` y `precio_venta_*` inspeccionan el archivo SQL o el contrato del cliente. No sustituyen ejecutar la migración en PostgreSQL. Una recepción real y el stock que ve el TPV después tampoco los cubre la suite local.
 
@@ -83,6 +86,8 @@ assets/changelog.json         Versión que muestra la UI
 **Observado.** `/store-registration` y el detalle de tienda crean o editan la tienda, sus almacenes, TPV y personal. `/workers` y `/tpv-management` asignan vendedores y puntos de venta. `/cocinas-management` configura estaciones; el almacenero no entra. `/servicentro-management` configura combustibles de un TPV y solo lo abre el gerente. `/settings` (gerente y supervisor) guarda los flags que el TPV lee, entre ellos `modo_restaurante`, `cocina_activa`, `permitir_modo_offline_completo` y los de ticket.
 
 En newa, leer y escribir `app_dat_configuracion_tienda` ya pasa por RLS. En main esa tabla sigue con RLS apagado. La regla que manda, cuando se haga el pase, es la de newa: el vendedor de la tienda puede leer; dueño, gerente y superadmin de nivel 1 escriben. Está descrita en la spec del TPV y en `tasks/plan_sync_newa_main.md`.
+
+**Actualizado el 2026-11-19.** Al desvincular el login de un trabajador, `WorkerService.removeWorkerUser` llama primero `fn_m01_personal_desvincular_usuario_trabajador` (solo newa). Esa función quita el uuid del trabajador y no borra la cuenta ni las filas de rol. Si no existe, cae a `fn_desvincular_usuario_trabajador`, que solo está en main y sí borra las filas de rol, incluido el dueño. Al promover M01 a main rige la de M01. El flag `permitir_moneda_por_producto` lo guarda `fn_m01_fijar_moneda_por_producto` (solo newa) y al encenderlo se apagan la moneda forzada y su valor en el mismo UPDATE. Quién puede escribirlo lo decide `fn_config_tienda_puede_escribir` (dueño, gerente y superadmin de nivel 1).
 
 ### Catálogo y precio
 
@@ -114,6 +119,15 @@ La matriz está en `PermissionsService._actionPermissions` y `_routePermissions`
 
 El costo desglosado por línea de recepción (`app_dat_producto_costo`, `app_dat_recepcion_producto_costo` y el trigger que rellena `costo_real`) está en newa y no en main. No cambia el stock que ve el TPV. El pase está en el plan de sincronización.
 
+**Actualizado el 2026-11-19.** El botón de cancelar de `inventory_operations_screen.dart` aparece para recepciones pendientes y también para completadas. `fn_registrar_cambio_estado_operacion_mejorado` (newa, con `sql_updates/fix_cambio_estado_operacion_mejorado_recepcion.sql`; main todavía no) decide qué pasa con el inventario:
+
+- Si el inventario de los productos de la recepción no se tocó desde que entró, cancelar (estado 4) o devolver (estado 3) devuelve la cantidad con un movimiento compensatorio. No se borra ninguna fila del historial.
+- Si algún producto ya se movió (venta, ajuste, transferencia u otra recepción) o el saldo actual no alcanza, no se cancela nada. La RPC devuelve `success = false`, `error_code = 'RECEPCION_INVENTARIO_USADO'` y `productos_con_problema` (producto, cantidad recibida, saldo actual, motivo). Admin abre el diálogo «No se puede cancelar la recepción» con esa lista para que el gerente ajuste el inventario a mano.
+- Una recepción ya devuelta o cancelada no se revierte dos veces. No se revierten el precio promedio ni `costo_real`.
+- El cliente manda `p_uuid_usuario`. Con la función vieja de main, que borra las filas de inventario de la recepción sin comprobar uso, no hay aviso: no publicar este cliente contra main sin el script.
+
+Completar una recepción sigue siendo `fn_completar_recepcion_operacion`. La función mejorada solo la usa Admin para cancelar y devolver. Con el flag `cambiar_fecha_creacion_operacion_al_cierre` de la tienda, completar fija `created_at = now()`.
+
 ## Reglas que impone el servidor
 
 **Verificado el 2026-11-14 en main**, leyendo el cuerpo de las RPC de escritura y de informe que esta app llama. La matriz de `PermissionsService` es la puerta de la pantalla. Donde la función mira rol o estado, manda la función.
@@ -142,7 +156,7 @@ El costo desglosado por línea de recepción (`app_dat_producto_costo`, `app_dat
 
 `fn_insertar_trabajador_completo` no crea un vendedor si la tienda no tiene TPV, ni un almacenero si no tiene almacén. `fn_eliminar_trabajador_completo` no borra a quien no existe. Si el trabajador tiene historial operativo, lo desactiva y quita los roles. Si no tiene historial, lo elimina.
 
-`fn_cxc_registrar_liquidacion` exige un monto mayor que cero. `fn_fdi_crear_liquidacion`, en main, solo la ejecuta un gerente o superadmin, exige cuenta destino de la misma tienda, órdenes elegibles en el periodo y una ganancia a retirar dentro de rango. La firma con `p_repartir_igual` sigue solo en newa.
+`fn_cxc_registrar_liquidacion` exige un monto mayor que cero. `fn_fdi_crear_liquidacion`, en main, solo la ejecuta un gerente o superadmin, exige cuenta destino de la misma tienda, órdenes elegibles en el periodo y una ganancia a retirar dentro de rango. La firma con `p_repartir_igual` sigue solo en newa (11 parámetros; main tiene la de 10). Admin siempre manda `p_repartir_igual`, así que contra main esa llamada no resuelve hasta que el pase deje en main solo la de 11 (`ventiq_admin_app/lib/sql/fondo_inversion_schema.sql` borra la de 10 y crea la de 11).
 
 ### Reportes
 
@@ -166,7 +180,7 @@ El costo desglosado por línea de recepción (`app_dat_producto_costo`, `app_dat
 
 `fn_moneda_consolidacion` devuelve la moneda forzada de la tienda si está activa en el catálogo de la tienda. La tasa preferida es CUP hacia esa moneda. Si no hay tasa, la moneda queda CUP con tasa 1.
 
-`fn_reporte_ventas_por_turno_v2` envuelve el reporte por turno y le añade el desglose de monedas del usuario. `fn_resumen_turno_por_id_v2` envuelve el resumen del turno y le añade el desglose de monedas de ese turno.
+`fn_reporte_ventas_por_turno_v2` envuelve el reporte por turno y le añade el desglose de monedas del usuario. **Actualizado el 2026-11-19:** `fn_reporte_ventas_por_turno` toma las ventas de un turno por rango de ids de operación (apertura hasta cierre) cuando el turno tiene `id_operacion_cierre`. Si no lo tiene, usa la fecha de cierre, o `now()` si sigue abierto, y corta en la apertura siguiente del mismo TPV y vendedor. Antes, en main, un turno cerrado sin `id_operacion_cierre` contaba todas las ventas posteriores (32 turnos de ago–sep con 56 228 ventas en vez de 681). Está aplicado en newa con `sql_updates/fix_reporte_ventas_por_turno_sin_cierre.sql`; main lo espera. `fn_resumen_turno_por_id_v2` envuelve el resumen del turno y le añade el desglose de monedas de ese turno.
 
 `fn_listar_turnos_admin` pagina turnos de la tienda. El límite queda entre 1 y 200, y la página mínima es 1. Lee apertura, cierre, pagos y extracciones. No es `SECURITY DEFINER` y no comprueba rol.
 
@@ -208,7 +222,7 @@ El costo desglosado por línea de recepción (`app_dat_producto_costo`, `app_dat
 
 `fn_hr_salary_report` y `fn_hr_dashboard_summary` suman asistencia con hora de salida, entre la fecha desde y el día siguiente de la fecha hasta. El salario es la base más el pago por resultado cuando la fila lo marca. La tarifa de un jornalero es `salario_dia`; la de un horario es `salario_horas`. `fn_hr_top_workers_by_pay` ordena por ese total. Ninguna comprueba rol: la puerta es la ruta de RR. HH. en el cliente.
 
-`fn_dashboard_carnaval_proveedor` rechaza un rango de fechas inválido y a quien no está autorizado en la tienda. Cruza la orden de carnaval con el producto local y su precio. `fn_audit_carnaval_order_lines` y `fn_audit_inventtia_carnaval_lines` comparan líneas entre el esquema `carnavalapp` y las órdenes locales. `fn_info_contabilizacion_ordenes_carnaval` resuelve la tienda por gerente, supervisor, auditor o trabajador.
+`fn_dashboard_carnaval_proveedor` rechaza un rango de fechas inválido y a quien no está autorizado en la tienda. Cruza la orden de carnaval con el producto local y su precio. El modelo y la pantalla de Admin exigen `por_estado[].monto`, `top_productos[].status` y `resumen.ordenes_completadas`; la versión que newa tenía hasta el 19/11 no los traía. Desde `sql_updates/newa_traer_funciones_main.sql` newa tiene el cuerpo de main (mismo hash). `fn_audit_carnaval_order_lines` y `fn_audit_inventtia_carnaval_lines` comparan líneas entre el esquema `carnavalapp` y las órdenes locales. `fn_info_contabilizacion_ordenes_carnaval` resuelve la tienda por gerente, supervisor, auditor o trabajador. Actualizado el 2026-11-19: en newa quedó una sola firma de `fn_actualizar_operacion_contabilizada`, de info y de historial, todas con `p_id_tienda bigint DEFAULT NULL` y sin EXECUTE para `anon`. Los llamadores (`inventory_service.dart`, `carnaval_service.dart`) mandan `p_id_tienda` solo cuando conocen la tienda; con la firma única, la llamada sin ese parámetro también resuelve. Main conserva además las firmas viejas sin `id_tienda` y con `anon`, y se limpia en el pase.
 
 `fn_reporte_eficiencia_restaurante` no está en main ni en newa.
 
@@ -270,10 +284,14 @@ Consignación, carnaval, WAPI (avisos y agotado), depósitos bancarios, facturas
 9. Completar una recepción que ya estaba completada, o que no es recepción, no vuelve a contabilizar el inventario.
 10. El informe de ganancias y el de ventas por moneda solo suman operaciones cuyo último estado es completada. El de ganancias, además, exige la venta pagada.
 11. Ganancias, ventas por proveedor, ventas por moneda y ventas por turno leen operaciones reales de la tienda. El tablero que llama `fn_profit_and_loss` queda fuera de ese contrato hasta que esas funciones existan en main.
+12. Cancelar o devolver una recepción cuyo inventario no se tocó devuelve la cantidad con un movimiento compensatorio y no borra historial. Si algún producto ya se usó, no cancela nada y Admin muestra cuáles (`RECEPCION_INVENTARIO_USADO`). Vale en newa; en main espera `fix_cambio_estado_operacion_mejorado_recepcion.sql`.
+13. Un turno cerrado sin `id_operacion_cierre` no cuenta ventas más allá de su fecha de cierre ni de la apertura siguiente del mismo TPV y vendedor.
+14. El tablero de proveedor de Carnaval trae `por_estado[].monto`, `top_productos[].status` y `resumen.ordenes_completadas`.
+15. `flutter test --no-pub test/sync_newa_main_sql_contract_test.dart` pasa. Es contrato de texto: no sustituye correr los scripts en PostgreSQL.
 
 ## Open Questions
 
-Ninguna que bloquee esta línea base. El RLS de configuración, los costos de recepción y el gasto del fondo con `repartir_igual` ya tienen destino: el plan de sincronización, cuando se cierre el trabajo en curso.
+Ninguna que bloquee esta línea base. El RLS de configuración, los costos de recepción y el gasto del fondo con `repartir_igual` ya tienen destino: el plan de sincronización. Abierto el 19/11: la cancelación de recepciones no revierte el precio promedio ni `costo_real`; si se quiere revertir, hay que decidir cómo recalcularlos sin tocar ventas ya hechas.
 
 ## Dependencias que esta app no posee
 

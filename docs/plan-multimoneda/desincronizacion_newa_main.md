@@ -5,8 +5,16 @@ md5 del cuerpo), tablas y vistas (columnas, RLS, policies, triggers) y migracion
 registradas. No incluye los esquemas `auth` ni `storage`, ni otros esquemas, ni datos.
 
 - **newa** (`qhprswhhfasrikhawjoz`): multimoneda + M01. Lo usa el build debug.
-  `TimeZone = UTC`.
+  `TimeZone = America/Havana` desde el 18/11 (el 18/11 por la mañana estaba en UTC y este
+  documento se escribió entonces).
 - **main**: producción. Lo usa el build release. `TimeZone = America/Havana`.
+
+> **Actualización del 2026-11-19.** Las "86" funciones con cuerpo distinto de las tablas
+> de abajo son **81** en la medición del 19/11, ya clasificadas en
+> `comparacion_funciones_newa_main.md` (21 newa más nueva, 42 sin cambio lógico, 16 main
+> más nueva, 2 combinadas). Newa ya tiene aplicados los scripts de las dos combinadas y de
+> las cuatro funciones traídas de main; main no tiene ninguno. Estado vigente en
+> `tasks/plan_sync_newa_main.md`.
 
 > La promoción de multimoneda a main **no es solo aplicar lo de newa**. Main tiene
 > trabajo de producción que newa no tiene (secciones 3 y 4). Si se copian los cuerpos de

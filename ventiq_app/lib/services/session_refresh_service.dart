@@ -46,17 +46,31 @@ class SessionRefreshService {
 
   /// Expiración (ya alineada al reloj del dispositivo) del último token visto.
   ///
-  /// gotrue 2.13 —la que resuelve el lock— **no expone** `signOutReason` ni
-  /// `SignOutReason`, así que la distinción entre «el usuario cerró sesión» y
-  /// «la sesión caducó» hay que deducirla: si al recibir el `signedOut` el
-  /// token todavía no había expirado, el cierre lo pidió alguien; si ya había
-  /// expirado, es la caducidad.
+  /// Solo se usa como respaldo cuando el evento `signedOut` no trae
+  /// `signOutReason` (gotrue 2.26 sí lo trae; `supabase_flutter ^2.16.0` lo
+  /// exige). Antes, sin el motivo, había que deducirlo: si el token todavía no
+  /// había expirado, el cierre lo pidió alguien; si ya había expirado, era la
+  /// caducidad. Esa deducción falla con gotrue 2.26: un 429 en el refresh
+  /// hace que el SDK cierre la sesión con `sessionExpired` aunque el JWT siga
+  /// vigente, y se tomaba por un cierre explícito.
   DateTime? _ultimaExpiracion;
 
-  /// `'explicit'` si el cierre lo provocó el usuario, `'session_expired'` si fue
-  /// la caducidad, `null` cuando el evento no es un cierre de sesión.
+  /// `'explicit'` si el cierre lo provocó el usuario, `'session_expired'` si lo
+  /// provocó el SDK (refresh rechazado), `'session_missing'` si no se pudo
+  /// recuperar la sesión guardada, `null` cuando el evento no es un cierre.
   String? _motivoSignOut(AuthState event) {
     if (event.event != AuthChangeEvent.signedOut) return null;
+    final SignOutReason? motivo = event.signOutReason;
+    if (motivo != null) {
+      switch (motivo) {
+        case SignOutReason.userInitiated:
+          return 'explicit';
+        case SignOutReason.sessionExpired:
+          return 'session_expired';
+        case SignOutReason.sessionMissing:
+          return 'session_missing';
+      }
+    }
     final DateTime? exp = _ultimaExpiracion;
     // Sin dato previo no se puede distinguir. Se asume explícito, que es el
     // caso conservador: corta la reautenticación automática.

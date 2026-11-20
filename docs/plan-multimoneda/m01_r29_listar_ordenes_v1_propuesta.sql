@@ -339,7 +339,7 @@ BEGIN
                     'fecha_pago',              pv.fecha_pago,
                     'es_digital',              mp.es_digital,
                     'es_efectivo',             mp.es_efectivo,
-                    'tipo_paago',               pv.tipo_pago,
+                    'tipo_pago',                pv.tipo_pago,
                     'moneda',                  COALESCE(NULLIF(upper(trim(pv.moneda)), ''), 'CUP'),
                     'tasa_usd',                pv.tasa_usd,
                     'monto_cup_equivalente',   pv.monto_cup_equivalente

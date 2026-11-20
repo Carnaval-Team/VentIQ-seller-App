@@ -149,6 +149,8 @@ Al fusionar productos no se borran órdenes pendientes ni se crea otro catálogo
 
 Flags de tienda que el TPV lee desde el cache de configuración (la escritura de la mayoría vive en admin): `modo_restaurante`, `cocina_activa`, `permitir_modo_offline_completo`, `permitir_imprimir_pendientes`, `need_master_password_to_cancel`, `need_all_orders_completed_to_continue`, `permite_vender_aun_sin_disponibilidad`, `no_solicitar_cliente`, `allow_discount_on_vendedor`, `mostrar_metodo_pago_ticket`, imagen de operación, modificaciones del vendedor, días máximos sin revalidar licencia, impresora por defecto y copias por ticket. `mostrar_selector_moneda` y `forzar_moneda_venta` están en el cliente y pertenecen al contrato de moneda en curso.
 
+**Actualizado el 2026-11-19.** El flag `permitir_moneda_por_producto` (apagado por defecto) lo lee `store_config_service.dart` y existe solo en newa: main no tiene la columna ni ninguna `fn_m01_*`. En newa está encendido en una tienda piloto; con el flag apagado o ausente rige el flujo de siempre. Cuando se enciende, `forzar_moneda_venta` y `moneda_venta_forzada` se apagan en el mismo UPDATE y no se pueden activar juntos (script 53). `mostrar_selector_moneda` se retiró del admin y del TPV nuevo; la columna queda para clientes viejos. El contrato completo sigue en `tasks/SPEC-product-currency-*.md` y su estado en `tasks/plan_admin_multimoneda.md`.
+
 ### Impresión y SMS
 
 **Observado.** `PrinterManager` elige canal: Bluetooth ESC/POS en móvil, diálogo de navegador en web, WiFi en `/wifi-printers`, Sunmi donde el dispositivo lo tiene. Qué tickets y cuántas copias salen de la config de tienda.
@@ -157,7 +159,7 @@ En Android, `another_telephony` lee SMS para confirmar un pago por transferencia
 
 ## Reglas que impone el servidor
 
-**Verificado el 2026-11-14** contra main (`vsieeihstajlrdvpuooh`) y newa (`qhprswhhfasrikhawjoz`). Cuando los dos difieren, esta spec describe la versión más nueva y dice en cuál proyecto está. El pase de un proyecto al otro está en `tasks/plan_sync_newa_main.md` y no se aplica todavía.
+**Verificado el 2026-11-14** contra main (`vsieeihstajlrdvpuooh`) y newa (`qhprswhhfasrikhawjoz`), y revisado el 2026-11-19. Cuando los dos difieren, esta spec describe la versión más nueva y dice en cuál proyecto está. El pase de un proyecto al otro está en `tasks/plan_sync_newa_main.md` y no se aplica todavía a main. Desde el 18/11 newa usa la misma zona horaria que main (`America/Havana`).
 
 El Dart arma la llamada. Quién puede vender qué, de qué almacén sale, si el inventario se mueve al pedir o al cobrar, y si un error deja la venta a medias, lo deciden estas RPC. Si el proyecto al que apunta el TPV no tiene la variante nueva, el cliente cae a la anterior y rigen las reglas de esa variante.
 
@@ -188,7 +190,7 @@ No se puede vender un plato de una cocina a la que el TPV no está ligado (`COCI
 
 Stock corto: `INSUFFICIENT_STOCK` en barra, `INSUFFICIENT_PORTIONS` en porciones de tanda, `INSUFFICIENT_STOCK_INGREDIENT` si falta materia prima. Un descuento de SKU que no consume la cantidad pedida aborta con `DESCUENTO_SKU_INCOMPLETO` para no confirmar un parcial.
 
-En main, `fn_descontar_venta_enrutada_v2` acepta `p_ruta`. Si ese JSON ya trae `status = success` y el mismo `id_producto`, el descuento reutiliza esa ruta y no vuelve a llamar a `fn_resolver_origen_venta`. Si no, resuelve la ruta como antes. Newa todavía tiene la firma sin `p_ruta`. La regla que manda es la de main.
+En main, `fn_descontar_venta_enrutada_v2` acepta `p_ruta`. Si ese JSON ya trae `status = success` y el mismo `id_producto`, el descuento reutiliza esa ruta y no vuelve a llamar a `fn_resolver_origen_venta`. Si no, resuelve la ruta como antes. Newa ya tiene la misma firma (aplicado el 18/11 con `sql_updates/optimizar_venta_v3_ruta_y_lock_timeout.sql` y `m01_mesa_ruta_y_lock_timeout.sql`), y la venta v3, la de mesa y las cuatro `fn_m01_*` de venta y mesa llevan `lock_timeout = 3s`. La regla que manda es la de main.
 
 `fn_pedir_item_cuenta_v2` mueve ese inventario al pedir, no al cobrar. Exige cuenta existente, estado abierta (`CUENTA_NO_ABIERTA`), TPV en la cuenta (`CUENTA_SIN_TPV`) y acceso a la tienda. Si `p_forzar_sin_stock` es verdadero y no hay stock, la línea entra igual y queda `stock_movido = false`. Al cobrar, `fn_registrar_venta_mesa` no vuelve a descontar una línea que ya movió stock (`funcionalidad_cocina/17_cobro_sin_redescontar.sql`). Una venta de mostrador no busca cuenta abierta: pedir y cobrar son el mismo acto.
 
@@ -205,6 +207,8 @@ En main, `_v2` solo admite CUP y USD. Otra moneda lanza excepción y el mensaje 
 ### Turno y licencia
 
 `fn_cerrar_turno_tpv` (`sql_updates/fn_cerrar_turno_tpv_idempotent.sql`) exige usuario. Cierra el turno abierto más reciente (`estado = 1`) de ese TPV y ese usuario. Si ya está cerrado (`estado = 2`), devuelve verdadero y no abre otro cierre. Si no hay ninguno, lanza excepción. Si el turno maneja inventario, la lista de productos del conteo es obligatoria y no puede ir vacía.
+
+**Venta offline y pertenencia al turno (2026-11-19).** Una venta pertenece al turno de su TPV y vendedor. El reporte por turno (`fn_reporte_ventas_por_turno`) usa el rango de ids de operación cuando el turno tiene `id_operacion_cierre`. Si no lo tiene, usa la fecha de cierre (o `now()` si sigue abierto) y nunca pasa de la siguiente apertura del mismo TPV y vendedor. En newa, la apertura reutilizada o repetida recupera la hora real con `fn_turno_alinear_fecha_apertura` (solo hacia atrás, tope 72 h, sin pisar el turno anterior; script 56). En el cliente, `UserPreferencesService.aperturaMasTemprana` conserva la apertura más temprana al fusionar la local con la del servidor, las órdenes ya sincronizadas del turno abierto siguen en la cola hasta el cierre y no se cuentan como pendientes, y `created_offline_at` no se pisa si el checkout ya mandó la hora corregida con `ServerTimeService`. Tests: `apertura_mas_temprana_test.dart`, `fecha_rpc_test.dart`, `cadena_por_clave_test.dart`. Main todavía no tiene `fn_turno_alinear_fecha_apertura`.
 
 `fn_obtener_licencia_firmada` devuelve error si la tienda no tiene suscripción con `estado = 1`. El secreto HMAC vive en una tabla con RLS y sin políticas; no se documenta aquí.
 
@@ -243,7 +247,7 @@ Convención de RPC: llamar la variante nueva (`_v3`, `_v4`) y, solo si PostgREST
 
 **Observado.** `flutter_test` dentro de `ventiq_app/test`. No hay un umbral de cobertura escrito. Los tests de esta línea base son de contrato y de widget sobre home, mesas, ingredientes, desarme de bulto, SMS bancario e impresión Sunmi. `test/home/app_compile_test.dart` comprueba que el paquete analiza.
 
-**Decidido.** Los tests de moneda (`*_multimoneda*`, `moneda_venta_*`, `checkout_payment_lines_test.dart`, `order_usd_payments_test.dart`, `payment_currency_amounts_test.dart`) no son criterio de esta línea base. Pasan a serlo cuando se cierre ese trabajo y se actualicen esta spec y la de admin.
+**Decidido.** Los tests de moneda (`*_multimoneda*`, `moneda_venta_*`, `checkout_payment_lines_test.dart`, `order_usd_payments_test.dart`, `payment_currency_amounts_test.dart`) no son criterio de esta línea base. Pasan a serlo cuando se cierre ese trabajo y se actualicen esta spec y la de admin. Estado al 19/11: la suite completa de `ventiq_app` corre y 594 casos pasan; falla solo `widget_test.dart`, la plantilla de contador, que no es de moneda. El caso del 429 de `session_refresh_service_test.dart` se corrigió el 20/11: el servicio usa `AuthState.signOutReason` de gotrue 2.26 (`supabase_flutter ^2.16.0`) para distinguir un cierre del usuario de uno que el SDK provoca al fallar el refresh. Siguen sin ser criterio de esta línea base hasta que M01 esté en main.
 
 **Inferido.** Una venta cobrada, su fila en Supabase y el ticket impreso no los cubre la suite local.
 

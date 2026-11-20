@@ -16,4 +16,6 @@ Orden: ventiq-app → ventiq-admin → inventtia-muevete → inventtia-flow → 
 
 Fuera de esta línea base: `tasks/SPEC-product-currency-*.md` y el contrato de precios vigentes en `AGENTS.md`. Están en implementación y cruzan TPV y admin.
 
-El pase entre newa y main, para cuando ese trabajo cierre, está en `tasks/plan_sync_newa_main.md`. No se aplica todavía.
+El pase entre newa y main, para cuando ese trabajo cierre, está en `tasks/plan_sync_newa_main.md`. No se aplica todavía a main.
+
+Revisión del 2026-11-19: `SPEC-ventiq-app.md` y `SPEC-ventiq-admin.md` incorporan los cambios desde la línea base del 14/11 (ruta de venta ya en newa, zona horaria de newa, pertenencia de ventas al turno, cancelación de recepciones, firma de 11 parámetros del fondo, contabilización de Carnaval, desvincular trabajador y estado del flag de moneda). El estado completo del trabajo de moneda está en `tasks/plan_admin_multimoneda.md`, sección «Estado al 2026-11-19».
