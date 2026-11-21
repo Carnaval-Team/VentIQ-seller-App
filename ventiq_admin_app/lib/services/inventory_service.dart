@@ -1344,6 +1344,13 @@ class InventoryService {
     required String uuid,
     int? idProveedor, // ← AGREGAR ESTE PARÁMETRO
     required String monedaFactura,
+    /// Tasa de la factura: unidades de [monedaFactura] por 1 USD.
+    ///
+    /// Obligatoria cuando la factura no es USD y la recepción lleva costos o
+    /// viene de una compra: sin ella la operación quedaría con
+    /// `tasa_cambio_aplicada` NULL y el aterrizaje del costo no podría
+    /// convertir (D8). Viaja dentro de `p_recepcion` como `p_tasa_usd`.
+    double? tasaUsd,
     int? idInversion,
     double? tasaInversion,
     List<Map<String, dynamic>>? fuentesFondo,
@@ -1373,6 +1380,9 @@ class InventoryService {
         'p_recibido_por': recibidoPor,
         'p_uuid': uuid,
         'p_moneda_factura': monedaFactura,
+        // D8: la tasa de la factura viaja con la recepción. El wrapper la exige
+        // si la moneda no es USD y la registra siempre en la operación (USD ⇒ 1).
+        if (tasaUsd != null) 'p_tasa_usd': tasaUsd,
         'p_id_inversion': idInversion,
         'p_tasa_inversion': tasaInversion,
       };
@@ -1382,13 +1392,17 @@ class InventoryService {
       // costo se perdía.
       final costosRpc = _costosParaRpc(productosConvertidos);
 
-      // `fn_fdi_recepcion_con_costos` sólo puede expresar dos de los tres
-      // carriles: el del fondo y el de una recepción suelta. Cuando el
-      // llamador amortiza una inversión ya existente (`idInversion` sin
-      // fuentes), el wrapper crea la recepción con `p_id_inversion` NULL y
-      // perdería el vínculo, así que ese carril conserva la RPC actual.
+      // `fn_fdi_recepcion_con_costos` hace dos cosas que la RPC simple no: registra
+// los costos en la misma transacción y deja la tasa de la factura en la
+// operación. Cualquiera de las dos justifica usarlo: una recepción de compra
+// en CUP sin costos también necesita la tasa para el aterrizaje (D8).
+      // Límite conocido: cuando se amortiza una inversión ya existente
+      // (`idInversion` sin fuentes), el wrapper crea la recepción con
+      // `p_id_inversion` NULL y perdería el vínculo; ese carril conserva la RPC
+      // actual (y no pide tasa: la inversión trae la suya).
+      final necesitaWrapper = costosRpc.isNotEmpty || tasaUsd != null;
       final rpcConCostos =
-          costosRpc.isNotEmpty && (fuentesFondo != null || idInversion == null);
+          necesitaWrapper && (fuentesFondo != null || idInversion == null);
 
       final dynamic response;
       if (rpcConCostos) {

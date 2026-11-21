@@ -40,6 +40,17 @@
 --   n=15  las operaciones con costos capitalizados tienen
 --         `app_dat_operacion_recepcion.tasa_cambio_aplicada` no nula (y las
 --         dos columnas de tasa de la operación existen)
+--   n=16  (D10) `app_dat_recepcion_producto_costo.id_compra_recepcion` existe,
+--         es bigint NULL, con FK al vínculo y con índice
+--   n=17  (D10) ninguna fila de costo está atribuida a un vínculo cuya
+--         operación difiera de la de su línea de recepción
+--   n=18  (D9) la moneda del vínculo, cuando está informada, es la de la
+--         operación: ninguna discrepancia
+--   n=19  los cuerpos aplicados son los de esta versión: `bases` compila en
+--         plpgsql, el reparto aborta por moneda y borra por vínculo, y el
+--         wrapper exige tasa cuando la factura no es USD
+--   n=20  (D10) en una operación con un solo vínculo, ninguna fila de
+--         Importadora queda sin atribuir
 --   n=99  resumen
 --
 -- NOTA sobre n=6 — QUÉ SE PUEDE COMPROBAR:
@@ -80,7 +91,8 @@ catalogo as (
       from public.app_cont_tipo_costo t
 ),
 
--- Costos por recepción, separando el tipo Importadora del resto.
+-- Costos por recepción, separando el tipo Importadora del resto. Es el respaldo
+-- para las filas anteriores a D10 (sin atribución).
 por_recepcion as (
     select rp.id_operacion,
            coalesce(sum(c.monto_usd) filter (where c.id_tipo_costo = (select id from tipo_imp)), 0) as suma_imp,
@@ -91,17 +103,58 @@ por_recepcion as (
      group by rp.id_operacion
 ),
 
+-- Costos del aterrizaje por VÍNCULO (D10): es la medida correcta cuando una
+-- operación cubre varias compras; el reparto ya escribe esta atribución.
+por_vinculo as (
+    select c.id_compra_recepcion as id_vinculo,
+           coalesce(sum(c.monto_usd) filter (where c.id_tipo_costo = (select id from tipo_imp)), 0) as suma_imp,
+           count(*)              filter (where c.id_tipo_costo = (select id from tipo_imp))          as filas_imp
+      from public.app_dat_recepcion_producto_costo c
+     where c.id_compra_recepcion is not null
+     group by c.id_compra_recepcion
+),
+
 vinculos as (
     select r.id,
            r.id_operacion,
            r.monto_importadora,
            r.origen_pago,
            upper(btrim(coalesce(r.moneda, ''))) as moneda,
+           upper(btrim(coalesce(o.moneda_factura, ''))) as moneda_op,
            r.tasa_usd_aplicada,
-           coalesce(pr.suma_imp, 0)             as suma_imp,
-           coalesce(pr.filas_imp, 0)            as filas_imp
+           coalesce(pv.suma_imp, pr.suma_imp, 0) as suma_imp,
+           coalesce(pv.filas_imp, pr.filas_imp, 0) as filas_imp,
+           (select count(*) from public.fdi_dat_compra_recepcion r2
+             where r2.id_operacion = r.id_operacion) as n_vinculos_op
       from public.fdi_dat_compra_recepcion r
+      left join public.app_dat_operacion_recepcion o on o.id_operacion = r.id_operacion
       left join por_recepcion pr on pr.id_operacion = r.id_operacion
+      left join por_vinculo pv on pv.id_vinculo = r.id
+),
+
+-- (D10) Cada fila de costo con su vínculo y la operación de su línea: sirve
+-- para detectar atribuciones cruzadas entre compras de la misma carga.
+costos_por_vinculo as (
+    select c.id,
+           c.id_recepcion_producto,
+           c.id_compra_recepcion,
+           r.id_operacion  as id_op_vinculo,
+           rp.id_operacion as id_op_linea
+      from public.app_dat_recepcion_producto_costo c
+      left join public.fdi_dat_compra_recepcion r on r.id = c.id_compra_recepcion
+      left join public.app_dat_recepcion_productos rp on rp.id = c.id_recepcion_producto
+),
+
+-- (D10) Filas de Importadora sin atribuir en una operación con un solo vínculo:
+-- después del backfill de 06b no debe quedar ninguna.
+huerfanos_vinculo as (
+    select c.id
+      from public.app_dat_recepcion_producto_costo c
+      join public.app_dat_recepcion_productos rp on rp.id = c.id_recepcion_producto
+     where c.id_tipo_costo = (select id from tipo_imp)
+       and c.id_compra_recepcion is null
+       and (select count(*) from public.fdi_dat_compra_recepcion r
+             where r.id_operacion = rp.id_operacion) = 1
 ),
 
 -- Operaciones con costos capitalizados: por cada línea de recepción con costo
@@ -220,15 +273,20 @@ base as (
 
   union all
   -- 6) INVARIANTE: Σ monto_usd del aterrizaje = el cargo (sólo USD)
+  --    Se mide por vínculo (D10) y sólo en operaciones de un solo vínculo: con
+  --    varias compras en la misma carga, el importe de una no tiene por qué
+  --    cuadrar con la suma de todas. La suma por vínculo ya es link-scoped.
   select 6, 'suma_costos_igual_cargo_usd',
-    'en vínculos con moneda USD: Σ monto_usd del tipo Importadora = monto_importadora',
-    (select count(*)::text from vinculos where moneda = 'USD') || ' vínculos USD, '
-      || (select count(*)::text from vinculos where moneda = 'USD' and filas_imp > 0) || ' con aterrizaje, '
+    'en vínculos USD de operaciones con un solo vínculo: Σ monto_usd del tipo Importadora = monto_importadora',
+    (select count(*)::text from vinculos
+      where moneda = 'USD' and n_vinculos_op = 1) || ' vínculos USD, '
       || (select count(*)::text from vinculos
-           where moneda = 'USD' and filas_imp > 0
+           where moneda = 'USD' and n_vinculos_op = 1 and filas_imp > 0) || ' con aterrizaje, '
+      || (select count(*)::text from vinculos
+           where moneda = 'USD' and n_vinculos_op = 1 and filas_imp > 0
              and abs(suma_imp - monto_importadora) >= 0.005) || ' descuadrados',
     (select count(*) = 0 from vinculos
-      where moneda = 'USD' and filas_imp > 0
+      where moneda = 'USD' and n_vinculos_op = 1 and filas_imp > 0
         and abs(suma_imp - monto_importadora) >= 0.005)
 
   union all
@@ -346,6 +404,108 @@ base as (
     (select count(*) = 2 from information_schema.columns
       where table_schema = 'public' and table_name = 'app_dat_operacion_recepcion'
         and column_name in ('tasa_cambio_aplicada','fecha_tasa_aplicada'))
+
+  union all
+  -- 16) INVARIANTE (D10): el costo sabe a qué vínculo pertenece
+  select 16, 'columna_vinculo_en_costo',
+    'id_compra_recepcion: bigint NULL, FK a fdi_dat_compra_recepcion e índice idx_recepcion_producto_costo_vinculo',
+    (select count(*)::text from information_schema.columns
+      where table_schema = 'public' and table_name = 'app_dat_recepcion_producto_costo'
+        and column_name = 'id_compra_recepcion'
+        and data_type = 'bigint' and is_nullable = 'YES') || ' columna, '
+      || (select count(*)::text
+            from pg_constraint c
+            join pg_class t on t.oid = c.conrelid
+            join pg_class f on f.oid = c.confrelid
+            join pg_attribute a on a.attrelid = t.oid and a.attnum = any (c.conkey)
+           where c.contype = 'f'
+             and t.relname = 'app_dat_recepcion_producto_costo'
+             and f.relname = 'fdi_dat_compra_recepcion'
+             and a.attname = 'id_compra_recepcion') || ' FK, '
+      || (select count(*)::text from pg_indexes
+           where schemaname = 'public' and tablename = 'app_dat_recepcion_producto_costo'
+             and indexname = 'idx_recepcion_producto_costo_vinculo') || ' índice',
+    (select count(*) = 1 from information_schema.columns
+      where table_schema = 'public' and table_name = 'app_dat_recepcion_producto_costo'
+        and column_name = 'id_compra_recepcion'
+        and data_type = 'bigint' and is_nullable = 'YES')
+    and
+    (select count(*) = 1
+       from pg_constraint c
+       join pg_class t on t.oid = c.conrelid
+       join pg_class f on f.oid = c.confrelid
+       join pg_attribute a on a.attrelid = t.oid and a.attnum = any (c.conkey)
+      where c.contype = 'f'
+        and t.relname = 'app_dat_recepcion_producto_costo'
+        and f.relname = 'fdi_dat_compra_recepcion'
+        and a.attname = 'id_compra_recepcion')
+    and
+    (select count(*) = 1 from pg_indexes
+      where schemaname = 'public' and tablename = 'app_dat_recepcion_producto_costo'
+        and indexname = 'idx_recepcion_producto_costo_vinculo')
+
+  union all
+  -- 17) INVARIANTE (D10): la atribución no cruza operaciones
+  select 17, 'costos_del_vinculo_no_invaden',
+    'ninguna fila de costo atribuida a un vínculo cuya operación difiera de la de su línea de recepción',
+    (select count(*)::text from costos_por_vinculo x
+      where x.id_compra_recepcion is not null
+        and x.id_op_vinculo is distinct from x.id_op_linea) || ' fila(s) mal atribuida(s) de '
+      || (select count(*)::text from costos_por_vinculo x
+           where x.id_compra_recepcion is not null) || ' atribuidas',
+    (select count(*) = 0 from costos_por_vinculo x
+      where x.id_compra_recepcion is not null
+        and x.id_op_vinculo is distinct from x.id_op_linea)
+
+  union all
+  -- 18) INVARIANTE (D9): moneda del vínculo = moneda de la operación
+  select 18, 'moneda_vinculo_igual_operacion',
+    'cuando el vínculo informa moneda, es la misma que app_dat_operacion_recepcion.moneda_factura',
+    (select count(*)::text from vinculos
+      where moneda <> '' and moneda_op <> '' and moneda <> moneda_op) || ' discrepancia(s) de '
+      || (select count(*)::text from vinculos where moneda <> '') || ' vínculo(s) con moneda informada',
+    (select count(*) = 0 from vinculos
+      where moneda <> '' and moneda_op <> '' and moneda <> moneda_op)
+
+  union all
+  -- 19) Los cuerpos desplegados son los de esta versión
+  --     Se comprueba con marcas que NO están en la firma (un `position` sobre
+  --     el nombre del parámetro daría falso positivo): `prolang` en bases
+  --     (pasó de `sql` a `plpgsql`) y mensajes propios de D8/D9 en los cuerpos
+  --     de plpgsql. Si alguien reaplica un cuerpo viejo, esto lo caza.
+  select 19, 'cuerpos_06b_desplegados',
+    'bases compilada en plpgsql; el reparto aborta por moneda (D9) y borra por vínculo (D10); el wrapper exige tasa no-USD (D8)',
+    (select count(*)::text from pg_proc p
+      where p.oid = to_regprocedure('public.fn_fdi_compra_recepcion_bases(bigint)')
+        and p.prolang = (select l.oid from pg_language l where l.lanname = 'plpgsql')
+        and position('v_vinculos' in p.prosrc) > 0) || ' de 1 bases, '
+      || (select count(*)::text from pg_proc p
+           where p.oid = to_regprocedure('public.fn_fdi_compra_repartir_aterrizaje(bigint,numeric)')
+             and position('no coincide con la de la operación' in p.prosrc) > 0
+             and position('id_compra_recepcion = p_id_compra_recepcion' in p.prosrc) > 0) || ' de 1 reparto, '
+      || (select count(*)::text from pg_proc p
+           where p.oid = to_regprocedure('public.fn_fdi_recepcion_con_costos(jsonb,jsonb,jsonb,uuid)')
+             and position('no se recibió la tasa' in p.prosrc) > 0) || ' de 1 wrapper',
+    (select count(*) = 1 from pg_proc p
+      where p.oid = to_regprocedure('public.fn_fdi_compra_recepcion_bases(bigint)')
+        and p.prolang = (select l.oid from pg_language l where l.lanname = 'plpgsql')
+        and position('v_vinculos' in p.prosrc) > 0)
+    and
+    (select count(*) = 1 from pg_proc p
+      where p.oid = to_regprocedure('public.fn_fdi_compra_repartir_aterrizaje(bigint,numeric)')
+        and position('no coincide con la de la operación' in p.prosrc) > 0
+        and position('id_compra_recepcion = p_id_compra_recepcion' in p.prosrc) > 0)
+    and
+    (select count(*) = 1 from pg_proc p
+      where p.oid = to_regprocedure('public.fn_fdi_recepcion_con_costos(jsonb,jsonb,jsonb,uuid)')
+        and position('no se recibió la tasa' in p.prosrc) > 0)
+
+  union all
+  -- 20) INVARIANTE (D10): con un solo vínculo, todo lo de Importadora queda atribuido
+  select 20, 'aterrizaje_siempre_atribuido',
+    'en una operación con un solo vínculo, ninguna fila del tipo Importadora queda con id_compra_recepcion NULL',
+    (select count(*)::text from huerfanos_vinculo) || ' fila(s) sin atribuir en operaciones de un solo vínculo',
+    (select count(*) = 0 from huerfanos_vinculo)
 )
 
 -- 99) Resumen: cuenta las filas con ok = false (las informativas siempre ok).

@@ -1,8 +1,9 @@
 # Fondo de Inversión → Compras → Recepción → Consumo — plan de implementación
 
-**Versión 6.1** · 2026-11-20 · Re-basado contra la rama **`multimoneda`**, `newa` (desarrollo) y Main
-(producción). Restaura el detalle operativo que la v6 comprimió (`11-diff-v4-v6.md`) sin perder ninguna de
-sus correcciones. Las 8 decisiones del dueño siguen cerradas.
+**Versión 6.2** · 2026-11-21 · Re-basado contra la rama **`multimoneda`**, `newa` (desarrollo) y Main
+(producción). La 6.1 restauró el detalle operativo que la v6 comprimió (`11-diff-v4-v6.md`); la 6.2
+cierra la revisión de la fase 6 (defectos D8-D12, ver bitácora). Las 8 decisiones del dueño siguen
+cerradas.
 
 ## Correcciones de la v6 (rama `multimoneda`)
 
@@ -115,12 +116,12 @@ combinada de cambio de estado.
 | 3. Compra como documento | **done** — esquema, RPC, UI, verify 13/13 y E2E del dueño aprobado |
 | 4. Reserva y liquidación (carril A, solo `al_pagar`) | **done** — backend, UI, verify 19/19 y E2E del dueño aprobado |
 | 5. Recepción: carril A y carril B | **done** — recepción contra compra, carril B cerrado, verify 21/21 y E2E del dueño aprobado |
-| 6. Costo aterrizado sobre el módulo existente | not started |
+| 6. Costo aterrizado sobre el módulo existente | **en curso** — 6a/6b aplicados y verificados (`verify/06` **20/20**); D1-D12 cerrados. Faltan los ítems propios de la fase: UI de captura de importadora y adicionales, ajustes `por_financiar`, reversión de costo al cancelar y desvío visible |
 | 7. Inversores aportantes (100%) | not started |
 | 8. Reportes, conciliación en UI y cierre | not started |
 | 9. Pendientes, recordatorios y registro de faltantes | not started |
 
-Current phase: 0 · Recommended next: 0
+Current phase: 6 · Recommended next: 6 (cerrar los ítems de la fase antes de la 7)
 
 > Agente ejecutor: actualiza esta tabla al terminar y anota una línea por desviación. No marques `done`
 > sin criterios de salida corridos y OK del dueño.
@@ -285,6 +286,62 @@ Current phase: 0 · Recommended next: 0
   **no promover a Main sin sincronizar**. `verify/06` aún no comprueba la columna nueva.
 - **Hallazgo del carril normal.** `app_dat_operaciones.uuid` **no es único**, así que reintentar con el
   mismo `uuid` no protegía de duplicar; el wrapper usa advisory lock + memo como el carril del fondo.
+- **Fase 6 · revisión de cierre: cinco defectos nuevos (D8-D12), todos cerrados (2026-11-21).** La
+  revisión del commit `34eeb0ee` encontró cinco defectos que el `verify/06` de 15 comprobaciones no veía.
+  Tres eran de dinero:
+  · **D8 — una factura no-USD se quedaba sin tasa.** El carril normal sólo escribía
+    `tasa_cambio_aplicada` si había inversión (`fondo_inversion_recepcion_patch.sql:130`) y el cliente no
+    mandaba tasa: la operación quedaba con NULL y el aterrizaje abortaba después con `22023`, con la
+    recepción ya creada. Ahora `fn_fdi_recepcion_con_costos` **exige** `p_tasa_usd` si la moneda de la
+    factura no es USD (rechaza **antes** de crear nada) y la **registra siempre** (USD ⇒ 1).
+  · **D9 — la moneda del vínculo no se comparaba con la de la operación.** Se usaba la de la operación y
+    una discrepancia cambiaba el cargo en silencio. El reparto aborta con `22023` y dice las dos monedas.
+  · **D10 — los costos no sabían a qué vínculo pertenecían.** Con `UNIQUE(id_operacion, id_compra)`, dos
+    compras podían compartir recepción y el reparto de la segunda borraba los costos de la primera: el
+    `DELETE` filtraba por `id_operacion`. `app_dat_recepcion_producto_costo` gana
+    `id_compra_recepcion` (FK, índice y backfill) y el reparto borra, inserta, cuadra y fotografía el
+    promedio **por vínculo**. Las líneas se resuelven por `id_recepcion_producto` explícito, por costos ya
+    atribuidos o, si la operación tiene un solo vínculo, por todas las suyas; con dos o más y sin
+    atribución **aborta** en vez de adivinar.
+  · **D11 — el rollback mentía.** Decía que «06b no añadió ni una columna» y no retiraba
+    `tasa_usd_aplicada`. Ahora retira las **dos** columnas que 06b añade.
+  · **D12 — `fecha_tasa_aplicada` no se re-sellaba al corregir la tasa.** Se conservaba la fecha del
+    primer registro. Ahora se re-sella **sólo cuando la tasa cambia**; un reintento idéntico conserva la
+    original.
+  Se hizo editando `06b_aterrizaje.sql` (no un `06c`): es idempotente y se reaplicó en `newa`; así el
+  archivo y la base siguen siendo el mismo cuerpo (huellas `md5` en su cabecera y en 4.7). `verify/06`
+  pasa de 15 a **20 comprobaciones**, con **control negativo** en cada invariante nuevo (moneda
+  discrepante, atribución cruzada, fila sin atribuir, cuerpo viejo: los cuatro bajan a `ok = false`).
+- **Fase 6 · lo que se probó de verdad en `newa` (transacciones revertidas).** No hay datos de costo en
+  la base, así que el dinero se probó con `ROLLBACK` y quedó registrado: (1) CUP sin tasa → `22023` y
+  **cero** operaciones creadas; (2) CUP con 320 → tasa 320 y fecha UTC; corrección a 330 con la misma
+  clave → `duplicada: true`, tasa 330 y fecha re-sellada; mismo reintento con 330 → la fecha **no** se
+  mueve; (3) vínculo CUP sobre operación USD → `22023`, sin escribir tasa ni costos; (4) dos vínculos
+  sobre la misma operación, cada uno con su línea atribuida: `0,15` y `0,30`, y volver a repartir el
+  primero deja intacto el segundo (`filas_retiradas = 1`); (5) dos vínculos **sin** atribución → `22023`;
+  (6) recepción USD sin tasa → tasa 1 registrada y costo 0,10. El rollback se ejecutó entero dentro de
+  una transacción revertida: retira funciones y columnas y la verificación vuelve a 20/20.
+- **Fase 6 · desviación documentada.** Los campos de importadora viven en el **vínculo**
+  (`fdi_dat_compra_recepcion`: `pct`, `base`, `monto`, `reembolso`, `origen_pago`), no en la fila de
+  costo. Es su grano real (por compra y recepción) y la fila de costo guarda el importe ya repartido en
+  USD. El plan pedía «extender la línea de costo con `origen_pago` y los campos de importadora»; se
+  implementó en el vínculo en la fase 5.
+- **Fase 6 · límite conocido de la multi-factura (no oculto).** Hoy `fn_fdi_compra_vincular_recepcion`
+  **rechaza** un segundo vínculo sobre la misma operación, así que D10 no era alcanzable por la RPC; la
+  restricción de la tabla sí lo permitía y el E2E 5 de la fase 5 lo exige. El reparto ya es por vínculo,
+  pero para que dos compras compartan una recepción falta **poblar `id_recepcion_producto`** en
+  `fdi_dat_compra_recepcion_linea` (la RPC no lo escribe: 0 de 1 filas) y quitar ese rechazo. Sin eso, el
+  reparto de una compra con líneas sin atribuir aborta en vez de adivinar.
+- **Fase 6 · cliente.** `inventory_reception_screen.dart` registraba **siempre USD** (`_selectedCurrency`
+  era un `final 'USD'`): una compra en CUP entraba con operación USD y el vínculo CUP, que es justo la
+  discrepancia de D9. Ahora, con compra, la moneda es la de la compra; se pide la tasa (precargada del
+  `tasa_factura` del detalle) y viaja como `p_tasa_usd` en `p_recepcion`. `insertInventoryRecepcion` usa
+  el wrapper transaccional también cuando hay tasa aunque no haya costos, para que la operación quede con
+  su tasa. Sin compra se mantiene USD, como antes.
+- **Fase 6 · `_v3` y el resto de la fase siguen pendientes.** Este pase cerró los cinco defectos; **no**
+  completó la fase: faltan la UI de captura de importadora/adicionales, los ajustes `por_financiar` con
+  reserva y pago propios, la reversión de costo al cancelar la recepción, el desvío visible y el borrado
+  documentado de `fn_actualizar_precio_promedio_recepcion_v3`.
 
 ---
 
@@ -402,7 +459,8 @@ aterrizado **2.150**; el fondo financia **2.000** (si el origen es wallet) o **2
   escala. `moneda` es `text` sin FK.
 - **`app_dat_operaciones`** sin columna de fecha (solo `created_at`), pero con `contabilizada`,
   `contabilizada_at`, `contabilizada_por`.
-- **Solo lectura es convención, no capacidad**: el agente no aplica SQL por regla.
+- **Solo lectura es convención, no capacidad**: el agente **aplica en `newa`** (decisión del dueño, fase 0)
+  y **nunca en Main**; para Main solo entrega scripts.
 
 ### Stack y convenciones
 
@@ -840,7 +898,9 @@ libera lo no usado y no reescribe el dinero ya pagado**. El pendiente es **de me
 **Objetivo:** que el costo real incluya importadora y adicionales reutilizando lo que `newa` ya tiene.
 
 **Estado real:** en `newa` el módulo funciona (`costo_real` no generada, trigger NULL-safe, `v2` con
-`costos[]`); **no suma adicionales** porque el catálogo tiene 0 filas. En Main no existe (fase 0b).
+`costos[]`) y el catálogo **ya está sembrado** (06a: 4 tipos), así que el aterrizaje escribe las filas del
+tipo Importadora (06b). Lo que falta de la fase es la UI de captura, los ajustes `por_financiar`, la
+reversión al cancelar y el desvío visible. En Main no existe (fase 0b).
 
 **Build:**
 - **Sembrar `app_cont_tipo_costo`** (0 filas en ambos). Columnas reales: `id, denominacion, descripcion,
@@ -864,15 +924,15 @@ libera lo no usado y no reescribe el dinero ya pagado**. El pendiente es **de me
   `RECEPCIÓN — importadora y adicionales`, `CONFIG — costos adicionales`.
 
 **Checklist:**
-- [ ] Catálogo sembrado
-- [ ] `origen_pago` y campos de importadora en la línea de costo
-- [ ] Reparto por valor + remanente por asignar
+- [x] Catálogo sembrado (06a)
+- [x] `origen_pago` y campos de importadora **en el vínculo** (05a; desviación documentada)
+- [x] Reparto por valor + remanente por asignar (06b)
 - [ ] Ajustes `por_financiar` con reserva y pago propios
-- [ ] Persistido dentro de la transacción
-- [ ] `costo_real` suma adicionales
+- [x] Persistido dentro de la transacción (06b)
+- [ ] `costo_real` suma adicionales (verificado de punta a punta)
 - [ ] `_v3` borrada
 - [ ] Reversión de costo al cancelar
-- [ ] `id_compra` + `moneda` en facturas
+- [x] `id_compra` + `moneda` en facturas (06a)
 - [ ] Desvío visible
 
 **Exit criteria:**
@@ -1037,12 +1097,12 @@ libera lo no usado y no reescribe el dinero ya pagado**. El pendiente es **de me
 | X7 moneda texto libre | 1 parcial | no cubierto en lo viejo |
 | X8 libro de importadora sin moneda | 6 | cubierto |
 | X9 tasa del cliente | 2 | cubierto |
-| X10 cancelar recepción no revierte costo | 6 | cubierto |
+| X10 cancelar recepción no revierte costo | 6 | **pendiente**: la reversión de costo al cancelar sigue sin documento de reversa; el reparto sí es idempotente y no borra lo ajeno (D10) |
 | X11 ajuste como válvula | 2 | cubierto |
 | 30.038 `costo_real` NULL en Main | 0b | cubierto vía pase + backfill |
 | `app_cont_tipo_costo` vacío | 6 | cubierto al sembrarlo |
 | Datos de prueba del fondo en `newa` | 1-2 | respaldo + verificación |
-| Rastra con 4 facturas | 5 | `UNIQUE(id_operacion, id_compra)` |
+| Rastra con 4 facturas | 5-6 | el reparto ya es **por vínculo** (D10) y no borra los costos de otra compra; falta poblar `id_recepcion_producto` en el vínculo y quitar el rechazo del segundo vínculo |
 | % de importadora distinto por recepción | 5-6 | por compra y por recepción, con historial |
 | Recordatorio de faltantes | 9 | cubierto |
 | Multi-almacén / ubicación destino | 3 | `id_almacen`/`id_ubicacion` por línea |

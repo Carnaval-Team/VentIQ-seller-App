@@ -1,21 +1,60 @@
 -- ============================================================================
 -- 06b_aterrizaje.sql — Fase 6b: aterrizaje del cargo de importadora en el costo
 --
--- SINCRONIZADO con `newa` (`qhprswhhfasrikhawjoz`) el 2026-11-21 (segunda
--- pasada: fuente única de tasa en la operación).
--- 15/15 en `verify/06_costos.sql`. El ALTER de `tasa_usd_aplicada` y el cuerpo
--- de las tres funciones son los que la base tiene aplicados: aplicarlo en otro
--- entorno produce el mismo resultado.
+-- SINCRONIZADO con `newa` (`qhprswhhfasrikhawjoz`) el 2026-11-21 (tercera
+-- pasada: los cinco defectos D8-D12 de la revisión de la fase 6).
+-- 20/20 en `verify/06_costos.sql`. Los dos `ALTER` (columnas
+-- `tasa_usd_aplicada` e `id_compra_recepcion`) y el cuerpo de las tres
+-- funciones son los que la base tiene aplicados: aplicarlo en otro entorno
+-- produce el mismo resultado. Es idempotente: se puede reaplicar sobre una
+-- base que ya tiene la versión anterior.
 --
 -- Verificación de sincronía archivo↔base: se compara el **cuerpo normalizado**
 -- de cada función (texto entre los delimitadores del cuerpo, con los espacios
 -- en blanco colapsados a uno y sin espacios en los extremos) por `md5`.
 -- Huellas vigentes (2026-11-21, `newa`):
---   fn_fdi_compra_recepcion_bases     899186477ddfdf59b4a8331a0f4a9a8d
---   fn_fdi_compra_repartir_aterrizaje c58da1ceb660b45cfe89b71b47b4fb8a
---   fn_fdi_recepcion_con_costos       bbbf4dc229c63b8c82c45c185d8caa94
+--   fn_fdi_compra_recepcion_bases     ad25f27acee669f302818105fd12c797
+--   fn_fdi_compra_repartir_aterrizaje abe00f1ac415f57553f40c012fbbae00
+--   fn_fdi_recepcion_con_costos       a2b9c4fb299f38e0d44a32347d514473
 -- La verificación 4.7 del propio script vuelve a emitir esas huellas al
--- aplicarlo, para contrastarlas sin depender de este comentario.
+-- aplicarlo, para contrastarlas sin depender de este comentario. **Las de
+-- arriba se sustituyen por las emitidas al aplicar**: si no coinciden, la base
+-- tiene otro cuerpo.
+--
+-- ---------------------------------------------------------------------------
+-- HISTORIAL DE LA FASE 6b
+-- ---------------------------------------------------------------------------
+--   · v1 (primer script aplicado): reparto del cargo de importadora, tasa en
+--     la operación y recepción con costos transaccional. Defectos D1-D7
+--     cerrados (commit 34eeb0ee).
+--   · v2 (este archivo): cierra los cinco defectos que la revisión de la fase
+--     encontró después. Todos son de dinero o de auditoría:
+--
+--     D8  **Una factura no-USD se quedaba sin tasa.** El carril normal sólo
+--         escribía `tasa_cambio_aplicada` si había inversión, y el cliente no
+--         mandaba `p_tasa_usd`: la operación quedaba con tasa NULL y el
+--         aterrizaje abortaba después con 22023. Ahora la recepción con
+--         costos **exige** la tasa si la factura no es USD (antes de crear
+--         nada) y **siempre** la registra (USD ⇒ 1).
+--     D9  **La moneda del vínculo no se comparaba con la de la operación.**
+--         Se usaba la de la operación y una discrepancia cambiaba el cargo en
+--         silencio. El reparto ahora aborta con 22023 y dice las dos monedas.
+--     D10 **Los costos no sabían a qué vínculo pertenecían.** Con
+--         `UNIQUE(id_operacion, id_compra)`, dos compras pueden compartir una
+--         recepción y el reparto de la segunda borraba los costos de la
+--         primera. `app_dat_recepcion_producto_costo` gana
+--         `id_compra_recepcion` y el reparto borra, inserta y cuadra **por
+--         vínculo**, no por operación; las líneas de cada vínculo se resuelven
+--         por `id_recepcion_producto`, por los costos ya atribuidos o, si la
+--         operación tiene un solo vínculo, por todas las líneas. Con dos o más
+--         vínculos y sin atribución **no adivina**: aborta.
+--     D11 **El rollback mentía.** Decía que 06b «no añadió ni una columna» y no
+--         retiraba `tasa_usd_aplicada`. Ahora retira las dos columnas.
+--     D12 **`fecha_tasa_aplicada` no se re-sellaba al corregir la tasa.** Se
+--         conservaba la fecha del primer registro. Ahora se re-sella **sólo
+--         cuando la tasa cambia**, que es el acto auditable; un reintento con
+--         la misma tasa conserva la fecha original.
+--
 --
 -- REQUIERE: 06a aplicado (catálogo `app_cont_tipo_costo` con sus 4 tipos) y
 --           05a/05c aplicados (columnas de importadora en el vínculo).
@@ -61,6 +100,12 @@
 --     `app_cont_tipo_costo(id)`.
 --     **NO tiene UNIQUE(id_recepcion_producto, id_tipo_costo)**; solo
 --     `idx_recepcion_producto_costo_rp`. Ver "idempotencia" abajo.
+--     `id_compra_recepcion` la añade este script (sección 0c) y es la
+--     atribución de la fila a un vínculo compra↔recepción. NULL a propósito
+--     cuando la fila no viene de un aterrizaje (costos del cliente) o cuando
+--     la operación cubre varias compras y no se puede atribuir sin adivinar.
+--     **El reparto no toca filas de otro vínculo**: borra, inserta y cuadra
+--     por `id_compra_recepcion` (D10).
 --
 --   · `fdi_dat_compra_recepcion_linea` sí tiene `cantidad_recibida`,
 --     `costo_unitario_aplicado` y `id_recepcion_producto`. Pero en `newa`
@@ -73,16 +118,25 @@
 -- Qué añade este script:
 --   0. `ALTER TABLE fdi_dat_compra_recepcion ADD COLUMN tasa_usd_aplicada
 --      numeric(18,10)` — la tasa efectiva que usó el reparto, para auditoría.
+--   0c. `ALTER TABLE app_dat_recepcion_producto_costo ADD COLUMN
+--      id_compra_recepcion bigint REFERENCES fdi_dat_compra_recepcion(id)
+--      ON DELETE CASCADE` + backfill de las filas de Importadora en
+--      operaciones con **un solo** vínculo. Es lo que impide que el reparto de
+--      una compra borre los costos de otra (D10).
 --   1. `fn_fdi_compra_recepcion_bases(bigint)` — STABLE. Una sola definición
 --      del "valor de cada línea" (base del reparto), reutilizable para
---      previsualizar el reparto antes de aplicarlo.
+--      previsualizar el reparto antes de aplicarlo. Devuelve sólo las líneas
+--      del vínculo (D10).
 --   2. `fn_fdi_compra_repartir_aterrizaje(bigint, numeric DEFAULT NULL)` —
---      reparte `monto_importadora` entre las líneas de la recepción, persiste
---      una fila por línea con el tipo de costo 'Importadora' y escribe la tasa
---      efectiva en la operación y en el vínculo (por su `id`).
+--      reparte `monto_importadora` entre las líneas **del vínculo**, persiste
+--      una fila por línea con el tipo de costo 'Importadora' (atribuida al
+--      vínculo), escribe la tasa efectiva en la operación y en el vínculo (por
+--      su `id`), y aborta si la moneda del vínculo no es la de la operación
+--      (D9).
 --   3. `fn_fdi_recepcion_con_costos(jsonb, jsonb, jsonb, uuid)` — recepción +
---      costos en UNA transacción, con clave de idempotencia y registro de la
---      tasa en la operación (nunca en el vínculo: eso es del reparto).
+--      costos en UNA transacción, con clave de idempotencia y registro
+--      **siempre** de la tasa en la operación (nunca en el vínculo: eso es del
+--      reparto). Exige la tasa si la factura no es USD (D8).
 --
 -- ---------------------------------------------------------------------------
 -- TASA (`p_tasa_usd`) — sentido, fuente única y regla
@@ -112,6 +166,24 @@
 --   `fecha_tasa_aplicada` es `timestamp without time zone`: se escribe
 --   `now() AT TIME ZONE 'UTC'`, nunca `now()` (dependería del TimeZone).
 --
+--   D8 — de dónde sale la tasa y cuándo es obligatoria:
+--     · Recepción con costos (`fn_fdi_recepcion_con_costos`): si la moneda de
+--       la factura no es USD, `p_tasa_usd` es **obligatoria**. Sin ella la
+--       operación quedaría con tasa NULL y el aterrizaje no podría convertir
+--       (22023). Se rechaza **antes** de crear la recepción.
+--     · Si es USD, la tasa se **fuerza a 1** y se registra igual.
+--     · El reparto acepta `p_tasa_usd` o, si no viene, lee la de la operación.
+--
+--   D12 — `fecha_tasa_aplicada` se **re-sella cuando la tasa cambia**. Un
+--   reintento idempotente con la misma tasa conserva la fecha original; una
+--   corrección (tasa distinta) actualiza tasa y fecha. Sin esto la auditoría
+--   decía que la tasa vigente se había aplicado en la fecha de la primera vez.
+--
+--   D9 — la moneda del vínculo ya no se ignora: si está informada y difiere de
+--   `app_dat_operacion_recepcion.moneda_factura`, el reparto **aborta** con
+--   22023 antes de escribir nada. Antes se usaba la de la operación y el cargo
+--   cambiaba en silencio.
+--
 --   `monto_importadora` está expresado en la moneda de la factura (lo calcula
 --   `fn_fdi_compra_vincular_recepcion` como `round(base × pct / 100, 2) − reembolso`).
 --
@@ -138,6 +210,28 @@
 --   Si `Σ base = 0` NO se reparte: se aborta con ERRCODE 22023. Repartir por
 --   valor sin valor es indefinido, y caer a "partes iguales" inventaría un
 --   costo. El mensaje dice qué líneas no tienen costo.
+--
+-- ---------------------------------------------------------------------------
+-- ATRIBUCIÓN — qué líneas son de este vínculo (D10)
+-- ---------------------------------------------------------------------------
+--   `fdi_dat_compra_recepcion` tiene `UNIQUE(id_operacion, id_compra)`: una
+--   misma carga puede cubrir N compras. Por eso "las líneas de la recepción"
+--   NO son "las líneas del vínculo". `fn_fdi_compra_recepcion_bases` resuelve
+--   el conjunto, en este orden:
+--     1. líneas cuyo `fdi_dat_compra_recepcion_linea.id_recepcion_producto`
+--        apunta al vínculo (el camino explícito, hoy sin poblar);
+--     2. líneas que ya tienen un costo atribuido al vínculo
+--        (`app_dat_recepcion_producto_costo.id_compra_recepcion`);
+--     3. si la operación tiene **un solo** vínculo, todas sus líneas.
+--   Con dos o más vínculos y sin 1 ni 2, la función **aborta** con 22023: no se
+--   adivina por producto/variante, porque dos compras pueden traer el mismo
+--   producto y el costo caería en la línea equivocada.
+--
+--   Todo lo que escribe el reparto —borrar, insertar, cuadrar y la foto del
+--   promedio anterior— se filtra por `id_compra_recepcion`. Las filas legadas
+--   con `id_compra_recepcion IS NULL` sólo se retiran si su línea pertenece al
+--   vínculo según la resolución de arriba; así se curan las de la v1 sin tocar
+--   las de otra compra.
 --
 -- ---------------------------------------------------------------------------
 -- ORIGEN DE PAGO — qué se toca y qué no
@@ -349,10 +443,56 @@ ALTER TABLE public.fdi_dat_compra_recepcion
     ADD COLUMN IF NOT EXISTS tasa_usd_aplicada numeric(18,10);
 
 -- ---------------------------------------------------------------------------
--- 1) Base del reparto: valor de cada línea de la recepción
+-- 0c) Atribución del costo a su vínculo (D10)
 --
---    Devuelve, por línea recibida, el costo unitario aplicado y su valor
---    (`cantidad × costo_unitario`). Precedencia del costo unitario, en orden:
+--     Sin esta columna, "los costos de la recepción" = "los costos de la
+--     operación", y una operación puede cubrir N compras: el reparto de la
+--     segunda borraba los de la primera. NULL-able a propósito:
+--       · el cliente escribe costos por su cuenta (sin vínculo todavía), y
+--       · una operación con varios vínculos no se atribuye sin adivinar.
+--     El reparto siempre la rellena.
+--
+--     ON DELETE CASCADE como `fdi_dat_compra_recepcion_linea`: si alguna vez
+--     se retira un vínculo, sus costos no quedan huérfanos apuntando a un id
+--     inexistente.
+-- ---------------------------------------------------------------------------
+ALTER TABLE public.app_dat_recepcion_producto_costo
+    ADD COLUMN IF NOT EXISTS id_compra_recepcion bigint
+        REFERENCES public.fdi_dat_compra_recepcion(id) ON DELETE CASCADE;
+
+CREATE INDEX IF NOT EXISTS idx_recepcion_producto_costo_vinculo
+    ON public.app_dat_recepcion_producto_costo (id_compra_recepcion);
+
+-- Backfill idempotente: las filas del tipo Importadora en una operación con
+-- **un solo** vínculo pasan a estar atribuidas a ese vínculo. Con dos o más no
+-- se tocan (quedan NULL) porque no hay forma de saber a cuál pertenecen sin
+-- `id_recepcion_producto`; el reparto de cada vínculo las ignora y escribe las
+-- suyas.
+UPDATE public.app_dat_recepcion_producto_costo c
+   SET id_compra_recepcion = v.id_link
+  FROM (
+        SELECT c2.id           AS id_costo,
+               min(r.id)       AS id_link,
+               count(r.id)     AS n_vinculos
+          FROM public.app_dat_recepcion_producto_costo c2
+          JOIN public.app_dat_recepcion_productos rp ON rp.id = c2.id_recepcion_producto
+          JOIN public.fdi_dat_compra_recepcion r ON r.id_operacion = rp.id_operacion
+         WHERE c2.id_compra_recepcion IS NULL
+           AND c2.id_tipo_costo IN (
+               SELECT t.id FROM public.app_cont_tipo_costo t
+                WHERE lower(btrim(t.denominacion)) = 'importadora')
+         GROUP BY c2.id
+       ) v
+ WHERE c.id = v.id_costo
+   AND v.n_vinculos = 1;
+
+-- ---------------------------------------------------------------------------
+-- 1) Base del reparto: valor de cada línea DEL VÍNCULO
+--
+--    Devuelve, por línea recibida del vínculo, el costo unitario aplicado y su
+--    valor (`cantidad × costo_unitario`). El conjunto de líneas no es "todas
+--    las de la operación": se resuelve como dice "ATRIBUCIÓN" arriba (D10).
+--    Precedencia del costo unitario, en orden:
 --      1. `fdi_dat_compra_recepcion_linea.costo_unitario_aplicado` con
 --         `id_recepcion_producto` apuntando a la línea (vínculo explícito).
 --         Hoy nunca está poblado, pero es el camino bueno si 05x lo rellena.
@@ -366,6 +506,9 @@ ALTER TABLE public.fdi_dat_compra_recepcion
 --    `origen_costo` deja escrito cuál de los cinco se usó, por línea.
 --
 --    STABLE: no escribe. Se puede llamar para previsualizar el reparto.
+--    **Aborta** (22023) si la operación cubre varias compras y el vínculo no
+--    tiene líneas atribuibles: una previsualización que devolviera 0 líneas
+--    ahí mentiría.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.fn_fdi_compra_recepcion_bases(p_id_compra_recepcion bigint)
 RETURNS TABLE (
@@ -376,23 +519,58 @@ RETURNS TABLE (
     base                  numeric,
     origen_costo          text
 )
-LANGUAGE sql
+LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
-    WITH vinculo AS (
-        SELECT r.id, r.id_operacion
-          FROM public.fdi_dat_compra_recepcion r
-         WHERE r.id = p_id_compra_recepcion
-    ),
-    linea AS (
+DECLARE
+    v_id_operacion bigint;
+    v_vinculos     integer;
+    v_ids          bigint[];
+BEGIN
+    SELECT r.id_operacion INTO v_id_operacion
+      FROM public.fdi_dat_compra_recepcion r
+     WHERE r.id = p_id_compra_recepcion;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION '06b: vínculo compra↔recepción % no encontrado', p_id_compra_recepcion
+            USING ERRCODE = 'P0002';
+    END IF;
+
+    SELECT count(*) INTO v_vinculos
+      FROM public.fdi_dat_compra_recepcion r
+     WHERE r.id_operacion = v_id_operacion;
+
+    -- D10: líneas atribuibles a ESTE vínculo. Dos fuentes explícitas; si no hay
+    -- ninguna y la operación cubre una sola compra, son todas las de la
+    -- operación. Con varias compras y sin atribución no se adivina.
+    SELECT array_agg(x.id_rp) INTO v_ids
+      FROM (
+            SELECT crl.id_recepcion_producto AS id_rp
+              FROM public.fdi_dat_compra_recepcion_linea crl
+             WHERE crl.id_compra_recepcion = p_id_compra_recepcion
+               AND crl.id_recepcion_producto IS NOT NULL
+            UNION
+            SELECT c.id_recepcion_producto
+              FROM public.app_dat_recepcion_producto_costo c
+             WHERE c.id_compra_recepcion = p_id_compra_recepcion
+           ) x;
+
+    IF v_vinculos > 1 AND COALESCE(array_length(v_ids, 1), 0) = 0 THEN
+        RAISE EXCEPTION '06b: la recepción % cubre % compras y el vínculo % no tiene líneas atribuidas; no se puede repartir sin adivinar (poblar id_recepcion_producto en fdi_dat_compra_recepcion_linea).',
+            v_id_operacion, v_vinculos, p_id_compra_recepcion
+            USING ERRCODE = '22023';
+    END IF;
+
+    RETURN QUERY
+    WITH linea AS (
         SELECT rp.id              AS id_rp,
                rp.id_producto     AS id_prod,
                rp.cantidad        AS cant,
                (SELECT crl.costo_unitario_aplicado
                   FROM public.fdi_dat_compra_recepcion_linea crl
-                 WHERE crl.id_compra_recepcion = v.id
+                 WHERE crl.id_compra_recepcion = p_id_compra_recepcion
                    AND crl.id_recepcion_producto = rp.id
                  ORDER BY crl.id
                  LIMIT 1)         AS costo_explicito,
@@ -400,15 +578,15 @@ AS $$
                             THEN min(crl.costo_unitario_aplicado) END
                   FROM public.fdi_dat_compra_recepcion_linea crl
                   JOIN public.fdi_dat_compra_linea cl ON cl.id = crl.id_compra_linea
-                 WHERE crl.id_compra_recepcion = v.id
+                 WHERE crl.id_compra_recepcion = p_id_compra_recepcion
                    AND crl.id_recepcion_producto IS NULL
                    AND cl.id_producto = rp.id_producto
                    AND cl.id_variante IS NOT DISTINCT FROM rp.id_variante) AS costo_unico,
                rp.costo_real      AS costo_real,
                rp.precio_unitario AS precio
           FROM public.app_dat_recepcion_productos rp
-          CROSS JOIN vinculo v
-         WHERE rp.id_operacion = v.id_operacion
+         WHERE rp.id_operacion = v_id_operacion
+           AND (v_vinculos = 1 OR rp.id = ANY(COALESCE(v_ids, '{}'::bigint[])))
     ),
     resuelto AS (
         SELECT li.id_rp,
@@ -422,14 +600,15 @@ AS $$
                     ELSE 'ninguno' END                                                AS origen
           FROM linea li
     )
-    SELECT r.id_rp,
-           r.id_prod,
-           r.cant,
-           r.costo,
-           round(r.cant * r.costo, 6),
-           r.origen
-      FROM resuelto r
-     ORDER BY r.id_rp;
+    SELECT res.id_rp,
+           res.id_prod,
+           res.cant,
+           res.costo,
+           round(res.cant * res.costo, 6),
+           res.origen
+      FROM resuelto res
+     ORDER BY res.id_rp;
+END;
 $$;
 
 REVOKE ALL ON FUNCTION public.fn_fdi_compra_recepcion_bases(bigint) FROM PUBLIC, anon;
@@ -503,6 +682,18 @@ BEGIN
     v_moneda_op   := upper(btrim(COALESCE(v_op_moneda, '')));
     v_moneda_link := upper(btrim(COALESCE(v_link.moneda, '')));
 
+    -- D9: la moneda del vínculo tiene que ser la de la operación. El vínculo la
+    -- guarda al enlazar (`fn_fdi_compra_vincular_recepcion` copia
+    -- `fdi_dat_compra.moneda_total`); si no coincide con la factura, el cargo
+    -- —que está en la moneda del vínculo— se convertiría con la tasa de otra
+    -- moneda y el importe cambiaría sin avisar. Se aborta ANTES de escribir.
+    IF v_moneda_link <> '' AND v_moneda_op <> ''
+       AND v_moneda_link IS DISTINCT FROM v_moneda_op THEN
+        RAISE EXCEPTION '06b: la moneda del vínculo (%) no coincide con la de la operación % (%). Corrija la recepción o la compra: el cargo no se convierte con la tasa de otra moneda.',
+            v_moneda_link, v_link.id_operacion, v_moneda_op
+            USING ERRCODE = '22023';
+    END IF;
+
     -- --- Tasa: el parámetro si viene; si no, la registrada en la operación --
     IF p_tasa_usd IS NOT NULL THEN
         IF NOT (p_tasa_usd > 0) OR p_tasa_usd >= 'Infinity'::numeric THEN
@@ -541,9 +732,15 @@ BEGIN
     -- wallet_proveedor porque la función retornaba antes de escribir nada.
     -- `fecha_tasa_aplicada` es timestamp WITHOUT time zone (D5): se escribe
     -- now() AT TIME ZONE 'UTC' para que no dependa del TimeZone de la sesión.
+    -- D12: la fecha se re-sella SÓLO si la tasa cambia (corrección); un
+    -- reintento con la misma tasa conserva la fecha del primer registro.
     UPDATE public.app_dat_operacion_recepcion
        SET tasa_cambio_aplicada = v_tasa,
-           fecha_tasa_aplicada  = COALESCE(fecha_tasa_aplicada, now() AT TIME ZONE 'UTC')
+           fecha_tasa_aplicada  = CASE
+               WHEN tasa_cambio_aplicada IS DISTINCT FROM v_tasa
+                   THEN now() AT TIME ZONE 'UTC'
+               ELSE COALESCE(fecha_tasa_aplicada, now() AT TIME ZONE 'UTC')
+           END
      WHERE id_operacion = v_link.id_operacion;
 
     -- --- Quién paga: sin cargo a la recepción si lo paga el fondo -----------
@@ -626,12 +823,17 @@ BEGIN
      WHERE id = p_id_compra_recepcion;
 
     -- --- Sin cargo: se limpia lo que hubiera (idempotencia) ------------------
+    -- D10: sólo lo de ESTE vínculo. Las filas legadas sin atribución se retiran
+    -- únicamente si su línea pertenece al vínculo según `bases`; nunca las de
+    -- otra compra de la misma carga.
     IF v_cargo_usd = 0 THEN
         DELETE FROM public.app_dat_recepcion_producto_costo c
          WHERE c.id_tipo_costo = v_id_tipo
-           AND c.id_recepcion_producto IN (
-               SELECT rp.id FROM public.app_dat_recepcion_productos rp
-                WHERE rp.id_operacion = v_link.id_operacion);
+           AND (c.id_compra_recepcion = p_id_compra_recepcion
+                OR (c.id_compra_recepcion IS NULL
+                    AND c.id_recepcion_producto IN (
+                        SELECT b.id_recepcion_producto
+                          FROM public.fn_fdi_compra_recepcion_bases(p_id_compra_recepcion) b)));
         GET DIAGNOSTICS v_borradas = ROW_COUNT;
 
         RETURN jsonb_build_object(
@@ -640,7 +842,7 @@ BEGIN
                            THEN 'cargo_cero'
                            ELSE 'cargo_redondeado_a_cero' END,
             'capitaliza', false,
-            'aviso', 'No hay cargo que aterrizar; se retiraron las filas previas del tipo Importadora. La tasa quedó registrada en la operación y en el vínculo.',
+            'aviso', 'No hay cargo que aterrizar; se retiraron las filas previas del tipo Importadora del vínculo. La tasa quedó registrada en la operación y en el vínculo.',
             'id_compra_recepcion', p_id_compra_recepcion,
             'id_compra', v_link.id_compra,
             'id_operacion', v_link.id_operacion,
@@ -677,6 +879,8 @@ BEGIN
     END IF;
 
     -- --- Foto del promedio anterior de las filas que ya existan -------------
+    -- D10: mismo alcance que el borrado (vínculo + legadas sólo si la línea es
+    -- del vínculo).
     SELECT COALESCE(jsonb_object_agg(x.id_rp::text, x.prev), '{}'::jsonb)
       INTO v_prev
       FROM (
@@ -685,18 +889,23 @@ BEGIN
                    c.monto_promedio_anterior AS prev
               FROM public.app_dat_recepcion_producto_costo c
              WHERE c.id_tipo_costo = v_id_tipo
-               AND c.id_recepcion_producto IN (
-                   SELECT rp.id FROM public.app_dat_recepcion_productos rp
-                    WHERE rp.id_operacion = v_link.id_operacion)
+               AND (c.id_compra_recepcion = p_id_compra_recepcion
+                    OR (c.id_compra_recepcion IS NULL
+                        AND c.id_recepcion_producto IN (
+                            SELECT b.id_recepcion_producto
+                              FROM public.fn_fdi_compra_recepcion_bases(p_id_compra_recepcion) b)))
              ORDER BY c.id_recepcion_producto, c.id
            ) x;
 
     -- --- Limpieza (reemplaza; cura duplicados) ------------------------------
+    -- D10: nunca las filas de otro vínculo de la misma operación.
     DELETE FROM public.app_dat_recepcion_producto_costo c
      WHERE c.id_tipo_costo = v_id_tipo
-       AND c.id_recepcion_producto IN (
-           SELECT rp.id FROM public.app_dat_recepcion_productos rp
-            WHERE rp.id_operacion = v_link.id_operacion);
+       AND (c.id_compra_recepcion = p_id_compra_recepcion
+            OR (c.id_compra_recepcion IS NULL
+                AND c.id_recepcion_producto IN (
+                    SELECT b.id_recepcion_producto
+                      FROM public.fn_fdi_compra_recepcion_bases(p_id_compra_recepcion) b)));
     GET DIAGNOSTICS v_borradas = ROW_COUNT;
 
     -- --- Reparto y persistencia --------------------------------------------
@@ -734,7 +943,8 @@ BEGIN
           FROM prorr p
     )
     INSERT INTO public.app_dat_recepcion_producto_costo
-        (id_recepcion_producto, id_tipo_costo, monto_usd, monto_promedio_anterior)
+        (id_recepcion_producto, id_tipo_costo, monto_usd, monto_promedio_anterior,
+         id_compra_recepcion)
     SELECT pl.id_recepcion_producto,
            v_id_tipo,
            pl.monto,
@@ -744,19 +954,19 @@ BEGIN
                   FROM public.app_dat_producto_costo pc
                  WHERE pc.id_producto = pl.id_producto
                    AND pc.id_tipo_costo = v_id_tipo),
-               0)
+               0),
+           p_id_compra_recepcion
       FROM plan pl;
 
     GET DIAGNOSTICS v_insertadas = ROW_COUNT;
 
     -- --- Cuadre antes de devolver ------------------------------------------
+    -- D10: el cuadre es del vínculo, no de la operación.
     SELECT count(*), COALESCE(sum(c.monto_usd), 0)
       INTO v_filas, v_suma
       FROM public.app_dat_recepcion_producto_costo c
      WHERE c.id_tipo_costo = v_id_tipo
-       AND c.id_recepcion_producto IN (
-           SELECT rp.id FROM public.app_dat_recepcion_productos rp
-            WHERE rp.id_operacion = v_link.id_operacion);
+       AND c.id_compra_recepcion = p_id_compra_recepcion;
 
     IF v_filas <> v_lineas THEN
         RAISE EXCEPTION '06b: quedaron % filas de costo para % líneas en la recepción %. Se aborta.',
@@ -907,8 +1117,10 @@ DECLARE
     v_tasa        numeric;
     v_tasa_recibida boolean := false;
     v_op_moneda   character varying;
+    v_op_tasa     numeric;
     v_moneda_op   text;
     v_tasa_forzada boolean := false;
+    v_link_unico  bigint;
 BEGIN
     -- --- Validaciones de forma ---------------------------------------------
     IF p_idempotency_key IS NULL THEN
@@ -977,6 +1189,20 @@ BEGIN
                 USING ERRCODE = '22023';
         END IF;
         v_tasa_recibida := true;
+    END IF;
+
+    -- D8: una factura que no es USD no puede entrar por este carril sin tasa.
+    -- Antes la operación quedaba con `tasa_cambio_aplicada` NULL (el carril
+    -- normal sólo la escribía si había inversión) y el aterrizaje posterior
+    -- abortaba con 22023, dejando la recepción creada y el costo sin poder
+    -- aterrizar. Se rechaza AQUÍ, antes de crear nada. La moneda se lee del
+    -- payload con la misma coerción que `fn_registrar_recepcion_con_inventario`
+    -- (vacío/NULL ⇒ USD).
+    v_moneda_op := upper(btrim(COALESCE(NULLIF(p_recepcion ->> 'p_moneda_factura', ''), 'USD')));
+    IF v_moneda_op <> 'USD' AND NOT v_tasa_recibida THEN
+        RAISE EXCEPTION '06b: la factura está en % y no se recibió la tasa (p_recepcion->>p_tasa_usd, unidades de la moneda de la factura por 1 USD). Sin tasa la operación quedaría con tasa NULL y el aterrizaje no podría convertir.',
+            v_moneda_op
+            USING ERRCODE = '22023';
     END IF;
 
     v_sol_full  := jsonb_build_object('recepcion', p_recepcion, 'costos', v_costos, 'fuentes', p_fuentes);
@@ -1050,7 +1276,15 @@ BEGIN
         IF v_fondo THEN
             -- Carril fondo: valida saldos, cubre la factura al céntimo, crea la
             -- inversión y lanza si algo falla (es atómica de por sí).
-            v_res := public.fn_fdi_registrar_recepcion(p_recepcion, p_fuentes, p_idempotency_key);
+            -- D4 (carril fondo): se le pasa la recepción SIN las claves de tasa.
+            -- `fn_fdi_registrar_recepcion` guarda la solicitud y la compara
+            -- exacta; si la tasa viajara, corregirla en un reintento abortaría
+            -- con "la clave ya corresponde a otra solicitud". La tasa la
+            -- registra este wrapper en la operación, después.
+            v_res := public.fn_fdi_registrar_recepcion(
+                p_recepcion - 'p_tasa_usd' - 'tasa_usd_aplicada'
+                            - 'tasa_cambio_aplicada' - 'fecha_tasa_aplicada',
+                p_fuentes, p_idempotency_key);
             v_operacion    := NULLIF(v_res ->> 'id_operacion', '')::bigint;
             v_id_inversion := NULLIF(v_res ->> 'id_inversion', '')::bigint;
 
@@ -1099,30 +1333,48 @@ BEGIN
     -- wallet_proveedor (no capitalice); quién capitaliza se decide después.
     -- D5: `fecha_tasa_aplicada` es timestamp WITHOUT time zone; now() es
     -- timestamptz y dependería del TimeZone de la sesión. Se fija UTC.
-    IF v_tasa_recibida THEN
-        SELECT o.moneda_factura
-          INTO v_op_moneda
-          FROM public.app_dat_operacion_recepcion o
-         WHERE o.id_operacion = v_operacion;
+    -- D8: ya no hay rama "sólo si vino la tasa". Si la factura es USD la tasa
+    -- es 1 por definición y se escribe igual: la auditoría no admite un NULL
+    -- que signifique "nadie lo registró". Si no es USD, la tasa vino
+    -- (validado arriba) o la operación ya la tenía de un intento anterior.
+    SELECT o.moneda_factura, o.tasa_cambio_aplicada
+      INTO v_op_moneda, v_op_tasa
+      FROM public.app_dat_operacion_recepcion o
+     WHERE o.id_operacion = v_operacion;
 
-        IF NOT FOUND THEN
-            RAISE EXCEPTION '06b: la recepción % no tiene fila en app_dat_operacion_recepcion; no se puede registrar la tasa.', v_operacion
-                USING ERRCODE = 'P0002';
-        END IF;
-
-        v_moneda_op := upper(btrim(COALESCE(v_op_moneda, '')));
-        IF v_moneda_op = 'USD' THEN
-            IF v_tasa <> 1 THEN
-                v_tasa_forzada := true;
-            END IF;
-            v_tasa := 1;
-        END IF;
-
-        UPDATE public.app_dat_operacion_recepcion
-           SET tasa_cambio_aplicada = v_tasa,
-               fecha_tasa_aplicada  = COALESCE(fecha_tasa_aplicada, now() AT TIME ZONE 'UTC')
-         WHERE id_operacion = v_operacion;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION '06b: la recepción % no tiene fila en app_dat_operacion_recepcion; no se puede registrar la tasa.', v_operacion
+            USING ERRCODE = 'P0002';
     END IF;
+
+    v_moneda_op := upper(btrim(COALESCE(v_op_moneda, '')));
+    IF v_moneda_op = 'USD' THEN
+        IF v_tasa IS NOT NULL AND v_tasa <> 1 THEN
+            v_tasa_forzada := true;
+        END IF;
+        v_tasa := 1;
+    ELSIF v_tasa IS NULL THEN
+        -- No vino en el payload: se conserva la que la operación ya tenía (un
+        -- reintento de una recepción registrada). Si tampoco hay, es un error:
+        -- no se inventa una conversión.
+        v_tasa := v_op_tasa;
+        IF v_tasa IS NULL THEN
+            RAISE EXCEPTION '06b: la operación % está en % y no tiene tasa registrada; pase p_recepcion->>p_tasa_usd.', v_operacion, v_moneda_op
+                USING ERRCODE = '22023';
+        END IF;
+    END IF;
+
+    -- D12: la fecha se re-sella sólo si la tasa cambia. Un reintento con la
+    -- misma tasa conserva la fecha del primer registro; una corrección la
+    -- actualiza, que es lo que la auditoría debe poder leer.
+    UPDATE public.app_dat_operacion_recepcion
+       SET tasa_cambio_aplicada = v_tasa,
+           fecha_tasa_aplicada  = CASE
+               WHEN tasa_cambio_aplicada IS DISTINCT FROM v_tasa
+                   THEN now() AT TIME ZONE 'UTC'
+               ELSE COALESCE(fecha_tasa_aplicada, now() AT TIME ZONE 'UTC')
+           END
+     WHERE id_operacion = v_operacion;
 
     -- --- Validación de los costos ------------------------------------------
     IF jsonb_array_length(v_costos) > 0 THEN
@@ -1198,6 +1450,15 @@ BEGIN
         END IF;
 
         -- --- Persistencia (idempotente: no duplica) ------------------------
+        -- D10: si la operación ya tiene exactamente un vínculo, el costo nace
+        -- atribuido; con 0 o con 2+ se deja NULL (no se adivina a cuál
+        -- pertenece). El reparto del aterrizaje reemplaza estas filas del tipo
+        -- Importadora por las suyas, ya atribuidas.
+        SELECT min(r.id) INTO v_link_unico
+          FROM public.fdi_dat_compra_recepcion r
+         WHERE r.id_operacion = v_operacion
+        HAVING count(*) = 1;
+
         WITH rl AS (
             SELECT rp.id,
                    row_number() OVER (ORDER BY rp.id) AS orden
@@ -1211,7 +1472,8 @@ BEGIN
               FROM jsonb_array_elements(v_costos) WITH ORDINALITY AS x(e, o)
         )
         INSERT INTO public.app_dat_recepcion_producto_costo
-            (id_recepcion_producto, id_tipo_costo, monto_usd, monto_promedio_anterior)
+            (id_recepcion_producto, id_tipo_costo, monto_usd, monto_promedio_anterior,
+             id_compra_recepcion)
         SELECT rl.id,
                pd.id_tipo_costo,
                pd.monto_usd,
@@ -1220,7 +1482,8 @@ BEGIN
                       FROM public.app_dat_producto_costo pc
                      WHERE pc.id_producto = rp.id_producto
                        AND pc.id_tipo_costo = pd.id_tipo_costo),
-                   0)
+                   0),
+               v_link_unico
           FROM pedido pd
           JOIN rl ON rl.orden = pd.orden
           JOIN public.app_dat_recepcion_productos rp ON rp.id = rl.id
@@ -1244,7 +1507,8 @@ BEGIN
         'tasa_usd_aplicada', v_tasa,
         'moneda_operacion', v_moneda_op,
         'tasa_forzada_usd', v_tasa_forzada,
-        'tasa_registrada_en_operacion', v_tasa_recibida,
+        'tasa_registrada_en_operacion', true,
+        'id_compra_recepcion', v_link_unico,
         'orden_sugerido', 'Ejecute fn_actualizar_precio_promedio_recepcion_v2/v3 después, para capitalizar los costos al promedio.');
 END;
 $$;
@@ -1284,6 +1548,42 @@ BEGIN
        AND is_nullable = 'YES';
     IF v <> 1 THEN
         RAISE EXCEPTION '06b: fdi_dat_compra_recepcion.tasa_usd_aplicada no quedó numeric(18,10) NULL';
+    END IF;
+
+    -- 4.2b) D10: la atribución del costo a su vínculo existe, NULL-able, con FK
+    --       al vínculo y con índice. Sin ella el reparto vuelve a borrar los
+    --       costos de otra compra de la misma carga.
+    SELECT count(*) INTO v
+      FROM information_schema.columns
+     WHERE table_schema = 'public'
+       AND table_name = 'app_dat_recepcion_producto_costo'
+       AND column_name = 'id_compra_recepcion'
+       AND data_type = 'bigint'
+       AND is_nullable = 'YES';
+    IF v <> 1 THEN
+        RAISE EXCEPTION '06b: app_dat_recepcion_producto_costo.id_compra_recepcion no quedó bigint NULL';
+    END IF;
+
+    SELECT count(*) INTO v
+      FROM pg_constraint c
+      JOIN pg_class t ON t.oid = c.conrelid
+      JOIN pg_class f ON f.oid = c.confrelid
+      JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY (c.conkey)
+     WHERE c.contype = 'f'
+       AND t.relname = 'app_dat_recepcion_producto_costo'
+       AND f.relname = 'fdi_dat_compra_recepcion'
+       AND a.attname = 'id_compra_recepcion';
+    IF v <> 1 THEN
+        RAISE EXCEPTION '06b: falta la FK app_dat_recepcion_producto_costo.id_compra_recepcion → fdi_dat_compra_recepcion';
+    END IF;
+
+    SELECT count(*) INTO v
+      FROM pg_indexes
+     WHERE schemaname = 'public'
+       AND tablename = 'app_dat_recepcion_producto_costo'
+       AND indexname = 'idx_recepcion_producto_costo_vinculo';
+    IF v <> 1 THEN
+        RAISE EXCEPTION '06b: falta el índice idx_recepcion_producto_costo_vinculo';
     END IF;
 
     -- 4.3) SECURITY DEFINER y valor de retorno jsonb donde toca.
@@ -1376,7 +1676,7 @@ BEGIN
         md5(btrim(regexp_replace(split_part(pg_get_functiondef(to_regprocedure('public.fn_fdi_compra_repartir_aterrizaje(bigint,numeric)')), '$function$', 2), '\s+', ' ', 'g'))),
         md5(btrim(regexp_replace(split_part(pg_get_functiondef(to_regprocedure('public.fn_fdi_recepcion_con_costos(jsonb,jsonb,jsonb,uuid)')), '$function$', 2), '\s+', ' ', 'g')));
 
-    RAISE NOTICE '06b aplicado: bases + reparto de importadora + recepción con costos transaccional (tasa_usd_aplicada incluida).';
+    RAISE NOTICE '06b aplicado: bases + reparto de importadora + recepción con costos transaccional (tasa_usd_aplicada e id_compra_recepcion incluidas).';
 END;
 $$;
 

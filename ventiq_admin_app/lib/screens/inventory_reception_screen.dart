@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../widgets/reception_total_widget.dart';
 import '../config/app_colors.dart';
@@ -41,8 +42,20 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   static String _lastEntregadoPor = '';
   static String _lastRecibidoPor = '';
   static String _lastObservaciones = '';
-  final String _selectedCurrency =
-      'USD'; // Siempre USD, la conversión se hace por producto
+
+  /// Moneda de la factura de la recepción.
+  ///
+  /// Con compra manda **la de la compra**: el vínculo guarda esa moneda y el
+  /// servidor aborta el aterrizaje si la de la operación no coincide (D9). Sin
+  /// compra se registra en USD, como siempre: la conversión de la recepción
+  /// libre se hace por producto.
+  static const String _monedaSinCompra = 'USD';
+  static const Set<String> _monedasValidas = {'USD', 'CUP', 'EUR'};
+
+  String get _selectedCurrency {
+    final moneda = _compraSeleccionada?.monedaTotal.trim().toUpperCase() ?? '';
+    return _monedasValidas.contains(moneda) ? moneda : _monedaSinCompra;
+  }
   List<Map<String, dynamic>> _selectedProducts = [];
   List<Map<String, dynamic>> _motivoOptions = [];
   Map<String, dynamic>? _selectedMotivo;
@@ -87,6 +100,11 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   final _reembolsoImportadoraController = TextEditingController();
   OrigenPagoAjuste _origenPagoImportadora = OrigenPagoAjuste.walletImportadora;
 
+  /// Tasa de la factura en la recepción con compra: unidades de la moneda de la
+  /// factura por 1 USD (la misma que `fdi_dat_compra.tasa_factura`). El servidor
+  /// la exige si la factura no es USD y la guarda en la operación (D8).
+  final _tasaFacturaUsdController = TextEditingController();
+
   /// Autorización de exceso para el envío en curso: se fija tras el diálogo y
   /// solo aplica a esa llamada a `vincularRecepcion`.
   bool _confirmarExcesoCompra = false;
@@ -97,6 +115,29 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
 
   /// Hay compra seleccionada: cambia el selector de productos y bloquea el fondo.
   bool get _conCompra => _compraSeleccionada != null;
+
+  /// Alguna línea lleva costos adicionales: la recepción viaja por el wrapper
+  /// transaccional y, si la factura no es USD, ese carril exige la tasa (D8).
+  bool get _hayCostos => _selectedProducts.any((p) {
+    final costos = p['costos'];
+    return costos is List && costos.isNotEmpty;
+  });
+
+  /// Hay que pedir y enviar `p_tasa_usd`: factura no-USD y un carril que la
+  /// exige (recepción de compra, siempre, porque el aterrizaje posterior la
+  /// necesita; o costos que se registran en la misma transacción).
+  bool get _requiereTasaFactura {
+    if (_selectedCurrency == 'USD') return false;
+    if (_conCompra) return true;
+    return _hayCostos && (_usarFondo || _selectedInversion == null);
+  }
+
+  static String _textoNumero(double valor) {
+    if (!valor.isFinite) return '';
+    return valor == valor.roundToDouble()
+        ? valor.toStringAsFixed(0)
+        : valor.toString();
+  }
 
   static double _numeroDe(String texto) {
     final t = texto.trim().replaceAll(',', '.');
@@ -174,6 +215,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
     _pctImportadoraController.dispose();
     _baseImportadoraController.dispose();
     _reembolsoImportadoraController.dispose();
+    _tasaFacturaUsdController.dispose();
     for (final controller in _cantidadCompraControllers.values) {
       controller.dispose();
     }
@@ -266,6 +308,12 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
         // Compra y financiación con el fondo no pueden convivir.
         _usarFondo = false;
         _fuentesFondo = [];
+        // Tasa congelada en la compra; se precarga y se puede corregir antes de
+        // guardar (el servidor la registra en la operación, D8). El resumen del
+        // listado no la trae: se lee del detalle.
+        _tasaFacturaUsdController.clear();
+      } else {
+        _tasaFacturaUsdController.clear();
       }
     });
     if (teniaProductos && mounted) {
@@ -276,6 +324,25 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
       );
     }
     if (compra != null) await _cargarPendiente(compra.id);
+    if (compra != null) await _cargarTasaCompra(compra);
+  }
+
+  /// Precarga la tasa congelada de la compra (`tasa_factura`). El resumen del
+  /// listado no la trae, así que se lee del detalle. Si falla, el campo queda
+  /// vacío y el usuario la escribe: el servidor la exige igual (D8).
+  Future<void> _cargarTasaCompra(CompraResumen compra) async {
+    final moneda = compra.monedaTotal.trim().toUpperCase();
+    if (moneda.isEmpty || moneda == 'USD') return;
+    try {
+      final detalle = await CompraService().detalle(compra.id);
+      if (!mounted || _compraSeleccionada?.id != compra.id) return;
+      setState(() {
+        _tasaFacturaUsdController.text =
+            _textoNumero(detalle.compra.tasaFactura);
+      });
+    } catch (e) {
+      print('i️ No se pudo leer la tasa de la compra ${compra.numeroCompra}: $e');
+    }
   }
 
   /// Pendiente por línea (`fn_fdi_compra_recepcion_pendiente`). Solo se
@@ -845,6 +912,16 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
       }
       _confirmarExcesoCompra = excesos.isNotEmpty;
     }
+    // D8: con factura no-USD y costos en la misma transacción, el servidor
+    // exige la tasa. Se avisa aquí en vez de dejar que la RPC devuelva 22023.
+    if (_requiereTasaFactura &&
+        _numeroDe(_tasaFacturaUsdController.text) <= 0) {
+      _showError(
+        'Indique la tasa de la factura: $_selectedCurrency por 1 USD '
+        '(sin ella el costo no se puede aterrizar)',
+      );
+      return;
+    }
     setState(() => _isLoading = true);
 
     try {
@@ -915,6 +992,11 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
         idProveedor: _selectedSupplier?.id,
         uuid: userUuid,
         monedaFactura: _selectedCurrency,
+        // D8: la tasa viaja con la recepción. Sin ella, una factura que no sea
+        // USD deja la operación con tasa NULL y el aterrizaje no puede convertir.
+        tasaUsd: _requiereTasaFactura
+            ? _numeroDe(_tasaFacturaUsdController.text)
+            : null,
         idInversion: inv?.id,
         tasaInversion: tasaInversion,
         fuentesFondo: _usarFondo ? _fuentesFondo.map((f) => f.toJson()).toList() : null,
@@ -1191,10 +1273,52 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
               ),
               const SizedBox(height: 16),
               _buildCargoImportadoraBlock(),
+              if (_requiereTasaFactura) ...[
+                const SizedBox(height: 16),
+                _buildTasaFacturaBlock(),
+              ],
             ],
           ],
         ),
       ),
+    );
+  }
+
+  /// Tasa de la factura con compra: unidades de la moneda de la factura por
+  /// 1 USD. La congela el documento de compra (`tasa_factura`); se puede
+  /// corregir antes de guardar y el servidor la registra en la operación (D8).
+  Widget _buildTasaFacturaBlock() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Tasa de la factura',
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Unidades de $_selectedCurrency por 1 USD. Obligatoria: sin ella no '
+          'se puede aterrizar el costo de la importadora.',
+          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+        ),
+        const SizedBox(height: 8),
+        TextFormField(
+          controller: _tasaFacturaUsdController,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
+          decoration: InputDecoration(
+            labelText: 'Tasa $_selectedCurrency por 1 USD',
+            border: const OutlineInputBorder(),
+          ),
+          validator: (v) {
+            if (!_requiereTasaFactura) return null;
+            final tasa = _numeroDe(v ?? '');
+            if (tasa <= 0) return 'Tasa requerida (mayor que 0)';
+            if (tasa >= 1e15) return 'Tasa fuera de rango';
+            return null;
+          },
+        ),
+      ],
     );
   }
 
