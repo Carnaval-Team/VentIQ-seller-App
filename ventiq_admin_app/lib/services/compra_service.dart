@@ -296,4 +296,39 @@ class CompraService {
     );
     return _asMap(resp);
   }
+
+  /// Resumen del costo aterrizado de la compra
+  /// (`fn_fdi_compra_costo_resumen`): valor de factura vinculado, cargo de
+  /// importadora, % declarado vs efectivo con su desvío, y qué parte de los
+  /// ajustes globales se aplica según lo recibido.
+  ///
+  /// Es de solo lectura: el aterrizaje se persiste al vincular/repartir y el
+  /// promedio lo capitaliza `fn_actualizar_precio_promedio_recepcion_v2`.
+  Future<Map<String, dynamic>> costoResumen(int idCompra) async {
+    final resp = await _supabase.rpc(
+      'fn_fdi_compra_costo_resumen',
+      params: {'p_id_compra': idCompra},
+    );
+    return _asMap(resp);
+  }
+
+  /// Reparte el cargo de importadora del vínculo entre sus líneas
+  /// (`fn_fdi_compra_repartir_aterrizaje`). Idempotente: reemplaza las filas
+  /// del tipo Importadora del vínculo, no las de otra compra.
+  ///
+  /// Devuelve `{status: ok|sin_cargo|omitido, capitaliza, suma_monto_usd,
+  /// filas_insertadas, filas_retiradas, tasa_usd_aplicada, ...}`.
+  Future<Map<String, dynamic>> repartirAterrizaje(
+    int idCompraRecepcion, {
+    double? tasaUsd,
+  }) async {
+    final resp = await _supabase.rpc(
+      'fn_fdi_compra_repartir_aterrizaje',
+      params: {
+        'p_id_compra_recepcion': idCompraRecepcion,
+        if (tasaUsd != null) 'p_tasa_usd': tasaUsd,
+      },
+    );
+    return _asMap(resp);
+  }
 }

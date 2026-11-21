@@ -27,6 +27,10 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
   String? _error;
   CompraDetalle? _detalle;
 
+  /// Resumen del costo aterrizado (`fn_fdi_compra_costo_resumen`). Es
+  /// opcional: si falla, el detalle se muestra igual sin el panel.
+  Map<String, dynamic>? _costoResumen;
+
   @override
   void initState() {
     super.initState();
@@ -40,9 +44,17 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
     });
     try {
       final detalle = await _service.detalle(widget.idCompra);
+      Map<String, dynamic>? costoResumen;
+      try {
+        costoResumen = await _service.costoResumen(widget.idCompra);
+      } catch (_) {
+        // El detalle no depende del resumen: si la RPC falla se oculta el panel.
+        costoResumen = null;
+      }
       if (!mounted) return;
       setState(() {
         _detalle = detalle;
+        _costoResumen = costoResumen;
         _cargando = false;
       });
     } catch (e) {
@@ -381,6 +393,7 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         _panelTotales(detalle),
+                        _panelCostoAterrizado(detalle),
                         const SizedBox(height: 12),
                         _panelAcciones(detalle),
                       ],
@@ -399,6 +412,7 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
             children: [
               _panelCabecera(detalle),
               _panelTotales(detalle),
+              _panelCostoAterrizado(detalle),
               const SizedBox(height: 12),
               _panelLineas(detalle, tamano),
               _panelAjustes(detalle),
@@ -583,6 +597,231 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
           style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
         ),
       ],
+    );
+  }
+
+  // ==========================================================================
+  // Costo aterrizado (fase 6)
+  // ==========================================================================
+
+  /// Cifras que manda el servidor (`fn_fdi_compra_costo_resumen`): valor de
+  /// factura vinculado, cargo de importadora con su desvío frente al % pactado,
+  /// ajustes globales aplicados y pendientes, y el costo aterrizado por línea.
+  /// Es solo lectura: el módulo muestra el desvío, no lo corrige.
+  /// Aterriza a mano el cargo de un vínculo que quedó sin costo (por ejemplo,
+/// porque la recepción se registró sin compra y se vinculó después). Es la
+/// misma RPC que usa la recepción; idempotente por vínculo.
+  Future<void> _aterrizarVinculo(int idCompraRecepcion) async {
+    try {
+      final r = await _service.repartirAterrizaje(idCompraRecepcion);
+      final status = r['status']?.toString() ?? '?';
+      _snack(
+        status == 'ok'
+            ? 'Cargo aterrizado en la recepción.'
+            : 'No se aterrizó: $status',
+        error: status != 'ok',
+      );
+      await _cargar();
+    } catch (e) {
+      _snack('No se pudo aterrizar el cargo: $e', error: true);
+    }
+  }
+
+  /// Un vínculo necesita aterrizaje si todavía no tiene filas de costo, el
+  /// cargo es mayor que cero y su origen capitaliza (wallet o externo).
+  bool _puedeAterrizar(Map<String, dynamic> vinculo) {
+    final filas = num.tryParse('${vinculo['filas_costo']}') ?? 0;
+    final cargo = num.tryParse('${vinculo['monto_importadora']}') ?? 0;
+    final origen = '${vinculo['origen_pago'] ?? ''}';
+    return filas == 0 &&
+        cargo > 0 &&
+        (origen == 'wallet_importadora' || origen == 'externo');
+  }
+
+  Widget _panelCostoAterrizado(CompraDetalle detalle) {
+    final resumen = _costoResumen;
+    if (resumen == null) return const SizedBox.shrink();
+    final moneda = detalle.compra.monedaTotal;
+
+    num numero(String clave) {
+      final v = resumen[clave];
+      if (v is num) return v;
+      return num.tryParse('$v') ?? 0;
+    }
+
+    num? opcional(String clave) {
+      final v = resumen[clave];
+      if (v == null) return null;
+      if (v is num) return v;
+      return num.tryParse('$v');
+    }
+
+    final lineas = (resumen['lineas'] as List?) ?? const [];
+    final vinculos = (resumen['vinculos'] as List?) ?? const [];
+    final pctDecl = opcional('pct_importadora_declarado');
+    final pctEf = opcional('pct_importadora_efectivo');
+    final desvio = opcional('desvio_importadora');
+    final ajustes = numero('ajustes_globales');
+
+    Widget fila(
+      String etiqueta,
+      String valor, {
+      bool destacada = false,
+      Color? color,
+    }) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                etiqueta,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ),
+            Text(
+              valor,
+              style: TextStyle(
+                fontSize: destacada ? 18 : 14,
+                fontWeight: destacada ? FontWeight.w700 : FontWeight.w600,
+                color: color ?? AppColors.textPrimary,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: panelCompras(
+        children: [
+          tituloSeccionCompras(
+            'Costo aterrizado',
+            trailing: textoMetaCompras('${vinculos.length} recepción(es)'),
+          ),
+          fila(
+            'Valor de factura vinculado',
+            formatearImporteMoneda(numero('valor_vinculado'), moneda),
+          ),
+          fila(
+            'Cargo de importadora',
+            formatearImporteMoneda(numero('cargo_importadora'), moneda),
+          ),
+          if (pctDecl != null)
+            textoMetaCompras(
+              'Importadora: declarado ${formatearCantidad(pctDecl)} % · '
+              'efectivo ${pctEf == null ? '—' : '${formatearCantidad(pctEf)} %'}',
+            ),
+          if (desvio != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: avisoCompras(
+                desvio == 0
+                    ? 'Desvío de importadora: el cargo coincide con lo declarado.'
+                    : 'Desvío de importadora: ${desvio > 0 ? '+' : ''}'
+                          '${formatearImporteMoneda(desvio, moneda)} '
+                          '(${desvio < 0 ? 'el cargo quedó por debajo de lo pactado' : 'el cargo superó lo pactado'}). '
+                          'No se corrige solo: decida si reembolsa o ajusta el %.',
+                color: desvio == 0 ? AppColors.success : AppColors.warning,
+                icono: desvio == 0
+                    ? Icons.check_circle_outline
+                    : Icons.warning_amber_rounded,
+              ),
+            ),
+          if (ajustes > 0) ...[
+            fila('Ajustes globales', formatearImporteMoneda(ajustes, moneda)),
+            fila(
+              'Aplicado (${formatearCantidad(numero('pct_recibido') * 100)} % recibido)',
+              formatearImporteMoneda(numero('ajustes_aplicados'), moneda),
+            ),
+            fila(
+              'Por asignar',
+              formatearImporteMoneda(numero('ajustes_por_asignar'), moneda),
+            ),
+          ],
+          const Divider(height: 20),
+          fila(
+            'Total aterrizado',
+            formatearImporteMoneda(numero('total_aterrizado'), moneda),
+            destacada: true,
+          ),
+          if (lineas.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            textoMetaCompras('Costo por línea recibida (${lineas.length})'),
+            const SizedBox(height: 4),
+            for (final linea in lineas.take(8))
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${linea['producto'] ?? ''} · '
+                        '${formatearCantidad(num.tryParse('${linea['cantidad']}') ?? 0)}',
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '${formatearImporte(num.tryParse('${linea['costo_factura_unit']}') ?? 0)}'
+                      ' → '
+                      '${formatearImporte(num.tryParse('${linea['costo_aterrizado_unit']}') ?? 0)}',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            if (lineas.length > 8)
+              textoMetaCompras('… y ${lineas.length - 8} línea(s) más'),
+            const SizedBox(height: 4),
+            textoMetaCompras(
+              'Unidad: factura → aterrizado, en $moneda. El promedio del '
+              'producto lo capitaliza el servidor al completar la recepción.',
+            ),
+          ],
+          if (vinculos.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            textoMetaCompras('Recepciones vinculadas (${vinculos.length})'),
+            for (final v in vinculos)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Recepción #${v['id_operacion']} · base '
+                        '${formatearImporteMoneda(num.tryParse('${v['base_importadora']}') ?? 0, moneda)}'
+                        ' · cargo '
+                        '${formatearImporteMoneda(num.tryParse('${v['monto_importadora']}') ?? 0, moneda)}',
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ),
+                    if (_puedeAterrizar(v))
+                      TextButton(
+                        onPressed: () =>
+                            _aterrizarVinculo((v['id_compra_recepcion'] as num).toInt()),
+                        child: const Text('Aterrizar cargo'),
+                      ),
+                  ],
+                ),
+              ),
+          ],
+        ],
+      ),
     );
   }
 

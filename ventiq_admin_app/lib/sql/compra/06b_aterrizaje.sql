@@ -3,11 +3,11 @@
 --
 -- SINCRONIZADO con `newa` (`qhprswhhfasrikhawjoz`) el 2026-11-21 (tercera
 -- pasada: los cinco defectos D8-D12 de la revisión de la fase 6).
--- 20/20 en `verify/06_costos.sql`. Los dos `ALTER` (columnas
--- `tasa_usd_aplicada` e `id_compra_recepcion`) y el cuerpo de las tres
--- funciones son los que la base tiene aplicados: aplicarlo en otro entorno
--- produce el mismo resultado. Es idempotente: se puede reaplicar sobre una
--- base que ya tiene la versión anterior.
+-- 20/20 en `verify/06_costos.sql` al aplicar 06b (23/23 con 06c). Los dos
+-- `ALTER` (columnas `tasa_usd_aplicada` e `id_compra_recepcion`) y el cuerpo de
+-- las tres funciones son los que la base tiene aplicados: aplicarlo en otro
+-- entorno produce el mismo resultado. Es idempotente: se puede reaplicar sobre
+-- una base que ya tiene la versión anterior.
 --
 -- Verificación de sincronía archivo↔base: se compara el **cuerpo normalizado**
 -- de cada función (texto entre los delimitadores del cuerpo, con los espacios

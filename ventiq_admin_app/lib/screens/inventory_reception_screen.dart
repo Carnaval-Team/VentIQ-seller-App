@@ -162,6 +162,20 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
       ? _totalAmount
       : (double.tryParse(_montoTotalController.text.replaceAll(',', '.')) ?? double.nan);
 
+  /// Costos adicionales ya capturados por línea (en USD, como los guarda el
+  /// módulo). Es solo para el adelanto en pantalla: el servidor manda.
+  double get _adicionalesSeleccionados {
+    var total = 0.0;
+    for (final producto in _selectedProducts) {
+      final costos = producto['costos'];
+      if (costos is! List) continue;
+      for (final costo in costos) {
+        if (costo is Map) total += _numeroDe('${costo['monto_usd']}');
+      }
+    }
+    return total;
+  }
+
   Future<void> _loadSaldosFondo() async {
     setState(() { _cargandoFondo = true; _errorFondo = null; });
     try {
@@ -505,6 +519,36 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
       ),
     );
     return confirmado == true;
+  }
+
+  /// Aterriza el cargo de importadora del vínculo recién creado
+  /// (`fn_fdi_compra_repartir_aterrizaje`). **No lanza**: la recepción y el
+  /// vínculo ya existen y no se deshacen; si el reparto falla, se dice tal cual
+  /// y se corrige desde la compra.
+  Future<String> _aterrizarCargo(Map<String, dynamic> vinculo) async {
+    final idLink = (vinculo['id_compra_recepcion'] as num?)?.toInt();
+    if (idLink == null) {
+      return ' · el vínculo no devolvió id para aterrizar el cargo.';
+    }
+    try {
+      final r = await CompraService().repartirAterrizaje(idLink);
+      final status = r['status']?.toString() ?? '?';
+      switch (status) {
+        case 'ok':
+          final suma = _numeroDe('${r['suma_monto_usd']}');
+          return ' · cargo aterrizado: ${_textoNumero(suma)} USD';
+        case 'sin_cargo':
+          return ' · sin cargo de importadora que aterrizar.';
+        case 'omitido':
+          return ' · el cargo lo paga ${r['origen_pago']}; no se toca el costo.';
+        default:
+          return ' · el cargo quedó sin aterrizar (estado: $status).';
+      }
+    } catch (e) {
+      return ' · la recepción quedó vinculada, pero el cargo NO se aterrizó: '
+          '${_mensajeError(e)}. Corríjalo desde la compra (el detalle muestra '
+          'el desvío).';
+    }
   }
 
   /// El vínculo falló pero la recepción ya existe: se dice tal cual y se
@@ -1077,9 +1121,14 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                 );
                 return;
               }
+              // El cargo de importadora se aterriza AHORA: el reparto escribe
+              // las filas del costo en la recepción, y `_v2` las capitaliza al
+              // completar la operación. Sin este paso el cargo queda declarado
+              // en el vínculo pero nunca llega al inventario.
+              final aterrizaje = await _aterrizarCargo(vinculo);
               mensajeCompra =
                   'vinculada a la compra #${compra.numeroCompra} '
-                  '(estado: ${vinculo['estado'] ?? '?'})';
+                  '(estado: ${vinculo['estado'] ?? '?'})$aterrizaje';
             } catch (e) {
               await _mostrarVinculoFallido(idOperacion, _mensajeError(e));
               return;
@@ -1277,9 +1326,112 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                 const SizedBox(height: 16),
                 _buildTasaFacturaBlock(),
               ],
+              const SizedBox(height: 16),
+              _buildCifrasRecepcion(),
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  /// Adelanto en vivo de las cifras del aterrizaje. El número que manda es el
+  /// del servidor al confirmar (y el de `_v2` al capitalizar); aquí no se
+  /// convierte nada entre monedas: si la factura no es USD, el aterrizado por
+  /// línea lo calcula el servidor con su tasa.
+  Widget _buildCifrasRecepcion() {
+    final total = _montoRecepcion;
+    final cargo = _cargoImportadora;
+    final adicionales = _adicionalesSeleccionados;
+    final usd = _selectedCurrency == 'USD';
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Cifras de recepción',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.info.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Text(
+                    'estimado',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.info,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            _filaCifra('Total recepción', total, _selectedCurrency),
+            _filaCifra('Cargo importadora', cargo, _selectedCurrency),
+            if (usd) _filaCifra('Adicionales', adicionales, 'USD'),
+            const Divider(height: 20),
+            if (usd)
+              _filaCifra(
+                'Costo aterrizado',
+                total + cargo + adicionales,
+                'USD',
+                destacada: true,
+              )
+            else
+              Text(
+                'Los adicionales se capturan en USD: el costo aterrizado por '
+                'línea lo calcula el servidor con la tasa de la factura.',
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              ),
+            const SizedBox(height: 4),
+            Text(
+              'Se aplica al confirmar. El promedio lo recalcula el servidor.',
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _filaCifra(
+    String etiqueta,
+    double valor,
+    String moneda, {
+    bool destacada = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              etiqueta,
+              style: const TextStyle(
+                fontSize: 13,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
+          Text(
+            '${valor.toStringAsFixed(2)} $moneda',
+            style: TextStyle(
+              fontSize: destacada ? 18 : 14,
+              fontWeight: destacada ? FontWeight.w700 : FontWeight.w600,
+              color: destacada ? AppColors.primary : AppColors.textPrimary,
+            ),
+          ),
+        ],
       ),
     );
   }

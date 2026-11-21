@@ -116,7 +116,7 @@ combinada de cambio de estado.
 | 3. Compra como documento | **done** — esquema, RPC, UI, verify 13/13 y E2E del dueño aprobado |
 | 4. Reserva y liquidación (carril A, solo `al_pagar`) | **done** — backend, UI, verify 19/19 y E2E del dueño aprobado |
 | 5. Recepción: carril A y carril B | **done** — recepción contra compra, carril B cerrado, verify 21/21 y E2E del dueño aprobado |
-| 6. Costo aterrizado sobre el módulo existente | **en curso** — 6a/6b aplicados y verificados (`verify/06` **20/20**); D1-D12 cerrados. Faltan los ítems propios de la fase: UI de captura de importadora y adicionales, ajustes `por_financiar`, reversión de costo al cancelar y desvío visible |
+| 6. Costo aterrizado sobre el módulo existente | **en curso** — 6a/6b/6c aplicados; `verify/06` **23/23** y pruebas de dinero **18/18**. El aterrizaje se dispara al vincular, el desvío y el remanente se ven en el detalle y el catálogo quedó bajo superadmin. Faltan: ajustes `por_financiar` con reserva y pago propios, reversión de costo al cancelar y el E2E del dueño |
 | 7. Inversores aportantes (100%) | not started |
 | 8. Reportes, conciliación en UI y cierre | not started |
 | 9. Pendientes, recordatorios y registro de faltantes | not started |
@@ -342,6 +342,44 @@ Current phase: 6 · Recommended next: 6 (cerrar los ítems de la fase antes de l
   completó la fase: faltan la UI de captura de importadora/adicionales, los ajustes `por_financiar` con
   reserva y pago propios, la reversión de costo al cancelar la recepción, el desvío visible y el borrado
   documentado de `fn_actualizar_precio_promedio_recepcion_v3`.
+- **Fase 6c · el aterrizaje se ejecuta, se ve y el catálogo queda cerrado (2026-11-21).** Cuatro piezas:
+  · **El aterrizaje no se ejecutaba nunca desde la app.** Vincular dejaba el cargo en el vínculo, pero
+    `fn_fdi_compra_repartir_aterrizaje` no la llamaba nadie: el inventario no recibía el cargo y `_v2`
+    capitalizaba solo lo que el cliente hubiera capturado. Ahora, tras vincular, la recepción llama al
+    reparto con el `id_compra_recepcion` y el mensaje dice si capitalizó, si lo paga el fondo o si falló.
+    El detalle de la compra gana **«Aterrizar cargo»** para reintentar un vínculo que quedó sin filas.
+  · **`fn_fdi_compra_costo_resumen`** (STABLE, solo lectura): valor de factura vinculado, cargo, %
+    declarado vs efectivo, **desvío**, ajustes globales aplicados/por asignar y costo aterrizado unitario
+    por línea, convertido a la moneda de la compra con la tasa USD de la operación. Alimenta el panel
+    «Costo aterrizado» del detalle.
+  · **Agujero de seguridad cerrado.** `app_cont_tipo_costo` tenía RLS `FOR ALL USING true` y GRANT de
+    INSERT/UPDATE/DELETE a `anon` y `authenticated`: cualquier autenticado podía crear o borrar el
+    nomenclador por PostgREST. Ahora es **solo lectura** y la escritura va por
+    `fn_cont_tipo_costo_guardar` / `_eliminar` con superadmin. Guardas: no renombrar ni borrar
+    «Importadora» (el aterrizaje la resuelve por denominación) y no borrar un tipo en uso.
+    Probado en vivo: gerente → `42501`; INSERT directo → `42501`; renombrar Importadora → `22023`.
+  · **`_v3` retirada** (código muerto). El rollback no la restaura y lo dice.
+  · **UI.** Nomenclador rehecho según Stitch (master-detalle, sin modales, `afecta_margen` y «Gasto» de
+    solo lectura) y bloque «Cifras de recepción» en la recepción con compra (estimado: total, cargo,
+    adicionales y aterrizado; si la factura no es USD no se suman monedas).
+  · **Verificación.** `verify/06_costos.sql` **23/23** (n=21..23 nuevas) y nuevo
+    `verify/06c_pruebas_aterrizaje.sql`, transaccional con `ROLLBACK`, **18/18**: 2.150 exacto de
+    2.000 + 15 % − 50 % de reembolso, el fondo no mueve un movimiento por el cargo de la wallet, flete
+    global 100.000 con 60/100 recibidas → **60.000 aplicados y 40.000 por asignar**, unitario aterrizado
+    21,50 y reparto idempotente. Control negativo del rollback de 06c: n=21 y n=23 bajan a `false`.
+  · **Stitch.** `RECEPCIÓN — importadora y adicionales` (`8e5451984ac841128b005ab0ebb6e831`) y
+    `CONFIG — costos adicionales` (`d810b6b7ab4e46cfb22b28f2f4a01d6f`), proyecto `4232822798385486487`;
+    capturas en `docs/design/compras-recepcion-aterrizaje.png` y `docs/design/compras-costos-adicionales.png`.
+- **Fase 6 · dos ítems que necesitan decisión del dueño (no se inventan).**
+  1. **Reversión de costo al cancelar la recepción.** Borrar filas de costo cambia la valoración y el
+     `precio_promedio` ya ponderado no se recalcula. Dos caminos: (a) borrar las filas del vínculo y dejar
+     el importe en el historial de la compra; (b) marcarlas con una reversa que `_v2` excluya. El (a) es
+     simple y auditable pero pierde el detalle; el (b) conserva todo y obliga a tocar `_v2` (función que
+     el pase promueve desde `newa`).
+  2. **Ajustes `por_financiar`.** Requieren su propia reserva y pago (fase 4) y un documento de ajuste;
+     el resumen ya dice cuánto se aplica y cuánto falta, pero persistirlos es un flujo de dinero aparte.
+  También queda la captura de adicionales por línea en la tabla de la recepción: hoy se capturan en el
+  diálogo del producto y viajan en la transacción, sin chips por línea en la pantalla.
 
 ---
 
@@ -926,14 +964,14 @@ reversión al cancelar y el desvío visible. En Main no existe (fase 0b).
 **Checklist:**
 - [x] Catálogo sembrado (06a)
 - [x] `origen_pago` y campos de importadora **en el vínculo** (05a; desviación documentada)
-- [x] Reparto por valor + remanente por asignar (06b)
+- [x] Reparto por valor del cargo (06b) y remanente por asignar visible (06c)
 - [ ] Ajustes `por_financiar` con reserva y pago propios
 - [x] Persistido dentro de la transacción (06b)
-- [ ] `costo_real` suma adicionales (verificado de punta a punta)
-- [ ] `_v3` borrada
-- [ ] Reversión de costo al cancelar
+- [ ] `costo_real` suma adicionales (la fórmula de `_v2` ya suma; falta el E2E con stock)
+- [x] `_v3` borrada (06c)
+- [ ] Reversión de costo al cancelar (**decisión pendiente del dueño**)
 - [x] `id_compra` + `moneda` en facturas (06a)
-- [ ] Desvío visible
+- [x] Desvío visible (06c: panel en el detalle de la compra)
 
 **Exit criteria:**
 - `verify/06_costo.sql`: 2.000 + 15% − 50% reembolso = **2.150** exacto; si el origen es wallet,

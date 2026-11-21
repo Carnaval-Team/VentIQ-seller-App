@@ -20,6 +20,9 @@ Este directorio entrega el SQL del plan `docs/planes/fondo-inversion/PLAN.md`.
 5. Cada script tiene su `_rollback.sql`, o dice explícitamente por qué no es reversible.
 6. La cabecera declara el orden: `-- REQUIERE: 01, 02`.
 7. Las verificaciones de solo lectura viven en `verify/` y devuelven `ok` / `falla` por comprobación.
+   Algunas **pruebas** de `verify/` son transaccionales y terminan en `ROLLBACK` (p. ej.
+   `06c_pruebas_aterrizaje.sql`, que crea compras y recepciones para probar las cifras de dinero): no dejan
+   datos y no sustituyen al verify de solo lectura.
 8. **Cada verificación es UNA sola sentencia.** Un CTE (`with base as …`) no sobrevive a otra sentencia:
    el resumen va como fila `UNION ALL` (convención: `n = 99`), nunca como `select` aparte. Ya rompió una
    vez con `ERROR: 42P01: relation "base" does not exist`.
@@ -36,13 +39,14 @@ Este directorio entrega el SQL del plan `docs/planes/fondo-inversion/PLAN.md`.
 
 `multimoneda` va por delante de las bases. Estado real verificado el 2026-11-21:
 
-- **`newa` ya tiene aplicado todo el módulo** (00 a 06b), incluida `fn_fdi_registrar_recepcion` con
-  **4 args** (`p_id_compra bigint DEFAULT NULL`) y el aterrizaje del costo con su columna de vínculo
-  (`app_dat_recepcion_producto_costo.id_compra_recepcion`) y `fdi_dat_compra_recepcion.tasa_usd_aplicada`.
+- **`newa` ya tiene aplicado todo el módulo** (00 a 06c), incluida `fn_fdi_registrar_recepcion` con
+  **4 args** (`p_id_compra bigint DEFAULT NULL`), el aterrizaje del costo con su columna de vínculo
+  (`app_dat_recepcion_producto_costo.id_compra_recepcion`), `fdi_dat_compra_recepcion.tasa_usd_aplicada`,
+  el resumen del costo aterrizado y el nomenclador bajo superadmin.
 - **Main no tiene nada de esto**: le faltan el módulo de costos, `fn_fdi_gasto`, `costo_real` escribible
   y todas las RPC de compras. Ese paquete es la fase 0b y va por el pase del equipo.
-- La fase 6 **no está cerrada**: falta la captura de importadora/adicionales en UI, los ajustes
-  `por_financiar`, la reversión de costo al cancelar y el desvío visible.
+- La fase 6 **no está cerrada**: falta la decisión de reversión de costo al cancelar, los ajustes
+  `por_financiar` y el E2E del dueño.
 
 Corrige la nota anterior, que decía que `fn_fdi_registrar_recepcion` no estaba aplicada: sí lo está en
 `newa`.

@@ -1,8 +1,9 @@
 -- ============================================================================
--- verify/06_costos.sql — Fase 6: costo aterrizado (06a + 06b)
+-- verify/06_costos.sql — Fase 6: costo aterrizado (06a + 06b + 06c)
 --
--- REQUIERE: 06a_costo_aterrizado_base.sql y 06b_aterrizaje.sql aplicados en
---           `newa` (qhprswhhfasrikhawjoz).
+-- REQUIERE: 06a_costo_aterrizado_base.sql, 06b_aterrizaje.sql y
+--           06c_aterrizaje_cierre.sql aplicados en `newa`
+--           (qhprswhhfasrikhawjoz).
 --
 -- SOLO LECTURA: SELECT / information_schema / pg_catalog / pg_proc. Ni DDL ni
 -- DML, ni una llamada a las funciones que escriben.
@@ -51,6 +52,13 @@
 --         wrapper exige tasa cuando la factura no es USD
 --   n=20  (D10) en una operación con un solo vínculo, ninguna fila de
 --         Importadora queda sin atribuir
+--   n=21  las RPC de 06c existen con su forma: resumen STABLE/SECURITY
+--         DEFINER/jsonb y las tres del catálogo SECURITY DEFINER
+--   n=22  `fn_actualizar_precio_promedio_recepcion_v3` ya no existe (código
+--         muerto retirado)
+--   n=23  el catálogo de costos es de solo lectura para `anon`/`authenticated`
+--         (sin INSERT/UPDATE/DELETE/TRUNCATE), con RLS activa y una sola
+--         política SELECT
 --   n=99  resumen
 --
 -- NOTA sobre n=6 — QUÉ SE PUEDE COMPROBAR:
@@ -506,6 +514,58 @@ base as (
     'en una operación con un solo vínculo, ninguna fila del tipo Importadora queda con id_compra_recepcion NULL',
     (select count(*)::text from huerfanos_vinculo) || ' fila(s) sin atribuir en operaciones de un solo vínculo',
     (select count(*) = 0 from huerfanos_vinculo)
+
+  union all
+  -- 21) Las RPC de 06c, con su forma
+  select 21, 'funciones_06c',
+    'resumen STABLE/SECURITY DEFINER/jsonb; guardar, eliminar y exigir_superadmin SECURITY DEFINER',
+    (select count(*)::text from pg_proc p
+      where p.oid = to_regprocedure('public.fn_fdi_compra_costo_resumen(bigint)')
+        and p.prosecdef and p.provolatile = 's'
+        and pg_get_function_result(p.oid) = 'jsonb') || ' resumen, '
+      || (select count(*)::text from pg_proc p
+           where p.oid in (to_regprocedure('public.fn_cont_tipo_costo_guardar(bigint,text,text,boolean)'),
+                           to_regprocedure('public.fn_cont_tipo_costo_eliminar(bigint)'),
+                           to_regprocedure('public.fn_fdi_exigir_superadmin()'))
+             and p.prosecdef) || ' de 3 catálogo',
+    (select count(*) = 1 from pg_proc p
+      where p.oid = to_regprocedure('public.fn_fdi_compra_costo_resumen(bigint)')
+        and p.prosecdef and p.provolatile = 's'
+        and pg_get_function_result(p.oid) = 'jsonb')
+    and
+    (select count(*) = 3 from pg_proc p
+      where p.oid in (to_regprocedure('public.fn_cont_tipo_costo_guardar(bigint,text,text,boolean)'),
+                      to_regprocedure('public.fn_cont_tipo_costo_eliminar(bigint)'),
+                      to_regprocedure('public.fn_fdi_exigir_superadmin()'))
+        and p.prosecdef)
+
+  union all
+  -- 22) El código muerto `_v3` está retirado
+  select 22, 'v3_retirada',
+    'fn_actualizar_precio_promedio_recepcion_v3(bigint,jsonb) no existe',
+    coalesce(to_regprocedure('public.fn_actualizar_precio_promedio_recepcion_v3(bigint,jsonb)')::text, 'ausente'),
+    to_regprocedure('public.fn_actualizar_precio_promedio_recepcion_v3(bigint,jsonb)') is null
+
+  union all
+  -- 23) El catálogo de costos quedó de solo lectura para el cliente
+  select 23, 'catalogo_solo_lectura',
+    'sin INSERT/UPDATE/DELETE/TRUNCATE para anon/authenticated; RLS activa y una sola política SELECT',
+    (select count(*)::text from information_schema.role_table_grants
+      where table_schema = 'public' and table_name = 'app_cont_tipo_costo'
+        and grantee in ('anon', 'authenticated')
+        and privilege_type in ('INSERT', 'UPDATE', 'DELETE', 'TRUNCATE')) || ' permisos de escritura, '
+      || (select count(*)::text from pg_policy
+           where polrelid = 'public.app_cont_tipo_costo'::regclass and polcmd = 'r') || ' políticas SELECT, rls='
+      || (select relrowsecurity::text from pg_class where oid = 'public.app_cont_tipo_costo'::regclass),
+    (select count(*) = 0 from information_schema.role_table_grants
+      where table_schema = 'public' and table_name = 'app_cont_tipo_costo'
+        and grantee in ('anon', 'authenticated')
+        and privilege_type in ('INSERT', 'UPDATE', 'DELETE', 'TRUNCATE'))
+    and
+    (select count(*) = 1 from pg_policy
+      where polrelid = 'public.app_cont_tipo_costo'::regclass and polcmd = 'r')
+    and
+    (select relrowsecurity from pg_class where oid = 'public.app_cont_tipo_costo'::regclass)
 )
 
 -- 99) Resumen: cuenta las filas con ok = false (las informativas siempre ok).
