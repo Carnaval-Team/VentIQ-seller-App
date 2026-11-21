@@ -114,7 +114,7 @@ combinada de cambio de estado.
 | 2. Motor de dinero II: idempotencia, tasa y gasto vinculado | **done** — 2a, 2b, cliente a v2 y E2E del dueño aprobado |
 | 3. Compra como documento | **done** — esquema, RPC, UI, verify 13/13 y E2E del dueño aprobado |
 | 4. Reserva y liquidación (carril A, solo `al_pagar`) | **done** — backend, UI, verify 19/19 y E2E del dueño aprobado |
-| 5. Recepción: carril A y carril B | **in progress** — vínculo recepción↔compra en curso |
+| 5. Recepción: carril A y carril B | **done** — recepción contra compra, carril B cerrado, verify 21/21 y E2E del dueño aprobado |
 | 6. Costo aterrizado sobre el módulo existente | not started |
 | 7. Inversores aportantes (100%) | not started |
 | 8. Reportes, conciliación en UI y cierre | not started |
@@ -237,6 +237,29 @@ Current phase: 0 · Recommended next: 0
   2 → pendiente 1) y `fn_fdi_compra_vincular_recepcion`, que enlaza una recepción ya registrada, valida
   cantidades contra el pendiente, exige confirmación para el exceso, calcula el cargo de importadora
   (`base × pct − reembolso`) y deriva el estado a `entrega_parcial` o `completada`.
+- **Fase 5c · carril B cerrado (2026-11-21).** Tres agujeros:
+  · **doble uso del desembolso**: al cancelar una recepción financiada se marca la inversión con
+    `requiere_revision = true` y motivo `recepcion_cancelada` (nuevo valor del CHECK), y
+    `fn_fdi_vincular_recepcion` la rechaza;
+  · **reintento sobre cancelada**: `fn_fdi_registrar_recepcion` mira el último estado de la operación y
+    **lanza error** en vez de devolver `duplicada: true` como si fuera éxito;
+  · **compra y carril directo**: la RPC acepta `p_id_compra` solo para **rechazarlo** — una recepción con
+    compra pertenece al carril A.
+- **Fase 5b · aprobada por el dueño (2026-11-21).** E2E 1-5 en verde: recepción contra la compra #2 con
+  cargo de importadora del 15 %, compra en `completada` y pendiente 0.
+- **Fase 5 · verificación 21/21 y control negativo.** `verify/05_recepcion.sql` en verde sobre `newa`;
+  cuatro invariantes (sobre-recepción, suma recibida, compra completada con pendiente, y cálculo del cargo
+  de importadora) cazan la perturbación cuando se las engaña, así que no pasan por vacío. Rollbacks de
+  05a y 05c validados contra catálogo, con los 3 cuerpos restaurados comparados línea a línea (0
+  discrepancias).
+- **Fase 5 · deuda detectada por el verify (pendiente, no oculta):**
+  1. `fdi_dat_compra_recepcion` **no tiene `confirmada_con_exceso`**. Un exceso confirmado en el carril A
+     es indistinguible de un exceso real, así que el verify lo marca como fallo por el lado estricto.
+     Falta columna + escritura en `fn_fdi_compra_vincular_recepcion`.
+  2. `app_dat_operacion_recepcion.fecha_operacion` existe pero **nadie la escribe**: 0 de 9 recepciones
+     la tienen. Columna muerta hasta que el cliente la mande.
+  3. La invariante de compras `entrega_parcial` pasa **vacuamente** (hoy hay 0 en ese estado).
+  4. `verify/05` comprobación `n=2` necesitó `\y` en vez de `\b` para regex en Postgres; quedó corregida.
 
 ---
 

@@ -33,7 +33,12 @@ Este directorio entrega el SQL del plan `docs/planes/fondo-inversion/PLAN.md`.
 
 ## Advertencia de la rama (`multimoneda`)
 
-`multimoneda` va por delante de las bases: hay código Dart que llama a RPC que **no están desplegadas**.
-El caso conocido es `fn_fdi_registrar_recepcion` (`fondo_inversion_financiar_recepcion.sql`), sin aplicar
-ni en `newa` ni en Main. El inventario de migraciones pendientes está en
-`docs/planes/fondo-inversion/12-inventario-migraciones.md`.
+`multimoneda` va por delante de las bases. Estado real verificado el 2026-11-21:
+
+- **`newa` ya tiene aplicado todo el módulo** (00 a 05c), incluida `fn_fdi_registrar_recepcion` con
+  **4 args** (`p_id_compra bigint DEFAULT NULL`).
+- **Main no tiene nada de esto**: le faltan el módulo de costos, `fn_fdi_gasto`, `costo_real` escribible
+  y todas las RPC de compras. Ese paquete es la fase 0b y va por el pase del equipo.
+
+Corrige la nota anterior, que decía que `fn_fdi_registrar_recepcion` no estaba aplicada: sí lo está en
+`newa`.
