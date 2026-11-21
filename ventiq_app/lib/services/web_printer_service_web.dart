@@ -13,6 +13,8 @@ import '../services/store_config_service.dart';
 import '../services/user_preferences_service.dart';
 import '../utils/price_utils.dart';
 import '../utils/receipt_options.dart';
+import '../utils/ticket_data.dart';
+import '../utils/ticket_plan.dart';
 
 class _StorePrintInfo {
   final String name;
@@ -270,53 +272,42 @@ class WebPrinterServiceImpl {
     try {
       print('🖨️ Iniciando impresión web completa para orden ${order.id}');
 
-      // ========== IMPRIMIR TICKET DEL CLIENTE PRIMERO ==========
-      print('📄 Imprimiendo ticket del cliente...');
-      final customerResult = await _printCustomerTicket(order);
-
-      if (!customerResult) {
-        print('❌ Ticket del cliente falló al imprimir');
-        return false;
-      }
-
-      // Esperar entre impresiones para evitar problemas
-      print('⏳ Esperando 2 segundos antes de la copia del vendedor...');
-      await Future.delayed(const Duration(seconds: 2));
-
-      // ========== IMPRIMIR COPIA DEL VENDEDOR ==========
-      print('🧾 Imprimiendo copia del vendedor...');
-      final sellerResult = await _printCustomerTicket(
-        order,
-        copyLabel: 'COPIA VENDEDOR',
-      );
-
-      if (!sellerResult) {
-        print('❌ Copia del vendedor falló al imprimir');
-        return false;
-      }
-
-      final receiptOptions = ReceiptOptions(
-        order,
-        restaurantMode: StoreConfigService.modoRestauranteSync,
-      );
-      if (!receiptOptions.includeWarehouseSlip) return true;
-
-      // Esperar entre impresiones para evitar problemas
-      print('⏳ Esperando 2 segundos antes de la guía de almacén...');
-      await Future.delayed(const Duration(seconds: 2));
-
-      // ========== IMPRIMIR GUÍA DE PICKING PARA ALMACENERO ==========
-      print('🏭 Imprimiendo guía de picking para almacenero...');
-      final warehouseResult = await _printWarehousePickingSlip(order);
-
-      if (!warehouseResult) {
-        print('❌ Guía de picking falló al imprimir');
-        return false;
-      }
-
+      // Tickets según la configuración de la tienda (`tickets_a_imprimir`).
+      final plan = await TicketPlan.cargar(order);
       print(
-        '✅ Ticket cliente, copia vendedor y guía de picking enviados a impresión web',
+        '🧾 Tickets a imprimir: ${plan.secuencia.map((t) => t.clave).join(', ')}',
       );
+      if (plan.vacio) {
+        print('ℹ️ La tienda no tiene tickets configurados para imprimir');
+        return true;
+      }
+
+      for (var i = 0; i < plan.secuencia.length; i++) {
+        final tipo = plan.secuencia[i];
+        print('🖨️ Imprimiendo ${tipo.clave} (${i + 1}/${plan.secuencia.length})');
+
+        final bool ok;
+        switch (tipo) {
+          case TicketTipo.factura:
+            ok = await _printCustomerTicket(order);
+          case TicketTipo.almacen:
+            ok = await _printWarehousePickingSlip(order);
+          case TicketTipo.caja:
+            ok = await _printCustomerTicket(order, copyLabel: 'COPIA VENDEDOR');
+        }
+
+        if (!ok) {
+          print('❌ ${tipo.clave} falló al imprimir');
+          return false;
+        }
+
+        // Esperar entre impresiones para evitar problemas
+        if (i < plan.secuencia.length - 1) {
+          print('⏳ Esperando 2 segundos antes del siguiente ticket...');
+          await Future.delayed(const Duration(seconds: 2));
+        }
+      }
+
       return true;
     } catch (e) {
       print('❌ Error imprimiendo factura web: $e');
@@ -512,7 +503,7 @@ class WebPrinterServiceImpl {
           }
           return '''
         <div class="product-line">${PriceUtils.formatQuantity(item.cantidad)}x ${item.nombre}</div>
-        <div class="product-price">${ticketMoney(item.precioUnitario)} c/u = ${ticketMoney(itemTotal)}</div>
+        <div class="product-price">${ticketMoney(itemTotal)}</div>
           ''';
         })
         .join('');
@@ -535,26 +526,28 @@ class WebPrinterServiceImpl {
       }
     }
 
-    final isFactura = copyLabel == null || copyLabel.isEmpty;
     final vendorName =
         await _getLoggedInUserName() ?? order.sellerName ?? '';
     final vendorHtml =
         vendorName.isNotEmpty
             ? '<div class="info-line">VENDEDOR: $vendorName</div>'
             : '';
-    final notesHtml =
-        isFactura
-            ? '<div class="notes">Con la tecnología de<br/>Inventtia S.R.L.</div>'
-            : '';
-    final thanksHtml =
-        isFactura
-            ? '''
+    // La copia del vendedor (recibo de caja) es igual que la factura: solo
+    // cambia la etiqueta de la copia.
+    const notesHtml =
+        '<div class="notes">Con la tecnología de<br/>Inventtia S.R.L.</div>';
+    final thanksHtml = '''
     <div class="footer">
         <div>${receiptOptions.thanksMessage}</div>
         <div>$storeName</div>
     </div>
-'''
-            : '';
+''';
+    // «TOTAL MONEDA» a la izquierda y el monto a la derecha, por moneda.
+    final totalsHtml = TicketData.totales(
+      order,
+      pagos: ticketPayments,
+      usdRate: usdRate,
+    ).map((t) => '<div class="final-total"><span>TOTAL ${t.moneda}</span><span>${t.monto}</span></div>').join();
 
     return '''
 <!DOCTYPE html>
@@ -678,7 +671,8 @@ class WebPrinterServiceImpl {
         .final-total {
             font-size: 18px;
             font-weight: bold;
-            text-align: right;
+            display: flex;
+            justify-content: space-between;
             margin: 5px 0;
         }
         .footer {
@@ -722,7 +716,7 @@ class WebPrinterServiceImpl {
     <div class="totals-section">
         <div class="separator">--------------------------------</div>
         $discountHtml
-        <div class="final-total">TOTAL: ${ticketMoney(order.total)}</div>
+        $totalsHtml
     </div>
 
     $thanksHtml
@@ -799,7 +793,7 @@ class WebPrinterServiceImpl {
                 }
                 return '''
         <div class="product-line">${PriceUtils.formatQuantity(item.cantidad)}x ${item.nombre}</div>
-        <div class="product-price">\$${item.precioUnitario.toStringAsFixed(0)} c/u = \$${itemTotal.toStringAsFixed(0)}</div>
+        <div class="product-price">\$${itemTotal.toStringAsFixed(0)}</div>
           ''';
               })
               .join('');
@@ -854,7 +848,7 @@ class WebPrinterServiceImpl {
       <div class="totals-section">
         <div class="separator">--------------------------------</div>
         $batchDiscountHtml
-        <div class="final-total">TOTAL: \$${order.total.toStringAsFixed(0)}</div>
+        <div class="final-total"><span>TOTAL CUP</span><span>${PriceUtils.formatAmount(order.total, decimals: 0, separator: ' ')}</span></div>
       </div>
 
       <div class="footer">
@@ -975,7 +969,8 @@ class WebPrinterServiceImpl {
         .final-total {
             font-size: 18px;
             font-weight: bold;
-            text-align: right;
+            display: flex;
+            justify-content: space-between;
             margin: 5px 0;
         }
         .footer {
@@ -1047,14 +1042,14 @@ class WebPrinterServiceImpl {
     final productRows = order.items
         .where((item) => item.subtotal > 0)
         .map((item) {
-          final ubicacion = item.ubicacionAlmacen ?? 'N/A';
+          final ubicacion =
+              item.ubicacionAlmacen.trim().isEmpty ? 'N/A' : item.ubicacionAlmacen;
           String productName = item.nombre;
 
           return '''
         <div class="product-item">
           <div class="product-line">${PriceUtils.formatQuantity(item.cantidad).padLeft(3, ' ')}x $productName</div>
           <div class="location-line">     Ubic: $ubicacion</div>
-          <div class="price-line">     \$${item.precioUnitario.toStringAsFixed(0)} c/u</div>
         </div>
         <div class="product-separator">- - - - - - - - - - - - - -</div>
           ''';
@@ -1203,7 +1198,6 @@ class WebPrinterServiceImpl {
     <div class="totals-section">
         <div class="separator">--------------------------------</div>
         <div class="total-line">TOTAL PRODUCTOS: ${order.distinctItemCount}</div>
-        <div class="total-line">VALOR TOTAL: \$${order.total.toStringAsFixed(0)}</div>
     </div>
 
     <div class="footer">

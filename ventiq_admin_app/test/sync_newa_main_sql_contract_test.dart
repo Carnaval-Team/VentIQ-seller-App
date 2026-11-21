@@ -193,6 +193,71 @@ void main() {
     });
   });
 
+  group('las otras 12 funciones de main en newa', () {
+    late String doce;
+    setUpAll(() {
+      doce = _leer('../sql_updates/newa_traer_12_funciones_main.sql');
+    });
+
+    test('es una sola transaccion que no toca datos', () {
+      expect(doce, startsWith('-- Solo newa'));
+      expect(doce, contains('\nBEGIN;\n'));
+      expect(doce.trimRight(), endsWith('COMMIT;'));
+      expect(doce.toLowerCase(), isNot(contains('create table')));
+      expect(
+        RegExp(r'\n(INSERT INTO|DELETE FROM|UPDATE |DROP )').hasMatch(doce),
+        isFalse,
+      );
+    });
+
+    test('el catalogo pasa al precio vigente por id mayor', () {
+      expect(
+        doce,
+        contains("v_viejo constant text := 'ORDER BY id_producto, fecha_desde DESC'"),
+      );
+      expect(
+        doce,
+        contains("v_nuevo constant text := 'ORDER BY id_producto, id DESC'"),
+      );
+      expect(doce, contains('IF v_veces <> 1 THEN'));
+    });
+
+    test('verifica las 12 huellas de main y el permiso de fn_check_update', () {
+      for (final par in const {
+        'buscar_producto_por_codigo_barras_v3(text)':
+            '73306441fd99a92b3765105f88385b45',
+        'fn_check_update(character varying,character varying,integer)':
+            '112e9101d04c14ff417ef7c04feffa1a',
+        'fn_listar_motivos_extraccion()': 'b5ffeaf89dc49a1421b4d490a346e0cf',
+        'fn_update_carnaval_product_prices()':
+            '039a999ba1c1b2f0ffa5c614ab7ea1bb',
+        'get_productos_completos_by_tienda_optimized_provider(bigint,bigint,boolean,integer)':
+            'b03f3caabaa10363a9b6e2cf09865a9f',
+        'get_productos_completos_by_tienda_optimized_provider2(bigint,bigint,boolean,integer,boolean)':
+            'fbcc3d5daf34bf19350d58f5f1f461cd',
+        'get_productos_completos_by_tienda_optimized_provider2(bigint,bigint,boolean,integer)':
+            'd300f4f919acd0e9cfdeb41e9f11d289',
+        'get_productos_completos_by_tienda_optimized_v2(bigint,bigint,boolean,boolean)':
+            '9ac2d5649de0290ef21d84b133f8fdfd',
+        'get_productos_completos_by_tienda_optimized(integer,integer,boolean)':
+            'ade12329400851570521ca6a47cc1214',
+        'get_productos_completos_by_tienda_optimized2(bigint,bigint,boolean,boolean)':
+            'b83f9858420d0a1424df31bcb2fcc752',
+        'get_productos_completos_by_tienda_with_supplier(integer,integer,boolean,integer)':
+            '322e5dd3ce0bc1fe0a4759e2de30e4dd',
+        'sync_price_to_carnaval()': '6401eca8bc810a3951033661f76c4b3b',
+      }.entries) {
+        expect(doce, contains("('public.${par.key}', '${par.value}')"));
+      }
+      expect(
+        doce,
+        contains(
+          'REVOKE ALL ON FUNCTION public.fn_check_update(character varying, character varying, integer) FROM PUBLIC;',
+        ),
+      );
+    });
+  });
+
   group('fn_listar_ordenes devuelve tipo_pago', () {
     test('la fuente aplicada en newa ya no tiene el typo', () {
       expect(r29, isNot(contains('tipo_paago')));

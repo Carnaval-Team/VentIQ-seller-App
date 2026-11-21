@@ -30,6 +30,8 @@ import '../utils/package_image_picker.dart' as web_picker;
 import '../widgets/checkout_amount_row.dart';
 import '../widgets/checkout_payment_lines_editor.dart';
 import '../widgets/checkout_v1_grupos.dart';
+import '../money/checkout_totales_moneda.dart';
+import '../money/ticket_v1.dart';
 import '../money/venta_v1_envio.dart';
 import '../services/payment_method_service.dart';
 import '../widgets/transfer_sms_confirmation_banner.dart';
@@ -570,9 +572,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     return _monedaBase;
   }
 
-  /// Se conserva el nombre para no romper las llamadas existentes.
-  bool get _displayTotalsInUsd => _monedaVisualizacion == 'USD';
-
   double _displayAmount(double cupAmount) {
     final moneda = _monedaVisualizacion;
     if (moneda == _monedaBase) return cupAmount;
@@ -582,6 +581,56 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   String _formatCheckoutAmount(double cupAmount) =>
       '${_displayAmount(cupAmount).toMoneyString(2)} $_monedaVisualizacion';
+
+  /// Importe de la orden en cada moneda, sin convertir entre ellas.
+  ///
+  /// En `producto-v1` cada línea tiene su moneda y `subtotal`/`finalTotal`
+  /// suman importes de monedas distintas: no sirven para mostrar. En el
+  /// cobro anterior la moneda es la elegida para el medio de pago de cada
+  /// línea; [conDescuento] reparte el descuento promocional como el cobro.
+  Map<String, double> _importesPorMoneda({required bool conDescuento}) {
+    if (_esV1) return TicketV1.totalesNativos(widget.order);
+
+    if (_editedPaymentLines != null) {
+      return CheckoutTotalesMoneda.desdePagos(
+        _editedPaymentLines!,
+        escala: conDescuento || finalTotal <= 0 ? 1.0 : subtotal / finalTotal,
+      );
+    }
+
+    return CheckoutTotalesMoneda.desdeLineas(
+      [
+        for (final item in widget.order.items)
+          (
+            cup: _calculateItemPrice(item),
+            moneda: item.paymentMethod == null ||
+                    item.paymentMethod!.esPagoPendiente
+                ? _monedaBase
+                : (_paymentCurrencyByMethodId[item.paymentMethod!.id] ??
+                    _monedaBase),
+          ),
+      ],
+      tasa: _tasaDe,
+      base: _monedaBase,
+      factor: conDescuento && subtotal > 0 ? finalTotal / subtotal : 1.0,
+    );
+  }
+
+  String _formatImportesPorMoneda(
+    Map<String, double> importes, {
+    String prefijo = '',
+  }) =>
+      CheckoutTotalesMoneda.formatear(
+        importes,
+        orden: _divisasDisponibles,
+        base: _monedaBase,
+        prefijo: prefijo,
+      );
+
+  /// Equivalente en moneda base del total; en `producto-v1` con la tasa del
+  /// snapshot de cada línea, no con la actual.
+  double get _totalEquivalenteBase =>
+      _esV1 ? TicketV1.equivalenteCupOrden(widget.order) : finalTotal;
 
   // Calculate payment breakdown from individual product payment methods
   Map<String, double> get paymentBreakdown {
@@ -744,7 +793,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ),
               ),
               Text(
-                _formatCheckoutAmount(subtotal),
+                _formatImportesPorMoneda(
+                  _importesPorMoneda(conDescuento: false),
+                ),
+                textAlign: TextAlign.end,
                 style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w800,
@@ -1052,9 +1104,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   ),
                 ),
                 Text(
-                  _formatCheckoutAmount(
-                    breakdown.values.fold(0.0, (sum, amount) => sum + amount),
+                  _formatImportesPorMoneda(
+                    _importesPorMoneda(conDescuento: false),
                   ),
+                  textAlign: TextAlign.end,
                   style: const TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w800,
@@ -1493,8 +1546,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Widget _buildFinalTotalSection() {
-    final monedaVista = _monedaVisualizacion;
-    final esBase = monedaVista == _monedaBase;
+    final totales = _importesPorMoneda(conDescuento: true);
+    final subtotales = _importesPorMoneda(conDescuento: false);
+    final descuentos = CheckoutTotalesMoneda.diferencia(subtotales, totales);
+    final esBase = totales.isEmpty ||
+        (totales.length == 1 && totales.keys.single == _monedaBase);
+    final equivalenteBase = _totalEquivalenteBase;
     final secondaryLabel = esBase
         ? (_usdRate > 0
               ? 'Equivalente USD (1 USD = ${_usdRate.toStringAsFixed(2)} $_monedaBase)'
@@ -1502,9 +1559,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         : 'Equivalente $_monedaBase';
     final secondaryAmount = esBase
         ? (_usdRate > 0
-              ? '${(finalTotal / _usdRate).toMoneyString(2)} USD'
+              ? '${(equivalenteBase / _usdRate).toMoneyString(2)} USD'
               : 'N/D')
-        : '${finalTotal.toMoneyString(2)} $_monedaBase';
+        : '${equivalenteBase.toMoneyString(2)} $_monedaBase';
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -1518,7 +1575,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         children: [
           CheckoutAmountRow(
             label: 'Subtotal:',
-            amount: _formatCheckoutAmount(subtotal),
+            amount: _formatImportesPorMoneda(subtotales),
             labelStyle: const TextStyle(
               fontSize: 14,
               color: VentiqHomeTheme.textSecondary,
@@ -1533,7 +1590,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             const SizedBox(height: 4),
             CheckoutAmountRow(
               label: 'Descuento promocional:',
-              amount: '-${_formatCheckoutAmount(_promoDiscount)}',
+              amount: descuentos.isEmpty
+                  ? '-${_formatCheckoutAmount(_promoDiscount)}'
+                  : _formatImportesPorMoneda(descuentos, prefijo: '-'),
               labelStyle: const TextStyle(
                 fontSize: 14,
                 color: VentiqHomeTheme.success,
@@ -1548,7 +1607,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           const Divider(height: 18),
           CheckoutAmountRow(
             label: 'Total Final:',
-            amount: _formatCheckoutAmount(finalTotal),
+            amount: _formatImportesPorMoneda(totales),
             labelStyle: const TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w700,
@@ -2165,6 +2224,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               'subtotal': itemTotal, // ✅ Subtotal con precio correcto
               'id_medio_pago': item.paymentMethod?.id,
               'metodo_pago': item.paymentMethod?.denominacion,
+              'medio_pago_es_efectivo': item.paymentMethod?.esEfectivo ?? false,
+              'medio_pago_es_digital': item.paymentMethod?.esDigital ?? false,
               'inventory_metadata': item.inventoryData,
               'es_elaborado': item.producto.esElaborado,
               'es_servicio': item.producto.esServicio,

@@ -140,6 +140,78 @@ class DesgloseTurnoMonedas {
       totalBase ?? monedas.fold<double>(0, (suma, m) => suma + m.importeBase);
 }
 
+/// Cuadre de caja de un turno en UNA moneda (`fn_turnos_por_moneda`).
+///
+/// Todos los importes están en la moneda en que se cobró: no se convierten ni se
+/// suman con los de otra moneda. Solo cuentan las operaciones completadas.
+class TurnoMoneda {
+  final int idTurno;
+  final String moneda;
+  final int operaciones;
+  final double ventas;
+  final double efectivo;
+  final double digital;
+  final double egresos;
+  final double inicial;
+  final double esperado;
+  final double? real;
+  final double? diferencia;
+
+  const TurnoMoneda({
+    required this.idTurno,
+    required this.moneda,
+    required this.operaciones,
+    required this.ventas,
+    required this.efectivo,
+    required this.digital,
+    required this.egresos,
+    required this.inicial,
+    required this.esperado,
+    this.real,
+    this.diferencia,
+  });
+
+  factory TurnoMoneda.fromJson(Map<String, dynamic> json) {
+    double num0(dynamic v) => CajaTurno._toDouble(v) ?? 0;
+    return TurnoMoneda(
+      idTurno: (json['id_turno'] as num).toInt(),
+      moneda: (json['moneda'] ?? '').toString().trim().toUpperCase(),
+      operaciones: (json['operaciones'] as num?)?.toInt() ?? 0,
+      ventas: num0(json['ventas_nativo']),
+      efectivo: num0(json['efectivo_nativo']),
+      digital: num0(json['digital_nativo']),
+      egresos: num0(json['egresos_nativo']),
+      inicial: num0(json['inicial_nativo']),
+      esperado: num0(json['esperado_nativo']),
+      real: CajaTurno._toDouble(json['real_nativo']),
+      diferencia: CajaTurno._toDouble(json['diferencia_nativo']),
+    );
+  }
+
+  /// Ventas entre operaciones de esa moneda; sin operaciones no hay ticket.
+  double? get ticketPromedio => operaciones > 0 ? ventas / operaciones : null;
+
+  /// Suma una magnitud por moneda. CUP primero y el resto alfabético, para que
+  /// el orden no cambie entre pantallas.
+  static Map<String, double> sumarPorMoneda(
+    Iterable<TurnoMoneda> filas,
+    double Function(TurnoMoneda) valor,
+  ) {
+    final totales = <String, double>{};
+    for (final f in filas) {
+      totales[f.moneda] = (totales[f.moneda] ?? 0) + valor(f);
+    }
+    final claves = totales.keys.toList()
+      ..sort((a, b) {
+        if (a == b) return 0;
+        if (a == 'CUP') return -1;
+        if (b == 'CUP') return 1;
+        return a.compareTo(b);
+      });
+    return {for (final k in claves) k: totales[k]!};
+  }
+}
+
 /// Reporte de discrepancias parseado desde `observaciones`.
 ///
 /// El TPV graba el texto con este formato:

@@ -5,12 +5,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:convert';
 import '../services/order_service.dart';
 import '../services/user_preferences_service.dart';
-import '../services/category_service.dart';
-import '../services/product_service.dart';
-import '../services/payment_method_service.dart';
 import '../services/turno_service.dart';
 import '../services/currency_service.dart';
-import '../utils/uuid_generator.dart';
 import '../utils/price_utils.dart';
 import '../services/settings_integration_service.dart';
 import '../services/auto_sync_service.dart';
@@ -307,6 +303,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     bool hasSavedPrinter = false;
     try {
       final printerManager = PrinterManager();
+      await printerManager.refreshSavedPrinter();
       hasSavedPrinter = printerManager.hasSavedPrinter;
       savedPrinterDescription = printerManager.savedPrinterDescription;
     } catch (e) {
@@ -2283,11 +2280,14 @@ class _SettingsScreenState extends State<SettingsScreen>
 
     // Verificar si hay datos offline para sincronizar
     final syncSummary = await _userPreferencesService.getOfflineSyncSummary();
+    final pendientesTotales =
+        await _userPreferencesService.getUnsyncedOfflineCounts();
     final hasPendingData =
         syncSummary['pending_orders_count'] > 0 ||
         syncSummary['pending_operations_count'] > 0 ||
         syncSummary['has_open_turno'] == true ||
-        (syncSummary['pending_turnos_count'] as int? ?? 0) > 0;
+        (syncSummary['pending_turnos_count'] as int? ?? 0) > 0 ||
+        (pendientesTotales['total'] ?? 0) > 0;
 
     if (!hasPendingData) {
       await _startManualSync();
@@ -2692,7 +2692,117 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
-  void _showStorageOptions() {
+  /// Línea del detalle de pendientes: icono, texto y cantidad.
+  Widget _pendienteRow(IconData icon, String texto, int cantidad) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: VentiqHomeTheme.warning),
+          const SizedBox(width: 10),
+          Expanded(child: Text(texto, style: const TextStyle(fontSize: 13))),
+          Text(
+            '$cantidad',
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Todo lo que sigue en el dispositivo sin subir al servidor, por categoría.
+  Widget _buildPendientesDetalle(Map<String, int> pendientes) {
+    final total = pendientes['total'] ?? 0;
+    if (total == 0) {
+      return Row(
+        children: const [
+          Icon(
+            Icons.cloud_done_outlined,
+            size: 18,
+            color: VentiqHomeTheme.success,
+          ),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Todo sincronizado: no hay datos offline pendientes',
+              style: TextStyle(fontSize: 13),
+            ),
+          ),
+        ],
+      );
+    }
+    final filas = <Widget>[
+      if ((pendientes['ventas'] ?? 0) > 0)
+        _pendienteRow(
+          Icons.shopping_cart_outlined,
+          'Ventas sin subir',
+          pendientes['ventas']!,
+        ),
+      if ((pendientes['aperturas'] ?? 0) > 0)
+        _pendienteRow(
+          Icons.lock_open_outlined,
+          'Aperturas de turno',
+          pendientes['aperturas']!,
+        ),
+      if ((pendientes['cierres'] ?? 0) > 0)
+        _pendienteRow(
+          Icons.lock_outline,
+          'Cierres de turno',
+          pendientes['cierres']!,
+        ),
+      if ((pendientes['egresos'] ?? 0) > 0)
+        _pendienteRow(
+          Icons.payments_outlined,
+          'Egresos',
+          pendientes['egresos']!,
+        ),
+      if ((pendientes['cambiosEstado'] ?? 0) > 0)
+        _pendienteRow(
+          Icons.swap_horiz,
+          'Cambios de estado de órdenes',
+          pendientes['cambiosEstado']!,
+        ),
+      if ((pendientes['trabajadores'] ?? 0) > 0)
+        _pendienteRow(
+          Icons.groups_outlined,
+          'Cambios de trabajadores',
+          pendientes['trabajadores']!,
+        ),
+      if ((pendientes['otrasOperaciones'] ?? 0) > 0)
+        _pendienteRow(
+          Icons.pending_actions,
+          'Otras operaciones',
+          pendientes['otrasOperaciones']!,
+        ),
+      if ((pendientes['adminOps'] ?? 0) > 0)
+        _pendienteRow(
+          Icons.inventory_2_outlined,
+          'Inventario/productos',
+          pendientes['adminOps']!,
+        ),
+      if ((pendientes['sinVerificar'] ?? 0) > 0)
+        _pendienteRow(
+          Icons.help_outline,
+          'No se pudo verificar el estado local',
+          1,
+        ),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Pendiente de subir al servidor:',
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 4),
+        ...filas,
+      ],
+    );
+  }
+
+  Future<void> _showStorageOptions() async {
+    final pendientes = await _userPreferencesService.getUnsyncedOfflineCounts();
+    if (!mounted) return;
     final closedPending =
         _dataSyncSummary?['closed_turnos_pending_count'] as int? ?? 0;
     showDialog(
@@ -2700,10 +2810,27 @@ class _SettingsScreenState extends State<SettingsScreen>
       builder:
           (context) => AlertDialog(
             title: const Text('Gestión de Datos'),
-            content: Column(
+            content: SingleChildScrollView(
+             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                _buildPendientesDetalle(pendientes),
+                if ((pendientes['total'] ?? 0) > 0) ...[
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _showSyncDialog();
+                      },
+                      icon: const Icon(Icons.sync),
+                      label: const Text('Sincronizar ahora'),
+                    ),
+                  ),
+                ],
+                const Divider(),
                 const Text('Opciones de almacenamiento:'),
                 const SizedBox(height: 16),
                 ListTile(
@@ -2775,6 +2902,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   ),
                 ],
               ],
+             ),
             ),
             actions: [
               TextButton(
@@ -3415,26 +3543,16 @@ class _SettingsScreenState extends State<SettingsScreen>
         // SyncModule.defaultCashFund es opcional: se descarga si existe, pero
         // no bloquea la activación offline si la tienda aún no lo configura.
       };
-      var syncSucceeded = false;
-      final wasOffline = await _userPreferencesService.isOfflineModeEnabled();
-      if (wasOffline) {
-        await _userPreferencesService.setOfflineMode(false);
-      }
-      try {
-        final result = await AutoSyncService().syncModules(
-          offlineReadinessOnly
-              ? requiredOfflineModules
-              : SyncModule.values.toSet(),
-          resumeFromCheckpoint: !offlineReadinessOnly,
-        );
-        syncSucceeded = result.success;
-        if (!mounted) return false;
-        await _showSyncResultFeedback(result);
-      } finally {
-        if (wasOffline) {
-          await _userPreferencesService.setOfflineMode(true);
-        }
-      }
+      final result = await AutoSyncService().syncModules(
+        offlineReadinessOnly
+            ? requiredOfflineModules
+            : SyncModule.values.toSet(),
+        resumeFromCheckpoint: !offlineReadinessOnly,
+        suspenderModoOffline: true,
+      );
+      final syncSucceeded = result.success;
+      if (!mounted) return false;
+      await _showSyncResultFeedback(result);
 
       unawaited(_refreshDataSection());
       return syncSucceeded;
@@ -3985,1297 +4103,5 @@ class _SettingsScreenState extends State<SettingsScreen>
       ),
     );
     await _refreshDataSection();
-  }
-}
-
-// Widget del diálogo de sincronización
-class _SyncDialog extends StatefulWidget {
-  final UserPreferencesService userPreferencesService;
-  final Function(bool) onSyncComplete;
-
-  const _SyncDialog({
-    required this.userPreferencesService,
-    required this.onSyncComplete,
-  });
-
-  @override
-  State<_SyncDialog> createState() => _SyncDialogState();
-}
-
-class _SyncDialogState extends State<_SyncDialog> {
-  double _progress = 0.0;
-  String _currentTask = 'Iniciando sincronización...';
-  bool _isCompleted = false;
-  bool _hasError = false;
-  int _currentIndex = -1;
-  final Set<int> _failedIndexes = {};
-
-  final List<Map<String, String>> _tasks = [
-    {'name': 'Reautenticando usuario', 'key': 'reauth'},
-    {'name': 'Sincronizando métodos de pago', 'key': 'payment_methods'},
-    {'name': 'Procesando operaciones pendientes', 'key': 'pending_operations'},
-    {
-      'name': 'Sincronizando turnos, ventas y cierres',
-      'key': 'sync_turno_queue',
-    },
-    {'name': 'Guardando credenciales', 'key': 'credentials'},
-    {'name': 'Sincronizando turno abierto', 'key': 'turno'},
-    {'name': 'Sincronizando egresos', 'key': 'egresos'},
-    {'name': 'Sincronizando configuración de tienda', 'key': 'store_config'},
-    {'name': 'Sincronizando promociones globales', 'key': 'promotions'},
-    {'name': 'Descargando categorías', 'key': 'categories'},
-    {'name': 'Descargando productos', 'key': 'products'},
-    {'name': 'Sincronizando órdenes', 'key': 'orders'},
-  ];
-
-  @override
-  void initState() {
-    super.initState();
-    _startSync();
-  }
-
-  Future<void> _startSync() async {
-    try {
-      final Map<String, dynamic> offlineData = {};
-      final List<String> successfulSteps = [];
-      final List<String> failedSteps = [];
-
-      for (int i = 0; i < _tasks.length; i++) {
-        final task = _tasks[i];
-        setState(() {
-          _currentIndex = i;
-          _currentTask = task['name']!;
-          // Progreso al iniciar el paso (lo hecho / total), no como si ya terminó.
-          _progress = i / _tasks.length;
-        });
-
-        // Procesar cada paso, continuando incluso si uno falla
-        try {
-          switch (task['key']) {
-            case 'reauth':
-              await _reauth();
-              successfulSteps.add(task['name']!);
-              break;
-            case 'pending_operations':
-              await _processPendingOperations();
-              successfulSteps.add(task['name']!);
-              break;
-            case 'sync_turno_queue':
-              // Cola offline_turnos en orden: apertura (idempotente) → ventas
-              // → egresos → cierre, y luego baja las órdenes del turno. Antes
-              // se subían las ventas una a una antes de abrir el turno.
-              await AutoSyncService().forceSyncPendingOrders();
-              successfulSteps.add(task['name']!);
-              break;
-            case 'credentials':
-              offlineData['credentials'] = await _syncCredentials();
-              successfulSteps.add(task['name']!);
-              break;
-            case 'turno':
-              offlineData['turno'] = await _syncTurno();
-              // También sincronizar el resumen de turno anterior para apertura/cierre
-              await _syncTurnoResumen();
-              // Sincronizar resumen de cierre diario para CierreScreen y VentaTotalScreen
-              await _syncResumenCierre();
-              successfulSteps.add(task['name']!);
-              break;
-            case 'egresos':
-              // Subir cola egresos_offline (+ turnos si hace falta el id_turno),
-              // luego refrescar cache desde servidor.
-              await AutoSyncService().syncModules({
-                SyncModule.uploadTurno,
-                SyncModule.uploadEgresos,
-                SyncModule.egresos,
-              });
-              successfulSteps.add(task['name']!);
-              break;
-            case 'store_config':
-              await _syncStoreConfig();
-              successfulSteps.add(task['name']!);
-              break;
-            case 'promotions':
-              offlineData['promotions'] = await _syncPromotions();
-              successfulSteps.add(task['name']!);
-              break;
-            case 'payment_methods':
-              final paymentMethods = await _syncPaymentMethods();
-              offlineData['payment_methods'] = paymentMethods;
-              if (paymentMethods.isNotEmpty) {
-                await widget.userPreferencesService.mergeOfflineData({
-                  'payment_methods': paymentMethods,
-                });
-              }
-              successfulSteps.add(task['name']!);
-              break;
-            case 'categories':
-              offlineData['categories'] = await _syncCategories();
-              successfulSteps.add(task['name']!);
-              break;
-            case 'products':
-              offlineData['products'] = await _syncProducts();
-              successfulSteps.add(task['name']!);
-              break;
-            case 'orders':
-              offlineData['orders'] = await _syncOrders();
-              successfulSteps.add(task['name']!);
-              break;
-          }
-        } catch (e) {
-          print('⚠️ Error en paso "${task['name']}": $e');
-          failedSteps.add(task['name']!);
-          _failedIndexes.add(i);
-          // Continuar con el siguiente paso incluso si este falló
-        }
-
-        if (mounted) {
-          setState(() {
-            _progress = (i + 1) / _tasks.length;
-          });
-        }
-      }
-
-      final idTienda = await widget.userPreferencesService.getIdTienda();
-      final idTpv = await widget.userPreferencesService.getIdTpv();
-      final userId = await widget.userPreferencesService.getUserId();
-
-      offlineData['meta'] = {
-        'schema_version': 1,
-        'created_at': DateTime.now().toIso8601String(),
-        'id_tienda': idTienda,
-        'id_tpv': idTpv,
-        'user_id': userId,
-        'source': 'manual',
-      };
-
-      // Limpiar datos offline después de procesamiento exitoso
-      // Guardar todos los datos offline actualizados
-      await widget.userPreferencesService.saveOfflineDataTransactional(
-        offlineData,
-      );
-      await widget.userPreferencesService.setOfflineMode(true);
-
-      await widget.userPreferencesService.clearAllOfflineData();
-      print('🗑️ Datos offline anteriores limpiados');
-
-      // Logging de datos guardados
-      print('💾 Datos offline guardados:');
-      print(
-        '  - Credenciales: ${offlineData['credentials'] != null ? 'Sí' : 'No'}',
-      );
-      print('  - Turno: ${offlineData['turno'] != null ? 'Sí' : 'No'}');
-      print(
-        '  - Promociones: ${offlineData['promotions'] != null ? 'Sí' : 'No'}',
-      );
-      print(
-        '  - Métodos de pago: ${offlineData['payment_methods'] != null ? 'Sí' : 'No'}',
-      );
-      print(
-        '  - Categorías: ${offlineData['categories'] != null ? offlineData['categories'].length : 0}',
-      );
-      print('  - Productos: ${offlineData['products'] != null ? 'Sí' : 'No'}');
-      print(
-        '  - Órdenes: ${offlineData['orders'] != null ? offlineData['orders'].length : 0}',
-      );
-      print('✅ Modo offline activado');
-
-      // Logging de resultados
-      print('📊 Resumen de sincronización:');
-      print(
-        '  ✅ Pasos exitosos (${successfulSteps.length}): ${successfulSteps.join(", ")}',
-      );
-      if (failedSteps.isNotEmpty) {
-        print(
-          '  ⚠️ Pasos fallidos (${failedSteps.length}): ${failedSteps.join(", ")}',
-        );
-      }
-
-      setState(() {
-        _isCompleted = true;
-        _currentTask =
-            failedSteps.isEmpty
-                ? '¡Sincronización completada!'
-                : '¡Sincronización completada con ${failedSteps.length} advertencias!';
-      });
-
-      // Esperar un momento antes de cerrar
-      await Future.delayed(const Duration(seconds: 1));
-      widget.onSyncComplete(true);
-    } catch (e) {
-      print('❌ Error durante sincronización: $e');
-      setState(() {
-        _hasError = true;
-        _currentTask = 'Error: $e';
-      });
-      await Future.delayed(const Duration(seconds: 2));
-      widget.onSyncComplete(false);
-    }
-  }
-
-  Future<Map<String, dynamic>> _syncCredentials() async {
-    final userData = await widget.userPreferencesService.getUserData();
-    final credentials =
-        await widget.userPreferencesService.getSavedCredentials();
-
-    // Verificar que tenemos email y password
-    final email = userData['email'] ?? credentials['email'];
-    final password = credentials['password'];
-    final userId = userData['userId'];
-
-    if (email == null || password == null || userId == null) {
-      throw Exception(
-        'No se pueden sincronizar credenciales. '
-        'Asegúrate de marcar "Recordarme" en el login para habilitar modo offline.',
-      );
-    }
-
-    print('✅ Credenciales encontradas:');
-    print('  - Email: $email');
-    print('  - Password: ${password.isNotEmpty ? "***" : "vacío"}');
-    print('  - UserId: $userId');
-
-    // Guardar usuario en el array de usuarios offline
-    await widget.userPreferencesService.saveOfflineUser(
-      email: email,
-      password: password,
-      userId: userId,
-    );
-
-    return {'email': email, 'password': password, 'userId': userId};
-  }
-
-  Future<Map<String, dynamic>> _syncPromotions() async {
-    final promotionData =
-        await widget.userPreferencesService.getPromotionData();
-    return promotionData ?? {};
-  }
-
-  Future<List<Map<String, dynamic>>> _syncPaymentMethods() async {
-    try {
-      final paymentMethods =
-          await PaymentMethodService.getActivePaymentMethods();
-
-      if (paymentMethods.isNotEmpty) {
-        final paymentMethodsList =
-            paymentMethods.map((pm) => pm.toJson()).toList();
-        await widget.userPreferencesService.mergeOfflineData({
-          'payment_methods': paymentMethodsList,
-        });
-        print('✅ Métodos de pago sincronizados: ${paymentMethodsList.length}');
-        return paymentMethodsList;
-      }
-
-      final cached =
-          await widget.userPreferencesService.getPaymentMethodsOffline();
-      if (cached.isNotEmpty) {
-        print('⚠️ Sin métodos de pago en línea - usando cache offline');
-        return cached;
-      }
-
-      print('⚠️ No hay métodos de pago disponibles');
-      return [];
-    } catch (e) {
-      print('❌ Error sincronizando métodos de pago: $e');
-      return [];
-    }
-  }
-
-  Future<Map<String, dynamic>?> _syncTurno() async {
-    try {
-      final hasOpenShift = await TurnoService.hasOpenShift();
-
-      if (hasOpenShift) {
-        // Obtener datos del turno abierto desde Supabase
-        final supabase = Supabase.instance.client;
-        final userPrefs = UserPreferencesService();
-        final idTpv = await userPrefs.getIdTpv();
-
-        if (idTpv == null) {
-          print('⚠️ No se pudo obtener el ID del TPV');
-          return null;
-        }
-
-        final response = await supabase
-            .from('app_dat_caja_turno')
-            .select('*')
-            .eq('id_tpv', idTpv)
-            .eq('estado', 1)
-            .order('fecha_apertura', ascending: false, nullsFirst: false)
-            .limit(1);
-
-        if (response.isNotEmpty) {
-          final turnoData = response.first;
-          print('✅ Turno abierto sincronizado: ID ${turnoData['id']}');
-
-          // ✅ CRÍTICO: Guardar en cache específico de turno offline (igual que auto_sync)
-          await widget.userPreferencesService.saveOfflineTurno(turnoData);
-          print('  💾 Turno guardado en cache offline específico');
-
-          return turnoData;
-        }
-      }
-
-      print('ℹ️ No hay turno abierto');
-      return null;
-    } catch (e) {
-      print('❌ Error sincronizando turno: $e');
-      return null;
-    }
-  }
-
-  Future<void> _syncEgresos() async {
-    try {
-      print('🔄 Sincronizando egresos...');
-
-      // Obtener egresos del turno actual usando TurnoService
-      final egresos = await TurnoService.getEgresosEnriquecidos();
-
-      if (egresos.isNotEmpty) {
-        // Convertir egresos a formato Map para cache
-        final egresosData =
-            egresos
-                .map(
-                  (egreso) => {
-                    'id_egreso': egreso.idEgreso,
-                    'monto_entrega': egreso.montoEntrega,
-                    'motivo_entrega': egreso.motivoEntrega,
-                    'nombre_autoriza': egreso.nombreAutoriza,
-                    'nombre_recibe': egreso.nombreRecibe,
-                    'es_digital': egreso.esDigital,
-                    'fecha_entrega': egreso.fechaEntrega.toIso8601String(),
-                    'id_medio_pago': egreso.idMedioPago,
-                    'turno_estado': egreso.turnoEstado,
-                    'medio_pago': egreso.medioPago,
-                  },
-                )
-                .toList();
-
-        // Guardar en cache para uso offline
-        await widget.userPreferencesService.saveEgresosCache(egresosData);
-        print(
-          '✅ Egresos sincronizados: ${egresos.length} egresos guardados en cache',
-        );
-      } else {
-        print('ℹ️ No hay egresos para sincronizar');
-        // Limpiar cache si no hay egresos
-        await widget.userPreferencesService.clearEgresosCache();
-      }
-    } catch (e) {
-      print('❌ Error sincronizando egresos: $e');
-      // En caso de error, mantener cache existente
-    }
-  }
-
-  Future<void> _syncStoreConfig() async {
-    try {
-      print('🔧 Sincronizando configuración de tienda...');
-
-      // Obtener ID de tienda
-      final idTienda = await widget.userPreferencesService.getIdTienda();
-
-      if (idTienda == null) {
-        print(
-          '❌ No se pudo obtener ID de tienda para sincronizar configuración',
-        );
-        return;
-      }
-
-      // Sincronizar configuración usando StoreConfigService
-      final success = await StoreConfigService.syncStoreConfig(idTienda);
-
-      if (success) {
-        print('✅ Configuración de tienda sincronizada exitosamente');
-      } else {
-        print('⚠️ No se pudo sincronizar configuración de tienda');
-      }
-    } catch (e) {
-      print('❌ Error sincronizando configuración de tienda: $e');
-    }
-  }
-
-  Future<void> _syncTurnoResumen() async {
-    try {
-      print('🔄 Sincronizando resumen de turno anterior...');
-
-      // Solo el último turno cerrado (KPI abierto pisa el cache y rompe apertura).
-      final resumenTurno = await TurnoService.getResumenUltimoTurnoCerrado();
-
-      if (resumenTurno != null) {
-        final normalized = widget.userPreferencesService
-            .normalizePreviousShiftSummary(resumenTurno);
-        await widget.userPreferencesService.saveTurnoResumenCache({
-          ...normalized,
-          'cerrado_online': true,
-          'status': UserPreferencesService.offlineTurnoStatusSynced,
-        });
-        await widget.userPreferencesService.saveResumenCierreCache({
-          ...normalized,
-          'total_ventas': normalized['ventas_totales'],
-          'efectivo_real':
-              normalized['efectivo_real'] ?? normalized['efectivo_final'],
-        });
-        print('✅ Resumen de turno sincronizado y guardado en cache');
-        print('📊 Datos sincronizados: ${normalized.keys.toList()}');
-      } else {
-        print('ℹ️ No hay resumen de turno anterior disponible');
-      }
-    } catch (e) {
-      print('❌ Error sincronizando resumen de turno: $e');
-    }
-  }
-
-  Future<void> _syncResumenCierre() async {
-    try {
-      print('🔄 Sincronizando resumen de cierre diario...');
-
-      // Obtener datos del usuario para llamar a fn_resumen_diario_cierre
-      final idTpv = await widget.userPreferencesService.getIdTpv();
-      final userID = await widget.userPreferencesService.getUserId();
-
-      if (idTpv != null && userID != null) {
-        print(
-          '📋 Llamando fn_resumen_diario_cierre_v2 - TPV: $idTpv, Usuario: $userID',
-        );
-
-        // Llamar a la función RPC fn_resumen_diario_cierre_v2
-        //
-        // FASE 3 presentaciones: v2 (la original redondeaba productos_vendidos).
-        final resumenCierreResponse = await Supabase.instance.client.rpc(
-          'fn_resumen_diario_cierre_v2',
-          params: {'id_tpv_param': idTpv, 'id_usuario_param': userID},
-        );
-
-        print(
-          '📋 Respuesta de fn_resumen_diario_cierre_v2: $resumenCierreResponse',
-        );
-        print('📋 Tipo de respuesta: ${resumenCierreResponse.runtimeType}');
-
-        if (resumenCierreResponse != null) {
-          Map<String, dynamic> resumenCierre;
-
-          // Manejar tanto List como Map de respuesta
-          if (resumenCierreResponse is List &&
-              resumenCierreResponse.isNotEmpty) {
-            // Si es una lista, tomar el primer elemento
-            resumenCierre = resumenCierreResponse[0] as Map<String, dynamic>;
-            print(
-              '📋 Resumen extraído de lista: ${resumenCierre.keys.toList()}',
-            );
-          } else if (resumenCierreResponse is Map<String, dynamic>) {
-            // Si ya es un mapa, usarlo directamente
-            resumenCierre = resumenCierreResponse;
-            print(
-              '📋 Resumen recibido como mapa: ${resumenCierre.keys.toList()}',
-            );
-          } else {
-            print(
-              '⚠️ Formato de respuesta no reconocido: ${resumenCierreResponse.runtimeType}',
-            );
-            throw Exception('Formato de respuesta no válido');
-          }
-
-          // Guardar en cache para uso offline
-          await widget.userPreferencesService.saveResumenCierreCache(
-            resumenCierre,
-          );
-          print('✅ Resumen de cierre sincronizado y guardado en cache');
-          print('📊 Datos sincronizados: ${resumenCierre.keys.toList()}');
-
-          // Log de valores principales para debugging
-          print('💰 Valores principales del resumen:');
-          if (resumenCierre['total_ventas'] != null) {
-            print('  - Total ventas: \$${resumenCierre['total_ventas']}');
-          }
-          if (resumenCierre['total_efectivo'] != null) {
-            print('  - Total efectivo: \$${resumenCierre['total_efectivo']}');
-          }
-          if (resumenCierre['productos_vendidos'] != null) {
-            print(
-              '  - Productos vendidos: ${resumenCierre['productos_vendidos']}',
-            );
-          }
-          if (resumenCierre['ventas_totales'] != null) {
-            print('  - Ventas totales: \$${resumenCierre['ventas_totales']}');
-          }
-          if (resumenCierre['efectivo_real'] != null) {
-            print('  - Efectivo real: \$${resumenCierre['efectivo_real']}');
-          }
-        } else {
-          print('ℹ️ No hay resumen de cierre disponible');
-        }
-      } else {
-        print('⚠️ Faltan datos requeridos para sincronizar resumen de cierre');
-        print('  - ID TPV: $idTpv');
-        print('  - User ID: $userID');
-      }
-    } catch (e) {
-      print('❌ Error sincronizando resumen de cierre: $e');
-      // En caso de error, intentar guardar un resumen vacío para evitar errores offline
-      try {
-        await widget.userPreferencesService.saveResumenCierreCache({
-          'total_ventas': 0.0,
-          'total_efectivo': 0.0,
-          'total_transferencias': 0.0,
-          'productos_vendidos': 0,
-          'ticket_promedio': 0.0,
-          'sync_error': true,
-          'error_message': e.toString(),
-        });
-        print('💾 Resumen de cierre vacío guardado como fallback');
-      } catch (fallbackError) {
-        print('❌ Error guardando resumen de cierre fallback: $fallbackError');
-      }
-    }
-  }
-
-  Future<List<Map<String, dynamic>>> _syncCategories() async {
-    // Aquí llamarías al CategoryService para obtener todas las categorías
-    final categoryService = CategoryService();
-    try {
-      final categories = await categoryService.getCategories();
-      return categories
-          .map(
-            (cat) => {
-              'id': cat.id,
-              'name': cat.name,
-              'imageUrl': cat.imageUrl,
-              'color': cat.color.value,
-            },
-          )
-          .toList();
-    } catch (e) {
-      print('Error sincronizando categorías: $e');
-      return [];
-    }
-  }
-
-  Future<Map<String, List<Map<String, dynamic>>>> _syncProducts() async {
-    final productService = ProductService();
-    final categoryService = CategoryService();
-    final Map<String, List<Map<String, dynamic>>> productsByCategory = {};
-
-    try {
-      final categories = await categoryService.getCategories();
-      print('📦 Sincronizando productos de ${categories.length} categorías...');
-
-      for (var category in categories) {
-        final productsMap = await productService.getProductsByCategory(
-          category.id,
-        );
-
-        // Convertir el Map<String, List<Product>> a lista plana con detalles completos
-        final List<Map<String, dynamic>> allProducts = [];
-
-        for (var entry in productsMap.entries) {
-          final subcategory = entry.key;
-          final products = entry.value;
-
-          for (var prod in products) {
-            try {
-              // Obtener detalles completos del producto usando el RPC get_detalle_producto
-              print(
-                '  🔍 Obteniendo detalles de: ${prod.denominacion} (ID: ${prod.id})',
-              );
-
-              final detailResponse = await Supabase.instance.client.rpc(
-                'get_detalle_producto',
-                params: {'id_producto_param': prod.id},
-              );
-
-              if (detailResponse != null) {
-                // Guardar la respuesta completa del RPC con todos los detalles
-                final productWithDetails = {
-                  'id': prod.id,
-                  'denominacion': prod.denominacion,
-                  'precio': prod.precio,
-                  'foto': prod.foto,
-                  'categoria': prod.categoria,
-                  'descripcion': prod.descripcion,
-                  'cantidad': prod.cantidad,
-                  'subcategoria': subcategory,
-                  // Agregar detalles completos del RPC
-                  'detalles_completos': detailResponse,
-                };
-
-                allProducts.add(productWithDetails);
-                print('    ✅ Detalles obtenidos para: ${prod.denominacion}');
-              } else {
-                // Si no hay detalles, guardar solo datos básicos
-                allProducts.add({
-                  'id': prod.id,
-                  'denominacion': prod.denominacion,
-                  'precio': prod.precio,
-                  'foto': prod.foto,
-                  'categoria': prod.categoria,
-                  'descripcion': prod.descripcion,
-                  'cantidad': prod.cantidad,
-                  'subcategoria': subcategory,
-                });
-                print('    ⚠️ Sin detalles para: ${prod.denominacion}');
-              }
-            } catch (e) {
-              print(
-                '    ❌ Error obteniendo detalles de ${prod.denominacion}: $e',
-              );
-              // En caso de error, guardar solo datos básicos
-              allProducts.add({
-                'id': prod.id,
-                'denominacion': prod.denominacion,
-                'precio': prod.precio,
-                'foto': prod.foto,
-                'categoria': prod.categoria,
-                'descripcion': prod.descripcion,
-                'cantidad': prod.cantidad,
-                'subcategoria': subcategory,
-              });
-            }
-          }
-        }
-
-        productsByCategory[category.id.toString()] = allProducts;
-        print(
-          '✅ Categoría "${category.name}": ${allProducts.length} productos sincronizados',
-        );
-      }
-
-      print(
-        '🎉 Total de productos sincronizados: ${productsByCategory.values.fold(0, (sum, list) => sum + list.length)}',
-      );
-      return productsByCategory;
-    } catch (e) {
-      print('❌ Error sincronizando productos: $e');
-      return {};
-    }
-  }
-
-  Future<List<Map<String, dynamic>>> _syncOrders() async {
-    try {
-      // Obtener datos del usuario
-      final userData = await widget.userPreferencesService.getUserData();
-      final idTienda = await widget.userPreferencesService.getIdTienda();
-      final idTpv = await widget.userPreferencesService.getIdTpv();
-      final userId = userData['userId'];
-
-      if (idTienda == null || idTpv == null || userId == null) {
-        print('⚠️ Faltan datos para sincronizar órdenes');
-        return [];
-      }
-
-      print('🔄 Sincronizando órdenes con estados completos...');
-      print('📋 Parámetros: idTienda=$idTienda, idTpv=$idTpv, userId=$userId');
-
-      // Llamar al RPC listar_ordenes para obtener órdenes desde Supabase
-      // Incluimos TODAS las órdenes (sin filtro de estado) para capturar el ciclo completo
-      final response = await Supabase.instance.client.rpc(
-        'listar_ordenes',
-        params: {
-          'con_inventario_param': false,
-          'fecha_desde_param': null,
-          'fecha_hasta_param': null,
-          'id_estado_param': null, // Sin filtro de estado para obtener todas
-          'id_tienda_param': idTienda,
-          'id_tipo_operacion_param': null,
-          'id_tpv_param': idTpv,
-          'id_usuario_param': userId,
-          'limite_param': 100, // Limitar a las últimas 100 órdenes
-          'pagina_param': null,
-          'solo_pendientes_param':
-              false, // Incluir órdenes completadas/canceladas
-        },
-      );
-
-      if (response is List && response.isNotEmpty) {
-        print('✅ Órdenes sincronizadas: ${response.length}');
-
-        // Agrupar órdenes por estado para logging detallado
-        final ordenesPorEstado = <String, int>{};
-        for (var orden in response) {
-          final estado = orden['estado_nombre'] ?? 'Sin estado';
-          ordenesPorEstado[estado] = (ordenesPorEstado[estado] ?? 0) + 1;
-        }
-
-        print('📊 Distribución por estado:');
-        ordenesPorEstado.forEach((estado, cantidad) {
-          print('  - $estado: $cantidad órdenes');
-        });
-
-        // Verificar órdenes con cambios de estado
-        final ordenesConCambios =
-            response.where((orden) {
-              final fechaCreacion = orden['fecha_creacion'];
-              final fechaActualizacion = orden['fecha_actualizacion'];
-              return fechaCreacion != fechaActualizacion;
-            }).toList();
-
-        if (ordenesConCambios.isNotEmpty) {
-          print(
-            '🔄 Órdenes con cambios de estado: ${ordenesConCambios.length}',
-          );
-          for (var orden in ordenesConCambios.take(5)) {
-            // Mostrar solo las primeras 5
-            print(
-              '  - ID: ${orden['id']}, Estado: ${orden['estado_nombre']}, Creada: ${orden['fecha_creacion']}, Actualizada: ${orden['fecha_actualizacion']}',
-            );
-          }
-        }
-
-        // Retornar la respuesta completa del RPC
-        final ordenes = response.cast<Map<String, dynamic>>();
-        print(
-          '✅ Sincronización de órdenes completada: ${ordenes.length} órdenes descargadas',
-        );
-        return ordenes;
-      }
-
-      print('ℹ️ No se encontraron órdenes para sincronizar');
-      return [];
-    } catch (e) {
-      print('❌ Error sincronizando órdenes: $e');
-      return [];
-    }
-  }
-
-  /// Reautenticar usuario con credenciales guardadas
-  Future<void> _reauth() async {
-    try {
-      final result =
-          await widget.userPreferencesService.reloginWithSavedCredentials();
-      if (!result['success']) {
-        throw Exception(result['error']);
-      }
-      print('✅ Reautenticación exitosa');
-    } catch (e) {
-      print('❌ Error en reautenticación: $e');
-      throw e;
-    }
-  }
-
-  /// Procesar operaciones pendientes (apertura/cierre de turno)
-  Future<void> _processPendingOperations() async {
-    try {
-      final operations =
-          await widget.userPreferencesService.getPendingOperations();
-      print('🔄 Procesando ${operations.length} operaciones pendientes...');
-
-      for (var operation in operations) {
-        final type = operation['type'];
-        print('  - Procesando operación: $type');
-
-        switch (type) {
-          case 'apertura_turno':
-          case 'cierre_turno':
-            // La cola real la sube AutoSync (uploadTurno) con client_uuid.
-            // Este paso no abre ni cierra por fn_cerrar_turno_tpv.
-            print(
-              'ℹ️ pending_operations type=$type omitido '
-              '(sync vía AutoSync / uploadTurno)',
-            );
-            break;
-          case 'egreso':
-            // La cola real es `egresos_offline` (AutoSync). No re-subir desde
-            // pending_operations: duplicaría con RPC no idempotente.
-            print(
-              'ℹ️ pending_operations type=egreso omitido '
-              '(sync vía AutoSync / egresos_offline)',
-            );
-            break;
-          case 'order_status_change':
-            await _processOrderStatusChange(operation);
-            break;
-          default:
-            print('⚠️ Tipo de operación desconocido: $type');
-        }
-      }
-
-      print('✅ Operaciones pendientes procesadas');
-    } catch (e) {
-      print('❌ Error procesando operaciones pendientes: $e');
-      throw e;
-    }
-  }
-
-
-
-  /// Procesar cambio de estado de orden por la cola con clave.
-  Future<void> _processOrderStatusChange(Map<String, dynamic> operation) async {
-    final orderId = operation['order_id']?.toString() ?? '';
-    final newStatus = operation['new_status']?.toString() ?? '';
-    try {
-      await AutoSyncService().syncPendingOrderStatusChanges();
-      final left = await widget.userPreferencesService.getPendingOperations();
-      final still = left.any(
-        (o) =>
-            o['type'] == 'order_status_change' &&
-            o['order_id']?.toString() == orderId &&
-            o['new_status']?.toString() == newStatus,
-      );
-      if (still) {
-        throw Exception(
-          'No se pudo confirmar el cambio de estado de $orderId',
-        );
-      }
-      print('✅ Estado de orden actualizado: $orderId -> $newStatus');
-    } catch (e) {
-      print('❌ Error actualizando estado de orden: $e');
-      rethrow;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Ícono
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color:
-                    _hasError
-                        ? VentiqHomeTheme.danger.withValues(alpha: 0.10)
-                        : _isCompleted
-                        ? VentiqHomeTheme.success.withValues(alpha: 0.10)
-                        : VentiqHomeTheme.primary.withValues(alpha: 0.10),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                _hasError
-                    ? Icons.error_outline
-                    : _isCompleted
-                    ? Icons.check_circle_outline
-                    : Icons.cloud_download,
-                size: 48,
-                color:
-                    _hasError
-                        ? VentiqHomeTheme.danger
-                        : _isCompleted
-                        ? VentiqHomeTheme.success
-                        : VentiqHomeTheme.primary,
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // Título
-            Text(
-              _hasError
-                  ? 'Error de Sincronización'
-                  : _isCompleted
-                  ? '¡Completado!'
-                  : 'Sincronizando Datos',
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-                color: VentiqHomeTheme.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Tarea actual
-            Text(
-              _currentTask,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 14,
-                color: VentiqHomeTheme.textSecondary,
-              ),
-            ),
-            const SizedBox(height: 8),
-            if (!_isCompleted && !_hasError)
-              Text(
-                _currentIndex < 0
-                    ? 'Preparando...'
-                    : 'Paso ${_currentIndex + 1} de ${_tasks.length}'
-                        ' · Faltan ${_tasks.length - _currentIndex}',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: VentiqHomeTheme.textSecondary,
-                ),
-              ),
-            const SizedBox(height: 16),
-
-            // Barra de progreso
-            if (!_isCompleted && !_hasError) ...[
-              LinearProgressIndicator(
-                value: _progress,
-                backgroundColor: VentiqHomeTheme.border,
-                valueColor: const AlwaysStoppedAnimation<Color>(
-                  VentiqHomeTheme.primary,
-                ),
-                minHeight: 8,
-                borderRadius: BorderRadius.circular(4),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '${(_progress * 100).toInt()}% completado',
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: VentiqHomeTheme.textSecondary,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-
-            // Lista de tareas
-            const SizedBox(height: 16),
-            Container(
-              constraints: const BoxConstraints(maxHeight: 220),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: VentiqHomeTheme.surface,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: VentiqHomeTheme.border),
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children:
-                      _tasks.asMap().entries.map((entry) {
-                        final index = entry.key;
-                        final task = entry.value;
-                        final isFailed = _failedIndexes.contains(index);
-                        final isCompleted =
-                            !isFailed &&
-                            (_isCompleted || index < _currentIndex);
-                        final isCurrent =
-                            !_isCompleted &&
-                            !_hasError &&
-                            index == _currentIndex;
-
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: Row(
-                            children: [
-                              Icon(
-                                isFailed
-                                    ? Icons.error_outline
-                                    : isCompleted
-                                    ? Icons.check_circle
-                                    : isCurrent
-                                    ? Icons.sync
-                                    : Icons.circle_outlined,
-                                size: 16,
-                                color:
-                                    isFailed
-                                        ? VentiqHomeTheme.warning
-                                        : isCompleted
-                                        ? VentiqHomeTheme.success
-                                        : isCurrent
-                                        ? VentiqHomeTheme.primary
-                                        : VentiqHomeTheme.textSecondary,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  task['name']!,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color:
-                                        isCompleted || isCurrent || isFailed
-                                            ? VentiqHomeTheme.textPrimary
-                                            : VentiqHomeTheme.textSecondary,
-                                    fontWeight:
-                                        isCurrent
-                                            ? FontWeight.w700
-                                            : FontWeight.normal,
-                                  ),
-                                ),
-                              ),
-                              if (!isCompleted && !isCurrent && !isFailed)
-                                const Text(
-                                  'Pendiente',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: VentiqHomeTheme.textSecondary,
-                                  ),
-                                ),
-                            ],
-                          ),
-                        );
-                      }).toList(),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Widget para sincronización manual de datos offline
-class _ManualSyncDialog extends StatefulWidget {
-  final UserPreferencesService userPreferencesService;
-  final Function(bool) onSyncComplete;
-
-  const _ManualSyncDialog({
-    required this.userPreferencesService,
-    required this.onSyncComplete,
-  });
-
-  @override
-  State<_ManualSyncDialog> createState() => _ManualSyncDialogState();
-}
-
-class _ManualSyncDialogState extends State<_ManualSyncDialog> {
-  double _progress = 0.0;
-  String _currentTask = 'Iniciando sincronización...';
-  bool _isCompleted = false;
-  bool _hasError = false;
-
-  final List<Map<String, String>> _tasks = [
-    {'name': 'Reautenticando usuario', 'key': 'reauth'},
-    {
-      'name': 'Sincronizando turnos, ventas y cierres',
-      'key': 'sync_turno_queue',
-    },
-    {'name': 'Descargando nuevas órdenes', 'key': 'sync_orders'},
-    {'name': 'Limpiando datos offline', 'key': 'cleanup'},
-  ];
-
-  @override
-  void initState() {
-    super.initState();
-    _startSync();
-  }
-
-  Future<void> _startSync() async {
-    try {
-      for (int i = 0; i < _tasks.length; i++) {
-        final task = _tasks[i];
-
-        setState(() {
-          _currentTask = task['name']!;
-          _progress = (i + 1) / _tasks.length;
-        });
-
-        // Simular delay para mostrar progreso
-        await Future.delayed(const Duration(milliseconds: 800));
-
-        // Procesar cada tarea
-        switch (task['key']) {
-          case 'reauth':
-            await _reauth();
-            break;
-          case 'sync_turno_queue':
-            await AutoSyncService().forceSyncPendingOrders();
-            break;
-          case 'sync_orders':
-            await _syncOrdersAfterManualSync();
-            break;
-          case 'cleanup':
-            await _cleanupOfflineData();
-            break;
-        }
-      }
-
-      setState(() {
-        _isCompleted = true;
-        _currentTask = '¡Sincronización completada!';
-      });
-
-      // Esperar un momento antes de cerrar
-      await Future.delayed(const Duration(seconds: 1));
-      widget.onSyncComplete(true);
-    } catch (e) {
-      print('❌ Error en sincronización manual: $e');
-      setState(() {
-        _hasError = true;
-        _currentTask = 'Error: ${e.toString()}';
-      });
-
-      await Future.delayed(const Duration(seconds: 2));
-      widget.onSyncComplete(false);
-    }
-  }
-
-  /// Reautenticar usuario
-  Future<void> _reauth() async {
-    final result =
-        await widget.userPreferencesService.reloginWithSavedCredentials();
-    if (!result['success']) {
-      throw Exception(result['error']);
-    }
-    print('✅ Reautenticación exitosa para sincronización manual');
-  }
-
-
-  /// Sincronizar nuevas órdenes después de procesar las pendientes
-  Future<void> _syncOrdersAfterManualSync() async {
-    try {
-      print('🔄 Descargando órdenes del turno actual desde Supabase...');
-      final n = await AutoSyncService().pullServerOrdersForCurrentShift();
-      print(
-        n > 0
-            ? '💾 Cache de órdenes del turno actualizado: $n'
-            : 'ℹ️ Sin órdenes en el rango del turno',
-      );
-    } catch (e) {
-      print('❌ Error descargando nuevas órdenes: $e');
-      rethrow;
-    }
-  }
-
-  /// Limpiar datos offline
-  Future<void> _cleanupOfflineData() async {
-    await widget.userPreferencesService.clearAllOfflineData();
-    print('🗑️ Datos offline limpiados');
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Ícono
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color:
-                    _hasError
-                        ? VentiqHomeTheme.danger.withValues(alpha: 0.10)
-                        : _isCompleted
-                        ? VentiqHomeTheme.success.withValues(alpha: 0.10)
-                        : VentiqHomeTheme.warning.withValues(alpha: 0.10),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                _hasError
-                    ? Icons.error_outline
-                    : _isCompleted
-                    ? Icons.check_circle_outline
-                    : Icons.sync,
-                size: 48,
-                color:
-                    _hasError
-                        ? VentiqHomeTheme.danger
-                        : _isCompleted
-                        ? VentiqHomeTheme.success
-                        : VentiqHomeTheme.warning,
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            // Título
-            Text(
-              _hasError
-                  ? 'Error de Sincronización'
-                  : _isCompleted
-                  ? '¡Completado!'
-                  : 'Sincronizando Datos Offline',
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: VentiqHomeTheme.textPrimary,
-              ),
-              textAlign: TextAlign.center,
-            ),
-
-            const SizedBox(height: 8),
-
-            // Subtítulo/tarea actual
-            Text(
-              _currentTask,
-              style: const TextStyle(
-                fontSize: 14,
-                color: VentiqHomeTheme.textSecondary,
-              ),
-              textAlign: TextAlign.center,
-            ),
-
-            const SizedBox(height: 24),
-
-            // Barra de progreso
-            if (!_isCompleted && !_hasError) ...[
-              LinearProgressIndicator(
-                value: _progress,
-                backgroundColor: VentiqHomeTheme.border,
-                valueColor: const AlwaysStoppedAnimation<Color>(
-                  VentiqHomeTheme.primary,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '${(_progress * 100).toInt()}%',
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: VentiqHomeTheme.textSecondary,
-                ),
-              ),
-            ],
-
-            // Lista de tareas
-            const SizedBox(height: 16),
-            Container(
-              constraints: const BoxConstraints(maxHeight: 200),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: VentiqHomeTheme.surface,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: VentiqHomeTheme.border),
-              ),
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: _tasks.length,
-                itemBuilder: (context, index) {
-                  final task = _tasks[index];
-                  final isCompleted = index < (_progress * _tasks.length);
-                  final isCurrent =
-                      index == (_progress * _tasks.length).floor() &&
-                      !_isCompleted;
-
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Row(
-                      children: [
-                        Icon(
-                          isCompleted
-                              ? Icons.check_circle
-                              : isCurrent
-                              ? Icons.sync
-                              : Icons.circle_outlined,
-                          size: 16,
-                          color:
-                              isCompleted
-                                  ? VentiqHomeTheme.success
-                                  : isCurrent
-                                  ? VentiqHomeTheme.primary
-                                  : VentiqHomeTheme.textSecondary,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            task['name']!,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color:
-                                  isCompleted || isCurrent
-                                      ? VentiqHomeTheme.textPrimary
-                                      : VentiqHomeTheme.textSecondary,
-                              fontWeight:
-                                  isCurrent
-                                      ? FontWeight.w700
-                                      : FontWeight.normal,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }

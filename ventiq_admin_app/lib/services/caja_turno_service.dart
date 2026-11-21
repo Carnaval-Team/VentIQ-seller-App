@@ -147,6 +147,40 @@ class CajaTurnoService {
     }
   }
 
+  /// Se apaga tras el primer "no existe" de `fn_turnos_por_moneda`.
+  static bool _porMonedaDisponible = true;
+
+  /// Cuadre de caja por turno y moneda (importes nativos, solo operaciones
+  /// completadas). Nunca lanza: sin la RPC o ante un error devuelve vacío y la
+  /// pantalla conserva los totales del listado.
+  static Future<Map<int, List<TurnoMoneda>>> getTurnosPorMoneda(
+    List<int> ids,
+  ) async {
+    if (ids.isEmpty || !_porMonedaDisponible) return {};
+    try {
+      final response = await _supabase.rpc(
+        'fn_turnos_por_moneda',
+        params: {'p_ids': ids},
+      );
+      final porTurno = <int, List<TurnoMoneda>>{};
+      if (response is List) {
+        for (final fila in response.whereType<Map>()) {
+          final item = TurnoMoneda.fromJson(Map<String, dynamic>.from(fila));
+          porTurno.putIfAbsent(item.idTurno, () => []).add(item);
+        }
+      }
+      return porTurno;
+    } catch (e) {
+      if (_esFuncionInexistente(e)) {
+        _porMonedaDisponible = false;
+        print('⚠️ fn_turnos_por_moneda no esta desplegada');
+      } else {
+        print('❌ Error cargando el cuadre por moneda: $e');
+      }
+      return {};
+    }
+  }
+
   /// Las RPC de resumen son `returns table(...)`: devuelven 0 o 1 fila y
   /// PostgREST la entrega dentro de una lista.
   static Future<Map<String, dynamic>?> _rpcFila(

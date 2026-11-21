@@ -79,31 +79,96 @@ class PrinterManager {
     return '';
   }
 
-  /// Limpia la selección guardada (usar al cerrar turno)
+  /// Limpia la selección guardada (usar al abrir o cerrar un turno)
   void clearSavedPrinter() {
     _savedPrinterType = null;
     _savedBluetoothDevice = null;
     _savedWifiPrinter = null;
+    _savedShiftKey = null;
     _rememberPrinterForShift = false;
     _savedPrinterPrefsLoaded = true;
     _clearSavedPrinterFromPrefs();
   }
 
+  // ── Impresora ligada al turno ───────────────────────────────────────────
+  // La selección solo vale para el turno en el que se guardó. Se identifica
+  // con el `local_id` del turno abierto de la cola local (existe tanto si se
+  // abrió online como offline y no cambia al sincronizar). Si al imprimir el
+  // turno abierto es otro —se cerró por una vía que no limpió, se abrió otro
+  // sin pasar por aquí— la selección se descarta y se vuelve a preguntar.
+  static const String _kShiftPrinterShiftKey = 'shift_saved_printer_shift_key';
+  String? _savedShiftKey;
+  Future<void> _persistFuture = Future.value();
+
+  Future<String?> _currentShiftKey() async {
+    try {
+      final open = await UserPreferencesService().getOpenOfflineTurno();
+      final key = open?['local_id']?.toString();
+      return (key == null || key.isEmpty) ? null : key;
+    } catch (e) {
+      print('⚠️ No se pudo leer el turno abierto para la impresora: $e');
+      return null;
+    }
+  }
+
+  /// Descarta la impresora guardada si no es del turno abierto ahora.
+  /// Sin turno abierto conocido no se toca (no hay con qué comparar).
+  Future<void> _discardSavedPrinterIfOtherShift() async {
+    if (!hasSavedPrinter) return;
+    final actual = await _currentShiftKey();
+    if (actual == null) return;
+    if (_savedShiftKey != actual) {
+      print(
+        '🖨️ Impresora guardada de otro turno '
+        '(guardada=$_savedShiftKey, actual=$actual): se vuelve a preguntar',
+      );
+      clearSavedPrinter();
+    }
+  }
+
+  @visibleForTesting
+  Future<void> debugRememberWifiForShift(Map<String, dynamic> printer) async {
+    _rememberWifiForShift(printer);
+    await _persistFuture;
+  }
+
+  /// Simula reiniciar la app: olvida lo que hay en memoria, no en disco.
+  @visibleForTesting
+  void debugForgetMemory() {
+    _savedPrinterType = null;
+    _savedBluetoothDevice = null;
+    _savedWifiPrinter = null;
+    _savedShiftKey = null;
+    _rememberPrinterForShift = false;
+    _savedPrinterPrefsLoaded = false;
+  }
+
+  /// Carga la impresora guardada y la valida contra el turno abierto.
+  /// Para pantallas que muestran el estado (ajustes).
+  Future<void> refreshSavedPrinter() => _ensureSavedPrinterLoaded();
+
   void _rememberBluetoothForShift(dynamic device) {
     _savedPrinterType = 'bluetooth';
     _savedBluetoothDevice = device;
     _rememberPrinterForShift = true;
-    _persistSavedPrinter();
+    _persistFuture = _persistSavedPrinter();
   }
 
   void _rememberWifiForShift(Map<String, dynamic> printer) {
     _savedPrinterType = 'wifi';
     _savedWifiPrinter = Map<String, dynamic>.from(printer);
     _rememberPrinterForShift = true;
-    _persistSavedPrinter();
+    _persistFuture = _persistSavedPrinter();
   }
 
   Future<void> _ensureSavedPrinterLoaded() async {
+    // Que no se valide a medias una selección que aún se está guardando.
+    await _persistFuture;
+    await _loadSavedPrinterFromPrefs();
+    await _discardSavedPrinterIfOtherShift();
+  }
+
+  Future<void> _loadSavedPrinterFromPrefs() async {
     if (hasSavedPrinter) {
       _savedPrinterPrefsLoaded = true;
       return;
@@ -113,6 +178,7 @@ class PrinterManager {
     try {
       final prefs = await SharedPreferences.getInstance();
       final type = prefs.getString(_kShiftPrinterType);
+      _savedShiftKey = prefs.getString(_kShiftPrinterShiftKey);
       if (type == 'sunmi' &&
           !kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
         _savedPrinterType = 'sunmi';
@@ -151,6 +217,13 @@ class PrinterManager {
         return;
       }
       await prefs.setString(_kShiftPrinterType, _savedPrinterType!);
+      // Turno al que pertenece esta selección.
+      _savedShiftKey = await _currentShiftKey();
+      if (_savedShiftKey != null) {
+        await prefs.setString(_kShiftPrinterShiftKey, _savedShiftKey!);
+      } else {
+        await prefs.remove(_kShiftPrinterShiftKey);
+      }
       if (_savedPrinterType == 'bluetooth' && _savedBluetoothDevice != null) {
         await prefs.setString(
           _kShiftPrinterBtName,
@@ -179,6 +252,7 @@ class PrinterManager {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_kShiftPrinterType);
+      await prefs.remove(_kShiftPrinterShiftKey);
       await prefs.remove(_kShiftPrinterBtName);
       await prefs.remove(_kShiftPrinterBtMac);
       await prefs.remove(_kShiftPrinterWifiIp);

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/user_preferences_service.dart';
+import '../services/printer_manager.dart';
 import '../services/store_config_service.dart';
 import '../services/auto_sync_service.dart';
 import '../services/turno_service.dart';
@@ -601,7 +602,7 @@ class _AperturaScreenState extends State<AperturaScreen>
 
   Future<void> _triggerPendingAperturaSync() async {
     try {
-      await AutoSyncService().performReconnectSync();
+      await AutoSyncService().subirPendientes();
     } catch (e) {
       print('⚠️ No se pudo iniciar la sincronización del turno: $e');
     }
@@ -2005,6 +2006,28 @@ class _AperturaScreenState extends State<AperturaScreen>
           productos: productCounts,
         );
       } else {
+        // Un cierre de turno anterior aún en la cola cerraría el turno que
+        // se abre ahora (el servidor cierra el turno abierto del TPV).
+        final sync = AutoSyncService();
+        await sync.subirPendientes();
+        final faltan = await sync.contarPendientesSubida();
+        if (faltan.cierresTurno > 0) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'No se puede abrir el turno: hay ${faltan.cierresTurno} '
+                  'cierre(s) de turno anterior sin subir al servidor. '
+                  'Revisa la conexión y vuelve a intentarlo.',
+                ),
+                backgroundColor: VentiqHomeTheme.danger,
+                duration: const Duration(seconds: 5),
+              ),
+            );
+          }
+          return;
+        }
+
         print('🌐 Modo online - Creando apertura en Supabase...');
         final clientUuidApertura = UuidGenerator.v4();
         final result = await TurnoService.registrarAperturaTurno(
@@ -2021,6 +2044,8 @@ class _AperturaScreenState extends State<AperturaScreen>
         if (mounted) {
           if (result['success'] == true) {
             await _userPrefs.clearPreviousTurnoCaches();
+            // Turno nuevo: la primera impresión vuelve a pedir la impresora.
+            PrinterManager().clearSavedPrinter();
             // Guardar turno abierto en cache offline para uso en modo sin conexión
             try {
               final turnoAbierto = await TurnoService.getTurnoAbierto();
@@ -2614,6 +2639,8 @@ class _AperturaScreenState extends State<AperturaScreen>
 
       // Cola multi-turno: crea entrada status=open (no sobrescribe cerrados).
       await _userPrefs.clearPreviousTurnoCaches();
+      // Turno nuevo: la primera impresión vuelve a pedir la impresora.
+      PrinterManager().clearSavedPrinter();
       await _userPrefs.createOpenOfflineTurno(aperturaPayload: aperturaData);
       await _clearInventoryCounts();
 

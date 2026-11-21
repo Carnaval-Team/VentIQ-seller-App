@@ -6,6 +6,9 @@ import '../services/user_preferences_service.dart';
 import '../services/payment_method_service.dart';
 import '../services/server_time_service.dart';
 import '../services/connectivity_service.dart';
+import '../services/caja_disponible_service.dart';
+import '../money/caja_disponible.dart';
+import '../money/fondo_caja_moneda.dart';
 import '../models/payment_method.dart';
 import '../utils/uuid_generator.dart';
 import '../utils/price_utils.dart';
@@ -34,6 +37,12 @@ class _EgresoScreenState extends State<EgresoScreen> {
   Map<String, dynamic>? _defaultCashFund;
   bool _contabilizarFondoCaja = false;
   bool _isLoadingCashFund = true;
+
+  /// Dinero que hay en la caja del turno. Null mientras se calcula o si no se
+  /// pudo calcular; sin él no se deja registrar ningún egreso.
+  CajaDisponible? _caja;
+  bool _isLoadingCaja = true;
+  String? _errorCaja;
 
   /// Divisas que acepta la tienda, en orden (la moneda base primero).
   ///
@@ -85,6 +94,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
             _errorMessage = 'No hay turno abierto offline para realizar egreso';
           }
         });
+        if (turnoOffline != null) _cargarCaja();
         return;
       }
 
@@ -100,12 +110,143 @@ class _EgresoScreenState extends State<EgresoScreen> {
           _errorMessage = 'No hay turno abierto para realizar egreso';
         }
       });
+      if (turno != null) _cargarCaja();
     } catch (e) {
       setState(() {
         _isLoadingTurno = false;
         _errorMessage = 'Error al verificar turno: $e';
       });
     }
+  }
+
+  /// Calcula lo que hay en la caja ahora mismo. Devuelve null si no se pudo.
+  Future<CajaDisponible?> _cargarCaja() async {
+    final turno = _turnoAbierto;
+    if (turno == null) return null;
+    if (mounted) {
+      setState(() {
+        _isLoadingCaja = true;
+        _errorCaja = null;
+      });
+    }
+    try {
+      final caja = await CajaDisponibleService.cargar(turno);
+      if (mounted) {
+        setState(() {
+          _caja = caja;
+          _isLoadingCaja = false;
+        });
+        _revalidarMonto();
+      }
+      return caja;
+    } catch (e) {
+      print('❌ Egreso: no se pudo calcular el dinero disponible: $e');
+      if (mounted) {
+        setState(() {
+          _isLoadingCaja = false;
+          _errorCaja = 'No se pudo calcular el dinero disponible en caja';
+        });
+      }
+      return null;
+    }
+  }
+
+  /// Por qué el egreso en la moneda elegida no puede ir al Fondo de Caja
+  /// (null si puede o si no hay cuenta, caso que la pantalla ya explica).
+  String? get _rechazoFondo =>
+      _defaultCashFund == null
+          ? null
+          : FondoCajaMoneda.rechazo(_defaultCashFund, _selectedDivisa);
+
+  /// Un medio cuenta como efectivo salvo que sea digital (igual que el cierre).
+  bool get _medioEsEfectivo => !(_selectedPaymentMethod?.esDigital ?? false);
+
+  double? _disponibleEn(String divisa) => _caja?.disponible(
+    moneda: divisa,
+    idMedio: _selectedPaymentMethod?.id,
+    efectivo: _medioEsEfectivo,
+  );
+
+  String? _rechazoPorSaldo(CajaDisponible? caja, double monto) {
+    if (caja == null) {
+      return _errorCaja ?? 'Calculando el dinero disponible en caja…';
+    }
+    final medio = _selectedPaymentMethod;
+    if (medio == null) return 'Debe seleccionar un método de pago';
+    return caja.rechazo(
+      monto: monto,
+      moneda: _selectedDivisa,
+      idMedio: medio.id,
+      efectivo: _medioEsEfectivo,
+      nombreMedio: medio.denominacion,
+    );
+  }
+
+  /// Dinero disponible del medio elegido, una línea por moneda de la caja.
+  Widget _buildDisponibleCard() {
+    final medio = _selectedPaymentMethod;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: VentiqHomeTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Disponible en caja',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: VentiqHomeTheme.textPrimary,
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Actualizar',
+                visualDensity: VisualDensity.compact,
+                onPressed: _isLoadingCaja ? null : _cargarCaja,
+                icon: const Icon(Icons.refresh, size: 20),
+              ),
+            ],
+          ),
+          Text(
+            medio == null
+                ? 'Seleccione un método de pago'
+                : _medioEsEfectivo
+                ? '${medio.displayName} · cajón de efectivo'
+                : '${medio.displayName} · solo lo cobrado con este medio',
+            style: const TextStyle(
+              fontSize: 12,
+              color: VentiqHomeTheme.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (_isLoadingCaja)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: LinearProgressIndicator(),
+            )
+          else if (_errorCaja != null)
+            Text(
+              '$_errorCaja. Toque actualizar para reintentar.',
+              style: TextStyle(color: Colors.red[600], fontSize: 13),
+            )
+          else if (medio != null)
+            for (final divisa in _divisasCaja)
+              _buildInfoRow(
+                divisa,
+                '${(_disponibleEn(divisa) ?? 0).toMoneyString(2)} $divisa',
+                destacar: divisa == _selectedDivisa,
+              ),
+        ],
+      ),
+    );
   }
 
   Future<void> _loadPaymentMethods() async {
@@ -125,13 +266,20 @@ class _EgresoScreenState extends State<EgresoScreen> {
             offlineData?['payment_methods'] as List<dynamic>? ?? [];
 
         // Convertir a objetos PaymentMethod
-        final paymentMethods =
+        final todos =
             paymentMethodsData
                 .map(
                   (data) =>
-                      PaymentMethod.fromJson(data as Map<String, dynamic>),
+                      PaymentMethod.fromJson(
+                        Map<String, dynamic>.from(data as Map),
+                      ),
                 )
+                .where((m) => !m.esPagoPendiente)
                 .toList();
+        // Mismos medios que online (solo efectivo). Si el caché es tan viejo
+        // que ninguno trae la marca, se ofrecen todos antes que ninguno.
+        final efectivo = todos.where((m) => m.esEfectivo).toList();
+        final paymentMethods = efectivo.isNotEmpty ? efectivo : todos;
 
         setState(() {
           _paymentMethods = paymentMethods;
@@ -190,10 +338,6 @@ class _EgresoScreenState extends State<EgresoScreen> {
     });
   }
 
-  /// ¿Hay más de una divisa entre las que elegir? Con una sola, el selector no
-  /// se pinta y la pantalla queda igual que antes de multimoneda.
-  bool get _hayVariasDivisas => _divisasCaja.length > 1;
-
   Future<void> _loadDefaultCashFund() async {
     try {
       final offlineData = await _userPrefs.getOfflineData();
@@ -209,7 +353,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
           final response =
               await Supabase.instance.client
                   .from('dep_dat_banco')
-                  .select('id, idtienda, denominacion, id_moneda, activo')
+                  .select(FondoCajaMoneda.selectCuenta)
                   .eq('idtienda', storeId)
                   .eq('activo', true)
                   .eq('es_predeterminada_fondo_caja', true)
@@ -342,101 +486,20 @@ class _EgresoScreenState extends State<EgresoScreen> {
 
                       const SizedBox(height: 20),
 
-                      // Monto del egreso
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: VentiqHomeTheme.border),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Monto del Egreso',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: VentiqHomeTheme.textPrimary,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            TextFormField(
-                              controller: _montoController,
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
-                              inputFormatters: [
-                                FilteringTextInputFormatter.allow(
-                                  RegExp(r'^\d+\.?\d{0,2}'),
-                                ),
-                              ],
-                              decoration: InputDecoration(
-                                labelText: 'Monto (\$)',
-                                prefixIcon: Icon(
-                                  Icons.attach_money,
-                                  color: Colors.red[600],
-                                ),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 8,
-                                ),
-                              ),
-                              validator: (value) {
-                                if (value == null || value.trim().isEmpty) {
-                                  return 'El monto es requerido';
-                                }
-                                final monto = double.tryParse(value);
-                                if (monto == null || monto <= 0) {
-                                  return 'Ingrese un monto válido mayor a 0';
-                                }
-                                return null;
-                              },
-                            ),
-                            if (_hayVariasDivisas) ...[
-                              const SizedBox(height: 12),
-                              DropdownButtonFormField<String>(
-                                value: _selectedDivisa,
-                                decoration: InputDecoration(
-                                  labelText: 'Divisa del egreso',
-                                  prefixIcon: Icon(
-                                    Icons.currency_exchange,
-                                    color: Colors.red[600],
-                                  ),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 8,
-                                  ),
-                                ),
-                                items:
-                                    _divisasCaja
-                                        .map(
-                                          (divisa) => DropdownMenuItem<String>(
-                                            value: divisa,
-                                            child: Text(divisa),
-                                          ),
-                                        )
-                                        .toList(),
-                                onChanged: (String? divisa) {
-                                  if (divisa == null) return;
-                                  setState(() => _selectedDivisa = divisa);
-                                },
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
+                      // 1) Moneda y 2) medio de pago: de ahí se sabe de dónde sale
+                      // el dinero y cuánto hay.
+                      _buildOrigenCard(),
 
                       const SizedBox(height: 20),
 
+                      _buildDisponibleCard(),
+
+                      const SizedBox(height: 20),
+
+                      // 3) Monto, validado mientras se escribe.
+                      _buildMontoCard(),
+
+                      const SizedBox(height: 20),
                       // Motivo del egreso
                       Container(
                         padding: const EdgeInsets.all(16),
@@ -483,98 +546,6 @@ class _EgresoScreenState extends State<EgresoScreen> {
 
                       const SizedBox(height: 20),
 
-                      // Medio de pago
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: VentiqHomeTheme.border),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Medio de Pago',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: VentiqHomeTheme.textPrimary,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            if (_isLoadingPaymentMethods)
-                              const Center(
-                                child: Padding(
-                                  padding: EdgeInsets.all(16.0),
-                                  child: CircularProgressIndicator(),
-                                ),
-                              )
-                            else if (_paymentMethods.isEmpty)
-                              Container(
-                                padding: const EdgeInsets.all(16),
-                                decoration: BoxDecoration(
-                                  color: VentiqHomeTheme.surface,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Text(
-                                  'No hay métodos de pago disponibles',
-                                  style: TextStyle(color: Colors.grey),
-                                ),
-                              )
-                            else
-                              DropdownButtonFormField<PaymentMethod>(
-                                value: _selectedPaymentMethod,
-                                decoration: InputDecoration(
-                                  labelText: 'Seleccionar método de pago',
-                                  prefixIcon: Icon(
-                                    Icons.payment,
-                                    color: Colors.red[600],
-                                  ),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 8,
-                                  ),
-                                ),
-                                items:
-                                    _paymentMethods.map((PaymentMethod method) {
-                                      return DropdownMenuItem<PaymentMethod>(
-                                        value: method,
-                                        child: Row(
-                                          children: [
-                                            Icon(
-                                              method.typeIcon,
-                                              size: 20,
-                                              color:
-                                                  VentiqHomeTheme.textSecondary,
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Text(method.displayName),
-                                          ],
-                                        ),
-                                      );
-                                    }).toList(),
-                                onChanged: (PaymentMethod? newValue) {
-                                  setState(() {
-                                    _selectedPaymentMethod = newValue;
-                                  });
-                                },
-                                validator: (value) {
-                                  if (value == null) {
-                                    return 'Debe seleccionar un método de pago';
-                                  }
-                                  return null;
-                                },
-                              ),
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 20),
-
                       Container(
                         decoration: BoxDecoration(
                           color: Colors.white,
@@ -584,7 +555,9 @@ class _EgresoScreenState extends State<EgresoScreen> {
                         child: CheckboxListTile(
                           value: _contabilizarFondoCaja,
                           onChanged:
-                              _defaultCashFund != null && !_isLoadingCashFund
+                              _defaultCashFund != null &&
+                                      !_isLoadingCashFund &&
+                                      _rechazoFondo == null
                                   ? (value) => setState(
                                     () =>
                                         _contabilizarFondoCaja = value ?? false,
@@ -596,7 +569,9 @@ class _EgresoScreenState extends State<EgresoScreen> {
                                 ? 'Verificando cuenta predeterminada...'
                                 : _defaultCashFund == null
                                 ? 'Configure una cuenta predeterminada de Fondo de Caja'
-                                : 'Ingresará en ${_defaultCashFund!['denominacion']}',
+                                : _rechazoFondo ??
+                                    'Ingresará en ${_defaultCashFund!['denominacion']} '
+                                        '(${FondoCajaMoneda.codigo(_defaultCashFund)})',
                           ),
                           controlAffinity: ListTileControlAffinity.leading,
                         ),
@@ -717,7 +692,209 @@ class _EgresoScreenState extends State<EgresoScreen> {
     );
   }
 
-  Widget _buildInfoRow(String label, String value) {
+  /// Moneda (primero) y medio de pago (segundo) del egreso.
+  Widget _buildOrigenCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: VentiqHomeTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '¿De dónde sale el dinero?',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: VentiqHomeTheme.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            '1. Moneda',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: VentiqHomeTheme.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final divisa in _divisasCaja)
+                ChoiceChip(
+                  key: ValueKey('egreso-moneda-$divisa'),
+                  label: Text(divisa),
+                  selected: divisa == _selectedDivisa,
+                  onSelected: (_) => _seleccionarDivisa(divisa),
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            '2. Medio de pago',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: VentiqHomeTheme.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (_isLoadingPaymentMethods)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(16.0),
+                child: CircularProgressIndicator(),
+              ),
+            )
+          else if (_paymentMethods.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: VentiqHomeTheme.surface,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text(
+                'No hay métodos de pago disponibles',
+                style: TextStyle(color: Colors.grey),
+              ),
+            )
+          else
+            DropdownButtonFormField<PaymentMethod>(
+              value: _selectedPaymentMethod,
+              decoration: InputDecoration(
+                labelText: 'Seleccionar método de pago',
+                prefixIcon: Icon(Icons.payment, color: Colors.red[600]),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+              ),
+              items:
+                  _paymentMethods.map((PaymentMethod method) {
+                    return DropdownMenuItem<PaymentMethod>(
+                      value: method,
+                      child: Row(
+                        children: [
+                          Icon(
+                            method.typeIcon,
+                            size: 20,
+                            color: VentiqHomeTheme.textSecondary,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(method.displayName),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+              onChanged: (PaymentMethod? newValue) {
+                setState(() => _selectedPaymentMethod = newValue);
+                _revalidarMonto();
+              },
+              validator: (value) {
+                if (value == null) return 'Debe seleccionar un método de pago';
+                return null;
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _seleccionarDivisa(String divisa) {
+    if (divisa == _selectedDivisa) return;
+    setState(() {
+      _selectedDivisa = divisa;
+      // El fondo no convierte: solo admite la moneda de su cuenta.
+      if (_rechazoFondo != null) _contabilizarFondoCaja = false;
+    });
+    _revalidarMonto();
+  }
+
+  /// Vuelve a evaluar el monto escrito cuando cambia la moneda o el medio.
+  void _revalidarMonto() {
+    if (_montoController.text.trim().isNotEmpty) {
+      _formKey.currentState?.validate();
+    }
+  }
+
+  /// Texto bajo el monto: lo que hay en la caja para la moneda y el medio.
+  String _ayudaMonto() {
+    if (_selectedPaymentMethod == null) return 'Elija primero el medio de pago';
+    if (_isLoadingCaja) return 'Calculando dinero disponible…';
+    final libre = _disponibleEn(_selectedDivisa);
+    if (libre == null) return _errorCaja ?? 'Disponible no calculado';
+    final donde = _medioEsEfectivo ? 'en efectivo' : 'en este medio';
+    return 'Disponible: ${libre.toMoneyString(2)} $_selectedDivisa $donde';
+  }
+
+  /// Monto: se valida a medida que se escribe contra lo disponible.
+  Widget _buildMontoCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: VentiqHomeTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '3. Monto del Egreso',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: VentiqHomeTheme.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _montoController,
+            enabled: _selectedPaymentMethod != null,
+            autovalidateMode: AutovalidateMode.onUserInteraction,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
+            ],
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              labelText: 'Monto ($_selectedDivisa)',
+              helperText: _ayudaMonto(),
+              prefixIcon: Icon(Icons.attach_money, color: Colors.red[600]),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 8,
+              ),
+            ),
+            validator: (value) {
+              if (value == null || value.trim().isEmpty) {
+                return 'El monto es requerido';
+              }
+              final monto = double.tryParse(value);
+              if (monto == null || monto <= 0) {
+                return 'Ingrese un monto válido mayor a 0';
+              }
+              return _rechazoPorSaldo(_caja, monto);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value, {bool destacar = false}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -728,6 +905,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
             style: TextStyle(
               fontSize: 14,
               color: VentiqHomeTheme.textSecondary,
+              fontWeight: destacar ? FontWeight.w700 : FontWeight.normal,
             ),
           ),
           const SizedBox(width: 8),
@@ -736,10 +914,13 @@ class _EgresoScreenState extends State<EgresoScreen> {
               value,
               textAlign: TextAlign.right,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: VentiqHomeTheme.textPrimary,
+                fontWeight: destacar ? FontWeight.w800 : FontWeight.w500,
+                color:
+                    destacar
+                        ? VentiqHomeTheme.primary
+                        : VentiqHomeTheme.textPrimary,
               ),
             ),
           ),
@@ -769,6 +950,22 @@ class _EgresoScreenState extends State<EgresoScreen> {
 
     try {
       final monto = double.parse(_montoController.text.trim());
+
+      // La caja pudo cambiar desde que se abrió la pantalla (otro egreso, otra
+      // venta): se recalcula justo antes de registrar y no se envía si no cubre.
+      final caja = await _cargarCaja();
+      final rechazo = _rechazoPorSaldo(caja, monto);
+      if (rechazo != null) {
+        _showErrorMessage(rechazo);
+        _formKey.currentState?.validate();
+        return;
+      }
+
+      if (_contabilizarFondoCaja && _rechazoFondo != null) {
+        _showErrorMessage(_rechazoFondo!);
+        return;
+      }
+
       final motivo = _motivoController.text.trim();
       final nombreAutoriza = _nombreAutorizaController.text.trim();
       final nombreRecibe = _nombreRecibeController.text.trim();
@@ -826,8 +1023,9 @@ class _EgresoScreenState extends State<EgresoScreen> {
               throw Exception('No hay cuenta predeterminada de Fondo de Caja');
             }
             final response = await Supabase.instance.client.rpc(
-              'fn_registrar_egreso_fondo_caja',
+              'fn_registrar_egreso_fondo_caja_v2',
               params: {
+                'p_moneda': _selectedDivisa,
                 'p_client_uuid': clientUuid,
                 'p_idtienda': storeId,
                 'p_id_turno': serverIdTurno,

@@ -14,6 +14,7 @@ import 'package:printing/printing.dart';
 import 'package:excel/excel.dart' as excel;
 import 'settings_screen.dart';
 import '../config/app_colors.dart';
+import '../widgets/egresos_turno_dialog.dart';
 import '../widgets/admin_drawer.dart';
 import '../widgets/admin_bottom_navigation.dart';
 import '../widgets/admin_ai_assistant_sheet.dart';
@@ -464,16 +465,49 @@ class _SalesScreenState extends State<SalesScreen>
     }
   }
 
+  /// Último día que se pide a `listar_ordenes` para un turno.
+  ///
+  /// Con rango de ids fiable se pide hasta hoy: una venta offline se sube
+  /// después del cierre y el servidor le pone la fecha de la subida, así que
+  /// acotar por la fecha de cierre la dejaba fuera de las listas.
+  DateTime _fechaHastaOrdenesTurno(
+    SalesVendorReport vendor,
+    RangoOperacionesTurno? rango,
+  ) {
+    if (rango != null && rango.utilizable(turnoAbierto: vendor.turnoAbierto)) {
+      final hoy = DateTime.now();
+      return hoy.isAfter(vendor.periodoFin) ? hoy : vendor.periodoFin;
+    }
+    return vendor.periodoFin;
+  }
+
+  Future<RangoOperacionesTurno?> _rangoOperacionesTurno(
+    SalesVendorReport vendor,
+  ) async {
+    final idTurno = vendor.idTurno;
+    if (idTurno == null) return null;
+    return SalesService.getRangoOperacionesTurno(idTurno);
+  }
+
   List<VendorOrder> _filterOrdersForVendorTurno(
     List<VendorOrder> orders,
-    SalesVendorReport vendor,
-  ) {
+    SalesVendorReport vendor, {
+    RangoOperacionesTurno? rango,
+  }) {
     if (!vendor.esPorTurno) return orders;
     final start = vendor.periodoInicio;
     final end = vendor.periodoFin;
     return orders.where((order) {
-      final fecha = order.fechaOperacion;
-      if (fecha.isBefore(start) || fecha.isAfter(end)) return false;
+      if (!ordenPerteneceATurno(
+        idOperacion: order.idOperacion,
+        fechaOperacion: order.fechaOperacion,
+        inicio: start,
+        fin: end,
+        turnoAbierto: vendor.turnoAbierto,
+        rango: rango,
+      )) {
+        return false;
+      }
       if (vendor.idTpv != null && vendor.idTpv! > 0) {
         return order.idTpv == vendor.idTpv;
       }
@@ -2214,14 +2248,23 @@ class _SalesScreenState extends State<SalesScreen>
 
       final List<SalesVendorReport> reportsWithEgresos = [];
       for (final report in reports) {
-        final totalEgresos = await SalesService.getTotalEgresosByVendor(
+        final entregas = await SalesService.getCashDeliveries(
           fechaInicio: report.periodoInicio,
           fechaFin: report.periodoFin,
           uuidUsuario: report.uuidUsuario,
           turnoId: report.idTurno,
         );
+        final porMoneda = egresosPorMoneda(entregas, monedaBase: _monedaBase);
+        // El total de la tarjeta es solo de la moneda base: sumar divisas
+        // distintas en un solo importe daría una cifra sin significado.
+        final totalBase = porMoneda[_monedaBase.trim().toUpperCase()] ?? 0.0;
 
-        reportsWithEgresos.add(report.copyWith(totalEgresos: totalEgresos));
+        reportsWithEgresos.add(
+          report.copyWith(
+            totalEgresos: totalBase,
+            egresosPorMoneda: porMoneda,
+          ),
+        );
       }
 
       setState(() {
@@ -7719,10 +7762,6 @@ class _SalesScreenState extends State<SalesScreen>
     // = 90.332) y el `$` de esa cifra se lee como CUP. El pie de la tabla es
     // el único total: suma `importeConsolidado`, que ya está en una divisa.
     final variasMonedas = _hayVariasMonedasEnFilas(vendor.desgloseMonedas);
-    final monedaPie = variasMonedas
-        ? _monedaConsolidacionDe(vendor.desgloseMonedas)
-        : null;
-
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -7764,12 +7803,11 @@ class _SalesScreenState extends State<SalesScreen>
               ),
             Text(
               variasMonedas
-                  // El mismo número que el pie «Consolidado» de la tabla. No
-                  // pasa por `formatear`: `importeConsolidado` ya está en
-                  // [monedaPie] y volver a multiplicar por la tasa lo cambiaría.
+                  // Cada divisa con su importe nativo: las monedas no se
+                  // mezclan en una sola cifra. El consolidado queda solo en el
+                  // pie de la tabla «Desglose por divisa».
                   ? '${vendor.totalVentas} ventas • '
-                        '${_formatCurrency(_totalConsolidadoEn(vendor.desgloseMonedas))} '
-                        '(consolidado en $monedaPie)'
+                        '${_formatDesglosePorMoneda({for (final f in vendor.desgloseMonedas) f.moneda: f.importeNativo})}'
                   : '${vendor.totalVentas} ventas • \$${vendor.totalDineroGeneral.toStringAsFixed(2)}',
             ),
             Text(
@@ -7833,13 +7871,21 @@ class _SalesScreenState extends State<SalesScreen>
                       : '—',
                   AppColors.textSecondary,
                 ),
-                _buildVendorDetailRow(
-                  variasMonedas
-                      ? 'Total egresos ($_monedaBase)'
-                      : 'Total Egresos',
-                  '\$${vendor.totalEgresos.toStringAsFixed(2)}',
-                  AppColors.error,
-                ),
+                if (variasMonedas && vendor.egresosPorMoneda.isNotEmpty)
+                  for (final e in vendor.egresosPorMoneda.entries)
+                    _buildVendorDetailRow(
+                      'Total egresos (${e.key})',
+                      _formatMontoNativo(e.value, e.key),
+                      AppColors.error,
+                    )
+                else
+                  _buildVendorDetailRow(
+                    variasMonedas
+                        ? 'Total egresos ($_monedaBase)'
+                        : 'Total Egresos',
+                    '\$${vendor.totalEgresos.toStringAsFixed(2)}',
+                    AppColors.error,
+                  ),
                 // Desglose por divisa del turno. Reutiliza la misma tabla y el
                 // mismo pie consolidado que la pestaña «Por moneda», pero con
                 // las filas del informe del turno. Solo se pinta con más de una
@@ -7980,6 +8026,7 @@ class _SalesScreenState extends State<SalesScreen>
       vendor.desgloseMonedas,
       egresos: vendor.totalEgresos,
       monedaBase: _monedaBase,
+      egresosPorMoneda: vendor.egresosPorMoneda,
     );
     final digitales = digitalCobradoPorDivisa(vendor.desgloseMonedas);
     return [
@@ -8423,90 +8470,13 @@ class _SalesScreenState extends State<SalesScreen>
 
       if (!mounted) return;
 
-      showDialog(
+      showEgresosTurnoDialog(
         context: context,
-        builder: (context) => AlertDialog(
-          title: Text(
-            'Egresos de ${vendor.nombreCompleto}',
-            style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-          content: SizedBox(
-            width: double.maxFinite,
-            height: 400,
-            child: deliveries.isEmpty
-                ? const Center(
-                    child: Text(
-                      'No hay egresos registrados para este vendedor en el período seleccionado',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: AppColors.textSecondary),
-                    ),
-                  )
-                : ListView.builder(
-                    itemCount: deliveries.length,
-                    itemBuilder: (context, index) {
-                      final delivery = deliveries[index];
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        child: ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: AppColors.error.withOpacity(0.1),
-                            child: const Icon(
-                              Icons.money_off,
-                              color: AppColors.error,
-                              size: 20,
-                            ),
-                          ),
-                          title: Text(
-                            '\$${delivery.montoEntrega.toStringAsFixed(2)}',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.error,
-                            ),
-                          ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                delivery.motivoEntrega,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              Text(
-                                'Recibe: ${delivery.nombreRecibe}',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: AppColors.textSecondary,
-                                ),
-                              ),
-                              Text(
-                                'Autoriza: ${delivery.nombreAutoriza}',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: AppColors.textSecondary,
-                                ),
-                              ),
-                            ],
-                          ),
-                          trailing: Text(
-                            _formatDateTime(delivery.fechaEntrega),
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cerrar'),
-            ),
-          ],
-        ),
+        titulo: 'Egresos de ${vendor.nombreCompleto}',
+        egresos: deliveries,
+        monedaBase: _monedaBase,
+        formatMonto: _formatMontoNativo,
+        formatFecha: _formatDateTime,
       );
     } catch (e) {
       print('Error loading vendor egresos detail: $e');
@@ -8523,12 +8493,17 @@ class _SalesScreenState extends State<SalesScreen>
 
   void _showVendorOrdersDetail(SalesVendorReport vendor) async {
     try {
+      final rango = await _rangoOperacionesTurno(vendor);
       final ordersRaw = await SalesService.getVendorOrders(
         fechaDesde: vendor.periodoInicio,
-        fechaHasta: vendor.periodoFin,
+        fechaHasta: _fechaHastaOrdenesTurno(vendor, rango),
         uuidUsuario: vendor.uuidUsuario,
       );
-      final orders = _filterOrdersForVendorTurno(ordersRaw, vendor);
+      final orders = _filterOrdersForVendorTurno(
+        ordersRaw,
+        vendor,
+        rango: rango,
+      );
 
       if (!mounted) return;
 
@@ -9815,6 +9790,7 @@ class _SalesScreenState extends State<SalesScreen>
   void _showVendorOrdenesPendientesDetail(SalesVendorReport vendor) async {
     try {
       // Llamar al método getVendorOrders con id_estado_param = 1 para órdenes pendientes
+      final rango = await _rangoOperacionesTurno(vendor);
       final response = await Supabase.instance.client.rpc(
         'listar_ordenes',
         params: {
@@ -9822,9 +9798,9 @@ class _SalesScreenState extends State<SalesScreen>
           'fecha_desde_param': vendor.periodoInicio.toIso8601String().split(
             'T',
           )[0],
-          'fecha_hasta_param': vendor.periodoFin.toIso8601String().split(
-            'T',
-          )[0],
+          'fecha_hasta_param': _fechaHastaOrdenesTurno(vendor, rango)
+              .toIso8601String()
+              .split('T')[0],
           'id_estado_param': 1, // Solo órdenes pendientes
           'id_tienda_param': await UserPreferencesService().getIdTienda(),
           'id_tipo_operacion_param': null,
@@ -9860,6 +9836,7 @@ class _SalesScreenState extends State<SalesScreen>
       final pendingOrders = _filterOrdersForVendorTurno(
         pendingOrdersRaw,
         vendor,
+        rango: rango,
       );
 
       // Calcular totales separados por tipo de pago
@@ -10834,12 +10811,17 @@ class _SalesScreenState extends State<SalesScreen>
 
   void _showVendorTransferenciasDetail(SalesVendorReport vendor) async {
     try {
+      final rango = await _rangoOperacionesTurno(vendor);
       final ordersRaw = await SalesService.getVendorOrders(
         fechaDesde: vendor.periodoInicio,
-        fechaHasta: vendor.periodoFin,
+        fechaHasta: _fechaHastaOrdenesTurno(vendor, rango),
         uuidUsuario: vendor.uuidUsuario,
       );
-      final orders = _filterOrdersForVendorTurno(ordersRaw, vendor);
+      final orders = _filterOrdersForVendorTurno(
+        ordersRaw,
+        vendor,
+        rango: rango,
+      );
 
       if (!mounted) return;
 

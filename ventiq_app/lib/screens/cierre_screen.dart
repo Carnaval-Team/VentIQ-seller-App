@@ -51,6 +51,21 @@ class _CierreScreenState extends State<CierreScreen> {
   Map<String, double> _efectivoPorDivisa = {};
   Map<String, double> _transferenciaPorDivisa = {};
 
+  /// Ventas cobradas por divisa (importe NATIVO, solo operaciones completadas)
+  /// y número de operaciones con cobro en cada una. Las divisas no se mezclan:
+  /// "Ventas totales" y "Ticket promedio" se muestran una vez por divisa.
+  Map<String, double> _ventasPorDivisa = {};
+  Map<String, int> _operacionesPorDivisa = {};
+
+  /// Lo mismo según el servidor (`importe_nativo` y `operaciones` de
+  /// `desglose_monedas`): completa las divisas sin órdenes locales cargadas.
+  Map<String, double> _ventasDesgloseServidor = {};
+  Map<String, int> _operacionesDesgloseServidor = {};
+
+  /// Egresos DIGITALES por divisa (los de efectivo están en
+  /// [_egresosEfectivoPorDivisa]).
+  Map<String, double> _egresosDigitalPorDivisa = {};
+
   /// Efectivo por divisa del turno según el servidor (`desglose_monedas` de las
   /// RPC `_v2`). Vacío cuando el backend todavía no las tiene o no responde.
   ///
@@ -359,6 +374,61 @@ class _CierreScreenState extends State<CierreScreen> {
     return double.tryParse(value.toString()) ?? 0.0;
   }
 
+  /// Divisas del resumen, base primero y el resto por orden alfabético: las
+  /// habilitadas más cualquiera que aparezca en cobros o efectivo inicial.
+  List<String> get _divisasResumen {
+    final divisas = <String>{
+      ..._divisasCaja,
+      ..._efectivoInicialPorDivisa.keys,
+      ..._ventasPorDivisa.keys,
+      ..._efectivoPorDivisa.keys,
+      ..._transferenciaPorDivisa.keys,
+      ..._egresosEfectivoPorDivisa.keys,
+      ..._egresosDigitalPorDivisa.keys,
+    };
+    return _ordenarDivisas(divisas);
+  }
+
+  /// Divisas con egresos en el turno.
+  List<String> get _divisasEgresos => _ordenarDivisas({
+    ..._egresosEfectivoPorDivisa.keys,
+    ..._egresosDigitalPorDivisa.keys,
+  });
+
+  List<String> _ordenarDivisas(Iterable<String> divisas) {
+    final lista = divisas.toList()..sort();
+    lista.remove(PriceUtils.baseCurrency);
+    if (divisas.contains(PriceUtils.baseCurrency)) {
+      lista.insert(0, PriceUtils.baseCurrency);
+    }
+    return lista;
+  }
+
+  String _montoDivisa(double monto, String divisa) =>
+      '\$${monto.toMoneyString(2)} $divisa';
+
+  double _totalEgresosDe(String divisa) =>
+      (_egresosEfectivoPorDivisa[divisa] ?? 0) +
+      (_egresosDigitalPorDivisa[divisa] ?? 0);
+
+  /// Ticket promedio de una divisa = cobrado en ella / operaciones con cobro
+  /// en ella.
+  double _ticketPromedioDe(String divisa) {
+    final operaciones = _operacionesPorDivisa[divisa] ?? 0;
+    if (operaciones <= 0) return 0;
+    return (_ventasPorDivisa[divisa] ?? 0) / operaciones;
+  }
+
+  /// Texto "CUP: 1.000,00 · USD: 20,00" para diálogos de resumen.
+  String _textoPorDivisa(Map<String, double> valores, {bool signo = false}) {
+    final partes = <String>[
+      for (final divisa in _ordenarDivisas(valores.keys))
+        '${signo && (valores[divisa] ?? 0) >= 0 ? '+' : ''}'
+            '\$${(valores[divisa] ?? 0).toMoneyString(2)} $divisa',
+    ];
+    return partes.join(' · ');
+  }
+
   /// Efectivo inicial de la moneda base (la RPC lo devuelve sin desglose).
   double get _montoInicialCaja =>
       _efectivoInicialPorDivisa[PriceUtils.baseCurrency] ?? 0.0;
@@ -523,6 +593,8 @@ class _CierreScreenState extends State<CierreScreen> {
     Map<String, double> transferenciaPorDivisa,
     num productos,
     int operaciones,
+    Map<String, double> ventasPorDivisa,
+    Map<String, int> operacionesPorDivisa,
   })
   _calculateClosureTotalsFromOrders(List<Order> orders) {
     double ventas = 0.0;
@@ -530,6 +602,8 @@ class _CierreScreenState extends State<CierreScreen> {
     double transferenciaBase = 0.0;
     final efectivoPorDivisa = <String, double>{};
     final transferenciaPorDivisa = <String, double>{};
+    final ventasPorDivisa = <String, double>{};
+    final operacionesPorDivisa = <String, int>{};
     // FASE 3 presentaciones: `num`, no `int`. Antes se acumulaba con
     // `item.cantidad.toInt()`, que TRUNCA cada linea por separado: media
     // libra (0,5) sumaba 0, y tres lineas de 0,5 kg daban 0 en vez de 1,5.
@@ -557,6 +631,9 @@ class _CierreScreenState extends State<CierreScreen> {
       double efectivoOrdenCup = 0.0;
       double transferenciaOrdenCup = 0.0;
       final pagos = order.pagos;
+      // Divisas en las que cobró esta orden: una orden con pago mixto cuenta
+      // una operación en cada divisa.
+      final divisasOrden = <String>{};
 
       if (pagos != null && pagos.isNotEmpty) {
         for (final raw in pagos) {
@@ -567,6 +644,12 @@ class _CierreScreenState extends State<CierreScreen> {
           final moneda = PriceUtils.paymentCurrency(pago);
           final montoNativo = PriceUtils.paymentAmount(pago);
           final montoCup = PriceUtils.paymentCupEquivalent(pago);
+          ventasPorDivisa.update(
+            moneda,
+            (total) => total + montoNativo,
+            ifAbsent: () => montoNativo,
+          );
+          divisasOrden.add(moneda);
 
           if (PriceUtils.paymentIsCash(pago)) {
             // Importe NATIVO de la divisa: es lo que hay físicamente en caja y
@@ -612,6 +695,16 @@ class _CierreScreenState extends State<CierreScreen> {
           (total) => total + order.total,
           ifAbsent: () => order.total,
         );
+        ventasPorDivisa.update(
+          PriceUtils.baseCurrency,
+          (total) => total + order.total,
+          ifAbsent: () => order.total,
+        );
+        divisasOrden.add(PriceUtils.baseCurrency);
+      }
+
+      for (final moneda in divisasOrden) {
+        operacionesPorDivisa.update(moneda, (n) => n + 1, ifAbsent: () => 1);
       }
     }
 
@@ -623,6 +716,8 @@ class _CierreScreenState extends State<CierreScreen> {
       transferenciaPorDivisa: transferenciaPorDivisa,
       productos: productos,
       operaciones: operaciones,
+      ventasPorDivisa: ventasPorDivisa,
+      operacionesPorDivisa: operacionesPorDivisa,
     );
   }
 
@@ -745,11 +840,24 @@ class _CierreScreenState extends State<CierreScreen> {
         'digital_nativo',
       );
 
+      final ventasServidor = _desgloseNativo(
+        resumen['desglose_monedas'],
+        'importe_nativo',
+      );
+      final operacionesServidor = _desgloseNativo(
+        resumen['desglose_monedas'],
+        'operaciones',
+      ).map((divisa, n) => MapEntry(divisa, n.round()));
+
       setState(() {
         _efectivoInicialPorDivisa = efectivoInicial;
         _efectivoPorDivisa = efectivoDelTurno;
         _efectivoDesgloseServidor = desgloseServidor;
         _digitalDesgloseServidor = desgloseDigitalServidor;
+        _ventasDesgloseServidor = ventasServidor;
+        _operacionesDesgloseServidor = operacionesServidor;
+        _ventasPorDivisa = ventasServidor;
+        _operacionesPorDivisa = operacionesServidor;
         _ventasTotales = (resumen['ventas_totales'] ?? 0.0).toDouble();
         _productosVendidos = (resumen['productos_vendidos'] as num?) ?? 0;
         _productosVendidosBase = resumen['productos_vendidos_base'] as num?;
@@ -1661,6 +1769,7 @@ class _CierreScreenState extends State<CierreScreen> {
       // Desglose nativo de los egresos en efectivo: es el que descuenta el
       // arqueo, cada importe de SU divisa.
       final egresosEfectivoPorDivisa = <String, double>{};
+      final egresosDigitalPorDivisa = <String, double>{};
 
       for (final expense in expenses) {
         total += expense.montoEntrega;
@@ -1668,6 +1777,11 @@ class _CierreScreenState extends State<CierreScreen> {
         final isDigital = expense.esDigital == true;
         if (isDigital) {
           transferencias += expense.montoEntrega;
+          egresosDigitalPorDivisa.update(
+            expense.moneda,
+            (acumulado) => acumulado + expense.montoEntrega,
+            ifAbsent: () => expense.montoEntrega,
+          );
         } else {
           efectivo += expense.montoEntrega;
           egresosEfectivoPorDivisa.update(
@@ -1684,6 +1798,7 @@ class _CierreScreenState extends State<CierreScreen> {
         _egresosEfectivo = efectivo;
         _egresosTransferencias = transferencias;
         _egresosEfectivoPorDivisa = egresosEfectivoPorDivisa;
+        _egresosDigitalPorDivisa = egresosDigitalPorDivisa;
         _isLoadingExpenses = false;
       });
     } catch (e) {
@@ -1791,6 +1906,14 @@ class _CierreScreenState extends State<CierreScreen> {
           totals.transferenciaPorDivisa,
           _digitalDesgloseServidor,
         );
+        _ventasPorDivisa = _conDesgloseServidor(
+          totals.ventasPorDivisa,
+          _ventasDesgloseServidor,
+        );
+        _operacionesPorDivisa = {
+          ..._operacionesDesgloseServidor,
+          ...totals.operacionesPorDivisa,
+        };
         _productosVendidos = totals.productos;
         _operacionesTotales = totals.operaciones;
         _ticketPromedio =
@@ -1921,22 +2044,30 @@ class _CierreScreenState extends State<CierreScreen> {
                       ),
                     ] else ...[
                       // Ventas y productos
-                      _buildInfoRow(
-                        'Monto inicial:',
-                        '\$${_montoInicialCaja.toMoneyString(2)}',
-                      ),
-                      _buildInfoRow(
-                        'Ventas totales:',
-                        '\$${_ventasTotales.toMoneyString(2)}',
-                      ),
+                      // Todo por divisa y en la divisa en que se cobró: nunca se
+                      // suman ni se convierten monedas distintas.
+                      for (final divisa in _divisasResumen)
+                        _buildInfoRow(
+                          'Monto inicial $divisa:',
+                          _montoDivisa(
+                            _efectivoInicialPorDivisa[divisa] ?? 0,
+                            divisa,
+                          ),
+                        ),
+                      for (final divisa in _divisasResumen)
+                        _buildInfoRow(
+                          'Ventas totales $divisa:',
+                          _montoDivisa(_ventasPorDivisa[divisa] ?? 0, divisa),
+                        ),
                       _buildInfoRow(
                         'Productos vendidos:',
                         _textoProductosVendidos(),
                       ),
-                      _buildInfoRow(
-                        'Ticket promedio:',
-                        '\$${_ticketPromedio.toMoneyString(2)}',
-                      ),
+                      for (final divisa in _divisasResumen)
+                        _buildInfoRow(
+                          'Ticket promedio $divisa:',
+                          _montoDivisa(_ticketPromedioDe(divisa), divisa),
+                        ),
                       _buildInfoRow(
                         'Operaciones totales:',
                         '$_operacionesTotales operaciones',
@@ -1956,23 +2087,21 @@ class _CierreScreenState extends State<CierreScreen> {
                         style: VentiqHomeTheme.rotuloBloque,
                       ),
                       const SizedBox(height: 8),
-                      _buildInfoRow(
-                        'Total efectivo ${PriceUtils.baseCurrency}:',
-                        '\$${_totalEfectivo.toMoneyString(2)} (${_porcentajeEfectivo.toStringAsFixed(1)}%)',
-                      ),
                       // Efectivo NATIVO de cada divisa: sin convertir, que es
-                      // como se cuenta en caja. La moneda base ya está arriba
-                      // consolidada, así que solo se listan las demás.
-                      for (final divisa in _divisasCaja)
-                        if (divisa != PriceUtils.baseCurrency)
-                          _buildInfoRow(
-                            'Total efectivo $divisa:',
-                            '\$${(_efectivoPorDivisa[divisa] ?? 0).toMoneyString(2)} $divisa',
+                      // como se cuenta en caja.
+                      for (final divisa in _divisasResumen)
+                        _buildInfoRow(
+                          'Total efectivo $divisa:',
+                          _montoDivisa(_efectivoPorDivisa[divisa] ?? 0, divisa),
+                        ),
+                      for (final divisa in _divisasResumen)
+                        _buildInfoRow(
+                          'Transferencias/Otros $divisa:',
+                          _montoDivisa(
+                            _transferenciaPorDivisa[divisa] ?? 0,
+                            divisa,
                           ),
-                      _buildInfoRow(
-                        'Transferencias/Otros:',
-                        '\$${_totalTransferencias.toMoneyString(2)} (${_porcentajeOtros.toStringAsFixed(1)}%)',
-                      ),
+                        ),
                       for (final divisa in _divisasCaja)
                         _buildInfoRow(
                           'Efectivo esperado $divisa:',
@@ -1989,21 +2118,25 @@ class _CierreScreenState extends State<CierreScreen> {
                           style: VentiqHomeTheme.rotuloBloque,
                         ),
                         const SizedBox(height: 4),
-                        _buildInfoRow(
-                          'Egresos en efectivo:',
-                          '-\$${_egresosEfectivo.toMoneyString(2)}',
-                          isNegative: true,
-                        ),
-                        _buildInfoRow(
-                          'Egresos digitales:',
-                          '-\$${_egresosTransferencias.toMoneyString(2)}',
-                          isNegative: true,
-                        ),
-                        _buildInfoRow(
-                          'Total egresos:',
-                          '-\$${_totalEgresos.toMoneyString(2)}',
-                          isNegative: true,
-                        ),
+                        for (final divisa in _divisasEgresos) ...[
+                          if ((_egresosEfectivoPorDivisa[divisa] ?? 0) != 0)
+                            _buildInfoRow(
+                              'Egresos en efectivo $divisa:',
+                              '-${_montoDivisa(_egresosEfectivoPorDivisa[divisa]!, divisa)}',
+                              isNegative: true,
+                            ),
+                          if ((_egresosDigitalPorDivisa[divisa] ?? 0) != 0)
+                            _buildInfoRow(
+                              'Egresos digitales $divisa:',
+                              '-${_montoDivisa(_egresosDigitalPorDivisa[divisa]!, divisa)}',
+                              isNegative: true,
+                            ),
+                          _buildInfoRow(
+                            'Total egresos $divisa:',
+                            '-${_montoDivisa(_totalEgresosDe(divisa), divisa)}',
+                            isNegative: true,
+                          ),
+                        ],
                         const SizedBox(height: 8),
                         const Divider(),
                         const SizedBox(height: 8),
@@ -2128,23 +2261,25 @@ class _CierreScreenState extends State<CierreScreen> {
                       const SizedBox(height: 12),
                       const Divider(),
                       const SizedBox(height: 8),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Total Egresos:',
-                            style: VentiqHomeTheme.tituloSeccion,
-                          ),
-                          Text(
-                            '\$${_totalEgresos.toMoneyString(2)}',
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w800,
-                              color: VentiqHomeTheme.danger,
+                      // Un total por divisa: un egreso en USD no se suma a los CUP.
+                      for (final divisa in _divisasEgresos)
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Total Egresos $divisa:',
+                              style: VentiqHomeTheme.tituloSeccion,
                             ),
-                          ),
-                        ],
-                      ),
+                            Text(
+                              _montoDivisa(_totalEgresosDe(divisa), divisa),
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                                color: VentiqHomeTheme.danger,
+                              ),
+                            ),
+                          ],
+                        ),
                     ],
                   ],
                 ),
@@ -2525,7 +2660,12 @@ class _CierreScreenState extends State<CierreScreen> {
   Future<void> _showCashCountDialog() async {
     final contado = await showDialog<Map<String, double>>(
       context: context,
-      builder: (context) => CashCountDialog(userPreferencesService: _userPrefs),
+      builder:
+          (context) => CashCountDialog(
+            userPreferencesService: _userPrefs,
+            // Lo que debe haber por moneda: cada una se verifica sola.
+            esperado: _efectivoEsperadoPorDivisa,
+          ),
     );
     if (contado == null || !mounted) return;
 
@@ -3153,9 +3293,6 @@ class _CierreScreenState extends State<CierreScreen> {
       print('📊 Total productos: ${productCounts?.length ?? 0}');
       print('📝 Observaciones finales: $observacionesFinales');
 
-      // Cerrar trabajadores activos antes de cerrar el turno
-      await _closeActiveWorkers();
-
       // Modo offline (config o auto por pérdida de red) o sin conexión:
       // guardar SOLO local. No intentar cierre online primero (evita el
       // fallback "intentó online → falló → cartel offline").
@@ -3177,6 +3314,24 @@ class _CierreScreenState extends State<CierreScreen> {
       final useOfflineTurnoPath =
           forceLocalOnly ||
           (offlineOpen != null && !isCachedOnlineTurno);
+
+      // El cierre online se aplica con lo que ya tiene el servidor: lo local
+      // sube antes y, si algo no sube, el turno no se cierra.
+      if (!useOfflineTurnoPath) {
+        final sync = AutoSyncService();
+        await sync.subirPendientes();
+        final faltan = await sync.contarPendientesSubida();
+        if (faltan.ventas > 0 || faltan.egresos > 0 || faltan.cierresTurno > 0) {
+          _showErrorMessage(
+            'No se puede cerrar el turno: quedan ${faltan.describir()} sin '
+            'subir al servidor. Revisa la conexión y las órdenes con error.',
+          );
+          return;
+        }
+      }
+
+      // Cerrar trabajadores activos antes de cerrar el turno
+      await _closeActiveWorkers();
 
       if (useOfflineTurnoPath) {
         print(
@@ -3384,10 +3539,15 @@ class _CierreScreenState extends State<CierreScreen> {
                   'El cierre de caja ha sido registrado exitosamente.',
                 ),
                 const SizedBox(height: 12),
-                Text('Monto final: \$${montoFinal.toMoneyString(2)}'),
-                Text('Ventas del día: \$${_ventasTotales.toMoneyString(2)}'),
-                if (diferencia.abs() > 0.01)
-                  Text('Diferencia: \$${diferencia.toMoneyString(2)}'),
+                // Por divisa: el arqueo no mezcla monedas.
+                Text(
+                  'Monto final: ${_textoPorDivisa(_efectivoRealPorDivisa)}',
+                ),
+                Text('Ventas del día: ${_textoPorDivisa(_ventasPorDivisa)}'),
+                if (_diferenciaPorDivisa.values.any((d) => d.abs() > 0.01))
+                  Text(
+                    'Diferencia: ${_textoPorDivisa(_diferenciaPorDivisa, signo: true)}',
+                  ),
                 Text('Órdenes pendientes: ${_ordenesPendientes.length}'),
                 if (_trabajadoresCerrados > 0)
                   Text('Trabajadores cerrados: $_trabajadoresCerrados'),
@@ -3799,15 +3959,19 @@ class _CierreScreenState extends State<CierreScreen> {
                     children: [
                       _buildDialogInfoRow(
                         'Monto Final:',
-                        '\$${montoFinal.toMoneyString(2)}',
+                        _textoPorDivisa(_efectivoRealPorDivisa),
                       ),
-                      if (diferencia.abs() > 0.01)
+                      if (_diferenciaPorDivisa.values.any(
+                        (d) => d.abs() > 0.01,
+                      ))
                         _buildDialogInfoRow(
                           'Diferencia:',
-                          '${diferencia >= 0 ? '+' : ''}\$${diferencia.toMoneyString(2)}',
+                          _textoPorDivisa(_diferenciaPorDivisa, signo: true),
                           isHighlight: true,
                           color:
-                              diferencia >= 0
+                              _diferenciaPorDivisa.values.every(
+                                    (d) => d >= -0.01,
+                                  )
                                   ? VentiqHomeTheme.success
                                   : VentiqHomeTheme.danger,
                         ),

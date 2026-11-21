@@ -55,7 +55,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
   bool _obscureMasterPassword = true;
   bool _showDescriptionInSelectors = false;
   bool _guardarImpresoraPorDefecto = false;
-  List<String> _ticketsAImprimir = ['cliente', 'almacen'];
+  List<String> _ticketsAImprimir = ['cliente', 'almacen', 'caja'];
   Map<String, int> _copiasPorTicket = {'cliente': 1, 'almacen': 1};
   bool _autocompletarCantidadRealConteo = false;
   int? _storeId;
@@ -534,7 +534,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
         _ticketsAImprimir =
             (rawTickets is List)
                 ? rawTickets.map((e) => e.toString()).toList()
-                : ['cliente', 'almacen'];
+                : ['cliente', 'almacen', 'caja'];
         final rawCopias = config['copias_por_ticket'];
         _copiasPorTicket =
             (rawCopias is Map)
@@ -1496,9 +1496,11 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
   String _ticketDisplayName(String ticket) {
     switch (ticket) {
       case 'cliente':
-        return 'Cliente';
+        return 'Factura';
       case 'almacen':
         return 'Almacén';
+      case 'caja':
+        return 'Recibo de caja';
       default:
         return ticket;
     }
@@ -2955,16 +2957,24 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
               Expanded(
                 child: _buildTicketChip(
                   key: 'cliente',
-                  label: 'Cliente',
+                  label: 'Factura',
                   icon: Icons.receipt_outlined,
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 8),
               Expanded(
                 child: _buildTicketChip(
                   key: 'almacen',
                   label: 'Almacén',
                   icon: Icons.warehouse_outlined,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildTicketChip(
+                  key: 'caja',
+                  label: 'Recibo caja',
+                  icon: Icons.point_of_sale,
                 ),
               ),
             ],

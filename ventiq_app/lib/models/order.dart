@@ -380,7 +380,13 @@ class OrderItem {
       idPresentacion: idPresentacion ?? this.idPresentacion,
       presentacionNombre: presentacionNombre ?? this.presentacionNombre,
       presentacionFactor: presentacionFactor ?? this.presentacionFactor,
-      seleccion: seleccion ?? this.seleccion,
+      // La selección v1 lleva su propia cantidad y de ella salen el neto y el
+      // equivalente CUP: al cambiar la cantidad del ítem se cambia también.
+      seleccion:
+          seleccion ??
+          (cantidad != null && this.seleccion != null
+              ? this.seleccion!.conCantidad(cantidad)
+              : this.seleccion),
     );
   }
 
@@ -456,9 +462,11 @@ class OrderItem {
       presentacionFactor: (json['presentacionFactor'] as num?)?.toDouble(),
       seleccion:
           json['seleccion'] is Map
+              // Un borrador guardado antes de este arreglo puede traer la
+              // cantidad vieja en la selección: manda la del ítem.
               ? ProductCurrencySeleccion.fromJson(
                 Map<String, dynamic>.from(json['seleccion'] as Map),
-              )
+              ).conCantidad((json['cantidad'] as num).toDouble())
               : null,
     );
   }

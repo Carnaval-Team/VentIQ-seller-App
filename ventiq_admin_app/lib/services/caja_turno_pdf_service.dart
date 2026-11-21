@@ -37,9 +37,11 @@ class CajaTurnoPdfService {
     required CajaTurno turno,
     required String storeName,
     DesgloseTurnoMonedas? desglose,
+    List<TurnoMoneda> monedas = const [],
   }) async {
     final pdf = pw.Document();
     final reporte = turno.reporte;
+    final porMoneda = monedas.isNotEmpty;
 
     pdf.addPage(
       pw.MultiPage(
@@ -73,7 +75,9 @@ class CajaTurnoPdfService {
             ]),
             pw.SizedBox(height: 14),
             _seccion('Conciliación de efectivo'),
-            _tablaConciliacion(turno),
+            porMoneda
+                ? _tablaConciliacionPorMoneda(turno, monedas)
+                : _tablaConciliacion(turno),
           ];
 
           if (turno.esperadoRegistradoDudoso) {
@@ -90,9 +94,17 @@ class CajaTurnoPdfService {
 
           bloques.add(pw.SizedBox(height: 14));
           bloques.add(_seccion('Ventas del turno'));
-          bloques.add(_tablaVentas(turno));
+          bloques.add(
+            porMoneda
+                ? _tablaVentasPorMoneda(turno, monedas)
+                : _tablaVentas(turno),
+          );
 
-          if (turno.desglosePagos.isNotEmpty) {
+          // El desglose por medio del listado suma monedas distintas: con más de
+          // una moneda se omite (la tabla por moneda ya separa efectivo y
+          // digital).
+          if (turno.desglosePagos.isNotEmpty &&
+              !(porMoneda && monedas.map((m) => m.moneda).toSet().length > 1)) {
             bloques.add(pw.SizedBox(height: 14));
             bloques.add(_seccion('Desglose de cobros por medio de pago'));
             bloques.add(_tablaPagos(turno));
@@ -210,8 +222,29 @@ class CajaTurnoPdfService {
     DateTime? fechaDesde,
     DateTime? fechaHasta,
     String? filtroDescripcion,
+    Map<int, List<TurnoMoneda>> monedas = const {},
   }) async {
     final pdf = pw.Document();
+    final porMoneda = monedas.values.any((l) => l.isNotEmpty);
+    final todas = monedas.values.expand((l) => l).toList();
+
+    // Con cuadre por moneda no se suman divisas: cada columna lleva una cifra
+    // por moneda, en la moneda en que se cobró.
+    String celda(CajaTurno t, double? Function(TurnoMoneda) valor, double? escalar) {
+      final filas = monedas[t.id];
+      if (!porMoneda || filas == null || filas.isEmpty) {
+        return escalar == null ? '-' : _money.format(escalar);
+      }
+      return _porMoneda(filas, valor);
+    }
+
+    String total(double Function(TurnoMoneda) valor, double escalar) {
+      if (!porMoneda) return _money.format(escalar);
+      final totales = TurnoMoneda.sumarPorMoneda(todas, valor);
+      return totales.entries
+          .map((e) => _moneyNativo(e.value, e.key))
+          .join('\n');
+    }
 
     double ventas = 0;
     double efectivo = 0;
@@ -227,7 +260,11 @@ class CajaTurnoPdfService {
       egresos += t.totalEgresos;
       contado += t.efectivoReal ?? 0;
       diferencias += t.diferenciaCalculada ?? 0;
-      if (t.estaCerrado && t.diferenciaAbsoluta > 1.00) conDescuadre++;
+      final filasMoneda = monedas[t.id];
+      final descuadrado = filasMoneda == null || filasMoneda.isEmpty
+          ? t.diferenciaAbsoluta > 1.00
+          : filasMoneda.any((f) => (f.diferencia ?? 0).abs() > 0.005);
+      if (t.estaCerrado && descuadrado) conDescuadre++;
       if (t.tieneDiscrepanciasInventario) conDiscrepancias++;
     }
 
@@ -369,14 +406,12 @@ class CajaTurnoPdfService {
                       ? 'En curso'
                       : _fechaHora.format(t.fechaCierre!),
                   t.duracionDisplay,
-                  _money.format(t.ventasTotales),
-                  _money.format(t.totalEfectivo),
-                  _money.format(t.totalEgresos),
-                  _money.format(t.efectivoEsperadoCalculado),
-                  t.efectivoReal == null ? '-' : _money.format(t.efectivoReal!),
-                  t.diferenciaCalculada == null
-                      ? '-'
-                      : _money.format(t.diferenciaCalculada!),
+                  celda(t, (m) => m.ventas, t.ventasTotales),
+                  celda(t, (m) => m.efectivo, t.totalEfectivo),
+                  celda(t, (m) => m.egresos, t.totalEgresos),
+                  celda(t, (m) => m.esperado, t.efectivoEsperadoCalculado),
+                  celda(t, (m) => m.real, t.efectivoReal),
+                  celda(t, (m) => m.diferencia, t.diferenciaCalculada),
                   t.conciliacionEstado,
                   t.tieneDiscrepanciasInventario
                       ? '${t.reporte.faltantes.length}/${t.reporte.excesos.length}'
@@ -390,12 +425,12 @@ class CajaTurnoPdfService {
                 '',
                 '',
                 '',
-                _money.format(ventas),
-                _money.format(efectivo),
-                _money.format(egresos),
+                total((m) => m.ventas, ventas),
+                total((m) => m.efectivo, efectivo),
+                total((m) => m.egresos, egresos),
                 '',
-                _money.format(contado),
-                _money.format(diferencias),
+                total((m) => m.real ?? 0, contado),
+                total((m) => m.diferencia ?? 0, diferencias),
                 '',
                 '',
               ],
@@ -605,6 +640,124 @@ class CajaTurnoPdfService {
         ['Cobros digitales', _money.format(turno.totalDigital)],
       ],
     );
+  }
+
+  /// Conciliación con una columna por moneda: cada divisa se concilia con su
+  /// propio efectivo, egresos y conteo, sin convertir ni sumar entre monedas.
+  static pw.Widget _tablaConciliacionPorMoneda(
+    CajaTurno turno,
+    List<TurnoMoneda> filas,
+  ) {
+    final ordenadas = _ordenadas(filas);
+    String celda(double? v, String moneda, {bool signo = false}) {
+      if (v == null) return '-';
+      final texto = _money.format(v);
+      return signo && v > 0 ? '+$texto $moneda' : '$texto $moneda';
+    }
+
+    List<String> fila(
+      String concepto,
+      double? Function(TurnoMoneda) valor, {
+      bool signo = false,
+      String vacio = '-',
+    }) => [
+      concepto,
+      for (final m in ordenadas)
+        valor(m) == null ? vacio : celda(valor(m), m.moneda, signo: signo),
+    ];
+
+    return pw.TableHelper.fromTextArray(
+      border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.4),
+      headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9),
+      cellStyle: const pw.TextStyle(fontSize: 9),
+      headerDecoration: const pw.BoxDecoration(color: PdfColors.grey300),
+      cellPadding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+      cellAlignments: {
+        0: pw.Alignment.centerLeft,
+        for (var i = 1; i <= ordenadas.length; i++) i: pw.Alignment.centerRight,
+      },
+      headers: ['Concepto', for (final m in ordenadas) m.moneda],
+      data: [
+        fila('Fondo inicial', (m) => m.inicial),
+        fila('(+) Efectivo cobrado', (m) => m.efectivo),
+        fila(
+          '(-) Egresos parciales (${turno.egresosCantidad})',
+          (m) => m.egresos,
+        ),
+        fila('(=) Efectivo esperado en caja', (m) => m.esperado),
+        fila('Efectivo contado al cierre', (m) => m.real, vacio: 'Sin conteo'),
+        fila('Diferencia', (m) => m.diferencia, signo: true),
+        fila('Cobros digitales', (m) => m.digital),
+      ],
+    );
+  }
+
+  /// Ventas completadas del turno, una fila por moneda.
+  static pw.Widget _tablaVentasPorMoneda(
+    CajaTurno turno,
+    List<TurnoMoneda> filas,
+  ) {
+    final ordenadas = _ordenadas(filas);
+    return pw.TableHelper.fromTextArray(
+      border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.4),
+      headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9),
+      cellStyle: const pw.TextStyle(fontSize: 9),
+      headerDecoration: const pw.BoxDecoration(color: PdfColors.grey300),
+      cellPadding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+      cellAlignments: {
+        0: pw.Alignment.centerLeft,
+        1: pw.Alignment.centerRight,
+        2: pw.Alignment.centerRight,
+        3: pw.Alignment.centerRight,
+        4: pw.Alignment.centerRight,
+      },
+      headers: const [
+        'Moneda',
+        'Operaciones',
+        'Ventas',
+        'Ticket prom.',
+        'Unidades (turno)',
+      ],
+      data: [
+        for (var i = 0; i < ordenadas.length; i++)
+          [
+            ordenadas[i].moneda,
+            '${ordenadas[i].operaciones}',
+            _moneyNativo(ordenadas[i].ventas, ordenadas[i].moneda),
+            ordenadas[i].ticketPromedio == null
+                ? '-'
+                : _moneyNativo(
+                    ordenadas[i].ticketPromedio!,
+                    ordenadas[i].moneda,
+                  ),
+            i == 0 ? _units.format(turno.productosVendidos) : '',
+          ],
+      ],
+    );
+  }
+
+  static List<TurnoMoneda> _ordenadas(List<TurnoMoneda> filas) {
+    return [...filas]..sort((a, b) {
+      if (a.moneda == b.moneda) return 0;
+      if (a.moneda == 'CUP') return -1;
+      if (b.moneda == 'CUP') return 1;
+      return a.moneda.compareTo(b.moneda);
+    });
+  }
+
+  /// Una cifra por moneda ("15,200.00 CUP · 23.10 USD"); [vacio] si no hay.
+  static String _porMoneda(
+    Iterable<TurnoMoneda> filas,
+    double? Function(TurnoMoneda) valor, {
+    String vacio = '-',
+  }) {
+    final partes = <String>[];
+    for (final m in _ordenadas(filas.toList())) {
+      final v = valor(m);
+      if (v == null) continue;
+      partes.add(_moneyNativo(v, m.moneda));
+    }
+    return partes.isEmpty ? vacio : partes.join('\n');
   }
 
   static pw.Widget _tablaVentas(CajaTurno turno) {

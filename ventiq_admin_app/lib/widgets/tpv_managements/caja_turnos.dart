@@ -43,6 +43,11 @@ class _CajaTurnosTabViewState extends State<CajaTurnosTabView> {
 
   Timer? _debounceTimer;
   List<CajaTurno> _turnos = [];
+
+  /// Cuadre por moneda de cada turno cargado (`fn_turnos_por_moneda`). Los
+  /// importes van en la moneda en que se cobraron; nunca se suman entre monedas.
+  /// Vacío si la RPC no está desplegada: entonces se muestran los escalares.
+  final Map<int, List<TurnoMoneda>> _monedas = {};
   List<Map<String, dynamic>> _tpvs = [];
   List<Map<String, dynamic>> _vendedores = [];
 
@@ -199,12 +204,18 @@ class _CajaTurnosTabViewState extends State<CajaTurnosTabView> {
       );
 
       if (!mounted) return;
+      final porMoneda = await CajaTurnoService.getTurnosPorMoneda(
+        response.turnos.map((t) => t.id).toList(),
+      );
+      if (!mounted) return;
       setState(() {
         if (reset) {
+          _monedas.clear();
           _turnos = response.turnos;
         } else {
           _turnos.addAll(response.turnos);
         }
+        _monedas.addAll(porMoneda);
         _totalCount = response.totalCount;
         _hasNextPage = _turnos.length < _totalCount;
         _isLoading = false;
@@ -337,6 +348,7 @@ class _CajaTurnosTabViewState extends State<CajaTurnosTabView> {
         turno: turno,
         storeName: _storeName,
         desglose: desglose,
+        monedas: _monedas[turno.id] ?? const [],
       );
     } catch (e) {
       if (!mounted) return;
@@ -360,6 +372,7 @@ class _CajaTurnosTabViewState extends State<CajaTurnosTabView> {
         fechaDesde: _fechaDesde,
         fechaHasta: _fechaHasta,
         filtroDescripcion: _describirFiltros(),
+        monedas: _monedas,
       );
     } catch (e) {
       if (!mounted) return;
@@ -718,22 +731,34 @@ class _CajaTurnosTabViewState extends State<CajaTurnosTabView> {
             children: [
               _buildKpi(
                 'Ventas',
-                _currencyFormatter.format(resumen.ventasTotales),
+                _resumenPorMoneda(
+                  (m) => m.ventas,
+                  resumen.ventasTotales,
+                ),
               ),
               _buildKpi(
                 'Efectivo',
-                _currencyFormatter.format(resumen.efectivoCobrado),
+                _resumenPorMoneda(
+                  (m) => m.efectivo,
+                  resumen.efectivoCobrado,
+                ),
               ),
               _buildKpi(
                 'Digital',
-                _currencyFormatter.format(resumen.digitalCobrado),
+                _resumenPorMoneda(
+                  (m) => m.digital,
+                  resumen.digitalCobrado,
+                ),
               ),
-              _buildKpi('Egresos', _currencyFormatter.format(resumen.egresos)),
+              _buildKpi(
+                'Egresos',
+                _resumenPorMoneda((m) => m.egresos, resumen.egresos),
+              ),
               _buildKpi('Abiertos', '${resumen.turnosAbiertos}'),
               _buildKpi(
                 'Descuadres',
-                '${resumen.turnosConDescuadre}',
-                alerta: resumen.turnosConDescuadre > 0,
+                '${_turnosConDescuadre(resumen)}',
+                alerta: _turnosConDescuadre(resumen) > 0,
               ),
               _buildKpi(
                 'Discrepancias',
@@ -745,6 +770,64 @@ class _CajaTurnosTabViewState extends State<CajaTurnosTabView> {
         ],
       ),
     );
+  }
+
+  /// Total de los turnos cargados, una cifra por moneda ("15.200,00 CUP ·
+  /// 23,10 USD"). Sin cuadre por moneda cae al escalar del listado
+  /// ([respaldo]), que es el comportamiento anterior.
+  String _resumenPorMoneda(
+    double Function(TurnoMoneda) valor,
+    double respaldo,
+  ) {
+    final filas = _monedas.values.expand((l) => l);
+    if (filas.isEmpty) return _currencyFormatter.format(respaldo);
+    final totales = TurnoMoneda.sumarPorMoneda(filas, valor);
+    final texto = totales.entries
+        .where((e) => e.value != 0)
+        .map((e) => _formatNativo(e.value, e.key))
+        .join(' · ');
+    return texto.isEmpty ? _currencyFormatter.format(0) : texto;
+  }
+
+  /// Ventas completadas del turno. Un cobro mixto cuenta en cada moneda, así
+  /// que se toma el mayor de los conteos por moneda en vez de sumarlos.
+  int _operacionesTurno(CajaTurno turno) {
+    final filas = _monedas[turno.id];
+    if (filas == null || filas.isEmpty) return turno.operacionesVenta;
+    return filas.fold<int>(0, (a, m) => m.operaciones > a ? m.operaciones : a);
+  }
+
+  /// Ticket promedio por moneda: ventas de esa moneda / operaciones en ella.
+  String _ticketTurno(CajaTurno turno) {
+    final filas = _monedas[turno.id];
+    if (filas == null || filas.isEmpty) {
+      return _currencyFormatter.format(turno.ticketPromedio);
+    }
+    final ordenadas = TurnoMoneda.sumarPorMoneda(filas, (m) => m.ventas).keys;
+    final partes = <String>[];
+    for (final moneda in ordenadas) {
+      final m = filas.firstWhere((f) => f.moneda == moneda);
+      final ticket = m.ticketPromedio;
+      if (ticket != null) partes.add(_formatNativo(ticket, moneda));
+    }
+    return partes.isEmpty ? _currencyFormatter.format(0) : partes.join(' · ');
+  }
+
+  /// Una cifra por moneda de un turno, o [respaldo] si no hay cuadre por moneda.
+  String _turnoPorMoneda(
+    CajaTurno turno,
+    double Function(TurnoMoneda) valor,
+    double respaldo,
+  ) {
+    final filas = _monedas[turno.id];
+    if (filas == null || filas.isEmpty) {
+      return _currencyFormatter.format(respaldo);
+    }
+    final texto = TurnoMoneda.sumarPorMoneda(filas, valor).entries
+        .where((e) => e.value != 0)
+        .map((e) => _formatNativo(e.value, e.key))
+        .join(' · ');
+    return texto.isEmpty ? _currencyFormatter.format(0) : texto;
   }
 
   Widget _buildKpi(String label, String value, {bool alerta = false}) {
@@ -802,8 +885,32 @@ class _CajaTurnosTabViewState extends State<CajaTurnosTabView> {
   // Tarjeta de turno
   // ===================================================================
 
+  /// Estado de conciliación. Con cuadre por moneda se evalúa cada moneda con su
+  /// propio conteo (lo que sobra en una no compensa lo que falta en otra); sin
+  /// él se conserva el estado del listado.
+  String _estadoConciliacion(CajaTurno turno) {
+    final filas = _monedas[turno.id];
+    if (filas == null || filas.isEmpty) return turno.conciliacionEstado;
+    if (turno.estaAbierto) return 'Abierto';
+    if (filas.any((f) => (f.diferencia ?? 0) < -0.005)) return 'Faltante';
+    if (filas.any((f) => (f.diferencia ?? 0) > 0.005)) return 'Sobrante';
+    if (filas.any((f) => f.real == null && f.esperado.abs() >= 0.005)) {
+      return 'Sin conteo';
+    }
+    return 'Conciliado';
+  }
+
+  int _turnosConDescuadre(CajaTurnoResponse resumen) {
+    return resumen.turnos.where((t) {
+      if (!t.estaCerrado) return false;
+      final filas = _monedas[t.id];
+      if (filas == null || filas.isEmpty) return t.diferenciaAbsoluta > 1.00;
+      return filas.any((f) => (f.diferencia ?? 0).abs() > 0.005);
+    }).length;
+  }
+
   Color _conciliacionColor(CajaTurno turno) {
-    switch (turno.conciliacionEstado) {
+    switch (_estadoConciliacion(turno)) {
       case 'Abierto':
         return AppColors.info;
       case 'Sin conteo':
@@ -821,7 +928,7 @@ class _CajaTurnosTabViewState extends State<CajaTurnosTabView> {
   }
 
   IconData _conciliacionIcono(CajaTurno turno) {
-    switch (turno.conciliacionEstado) {
+    switch (_estadoConciliacion(turno)) {
       case 'Abierto':
         return Icons.lock_open;
       case 'Sin conteo':
@@ -864,15 +971,15 @@ class _CajaTurnosTabViewState extends State<CajaTurnosTabView> {
                   children: [
                     _buildInfoChip(
                       Icons.attach_money,
-                      'Ventas ${_currencyFormatter.format(turno.ventasTotales)}',
+                      'Ventas ${_turnoPorMoneda(turno, (m) => m.ventas, turno.ventasTotales)}',
                     ),
                     _buildInfoChip(
                       Icons.receipt_long,
-                      '${turno.operacionesVenta} ops',
+                      '${_operacionesTurno(turno)} ops',
                     ),
                     _buildInfoChip(
                       Icons.confirmation_number_outlined,
-                      'Ticket ${_currencyFormatter.format(turno.ticketPromedio)}',
+                      'Ticket ${_ticketTurno(turno)}',
                     ),
                     if (turno.productosVendidos > 0)
                       _buildInfoChip(
@@ -1013,7 +1120,7 @@ class _CajaTurnosTabViewState extends State<CajaTurnosTabView> {
         border: Border.all(color: color.withOpacity(0.35)),
       ),
       child: Text(
-        '${turno.estadoLabel} · ${turno.conciliacionEstado}',
+        '${turno.estadoLabel} · ${_estadoConciliacion(turno)}',
         style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w600,
@@ -1026,6 +1133,10 @@ class _CajaTurnosTabViewState extends State<CajaTurnosTabView> {
   /// Libro de caja compacto: cada linea es un paso del arqueo, para que el
   /// auditor pueda seguir el calculo sin abrir el detalle.
   Widget _buildConciliacion(CajaTurno turno, Color color) {
+    final porMoneda = _monedas[turno.id];
+    if (porMoneda != null && porMoneda.isNotEmpty) {
+      return _buildConciliacionPorMoneda(turno, porMoneda, color);
+    }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
@@ -1095,6 +1206,95 @@ class _CajaTurnosTabViewState extends State<CajaTurnosTabView> {
     );
   }
 
+  /// Un libro de caja por moneda: cada divisa se concilia con su propio
+  /// efectivo, egresos y conteo. Lo que sobra en una no compensa lo que falta
+  /// en otra.
+  Widget _buildConciliacionPorMoneda(
+    CajaTurno turno,
+    List<TurnoMoneda> filas,
+    Color color,
+  ) {
+    final ordenadas = [...filas]
+      ..sort((a, b) {
+        if (a.moneda == b.moneda) return 0;
+        if (a.moneda == 'CUP') return -1;
+        if (b.moneda == 'CUP') return 1;
+        return a.moneda.compareTo(b.moneda);
+      });
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceVariant,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        children: [
+          for (var i = 0; i < ordenadas.length; i++) ...[
+            if (i > 0) const Divider(height: 18, thickness: 0.6),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                ordenadas[i].moneda,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ),
+            const SizedBox(height: 2),
+            _buildLedgerRow(
+              'Fondo inicial',
+              ordenadas[i].inicial,
+              moneda: ordenadas[i].moneda,
+            ),
+            _buildLedgerRow(
+              '(+) Efectivo cobrado',
+              ordenadas[i].efectivo,
+              color: AppColors.success,
+              moneda: ordenadas[i].moneda,
+            ),
+            _buildLedgerRow(
+              '(-) Egresos parciales',
+              ordenadas[i].egresos,
+              color: ordenadas[i].egresos > 0 ? AppColors.warning : null,
+              moneda: ordenadas[i].moneda,
+            ),
+            _buildLedgerRow(
+              '(=) Esperado en caja',
+              ordenadas[i].esperado,
+              bold: true,
+              moneda: ordenadas[i].moneda,
+            ),
+            _buildLedgerRow(
+              'Contado al cierre',
+              ordenadas[i].real,
+              bold: true,
+              placeholder: 'Sin conteo',
+              moneda: ordenadas[i].moneda,
+            ),
+            _buildLedgerRow(
+              'Diferencia',
+              ordenadas[i].diferencia,
+              bold: true,
+              color: _colorDiferencia(ordenadas[i].diferencia, color),
+              placeholder: '—',
+              signo: true,
+              moneda: ordenadas[i].moneda,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Color _colorDiferencia(double? diferencia, Color porDefecto) {
+    if (diferencia == null) return AppColors.textSecondary;
+    if (diferencia.abs() < 0.005) return AppColors.success;
+    return diferencia < 0 ? AppColors.error : AppColors.warning;
+  }
+
   Widget _buildLedgerRow(
     String label,
     double? value, {
@@ -1102,12 +1302,14 @@ class _CajaTurnosTabViewState extends State<CajaTurnosTabView> {
     Color? color,
     String placeholder = '—',
     bool signo = false,
+    String? moneda,
   }) {
+    final sufijo = moneda == null ? '' : ' $moneda';
     final texto = value == null
         ? placeholder
         : signo && value > 0
-        ? '+${_currencyFormatter.format(value)}'
-        : _currencyFormatter.format(value);
+        ? '+${_currencyFormatter.format(value)}$sufijo'
+        : '${_currencyFormatter.format(value)}$sufijo';
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
@@ -1542,7 +1744,7 @@ class _CajaTurnosTabViewState extends State<CajaTurnosTabView> {
                             ),
                           ),
                           Text(
-                            '${turno.estadoLabel} · ${turno.conciliacionEstado}',
+                            '${turno.estadoLabel} · ${_estadoConciliacion(turno)}',
                             style: TextStyle(fontSize: 12, color: color),
                           ),
                         ],
@@ -1592,15 +1794,21 @@ class _CajaTurnosTabViewState extends State<CajaTurnosTabView> {
                     _buildDetalleSeccion('Ventas'),
                     _buildDetalleFila(
                       'Total vendido',
-                      _currencyFormatter.format(turno.ventasTotales),
+                      _turnoPorMoneda(
+                        turno,
+                        (m) => m.ventas,
+                        turno.ventasTotales,
+                      ),
                     ),
                     _buildDetalleFila(
                       'Operaciones',
-                      '${turno.operacionesVenta} (${turno.ventasPagadas} pagadas)',
+                      _monedas[turno.id]?.isNotEmpty == true
+                          ? '${_operacionesTurno(turno)} completadas'
+                          : '${turno.operacionesVenta} (${turno.ventasPagadas} pagadas)',
                     ),
                     _buildDetalleFila(
                       'Ticket promedio',
-                      _currencyFormatter.format(turno.ticketPromedio),
+                      _ticketTurno(turno),
                     ),
                     _buildDetalleFila(
                       'Unidades vendidas',
@@ -1608,12 +1816,17 @@ class _CajaTurnosTabViewState extends State<CajaTurnosTabView> {
                     ),
                     _buildDetalleFila(
                       'Cobros digitales',
-                      _currencyFormatter.format(turno.totalDigital),
+                      _turnoPorMoneda(
+                        turno,
+                        (m) => m.digital,
+                        turno.totalDigital,
+                      ),
                     ),
-                    _buildDetalleFila(
-                      '% efectivo',
-                      '${turno.porcentajeEfectivo.toStringAsFixed(1)}%',
-                    ),
+                    if (_monedas[turno.id]?.isNotEmpty != true)
+                      _buildDetalleFila(
+                        '% efectivo',
+                        '${turno.porcentajeEfectivo.toStringAsFixed(1)}%',
+                      ),
                     FutureBuilder<DesgloseTurnoMonedas>(
                       future: desgloseFuture,
                       builder: (context, snapshot) {
@@ -1634,7 +1847,10 @@ class _CajaTurnosTabViewState extends State<CajaTurnosTabView> {
                         );
                       },
                     ),
-                    if (turno.desglosePagos.isNotEmpty) ...[
+                    // El desglose por medio del listado suma monedas distintas:
+                    // solo se muestra si el turno cobró en una sola moneda.
+                    if (turno.desglosePagos.isNotEmpty &&
+                        (_monedas[turno.id]?.length ?? 0) <= 1) ...[
                       const SizedBox(height: 16),
                       _buildDetalleSeccion('Desglose de cobros'),
                       ...turno.desglosePagos.map(
