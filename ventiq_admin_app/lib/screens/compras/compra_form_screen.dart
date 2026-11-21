@@ -480,6 +480,7 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
         return Scaffold(
           backgroundColor: AppColors.background,
           appBar: AppBar(
+            leading: const BackButton(color: Colors.white),
             title: Text(
               _esEdicion
                   ? 'Editar compra #${detalle!.numeroCompra}'

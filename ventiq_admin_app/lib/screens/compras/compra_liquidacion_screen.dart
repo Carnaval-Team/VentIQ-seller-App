@@ -378,6 +378,7 @@ class _CompraLiquidacionScreenState extends State<CompraLiquidacionScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
+        leading: const BackButton(color: Colors.white),
         title: Text(
           'Liquidar compra #${widget.compra.numeroCompra}',
           style: const TextStyle(

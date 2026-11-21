@@ -113,8 +113,8 @@ combinada de cambio de estado.
 | 1. Motor de dinero I: integridad, escala y conciliación | **done** — 11/11 verificaciones y E2E del dueño aprobado |
 | 2. Motor de dinero II: idempotencia, tasa y gasto vinculado | **done** — 2a, 2b, cliente a v2 y E2E del dueño aprobado |
 | 3. Compra como documento | **done** — esquema, RPC, UI, verify 13/13 y E2E del dueño aprobado |
-| 4. Reserva y liquidación (carril A, solo `al_pagar`) | **in progress** — backend, datos, pantalla, verify 19/19 y rollback; falta E2E del dueño |
-| 5. Recepción: carril A y carril B | not started |
+| 4. Reserva y liquidación (carril A, solo `al_pagar`) | **done** — backend, UI, verify 19/19 y E2E del dueño aprobado |
+| 5. Recepción: carril A y carril B | **in progress** — vínculo recepción↔compra en curso |
 | 6. Costo aterrizado sobre el módulo existente | not started |
 | 7. Inversores aportantes (100%) | not started |
 | 8. Reportes, conciliación en UI y cierre | not started |
@@ -227,6 +227,16 @@ Current phase: 0 · Recommended next: 0
   `RETURNS void`**, o quedaban apuntando a tablas borradas.
 - **Fase 4 · defecto documental.** El comentario del 04 aplicado dice «12 args» donde la función quedó con
   **13**. El catálogo manda; el verify comprueba 13 y el rollback borra la firma de 13.
+- **Fase 4 · aprobada por el dueño (2026-11-21).** E2E 1-8 en verde. Único defecto de UX reportado: al
+  detalle le faltaba la vuelta al listado, porque tener `drawer` en el `Scaffold` **sustituye la flecha de
+  volver por la hamburguesa**. Añadido `leading: BackButton` al formulario, al detalle y a la liquidación.
+- **Fase 5a · vínculo recepción↔compra aplicado (2026-11-21).** `fdi_dat_compra_recepcion` gana
+  `pct_importadora`, `base_importadora`, `monto_importadora`, `reembolso_importadora` y `origen_pago`;
+  `app_dat_operacion_recepcion` gana `fecha_operacion`. Nuevas
+  `fn_fdi_compra_recepcion_pendiente` (por línea: comprado/recibido/pendiente, verificada sobre la compra
+  2 → pendiente 1) y `fn_fdi_compra_vincular_recepcion`, que enlaza una recepción ya registrada, valida
+  cantidades contra el pendiente, exige confirmación para el exceso, calcula el cargo de importadora
+  (`base × pct − reembolso`) y deriva el estado a `entrega_parcial` o `completada`.
 
 ---
 

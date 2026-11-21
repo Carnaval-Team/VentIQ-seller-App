@@ -286,6 +286,8 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
+        // Con `drawer` el AppBar muestra hamburguesa y se pierde la vuelta.
+        leading: const BackButton(color: Colors.white),
         title: Text(
           detalle == null ? 'Compra' : 'Compra #${detalle.numeroCompra}',
           style: const TextStyle(
