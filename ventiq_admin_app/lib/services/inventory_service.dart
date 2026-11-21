@@ -1376,18 +1376,50 @@ class InventoryService {
         'p_id_inversion': idInversion,
         'p_tasa_inversion': tasaInversion,
       };
-      final response = await _supabase.rpc(
-        fuentesFondo == null
-            ? 'fn_registrar_recepcion_con_inventario'
-            : 'fn_fdi_registrar_recepcion',
-        params: fuentesFondo == null
-            ? parametros
-            : {
-              'p_recepcion': parametros,
-              'p_fuentes': fuentesFondo,
-              'p_idempotency_key': idempotencyKey,
-            },
-      );
+      // Los costos por línea viajan DENTRO de la recepción (recepción +
+      // costos en una sola transacción). Antes se persistían después, en un
+      // catch que sólo imprimía: si fallaban, la pantalla decía "éxito" y el
+      // costo se perdía.
+      final costosRpc = _costosParaRpc(productosConvertidos);
+
+      // `fn_fdi_recepcion_con_costos` sólo puede expresar dos de los tres
+      // carriles: el del fondo y el de una recepción suelta. Cuando el
+      // llamador amortiza una inversión ya existente (`idInversion` sin
+      // fuentes), el wrapper crea la recepción con `p_id_inversion` NULL y
+      // perdería el vínculo, así que ese carril conserva la RPC actual.
+      final rpcConCostos =
+          costosRpc.isNotEmpty && (fuentesFondo != null || idInversion == null);
+
+      final dynamic response;
+      if (rpcConCostos) {
+        response = await _supabase.rpc(
+          'fn_fdi_recepcion_con_costos',
+          params: {
+            'p_recepcion': parametros,
+            'p_costos': costosRpc,
+            // Sin fuentes del fondo el wrapper toma el carril de recepción
+            // suelta; la lista vacía es el valor que espera para ese carril.
+            'p_fuentes': fuentesFondo ?? <Map<String, dynamic>>[],
+            // El wrapper exige clave de reintento incluso sin fondo. Sin
+            // financiación no había clave: se genera una por intento, igual
+            // que el comportamiento anterior (sin idempotencia).
+            'p_idempotency_key': idempotencyKey ?? createClientRequestUuid(),
+          },
+        );
+      } else {
+        response = await _supabase.rpc(
+          fuentesFondo == null
+              ? 'fn_registrar_recepcion_con_inventario'
+              : 'fn_fdi_registrar_recepcion',
+          params: fuentesFondo == null
+              ? parametros
+              : {
+                  'p_recepcion': parametros,
+                  'p_fuentes': fuentesFondo,
+                  'p_idempotency_key': idempotencyKey,
+                },
+        );
+      }
 
       print('📦 Respuesta RPC: $response');
 
@@ -1404,7 +1436,10 @@ class InventoryService {
       }
 
       final idOperacion = response['id_operacion'];
-      if (idOperacion != null) {
+      if (idOperacion != null && costosRpc.isNotEmpty && !rpcConCostos) {
+        // Carril de inversión existente: el wrapper transaccional no lo cubre,
+        // así que se conserva el persistido posterior. Pero el fallo ya NO se
+        // traga: si el costo no se guarda, el usuario tiene que enterarse.
         try {
           await CostosAdicionalesService().persistirCostosRecepcion(
             idOperacion: idOperacion is int
@@ -1413,7 +1448,11 @@ class InventoryService {
             productos: productosConvertidos,
           );
         } catch (e) {
-          print('⚠️ No se pudieron persistir costos adicionales: $e');
+          throw Exception(
+            'La recepción $idOperacion quedó registrada, pero no se pudieron '
+            'guardar sus costos adicionales: $e. No la registre otra vez; '
+            'corrija los costos sobre esa recepción.',
+          );
         }
       }
 
@@ -1423,6 +1462,38 @@ class InventoryService {
       print('📍 StackTrace: $stackTrace');
       throw Exception('Error al insertar recepción: $e');
     }
+  }
+
+  /// Aplana los costos por línea al contrato de `fn_fdi_recepcion_con_costos`.
+  ///
+  /// `p_costos` es `[{id_tipo_costo, monto_usd, orden_linea}]`. `orden_linea`
+  /// es la posición 1..n de la línea dentro de la recepción: el wrapper la
+  /// compara con `row_number() OVER (ORDER BY rp.id)` y
+  /// `fn_registrar_recepcion_con_inventario` inserta las líneas en el orden de
+  /// `p_productos`, así que el índice de esta lista es ese número.
+  static List<Map<String, dynamic>> _costosParaRpc(
+    List<Map<String, dynamic>> productos,
+  ) {
+    final costos = <Map<String, dynamic>>[];
+    for (var i = 0; i < productos.length; i++) {
+      final raw = productos[i]['costos'];
+      if (raw is! List) continue;
+      for (final item in raw) {
+        if (item is! Map) continue;
+        final idTipo = _asInt(item['id_tipo_costo']);
+        final montoRaw = item['monto_usd'];
+        final monto = montoRaw is num
+            ? montoRaw.toDouble()
+            : double.tryParse('$montoRaw');
+        if (idTipo == null || monto == null) continue;
+        costos.add({
+          'id_tipo_costo': idTipo,
+          'monto_usd': monto,
+          'orden_linea': i + 1,
+        });
+      }
+    }
+    return costos;
   }
 
   /// Verifica el inventario de ingredientes en una zona específica

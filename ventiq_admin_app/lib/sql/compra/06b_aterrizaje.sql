@@ -1,15 +1,10 @@
 -- ============================================================================
 -- 06b_aterrizaje.sql — Fase 6b: aterrizaje del cargo de importadora en el costo
 --
--- ⚠️ DESINCRONIZADO RESPECTO A `newa` (2026-11-21). NO promocionar a Main tal cual.
---    La base se aplicó con dos cambios aprobados por el dueño que este texto
---    todavía no refleja:
---      1. `fdi_dat_compra_recepcion.tasa_usd_aplicada numeric(18,10)` (columna nueva).
---      2. `fn_fdi_compra_repartir_aterrizaje` y `fn_fdi_recepcion_con_costos`
---         ESCRIBEN esa tasa (la efectiva, normalizada a 1 si la moneda es USD).
---    Antes de promover: sincronizar el cuerpo de las dos funciones y el ALTER en
---    este archivo. La base en `newa` es la fuente de verdad.
---
+-- SINCRONIZADO con `newa` (`qhprswhhfasrikhawjoz`) el 2026-11-21.
+-- 13/13 en `verify/06_costos.sql`. El ALTER de `tasa_usd_aplicada` y el cuerpo
+-- de las tres funciones son los que la base tiene aplicados: aplicarlo en otro
+-- entorno produce el mismo resultado.
 --
 -- REQUIERE: 06a aplicado (catálogo `app_cont_tipo_costo` con sus 4 tipos) y
 --           05a/05c aplicados (columnas de importadora en el vínculo).
@@ -21,13 +16,16 @@
 --     monto_valorizado, moneda, tasa_a_base, created_by, created_at,
 --     pct_importadora numeric(7,4), base_importadora numeric(14,2),
 --     monto_importadora numeric(14,2), reembolso_importadora numeric(14,2),
---     origen_pago text, confirmada_con_exceso boolean.
+--     origen_pago text, confirmada_con_exceso boolean,
+--     tasa_usd_aplicada numeric(18,10) NULL.
 --     **NO existe `fecha_operacion` en esta tabla.** `fecha_operacion` vive en
 --     `app_dat_operacion_recepcion` (la añade 05a y la escribe el trigger
 --     `trg_fdi_recepcion_fecha` de 06a). No se usa aquí.
 --     `tasa_a_base` es numeric NOT NULL DEFAULT 1 y `fn_fdi_compra_vincular_recepcion`
 --     la escribe **siempre como 1**: no es una tasa a USD y no sirve para
 --     convertir. Por eso la tasa entra por parámetro.
+--     `tasa_usd_aplicada` la añade este script (sección 0b) y la escriben las
+--     dos funciones de reparto/recepción de abajo.
 --     CHECK real de `origen_pago`: fondo | wallet_importadora |
 --     wallet_proveedor | externo.
 --
@@ -61,14 +59,18 @@
 --     El orden exacto está en `fn_fdi_compra_recepcion_bases` (abajo).
 --
 -- Qué añade este script:
+--   0. `ALTER TABLE fdi_dat_compra_recepcion ADD COLUMN tasa_usd_aplicada
+--      numeric(18,10)` — la tasa efectiva que usó el reparto, para auditoría.
 --   1. `fn_fdi_compra_recepcion_bases(bigint)` — STABLE. Una sola definición
 --      del "valor de cada línea" (base del reparto), reutilizable para
 --      previsualizar el reparto antes de aplicarlo.
 --   2. `fn_fdi_compra_repartir_aterrizaje(bigint, numeric)` — reparte
---      `monto_importadora` entre las líneas de la recepción y persiste una
---      fila por línea con el tipo de costo 'Importadora'.
+--      `monto_importadora` entre las líneas de la recepción, persiste una
+--      fila por línea con el tipo de costo 'Importadora' y deja escrita la
+--      tasa efectiva en `tasa_usd_aplicada`.
 --   3. `fn_fdi_recepcion_con_costos(jsonb, jsonb, jsonb, uuid)` — recepción +
---      costos en UNA transacción, con clave de idempotencia.
+--      costos en UNA transacción, con clave de idempotencia y propagación
+--      opcional de la tasa a la recepción y al vínculo.
 --
 -- ---------------------------------------------------------------------------
 -- TASA (`p_tasa_usd`) — sentido y regla
@@ -166,15 +168,16 @@
 --   costo del producto, no del concepto).
 --
 -- ---------------------------------------------------------------------------
--- LÍMITE CONOCIDO (y por qué el verify no comprueba todo)
+-- TASA APLICADA — ahora persistida
 -- ---------------------------------------------------------------------------
---   La tasa aplicada **no se persiste** en ninguna columna del vínculo, así
---   que el reparto de una compra que no sea en USD no se puede re-derivar
---   después. `verify/06_costos.sql` sólo puede comprobar
---   `Σ monto_usd = monto_importadora` cuando `moneda = 'USD'`; para el resto
---   informa y no falla. Si el lead quiere auditoría completa, el paso
---   siguiente es una columna `tasa_usd_aplicada numeric` en
---   `fdi_dat_compra_recepcion` (DDL que este script NO hace a propósito).
+--   La tasa efectiva del reparto (ya normalizada a 1 si la moneda es USD) se
+--   guarda en `fdi_dat_compra_recepcion.tasa_usd_aplicada numeric(18,10)`, así
+--   que el reparto de una compra que no sea en USD **sí se puede re-derivar**
+--   después. La columna es NULL a propósito: un vínculo anterior a este script
+--   no tiene tasa conocida y NULL lo dice; no se inventa un 1.
+--
+--   `verify/06_costos.sql` mantiene su invariante de Σ monto_usd = cargo sólo
+--   para `moneda = 'USD'`; el resto de vínculos se informa y no falla.
 --
 -- ROLLBACK: 06b_aterrizaje_rollback.sql
 -- ============================================================================
@@ -261,6 +264,18 @@ BEGIN
     END IF;
 END;
 $$;
+
+-- ---------------------------------------------------------------------------
+-- 0b) Columna de auditoría de la tasa efectiva
+--
+--     La escriben las dos funciones de abajo: `fn_fdi_compra_repartir_aterrizaje`
+--     deja la tasa que usó realmente el reparto (normalizada a 1 si la moneda
+--     es USD) y `fn_fdi_recepcion_con_costos` la propaga cuando el llamador
+--     manda una. Es NULL-able y sin DEFAULT a propósito: un vínculo anterior a
+--     este script no tiene tasa conocida y NULL lo dice, no un 1 inventado.
+-- ---------------------------------------------------------------------------
+ALTER TABLE public.fdi_dat_compra_recepcion
+    ADD COLUMN IF NOT EXISTS tasa_usd_aplicada numeric(18,10);
 
 -- ---------------------------------------------------------------------------
 -- 1) Base del reparto: valor de cada línea de la recepción
@@ -418,7 +433,7 @@ BEGIN
         RETURN jsonb_build_object(
             'status', 'omitido',
             'motivo', 'origen_pago_wallet_proveedor',
-            'aviso', 'origen_pago = wallet_proveedor no está en el alcance de 06b: sólo wallet_importadora y externo aterrizan. Si debe aterrizar, es una decisión de negocio pendiente.',
+            'aviso', 'origen_pago = wallet_proveedor no capitaliza (decisión del dueño): sólo wallet_importadora y externo aterrizan.',
             'id_compra_recepcion', p_id_compra_recepcion,
             'id_compra', v_link.id_compra,
             'id_operacion', v_link.id_operacion,
@@ -462,6 +477,13 @@ BEGIN
 
     v_cargo_usd := round(v_link.monto_importadora / v_tasa, 2);
 
+    -- --- Persistencia de la tasa efectiva (auditoría) -----------------------
+    -- Se escribe la tasa que REALMENTE se usó, ya normalizada a 1 si la moneda
+    -- del vínculo es USD. Así el reparto se puede re-derivar después.
+    UPDATE public.fdi_dat_compra_recepcion
+       SET tasa_usd_aplicada = v_tasa
+     WHERE id = p_id_compra_recepcion;
+
     -- --- Sin cargo: se limpia lo que hubiera (idempotencia) ------------------
     IF v_cargo_usd = 0 THEN
         DELETE FROM public.app_dat_recepcion_producto_costo c
@@ -482,6 +504,7 @@ BEGIN
             'id_operacion', v_link.id_operacion,
             'monto_importadora', v_link.monto_importadora,
             'tasa_usd', v_tasa,
+            'tasa_usd_aplicada', v_tasa,
             'tasa_forzada_usd', v_tasa_forzada,
             'cargo_usd', v_cargo_usd,
             'id_tipo_costo', v_id_tipo,
@@ -606,6 +629,7 @@ BEGIN
         'origen_pago', v_link.origen_pago,
         'moneda', v_link.moneda,
         'tasa_usd', v_tasa,
+        'tasa_usd_aplicada', v_tasa,
         'tasa_forzada_usd', v_tasa_forzada,
         'monto_importadora', v_link.monto_importadora,
         'cargo_usd', v_cargo_usd,
@@ -668,10 +692,16 @@ GRANT EXECUTE ON FUNCTION public.fn_fdi_compra_repartir_aterrizaje(bigint, numer
 --    p_moneda_factura, p_motivo, p_entregado_por, p_recibido_por,
 --    p_observaciones, p_uuid, p_productos[].
 --
+--    Tasa (opcional, `p_tasa_usd` o `tasa_usd_aplicada` dentro de
+--    `p_recepcion`): mismo sentido que en el reparto, unidades de la moneda de
+--    la factura por 1 USD, y se normaliza a 1 si la moneda es USD. Si viene, se
+--    propaga a `app_dat_operacion_recepcion.tasa_cambio_aplicada` /
+--    `fecha_tasa_aplicada` y a `fdi_dat_compra_recepcion.tasa_usd_aplicada`.
+--
 --    Forma de `p_costos` (array; puede venir vacío):
 --        [{ "id_tipo_costo": 3, "monto_usd": 12.34, "orden_linea": 1 }, ...]
 --      · `orden_linea` (1-based) es opcional: si falta, se usa la posición del
---        elemento en el array. Debe caer en [1, nº de líneas].
+--        elemento en el array. Debe caer en [1, no de líneas].
 --      · `monto_promedio_anterior` NO se acepta del cliente: lo calcula el
 --        servidor con la misma regla que el resto del módulo.
 --
@@ -717,6 +747,8 @@ DECLARE
     v_insertadas  integer := 0;
     v_dup         integer;
     v_malo        bigint;
+    v_tasa        numeric;
+    v_tasa_recibida boolean := false;
 BEGIN
     -- --- Validaciones de forma ---------------------------------------------
     IF p_idempotency_key IS NULL THEN
@@ -769,6 +801,24 @@ BEGIN
     IF v_fondo AND NULLIF(p_recepcion ->> 'p_uuid', '') IS NULL THEN
         RAISE EXCEPTION '06b: p_recepcion->>p_uuid es obligatorio en el carril fondo y debe ser el usuario autenticado'
             USING ERRCODE = '22023';
+    END IF;
+
+    -- --- Tasa USD aplicada (opcional; se PROPAGA a la recepción) -----------
+    -- Se acepta `p_tasa_usd` (mismo nombre que el reparto) o `tasa_usd_aplicada`.
+    -- Sentido: unidades de la moneda de la factura por 1 USD. Si la moneda es
+    -- USD se normaliza a 1, igual que en fn_fdi_compra_repartir_aterrizaje.
+    IF COALESCE(NULLIF(p_recepcion ->> 'p_tasa_usd', ''),
+                NULLIF(p_recepcion ->> 'tasa_usd_aplicada', '')) IS NOT NULL THEN
+        v_tasa := COALESCE(NULLIF(p_recepcion ->> 'p_tasa_usd', '')::numeric,
+                           NULLIF(p_recepcion ->> 'tasa_usd_aplicada', '')::numeric);
+        IF v_tasa IS NULL OR NOT (v_tasa > 0) OR v_tasa >= 'Infinity'::numeric THEN
+            RAISE EXCEPTION '06b: p_tasa_usd debe ser un número finito > 0 (recibido: %)', v_tasa
+                USING ERRCODE = '22023';
+        END IF;
+        IF upper(btrim(COALESCE(NULLIF(p_recepcion ->> 'p_moneda_factura', ''), 'USD'))) = 'USD' THEN
+            v_tasa := 1;
+        END IF;
+        v_tasa_recibida := true;
     END IF;
 
     v_sol_full  := jsonb_build_object('recepcion', p_recepcion, 'costos', v_costos, 'fuentes', p_fuentes);
@@ -851,6 +901,22 @@ BEGIN
                    fdi_solicitud       = v_sol_full
              WHERE id_operacion = v_operacion;
         END IF;
+    END IF;
+
+    -- --- Propagación de la tasa (si el llamador la envió) -------------------
+    -- Se escribe en la recepción (`tasa_cambio_aplicada`, la columna que ya
+    -- leen dashboard y analítica) y, si el vínculo compra↔recepción ya existe,
+    -- también en `fdi_dat_compra_recepcion.tasa_usd_aplicada`, que es la que
+    -- deja escrita el reparto.
+    IF v_tasa_recibida THEN
+        UPDATE public.app_dat_operacion_recepcion
+           SET tasa_cambio_aplicada = v_tasa,
+               fecha_tasa_aplicada  = COALESCE(fecha_tasa_aplicada, now())
+         WHERE id_operacion = v_operacion;
+
+        UPDATE public.fdi_dat_compra_recepcion
+           SET tasa_usd_aplicada = v_tasa
+         WHERE id_operacion = v_operacion;
     END IF;
 
     -- --- Validación de los costos ------------------------------------------
@@ -969,6 +1035,8 @@ BEGIN
         'duplicada', v_duplicada,
         'costos_insertados', v_insertadas,
         'costos_solicitados', jsonb_array_length(v_costos),
+        'tasa_recibida', v_tasa_recibida,
+        'tasa_usd_aplicada', v_tasa,
         'orden_sugerido', 'Ejecute fn_actualizar_precio_promedio_recepcion_v2/v3 después, para capitalizar los costos al promedio.');
 END;
 $$;
@@ -996,7 +1064,21 @@ BEGIN
         RAISE EXCEPTION '06b: no se creó fn_fdi_recepcion_con_costos(jsonb,jsonb,jsonb,uuid)';
     END IF;
 
-    -- 4.2) SECURITY DEFINER y valor de retorno jsonb donde toca.
+    -- 4.2) La columna de la tasa efectiva existe, con el tipo exacto y NULL-able.
+    SELECT count(*) INTO v
+      FROM information_schema.columns
+     WHERE table_schema = 'public'
+       AND table_name = 'fdi_dat_compra_recepcion'
+       AND column_name = 'tasa_usd_aplicada'
+       AND data_type = 'numeric'
+       AND numeric_precision = 18
+       AND numeric_scale = 10
+       AND is_nullable = 'YES';
+    IF v <> 1 THEN
+        RAISE EXCEPTION '06b: fdi_dat_compra_recepcion.tasa_usd_aplicada no quedó numeric(18,10) NULL';
+    END IF;
+
+    -- 4.3) SECURITY DEFINER y valor de retorno jsonb donde toca.
     SELECT count(*) INTO v
       FROM pg_proc p
      WHERE p.oid IN (to_regprocedure('public.fn_fdi_compra_repartir_aterrizaje(bigint,numeric)'),
@@ -1007,7 +1089,7 @@ BEGIN
         RAISE EXCEPTION '06b: se esperaban 2 funciones jsonb SECURITY DEFINER, hay %', v;
     END IF;
 
-    -- 4.3) El DEFAULT de p_tasa_usd es 1.
+    -- 4.4) El DEFAULT de p_tasa_usd es 1.
     SELECT count(*) INTO v
       FROM pg_proc p
      WHERE p.oid = to_regprocedure('public.fn_fdi_compra_repartir_aterrizaje(bigint,numeric)')
@@ -1017,7 +1099,7 @@ BEGIN
         RAISE EXCEPTION '06b: p_tasa_usd no quedó con DEFAULT 1';
     END IF;
 
-    -- 4.4) La base del reparto es consultable y no rompe con un vínculo real.
+    -- 4.5) La base del reparto es consultable y no rompe con un vínculo real.
     IF EXISTS (SELECT 1 FROM public.fdi_dat_compra_recepcion) THEN
         SELECT min(r.id) INTO v_id_link FROM public.fdi_dat_compra_recepcion r;
 
@@ -1028,7 +1110,7 @@ BEGIN
         END IF;
     END IF;
 
-    -- 4.5) Prueba de humo con ROLLBACK: se ejecuta el reparto de verdad y se
+    -- 4.6) Prueba de humo con ROLLBACK: se ejecuta el reparto de verdad y se
     --      deshace con una subtransacción. Así se comprueba que compila, corre
     --      y cuadra, sin dejar ni una fila. Sólo se lanza si hay un vínculo
     --      cuyo reparto tenga sentido (cargo > 0 y base total > 0): sin eso,
@@ -1055,11 +1137,16 @@ BEGIN
         IF COALESCE(v_res ->> 'status', '') NOT IN ('ok', 'sin_cargo') THEN
             RAISE EXCEPTION '06b: la prueba de humo devolvió status %', COALESCE(v_res ->> 'status', 'NULL');
         END IF;
+
+        -- La tasa aplicada viaja en la respuesta del reparto.
+        IF v_res ->> 'tasa_usd_aplicada' IS NULL THEN
+            RAISE EXCEPTION '06b: el reparto no devolvió tasa_usd_aplicada';
+        END IF;
     ELSE
         RAISE NOTICE '06b: no hay vínculos con cargo > 0 y base repartible; se omite la prueba de humo del reparto.';
     END IF;
 
-    RAISE NOTICE '06b aplicado: bases + reparto de importadora + recepción con costos transaccional.';
+    RAISE NOTICE '06b aplicado: bases + reparto de importadora + recepción con costos transaccional (tasa_usd_aplicada incluida).';
 END;
 $$;
 
