@@ -260,6 +260,17 @@ Current phase: 0 · Recommended next: 0
      la tienen. Columna muerta hasta que el cliente la mande.
   3. La invariante de compras `entrega_parcial` pasa **vacuamente** (hoy hay 0 en ese estado).
   4. `verify/05` comprobación `n=2` necesitó `\y` en vez de `\b` para regex en Postgres; quedó corregida.
+- **Fase 6a · base del costo aterrizado aplicada (2026-11-21).** Cerrados los dos huecos de la fase 5 y
+  preparado el terreno del costo:
+  · `fdi_dat_compra_recepcion.confirmada_con_exceso` + trigger que la marca cuando lo recibido supera lo
+    comprado (antes un exceso autorizado era indistinguible de uno real);
+  · `fecha_operacion` ahora se escribe sola en toda recepción (trigger `BEFORE INSERT`) y se hizo backfill:
+    **0 recepciones sin fecha**;
+  · `id_compra` (y `moneda` donde faltaba) en `imp_dat_factura` y `prv_dat_factura`, con índice parcial;
+  · catálogo `app_cont_tipo_costo` **sembrado**: Aduana, Flete, Importadora, Seguro (antes 0 filas, así
+    que el módulo de costos no se había ejecutado nunca).
+  · Corregido en el script: `app_cont_tipo_costo.id` es identidad `GENERATED ALWAYS`, no admite id
+    explícito; la transacción revirtió entera en el primer intento y se reaplicó sin id.
 
 ---
 
