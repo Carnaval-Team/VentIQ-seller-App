@@ -23,33 +23,37 @@
 --         más confirmada_con_exceso
 --   n=4   las 3 funciones de 06b con su firma exacta
 --   n=5   las 2 que devuelven jsonb son SECURITY DEFINER y p_tasa_usd tiene
---         DEFAULT 1
+--         DEFAULT NULL (sin tasa se lee la de la operación)
 --   n=6   Σ monto_usd del tipo Importadora por recepción = cargo convertido
 --         (sólo verificable en vínculos con moneda USD: ver nota)
 --   n=7   ninguna fila con id_tipo_costo inexistente en el catálogo
 --   n=8   monto_promedio_anterior >= 0 en todas las filas
 --   n=9   sin duplicados por (id_recepcion_producto, id_tipo_costo)
 --   n=10  monto_usd finito y no negativo
---   n=11  (informativa) vínculos que no son USD: la tasa aplicada no se
---         persiste, así que su reparto no se puede re-derivar
+--   n=11  (informativa) vínculos que no son USD y su tasa persistida
 --   n=12  (informativa) vínculos en USD sin aterrizaje (fondo, cargo 0 o
 --         anteriores a 06b)
 --   n=13  (informativa) volumen de la fase 6
+--   n=14  `fdi_dat_compra_recepcion.tasa_usd_aplicada` existe y, en vínculos
+--         con moneda USD, nunca vale algo distinto de 1; si el vínculo USD ya
+--         tiene aterrizaje, vale exactamente 1 (no NULL)
+--   n=15  las operaciones con costos capitalizados tienen
+--         `app_dat_operacion_recepcion.tasa_cambio_aplicada` no nula (y las
+--         dos columnas de tasa de la operación existen)
 --   n=99  resumen
 --
--- NOTA sobre n=6 — POR QUÉ NO SE COMPRUEBA TODO:
---   `fn_fdi_compra_repartir_aterrizaje` convierte con `p_tasa_usd`, y **esa
---   tasa no se guarda en ninguna columna**: `fdi_dat_compra_recepcion` sólo
---   tiene `moneda` y `tasa_a_base`, y esta última la escribe
---   `fn_fdi_compra_vincular_recepcion` siempre como 1 (no es una tasa a USD).
---   Por eso:
+-- NOTA sobre n=6 — QUÉ SE PUEDE COMPROBAR:
+--   `fn_fdi_compra_repartir_aterrizaje` convierte con una tasa que ya **sí se
+--   persiste**: `app_dat_operacion_recepcion.tasa_cambio_aplicada` (fuente
+--   única, la escribe el wrapper y el propio reparto) y
+--   `fdi_dat_compra_recepcion.tasa_usd_aplicada` (la escribe el reparto por el
+--   `id` del vínculo). Por eso:
 --     · moneda USD  → tasa 1 (la función la fuerza) y el invariante es
 --                     Σ monto_usd = monto_importadora. Se comprueba.
---     · moneda ≠ USD → el cargo en USD no se puede recalcular. Se informa en
---                     n=11 y NO se marca como fallo: fallar aquí sería culpar
---                     al dato de una carencia del esquema.
---   Si el lead quiere auditoría completa, hace falta
---   `fdi_dat_compra_recepcion.tasa_usd_aplicada numeric`. 06b NO la añade.
+--     · moneda ≠ USD → el cargo en USD se recalcula con la tasa de la
+--                     operación. n=11 informa de los vínculos con tasa
+--                     persistida y de los que aún no la tienen; no falla por
+--                     datos anteriores a 06b.
 -- ============================================================================
 
 with
@@ -93,10 +97,19 @@ vinculos as (
            r.monto_importadora,
            r.origen_pago,
            upper(btrim(coalesce(r.moneda, ''))) as moneda,
+           r.tasa_usd_aplicada,
            coalesce(pr.suma_imp, 0)             as suma_imp,
            coalesce(pr.filas_imp, 0)            as filas_imp
       from public.fdi_dat_compra_recepcion r
       left join por_recepcion pr on pr.id_operacion = r.id_operacion
+),
+
+-- Operaciones con costos capitalizados: por cada línea de recepción con costo
+-- (de cualquier tipo), la operación dueña de esa línea.
+ops_con_costos as (
+    select distinct rp.id_operacion
+      from public.app_dat_recepcion_productos rp
+      join public.app_dat_recepcion_producto_costo c on c.id_recepcion_producto = rp.id
 ),
 
 duplicados as (
@@ -187,7 +200,7 @@ base as (
   union all
   -- 5) SECURITY DEFINER, retorno jsonb y DEFAULT de la tasa
   select 5, 'funciones_06b_definer_tasa',
-    'las 2 RPC devuelven jsonb y son SECURITY DEFINER; p_tasa_usd con DEFAULT 1',
+    'las 2 RPC devuelven jsonb y son SECURITY DEFINER; p_tasa_usd con DEFAULT NULL',
     (select count(*)::text from pg_proc p
       where p.oid in (to_regprocedure('public.fn_fdi_compra_repartir_aterrizaje(bigint,numeric)'),
                       to_regprocedure('public.fn_fdi_recepcion_con_costos(jsonb,jsonb,jsonb,uuid)'))
@@ -203,7 +216,7 @@ base as (
     (select count(*) = 1 from pg_proc p
       where p.oid = to_regprocedure('public.fn_fdi_compra_repartir_aterrizaje(bigint,numeric)')
         and p.pronargdefaults = 1
-        and pg_get_expr(p.proargdefaults, 0) = '1')
+        and pg_get_expr(p.proargdefaults, 0) = 'NULL::numeric')
 
   union all
   -- 6) INVARIANTE: Σ monto_usd del aterrizaje = el cargo (sólo USD)
@@ -249,12 +262,16 @@ base as (
     (select count(*) = 0 from montos_raros)
 
   union all
-  -- 11) (informativa) vínculos no-USD: no re-derivables
-  select 11, 'vinculos_no_usd_sin_tasa_persistida',
-    'informativa: la tasa aplicada no se guarda, así que el reparto no-USD no se puede re-calcular',
+  -- 11) (informativa) vínculos no-USD y su tasa de operación
+  select 11, 'vinculos_no_usd_tasa_persistida',
+    'informativa: los vínculos no-USD convierten con la tasa de la operación (tasa_cambio_aplicada)',
     (select count(*)::text from vinculos where moneda <> 'USD') || ' vínculo(s) con moneda distinta de USD ('
       || coalesce((select string_agg(distinct coalesce(nullif(moneda, ''), 'NULL'), ', ')
-                     from vinculos where moneda <> 'USD'), 'ninguna') || ')',
+                     from vinculos where moneda <> 'USD'), 'ninguna') || '), '
+      || (select count(*)::text
+            from vinculos v
+            join public.app_dat_operacion_recepcion o on o.id_operacion = v.id_operacion
+           where v.moneda <> 'USD' and o.tasa_cambio_aplicada is not null) || ' con tasa de operación',
     true
 
   union all
@@ -281,6 +298,54 @@ base as (
       || ', origen_pago=' || coalesce((select string_agg(distinct origen_pago, ', ')
                                          from public.fdi_dat_compra_recepcion), 'ninguno'),
     true
+
+  union all
+  -- 14) INVARIANTE: tasa_usd_aplicada del vínculo
+  select 14, 'tasa_usd_aplicada_vinculo',
+    'la columna existe numeric(18,10); en vínculos USD nunca vale ≠ 1 y, si ya hay aterrizaje, vale exactamente 1',
+    (select count(*)::text from information_schema.columns
+      where table_schema = 'public' and table_name = 'fdi_dat_compra_recepcion'
+        and column_name = 'tasa_usd_aplicada'
+        and data_type = 'numeric' and numeric_precision = 18 and numeric_scale = 10) || ' columna, '
+      || (select count(*)::text from vinculos
+           where moneda = 'USD' and tasa_usd_aplicada is not null
+             and tasa_usd_aplicada <> 1) || ' vínculo(s) USD con tasa ≠ 1, '
+      || (select count(*)::text from vinculos
+           where moneda = 'USD' and filas_imp > 0
+             and tasa_usd_aplicada is null) || ' vínculo(s) USD con aterrizaje y tasa NULL',
+    (select count(*) = 1 from information_schema.columns
+      where table_schema = 'public' and table_name = 'fdi_dat_compra_recepcion'
+        and column_name = 'tasa_usd_aplicada'
+        and data_type = 'numeric' and numeric_precision = 18 and numeric_scale = 10)
+    and
+    (select count(*) = 0 from vinculos
+      where moneda = 'USD' and tasa_usd_aplicada is not null
+        and tasa_usd_aplicada <> 1)
+    and
+    (select count(*) = 0 from vinculos
+      where moneda = 'USD' and filas_imp > 0
+        and tasa_usd_aplicada is null)
+
+  union all
+  -- 15) INVARIANTE: tasa de la operación en operaciones con costos capitalizados
+  select 15, 'tasa_operacion_en_costos_capitalizados',
+    'las operaciones con costos tienen tasa_cambio_aplicada no nula; tasa_cambio_aplicada y fecha_tasa_aplicada existen',
+    (select count(*)::text from ops_con_costos) || ' operación(es) con costos, '
+      || (select count(*)::text
+            from ops_con_costos oc
+            join public.app_dat_operacion_recepcion o on o.id_operacion = oc.id_operacion
+           where o.tasa_cambio_aplicada is null) || ' con tasa NULL, '
+      || (select count(*)::text from information_schema.columns
+           where table_schema = 'public' and table_name = 'app_dat_operacion_recepcion'
+             and column_name in ('tasa_cambio_aplicada','fecha_tasa_aplicada')) || ' de 2 columnas',
+    (select count(*) = 0
+       from ops_con_costos oc
+       join public.app_dat_operacion_recepcion o on o.id_operacion = oc.id_operacion
+      where o.tasa_cambio_aplicada is null)
+    and
+    (select count(*) = 2 from information_schema.columns
+      where table_schema = 'public' and table_name = 'app_dat_operacion_recepcion'
+        and column_name in ('tasa_cambio_aplicada','fecha_tasa_aplicada'))
 )
 
 -- 99) Resumen: cuenta las filas con ok = false (las informativas siempre ok).
