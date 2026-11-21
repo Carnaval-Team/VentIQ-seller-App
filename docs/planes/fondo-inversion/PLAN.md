@@ -271,6 +271,20 @@ Current phase: 0 · Recommended next: 0
     que el módulo de costos no se había ejecutado nunca).
   · Corregido en el script: `app_cont_tipo_costo.id` es identidad `GENERATED ALWAYS`, no admite id
     explícito; la transacción revirtió entera en el primer intento y se reaplicó sin id.
+- **Fase 6b · aterrizaje aplicado en `newa` (2026-11-21).** Tres funciones:
+  `fn_fdi_compra_recepcion_bases` (previsualiza), `fn_fdi_compra_repartir_aterrizaje` (reparto por valor,
+  residuo a la línea de mayor base, idempotente por reemplazo, aborta si `Σ monto_usd ≠ cargo`) y
+  `fn_fdi_recepcion_con_costos` (recepción + costos en **una transacción**). `verify/06_costos.sql`
+  → **13 ok · 0 falla**. Prueba funcional en transacción revertida sobre el vínculo 1: 0,15 repartido en
+  1 línea, tasa 1, y la segunda llamada reemplaza sin duplicar.
+- **Fase 6b · decisiones del dueño.** `wallet_proveedor` **no capitaliza** (verificado: la función lo
+  omite). Se añadió `tasa_usd_aplicada` al vínculo y las funciones la escriben, para que un aterrizaje en
+  CUP sea auditable.
+- **Fase 6b · deuda documental.** `06b_aterrizaje.sql` en el repo **va por detrás de `newa`**: le faltan el
+  `ALTER` y la escritura de la tasa en los cuerpos de dos funciones. Marcado en la cabecera del archivo;
+  **no promover a Main sin sincronizar**. `verify/06` aún no comprueba la columna nueva.
+- **Hallazgo del carril normal.** `app_dat_operaciones.uuid` **no es único**, así que reintentar con el
+  mismo `uuid` no protegía de duplicar; el wrapper usa advisory lock + memo como el carril del fondo.
 
 ---
 

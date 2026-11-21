@@ -1,6 +1,16 @@
 -- ============================================================================
 -- 06b_aterrizaje.sql — Fase 6b: aterrizaje del cargo de importadora en el costo
 --
+-- ⚠️ DESINCRONIZADO RESPECTO A `newa` (2026-11-21). NO promocionar a Main tal cual.
+--    La base se aplicó con dos cambios aprobados por el dueño que este texto
+--    todavía no refleja:
+--      1. `fdi_dat_compra_recepcion.tasa_usd_aplicada numeric(18,10)` (columna nueva).
+--      2. `fn_fdi_compra_repartir_aterrizaje` y `fn_fdi_recepcion_con_costos`
+--         ESCRIBEN esa tasa (la efectiva, normalizada a 1 si la moneda es USD).
+--    Antes de promover: sincronizar el cuerpo de las dos funciones y el ALTER en
+--    este archivo. La base en `newa` es la fuente de verdad.
+--
+--
 -- REQUIERE: 06a aplicado (catálogo `app_cont_tipo_costo` con sus 4 tipos) y
 --           05a/05c aplicados (columnas de importadora en el vínculo).
 --
