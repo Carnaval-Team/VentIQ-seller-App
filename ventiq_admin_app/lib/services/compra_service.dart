@@ -71,6 +71,22 @@ class CompraService {
     return CompraDetalle.fromJson(_asMap(resp));
   }
 
+  /// Líneas de la compra con lo ya recibido y lo que falta
+  /// (`fn_fdi_compra_recepcion_pendiente`).
+  ///
+  /// Devuelve todas las líneas, también las completas: la pantalla de recepción
+  /// filtra por [LineaPendiente.tienePendiente]. Es la fuente de verdad, así que
+  /// se relee antes de cada recepción y no se cachea.
+  Future<List<LineaPendiente>> pendiente(int idCompra) async {
+    final resp = await _supabase.rpc(
+      'fn_fdi_compra_recepcion_pendiente',
+      params: {'p_id_compra': idCompra},
+    );
+    return ((_asMap(resp)['lineas'] as List?) ?? [])
+        .map((e) => LineaPendiente.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
   // ==========================================================================
   // Escritura
   // ==========================================================================
@@ -229,6 +245,54 @@ class CompraService {
     final resp = await _supabase.rpc(
       'fn_fdi_compra_anular',
       params: {'p_id_compra': idCompra, 'p_motivo': motivo},
+    );
+    return _asMap(resp);
+  }
+
+  // ==========================================================================
+  // Recepción contra compra (fase 5b)
+  // ==========================================================================
+
+  /// Enlaza a su compra una recepción **ya registrada**
+  /// (`fn_fdi_compra_vincular_recepcion`) y mueve el estado de la compra a
+  /// `entrega_parcial` o `completada`.
+  ///
+  /// La RPC no crea la recepción: [idOperacion] tiene que existir, así que se
+  /// llama después de `insertInventoryReception`. [lineas] va tal cual en
+  /// `p_lineas`: `[{id_compra_linea, cantidad_recibida}]`.
+  ///
+  /// Si [confirmarExceso] es false y alguna línea supera el pendiente, la RPC
+  /// lanza el error de exceso y no vincula nada; hay que reintentar el vínculo
+  /// (no la recepción) con true.
+  ///
+  /// [pctImportadora] va en porcentaje 0..100 — la RPC guarda
+  /// `round(base * pct / 100, 2) - reembolso` como cargo de importadora.
+  /// [origenPago]: `fondo | wallet_importadora | wallet_proveedor | externo`.
+  ///
+  /// Devuelve `{status, id_compra, id_operacion, estado, pendiente_total,
+  /// id_compra_recepcion, cargo_importadora}`.
+  Future<Map<String, dynamic>> vincularRecepcion({
+    required int idOperacion,
+    required int idCompra,
+    required List<Map<String, dynamic>> lineas,
+    bool confirmarExceso = false,
+    double pctImportadora = 0,
+    double baseImportadora = 0,
+    double reembolsoImportadora = 0,
+    String origenPago = 'wallet_importadora',
+  }) async {
+    final resp = await _supabase.rpc(
+      'fn_fdi_compra_vincular_recepcion',
+      params: {
+        'p_id_operacion': idOperacion,
+        'p_id_compra': idCompra,
+        'p_lineas': lineas,
+        'p_confirmar_exceso': confirmarExceso,
+        'p_pct_importadora': pctImportadora,
+        'p_base_importadora': baseImportadora,
+        'p_reembolso_importadora': reembolsoImportadora,
+        'p_origen_pago': origenPago,
+      },
     );
     return _asMap(resp);
   }

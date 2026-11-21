@@ -203,6 +203,53 @@ class CompraLinea {
   };
 }
 
+/// Estado de una línea de compra frente a lo ya recibido, según
+/// `fn_fdi_compra_recepcion_pendiente`.
+///
+/// [pendiente] lo calcula el servidor (`cantidad - recibido`, redondeado a 4):
+/// es la fuente de verdad del "falta por llegar" y el tope que la recepción
+/// precarga y deja editar.
+class LineaPendiente {
+  final int idLinea;
+  final int idProducto;
+  final String producto;
+  final double cantidad;
+  final double costoUnitario;
+  final double recibido;
+  final double pendiente;
+
+  const LineaPendiente({
+    required this.idLinea,
+    required this.idProducto,
+    this.producto = '',
+    this.cantidad = 0,
+    this.costoUnitario = 0,
+    this.recibido = 0,
+    this.pendiente = 0,
+  });
+
+  /// Solo las líneas con pendiente > 0 se pueden recepcionar.
+  bool get tienePendiente => pendiente > 0;
+
+  /// Valor del pendiente al costo de la compra (mismo redondeo a 2).
+  double get valorPendiente => _redondear2(pendiente * costoUnitario);
+
+  factory LineaPendiente.fromJson(Map<String, dynamic> j) {
+    final cantidad = (j['cantidad'] as num?)?.toDouble() ?? 0;
+    final recibido = (j['recibido'] as num?)?.toDouble() ?? 0;
+    return LineaPendiente(
+      idLinea: (j['id_linea'] as num?)?.toInt() ?? 0,
+      idProducto: (j['id_producto'] as num?)?.toInt() ?? 0,
+      producto: j['producto']?.toString() ?? '',
+      cantidad: cantidad,
+      costoUnitario: (j['costo_unitario'] as num?)?.toDouble() ?? 0,
+      recibido: recibido,
+      pendiente: (j['pendiente'] as num?)?.toDouble() ??
+          _redondear2(cantidad - recibido),
+    );
+  }
+}
+
 /// Un ajuste de la compra (flete, aduana, servicio de importadora...).
 /// `toJson` emite exactamente las claves de `p_ajustes`.
 class CompraAjuste {

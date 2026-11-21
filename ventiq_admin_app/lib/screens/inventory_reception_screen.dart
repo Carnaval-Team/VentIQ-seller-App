@@ -18,6 +18,8 @@ import '../models/ai_reception_models.dart';
 import '../models/fondo_inversion.dart';
 import '../services/fondo_inversion_service.dart';
 import '../widgets/fdi_recepcion_fuentes.dart';
+import '../models/compra.dart';
+import '../services/compra_service.dart';
 
 class InventoryReceptionScreen extends StatefulWidget {
   const InventoryReceptionScreen({super.key});
@@ -65,6 +67,56 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   String? _errorFondo;
   late final String _claveFondo = FondoInversionService().newIdempotencyKey();
 
+  // ── Recepción contra compra (fase 5b) ─────────────────────────────────────
+  // Todo este bloque es opcional: si no se elige compra, nada de esto entra en
+  // juego y la recepción funciona exactamente como antes.
+  List<CompraResumen> _comprasRecepcion = [];
+  bool _isLoadingCompras = true;
+  String? _errorCompras;
+  CompraResumen? _compraSeleccionada;
+  List<LineaPendiente> _lineasPendientes = [];
+  bool _isLoadingPendiente = false;
+  String? _errorPendiente;
+
+  /// Cantidad a recibir por `id_compra_linea`; su presencia es la selección.
+  final Map<int, double> _cantidadesCompra = {};
+  final Map<int, TextEditingController> _cantidadCompraControllers = {};
+
+  final _pctImportadoraController = TextEditingController();
+  final _baseImportadoraController = TextEditingController();
+  final _reembolsoImportadoraController = TextEditingController();
+  OrigenPagoAjuste _origenPagoImportadora = OrigenPagoAjuste.walletImportadora;
+
+  /// Autorización de exceso para el envío en curso: se fija tras el diálogo y
+  /// solo aplica a esa llamada a `vincularRecepcion`.
+  bool _confirmarExcesoCompra = false;
+
+  /// Si el vínculo falla, la recepción ya existe: se guarda su id para impedir
+  /// que un segundo intento cree otra recepción duplicada.
+  int? _recepcionRegistradaId;
+
+  /// Hay compra seleccionada: cambia el selector de productos y bloquea el fondo.
+  bool get _conCompra => _compraSeleccionada != null;
+
+  static double _numeroDe(String texto) {
+    final t = texto.trim().replaceAll(',', '.');
+    if (t.isEmpty) return 0;
+    final v = double.tryParse(t);
+    return v == null || !v.isFinite ? 0 : v;
+  }
+
+  double get _pctImportadora => _numeroDe(_pctImportadoraController.text);
+  double get _baseImportadora => _numeroDe(_baseImportadoraController.text);
+  double get _reembolsoImportadora =>
+      _numeroDe(_reembolsoImportadoraController.text);
+
+  /// `base × % / 100 − reembolso`, el mismo cálculo que hace la RPC.
+  double get _cargoImportadora {
+    final cargo = _baseImportadora * _pctImportadora / 100 -
+        _reembolsoImportadora;
+    return cargo.isFinite ? (cargo * 100).round() / 100 : 0;
+  }
+
   double get _montoRecepcion => _montoTotalController.text.trim().isEmpty
       ? _totalAmount
       : (double.tryParse(_montoTotalController.text.replaceAll(',', '.')) ?? double.nan);
@@ -92,6 +144,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
     _loadProveedores();
     _loadInversionesAbiertas();
     _loadSaldosFondo();
+    _loadCompras();
     _searchController.addListener(_onSearchChanged);
 
     // Load persisted values from previous entries
@@ -118,6 +171,13 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
     _montoTotalController.dispose();
     _searchController.dispose();
     _tasaInversionController.dispose();
+    _pctImportadoraController.dispose();
+    _baseImportadoraController.dispose();
+    _reembolsoImportadoraController.dispose();
+    for (final controller in _cantidadCompraControllers.values) {
+      controller.dispose();
+    }
+    _cantidadCompraControllers.clear();
     super.dispose();
   }
 
@@ -137,6 +197,289 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
     } catch (e) {
       print('ℹ️ Sin inversiones del fondo disponibles: $e');
     }
+  }
+
+  // ── Compra (fase 5b): compras, pendiente, líneas y vínculo ────────────────
+
+  /// Compras de la tienda que aceptan recepción (`reservada`, `pagada`,
+  /// `entrega_parcial`). `listar` filtra por un solo estado, así que se piden
+  /// todas y se filtran aquí.
+  Future<void> _loadCompras() async {
+    setState(() {
+      _isLoadingCompras = true;
+      _errorCompras = null;
+    });
+    try {
+      final idTienda = await UserPreferencesService().getIdTienda();
+      if (idTienda == null) throw StateError('No se encontró la tienda');
+      final compras = await CompraService().listar(idTienda: idTienda);
+      if (!mounted) return;
+      const recepcionables = {'reservada', 'pagada', 'entrega_parcial'};
+      setState(() {
+        _comprasRecepcion = compras
+            .where((c) => recepcionables.contains(c.estado))
+            .toList();
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _errorCompras = 'No se pudieron cargar las compras: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _isLoadingCompras = false);
+    }
+  }
+
+  /// La compra de la lista por id (el selector trabaja con ids, no con
+  /// instancias: así una recarga de la lista no rompe la selección).
+  CompraResumen? _compraPorId(int? idCompra) {
+    if (idCompra == null) return null;
+    for (final compra in _comprasRecepcion) {
+      if (compra.id == idCompra) return compra;
+    }
+    return null;
+  }
+
+  /// Cambia de compra (o vuelve a recepción sin compra). Los productos ajenos a
+  /// la compra se descartan: con compra, la selección se restringe a su
+  /// pendiente y nada más.
+  Future<void> _seleccionarCompra(CompraResumen? compra) async {
+    if (compra?.id == _compraSeleccionada?.id) return;
+    final teniaProductos = _selectedProducts.isNotEmpty;
+    for (final controller in _cantidadCompraControllers.values) {
+      controller.dispose();
+    }
+    setState(() {
+      _compraSeleccionada = compra;
+      _lineasPendientes = [];
+      _errorPendiente = null;
+      _isLoadingPendiente = false;
+      _cantidadesCompra.clear();
+      _cantidadCompraControllers.clear();
+      _selectedProducts = [];
+      _confirmarExcesoCompra = false;
+      _pctImportadoraController.clear();
+      _reembolsoImportadoraController.clear();
+      _baseImportadoraController.clear();
+      if (compra != null) {
+        _baseImportadoraController.text =
+            compra.totalMercancia.toStringAsFixed(2);
+        // Compra y financiación con el fondo no pueden convivir.
+        _usarFondo = false;
+        _fuentesFondo = [];
+      }
+    });
+    if (teniaProductos && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Se limpiaron los productos que no eran de la compra'),
+        ),
+      );
+    }
+    if (compra != null) await _cargarPendiente(compra.id);
+  }
+
+  /// Pendiente por línea (`fn_fdi_compra_recepcion_pendiente`). Solo se
+  /// conservan las líneas con pendiente > 0: las completas no se pueden
+  /// recepcionar.
+  Future<void> _cargarPendiente(int idCompra) async {
+    setState(() {
+      _isLoadingPendiente = true;
+      _errorPendiente = null;
+    });
+    try {
+      final lineas = await CompraService().pendiente(idCompra);
+      if (!mounted || _compraSeleccionada?.id != idCompra) return;
+      final conPendiente = lineas.where((l) => l.tienePendiente).toList();
+      final controllers = <int, TextEditingController>{
+        for (final linea in conPendiente)
+          linea.idLinea: TextEditingController(
+            text: _formatQuantity(linea.pendiente),
+          ),
+      };
+      setState(() {
+        for (final controller in _cantidadCompraControllers.values) {
+          controller.dispose();
+        }
+        _lineasPendientes = conPendiente;
+        _cantidadCompraControllers
+          ..clear()
+          ..addAll(controllers);
+        _cantidadesCompra.clear();
+        _selectedProducts = [];
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(
+          () => _errorPendiente =
+              'No se pudo cargar el pendiente de la compra: ${_mensajeError(e)}',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoadingPendiente = false);
+    }
+  }
+
+  LineaPendiente? _lineaCompraPorId(int idLinea) {
+    for (final linea in _lineasPendientes) {
+      if (linea.idLinea == idLinea) return linea;
+    }
+    return null;
+  }
+
+  /// Marca o desmarca una línea. Al marcarla precarga el pendiente como
+  /// cantidad a recibir (editable después).
+  void _toggleLineaCompra(LineaPendiente linea, bool seleccionar) {
+    setState(() {
+      if (seleccionar) {
+        var cantidad =
+            _numeroDe(_cantidadCompraControllers[linea.idLinea]?.text ?? '');
+        if (cantidad <= 0) {
+          cantidad = linea.pendiente;
+          _cantidadCompraControllers[linea.idLinea]?.text =
+              _formatQuantity(linea.pendiente);
+        }
+        _cantidadesCompra[linea.idLinea] = cantidad;
+      } else {
+        _cantidadesCompra.remove(linea.idLinea);
+      }
+      _rebuildProductosCompra();
+    });
+  }
+
+  void _setCantidadCompra(int idLinea, String texto) {
+    if (!_cantidadesCompra.containsKey(idLinea)) return;
+    setState(() {
+      _cantidadesCompra[idLinea] = _numeroDe(texto);
+      _rebuildProductosCompra();
+    });
+  }
+
+  /// Convierte las líneas marcadas en los productos que ya sabe manejar el
+  /// resto de la pantalla (totales, conversiones y envío de la recepción).
+  void _rebuildProductosCompra() {
+    final productos = <Map<String, dynamic>>[];
+    for (final entry in _cantidadesCompra.entries) {
+      final linea = _lineaCompraPorId(entry.key);
+      if (linea == null) continue;
+      productos.add(_productoDeLineaCompra(linea, entry.value));
+    }
+    _selectedProducts = productos;
+  }
+
+  Map<String, dynamic> _productoDeLineaCompra(
+    LineaPendiente linea,
+    double cantidad,
+  ) => {
+    'id': linea.idProducto,
+    'id_producto': linea.idProducto,
+    'denominacion': linea.producto,
+    'sku_producto': '',
+    'cantidad': cantidad,
+    'precio_unitario': linea.costoUnitario,
+    'moneda_precio': _selectedCurrency,
+    'precio_referencia': 0.0,
+    'descuento_porcentaje': 0.0,
+    'descuento_monto': 0.0,
+    'bonificacion_cantidad': 0.0,
+    // Solo de esta pantalla: no viajan al RPC de recepción y son la llave de
+    // `p_lineas` en el vínculo con la compra.
+    'id_compra_linea': linea.idLinea,
+    'id_compra_pendiente': linea.pendiente,
+  };
+
+  List<Map<String, dynamic>> _lineasParaVincular() => [
+    for (final entry in _cantidadesCompra.entries)
+      if (entry.value > 0)
+        {'id_compra_linea': entry.key, 'cantidad_recibida': entry.value},
+  ];
+
+  /// Líneas que superan el pendiente, en texto, para el diálogo de exceso.
+  List<String> _lineasSobrePendiente() {
+    final detalles = <String>[];
+    for (final entry in _cantidadesCompra.entries) {
+      final linea = _lineaCompraPorId(entry.key);
+      if (linea == null) continue;
+      if (entry.value > linea.pendiente + 0.0001) {
+        detalles.add(
+          '- ${linea.producto}: pendiente '
+          '${_formatQuantity(linea.pendiente)} y se intentan recibir '
+          '${_formatQuantity(entry.value)}',
+        );
+      }
+    }
+    return detalles;
+  }
+
+  Future<bool> _confirmarExcesoRecepcion(List<String> detalles) async {
+    final compra = _compraSeleccionada;
+    final confirmado = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Exceso sobre la compra'),
+        content: SingleChildScrollView(
+          child: Text(
+            'La compra #${compra?.numeroCompra ?? ''} recibiría más de lo '
+            'pendiente:\n\n${detalles.join('\n')}\n\n'
+            'El servidor acepta el exceso solo si se confirma. '
+            '¿Confirmar el exceso?',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Corregir'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Confirmar exceso'),
+          ),
+        ],
+      ),
+    );
+    return confirmado == true;
+  }
+
+  /// El vínculo falló pero la recepción ya existe: se dice tal cual y se
+  /// bloquea un segundo envío para no duplicar el inventario.
+  Future<void> _mostrarVinculoFallido(int? idOperacion, String detalle) async {
+    // -1: la recepción se registró pero sin id utilizable; igual bloquea el
+    // reenvío.
+    setState(() => _recepcionRegistradaId = idOperacion ?? -1);
+    if (!mounted) return;
+    final numeroCompra = _compraSeleccionada?.numeroCompra;
+    final referencia = idOperacion == null
+        ? 'La recepción quedó registrada'
+        : 'La recepción #$idOperacion quedó registrada';
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Recepción registrada, vínculo fallido'),
+        content: SingleChildScrollView(
+          child: Text(
+            '$referencia, pero NO se pudo vincular a la compra '
+            '#$numeroCompra.\n\n$detalle\n\n'
+            'El inventario ya se actualizó. No vuelvas a registrar la '
+            'recepción: el vínculo se corrige desde la compra.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Entendido'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _mensajeError(Object e) {
+    if (e is PostgrestException) {
+      final detalle = e.details?.toString().trim() ?? '';
+      return detalle.isEmpty ? e.message : '${e.message} ($detalle)';
+    }
+    return e.toString();
   }
 
   void _onSearchChanged() {
@@ -379,7 +722,10 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
 
   void _removeProduct(int index) {
     setState(() {
-      _selectedProducts.removeAt(index);
+      final quitado = _selectedProducts.removeAt(index);
+      // Un producto de compra se quita desmarcando su línea.
+      final idLinea = (quitado['id_compra_linea'] as num?)?.toInt();
+      if (idLinea != null) _cantidadesCompra.remove(idLinea);
     });
   }
 
@@ -402,6 +748,19 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   }
 
   Future<void> _submitReception() async {
+    // Si la recepción ya se registró y solo falló el vínculo con la compra, no
+    // se vuelve a enviar: duplicaría el inventario.
+    if (_recepcionRegistradaId != null) {
+      final id = _recepcionRegistradaId!;
+      _showError(
+        id > 0
+            ? 'La recepción #$id ya quedó registrada; no se vuelve a enviar. '
+                  'El vínculo con la compra se corrige desde la compra.'
+            : 'La recepción ya quedó registrada; no se vuelve a enviar. '
+                  'El vínculo con la compra se corrige desde la compra.',
+      );
+      return;
+    }
     // Validaciones mejoradas
     if (!_formKey.currentState!.validate()) {
       _showError('Complete todos los campos requeridos');
@@ -453,6 +812,39 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
       final error = FdiFuenteRecepcion.validar(_fuentesFondo, _montoRecepcion, _selectedCurrency);
       if (error != null) { _showError(error); return; }
     }
+    // Recepción contra compra: nada de productos ajenos, y el exceso se
+    // confirma ANTES de registrar la recepción para no dejarla a medias.
+    if (_conCompra) {
+      if (_usarFondo) {
+        _showError(
+          'Una recepción se financia con el fondo o viene de una compra ya '
+          'pagada, no ambas. Desactive una de las dos.',
+        );
+        return;
+      }
+      if (_lineasParaVincular().isEmpty) {
+        _showError('Seleccione al menos una línea de la compra');
+        return;
+      }
+      if (_pctImportadora < 0 || _pctImportadora > 100) {
+        _showError('El % de importadora debe estar entre 0 y 100');
+        return;
+      }
+      if (_reembolsoImportadora < 0) {
+        _showError('El reembolso no puede ser negativo');
+        return;
+      }
+      if (_cargoImportadora < 0) {
+        _showError('El reembolso supera el cargo de importadora');
+        return;
+      }
+      final excesos = _lineasSobrePendiente();
+      if (excesos.isNotEmpty) {
+        final confirmado = await _confirmarExcesoRecepcion(excesos);
+        if (!confirmado) return;
+      }
+      _confirmarExcesoCompra = excesos.isNotEmpty;
+    }
     setState(() => _isLoading = true);
 
     try {
@@ -474,6 +866,10 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
             productWithLocation['id'] != null) {
           productWithLocation['id_producto'] = productWithLocation['id'];
         }
+
+        // Claves solo de esta pantalla (compra): no viajan al RPC de recepción.
+        productWithLocation.remove('id_compra_linea');
+        productWithLocation.remove('id_compra_pendiente');
 
         if (_selectedLocation != null) {
           // Remove prefix ('z' for zones, 'w' for warehouses) before parsing as int
@@ -565,16 +961,62 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
 
       if (mounted) {
         if (result['status'] == 'success') {
+          final idOperacion = (result['id_operacion'] as num?)?.toInt();
+          String? mensajeCompra;
+
+          // ── Vínculo con la compra (solo si se eligió una) ────────────────
+          // La recepción ya existe: si el vínculo falla NO se finge éxito ni
+          // se vuelve a registrar; se dice que la recepción quedó creada.
+          if (_conCompra) {
+            if (idOperacion == null) {
+              await _mostrarVinculoFallido(
+                null,
+                'La RPC no devolvió id_operacion, así que no hay a qué '
+                'vincular la recepción.',
+              );
+              return;
+            }
+            final compra = _compraSeleccionada!;
+            try {
+              final vinculo = await CompraService().vincularRecepcion(
+                idOperacion: idOperacion,
+                idCompra: compra.id,
+                lineas: _lineasParaVincular(),
+                confirmarExceso: _confirmarExcesoCompra,
+                pctImportadora: _pctImportadora,
+                baseImportadora: _baseImportadora,
+                reembolsoImportadora: _reembolsoImportadora,
+                origenPago: _origenPagoImportadora.codigo,
+              );
+              if (vinculo['status'] != 'ok') {
+                await _mostrarVinculoFallido(
+                  idOperacion,
+                  '${vinculo['message'] ?? vinculo}',
+                );
+                return;
+              }
+              mensajeCompra =
+                  'vinculada a la compra #${compra.numeroCompra} '
+                  '(estado: ${vinculo['estado'] ?? '?'})';
+            } catch (e) {
+              await _mostrarVinculoFallido(idOperacion, _mensajeError(e));
+              return;
+            }
+          }
+
           // Save the values for future use before showing success message
           _savePersistedValues();
 
           // Capturar referencia al ScaffoldMessenger antes de pop
+          if (!mounted) return;
           final messenger = ScaffoldMessenger.of(context);
           Navigator.pop(context);
           messenger.showSnackBar(
             SnackBar(
               content: Text(
-                'Recepción registrada exitosamente. ID: ${result['id_operacion']}',
+                mensajeCompra == null
+                    ? 'Recepción registrada exitosamente. ID: $idOperacion'
+                    : 'Recepción registrada. ID: $idOperacion · $mensajeCompra',
               ),
               backgroundColor: AppColors.success,
             ),
@@ -629,6 +1071,8 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    _buildCompraSection(),
+                    const SizedBox(height: 24),
                     _buildReceptionInfoSection(),
                     const SizedBox(height: 24),
                     _buildLocationSelectionSection(),
@@ -644,6 +1088,359 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildCompraSection() {
+    final compra = _compraSeleccionada;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Compra (opcional)',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Sin compra la recepción funciona como siempre. Con compra solo '
+              'se pueden recibir sus líneas pendientes y se registra el '
+              'vínculo al guardar.',
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 12),
+            if (_isLoadingCompras)
+              const LinearProgressIndicator()
+            else if (_errorCompras != null)
+              TextButton(
+                onPressed: _loadCompras,
+                child: Text('$_errorCompras · Reintentar'),
+              )
+            else
+              DropdownButtonFormField<int?>(
+                // La clave por id evita peleas de identidad con la lista.
+                key: ValueKey('compra_${compra?.id}'),
+                initialValue: compra?.id,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  labelText: 'Compra',
+                  border: const OutlineInputBorder(),
+                  helperText: _usarFondo
+                      ? 'Desactive "Financiar con fondo de inversión" para '
+                            'elegir una compra'
+                      : 'Sin compra = recepción normal, como siempre',
+                ),
+                items: [
+                  const DropdownMenuItem<int?>(
+                    value: null,
+                    child: Text('Sin compra'),
+                  ),
+                  ..._comprasRecepcion.map(
+                    (c) => DropdownMenuItem<int?>(
+                      value: c.id,
+                      child: Text(
+                        '#${c.numeroCompra} · ${c.proveedor} · '
+                        '${c.numeroFactura?.trim().isNotEmpty == true ? c.numeroFactura : "sin factura"} · '
+                        '${c.totalMercancia.toStringAsFixed(2)} ${c.monedaTotal}',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                ],
+                onChanged:
+                    (_isLoading || _usarFondo || _recepcionRegistradaId != null)
+                    ? null
+                    : (idCompra) => _seleccionarCompra(_compraPorId(idCompra)),
+              ),
+            if (!_isLoadingCompras &&
+                _errorCompras == null &&
+                _comprasRecepcion.isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text(
+                  'No hay compras reservadas, pagadas ni con entrega parcial.',
+                  style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                ),
+              ),
+            if (compra != null) ...[
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '#${compra.numeroCompra} · ${compra.proveedor}',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  Chip(
+                    label: Text(compra.estadoLegible),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ],
+              ),
+              Text(
+                'Factura: ${compra.numeroFactura ?? '—'} · '
+                'Total mercancía: '
+                '${compra.totalMercancia.toStringAsFixed(2)} '
+                '${compra.monedaTotal}',
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 16),
+              _buildCargoImportadoraBlock(),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Cargo de importadora que se guarda con el vínculo. La RPC calcula
+  /// `base × % / 100 − reembolso`; aquí se muestra en vivo el mismo número.
+  Widget _buildCargoImportadoraBlock() {
+    final cargo = _cargoImportadora;
+    final negativo = cargo < 0;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Cargo de importadora',
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Se guarda con el vínculo: base × % / 100 − reembolso.',
+          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: TextFormField(
+                controller: _pctImportadoraController,
+                decoration: const InputDecoration(
+                  labelText: '% importadora',
+                  border: OutlineInputBorder(),
+                  suffixText: '%',
+                  isDense: true,
+                ),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextFormField(
+                controller: _baseImportadoraController,
+                decoration: const InputDecoration(
+                  labelText: 'Base',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: TextFormField(
+                controller: _reembolsoImportadoraController,
+                decoration: const InputDecoration(
+                  labelText: 'Reembolso',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: DropdownButtonFormField<OrigenPagoAjuste>(
+                key: ValueKey('origen_${_origenPagoImportadora.codigo}'),
+                initialValue: _origenPagoImportadora,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Origen de pago',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                items: [
+                  for (final origen in OrigenPagoAjuste.values)
+                    DropdownMenuItem(
+                      value: origen,
+                      child: Text(
+                        origen.etiqueta,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: (valor) => setState(
+                  () => _origenPagoImportadora =
+                      valor ?? OrigenPagoAjuste.walletImportadora,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: (negativo ? AppColors.error : AppColors.primary).withValues(
+              alpha: 0.08,
+            ),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            'Cargo calculado: ${cargo.toStringAsFixed(2)} '
+            '${_compraSeleccionada?.monedaTotal ?? ''}',
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: negativo ? AppColors.error : AppColors.primary,
+            ),
+          ),
+        ),
+        if (negativo)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              'El reembolso supera el cargo: la RPC rechazaría el vínculo.',
+              style: TextStyle(fontSize: 11, color: AppColors.error),
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// Selector de productos cuando hay compra: solo líneas con pendiente > 0.
+  Widget _buildCompraLineasPicker() {
+    final compra = _compraSeleccionada!;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Productos de la compra',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Solo las líneas con pendiente de la compra '
+              '#${compra.numeroCompra}. La cantidad viene precargada con el '
+              'pendiente y se puede bajar; si la sube se pedirá confirmar el '
+              'exceso.',
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 12),
+            if (_isLoadingPendiente)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (_errorPendiente != null)
+              TextButton(
+                onPressed: () => _cargarPendiente(compra.id),
+                child: Text('$_errorPendiente · Reintentar'),
+              )
+            else if (_lineasPendientes.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text('Esta compra no tiene líneas pendientes por recibir.'),
+              )
+            else
+              ..._lineasPendientes.map(_buildLineaCompraRow),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLineaCompraRow(LineaPendiente linea) {
+    final seleccionada = _cantidadesCompra.containsKey(linea.idLinea);
+    final cantidad = _cantidadesCompra[linea.idLinea] ?? linea.pendiente;
+    final excede = seleccionada && cantidad > linea.pendiente + 0.0001;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Checkbox(
+              value: seleccionada,
+              onChanged: _isLoading
+                  ? null
+                  : (valor) => _toggleLineaCompra(linea, valor ?? false),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      linea.producto,
+                      style: const TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                    Text(
+                      'Comprado ${_formatQuantity(linea.cantidad)} · '
+                      'recibido ${_formatQuantity(linea.recibido)} · '
+                      'pendiente ${_formatQuantity(linea.pendiente)} · '
+                      'costo ${linea.costoUnitario.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 96,
+              child: TextField(
+                controller: _cantidadCompraControllers[linea.idLinea],
+                enabled: seleccionada && !_isLoading,
+                decoration: const InputDecoration(
+                  labelText: 'A recibir',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                onChanged: (texto) => _setCantidadCompra(linea.idLinea, texto),
+              ),
+            ),
+          ],
+        ),
+        if (excede)
+          Padding(
+            padding: const EdgeInsets.only(left: 40, bottom: 4),
+            child: Text(
+              'Excede el pendiente: se pedirá confirmación al registrar',
+              style: TextStyle(fontSize: 11, color: AppColors.warning),
+            ),
+          ),
+        const Divider(height: 8),
+      ],
     );
   }
 
@@ -731,9 +1528,15 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Financiar con fondo de inversión'),
-                subtitle: const Text('Descontar de una o varias cuentas y registrar el uso con esta recepción.'),
+                subtitle: Text(
+                  _conCompra
+                      ? 'No disponible con compra: una recepción se financia '
+                            'con el fondo o viene de una compra ya pagada, no '
+                            'ambas. Quite la compra para financiar.'
+                      : 'Descontar de una o varias cuentas y registrar el uso con esta recepción.',
+                ),
                 value: _usarFondo,
-                onChanged: _isLoading ? null : (value) => setState(() {
+                onChanged: (_isLoading || _conCompra) ? null : (value) => setState(() {
                   _usarFondo = value;
                   _selectedInversion = null;
                   _fuentesFondo = [];
@@ -747,7 +1550,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                 ),
             ],
             // Vínculo opcional con una inversión abierta del fondo
-            if (!_usarFondo && _inversionesAbiertas.isNotEmpty) ...[
+            if (!_usarFondo && !_conCompra && _inversionesAbiertas.isNotEmpty) ...[
               const SizedBox(height: 12),
               DropdownButtonFormField<FdiInversion>(
                 initialValue: _selectedInversion,
@@ -830,6 +1633,9 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   }
 
   Widget _buildProductSelectionSection() {
+    // Con compra no hay selector libre: el producto tiene que ser una línea de
+    // la compra, así que se sustituye por su propio selector.
+    if (_conCompra) return _buildCompraLineasPicker();
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -970,6 +1776,15 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                           _buildPriceDisplay(item),
                           style: TextStyle(fontWeight: FontWeight.w500),
                         ),
+                        if (item['id_compra_pendiente'] != null)
+                          Text(
+                            'Pendiente de la compra: '
+                            '${_formatQuantity((item['id_compra_pendiente'] as num).toDouble())}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
                         if ((item['codigo_lote'] as String?)
                                 ?.trim()
                                 .isNotEmpty ==
