@@ -674,6 +674,39 @@ class _AdminDrawerState extends State<AdminDrawer> {
                   },
                 ),
 
+                // Reportes del fondo y de compras (solo gerente): conciliación,
+                // caja, costo y cambiario, movimientos, inversores y pendientes.
+                FutureBuilder<bool>(
+                  future: NavigationGuard.canNavigate(
+                    '/reportes',
+                    context,
+                    showDialog: false,
+                  ),
+                  builder: (context, snapshot) {
+                    if (snapshot.data == true) {
+                      return Column(
+                        children: [
+                          _buildDrawerItem(
+                            context,
+                            icon: Icons.insights_outlined,
+                            title: 'Reportes',
+                            subtitle: 'Conciliación, costo y pendientes',
+                            onTap: () {
+                              Navigator.pop(context);
+                              NavigationGuard.navigateWithPermission(
+                                context,
+                                '/reportes',
+                              );
+                            },
+                          ),
+                          const Divider(height: 1),
+                        ],
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  },
+                ),
+
                 // Notificación a Clientes — Difusión WhatsApp.
                 // Visible para todos los clientes; el acceso real se valida
                 // dentro de la pantalla contra la licencia WAPI específica.

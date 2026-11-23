@@ -55,6 +55,7 @@ import 'screens/consignacion_screen.dart';
 import 'screens/cuentas_por_cobrar_screen.dart';
 import 'screens/fondo_inversion_screen.dart';
 import 'screens/compras/compras_list_screen.dart';
+import 'screens/reportes/reportes_screen.dart';
 import 'screens/wapi_notifications_screen.dart';
 import 'screens/interacciones_clientes_screen.dart';
 import 'screens/precios_productos_screen.dart';
@@ -277,6 +278,7 @@ class MyApp extends StatelessWidget {
         '/cuentas-por-cobrar': (context) => const CuentasPorCobrarScreen(),
         '/fondo-inversion': (context) => const FondoInversionScreen(),
         '/compras': (context) => const ComprasListScreen(),
+        '/reportes': (context) => const ReportesScreen(),
         '/wapi-notifications': (context) => const WapiNotificationsScreen(),
         '/wifi-printers': (context) => const WiFiPrintersScreen(),
         '/interacciones-clientes': (context) => const InteraccionesClientesScreen(),
