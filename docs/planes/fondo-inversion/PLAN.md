@@ -116,7 +116,7 @@ combinada de cambio de estado.
 | 3. Compra como documento | **done** — esquema, RPC, UI, verify 13/13 y E2E del dueño aprobado |
 | 4. Reserva y liquidación (carril A, solo `al_pagar`) | **done** — backend, UI, verify 19/19 y E2E del dueño aprobado |
 | 5. Recepción: carril A y carril B | **done** — recepción contra compra, carril B cerrado, verify 21/21 y E2E del dueño aprobado |
-| 6. Costo aterrizado sobre el módulo existente | **en curso** — 6a/6b/6c aplicados; `verify/06` **23/23** y pruebas de dinero **18/18**. El aterrizaje se dispara al vincular, el desvío y el remanente se ven en el detalle y el catálogo quedó bajo superadmin. Faltan: ajustes `por_financiar` con reserva y pago propios, reversión de costo al cancelar y el E2E del dueño |
+| 6. Costo aterrizado sobre el módulo existente | **en curso** — 6a/6b/6c/6d aplicados; `verify/06` **26/26**, pruebas de dinero **23/23 + 14/14**. El aterrizaje se dispara al vincular, el desvío y el remanente se ven en el detalle, el catálogo está bajo superadmin, el costo se revierte al cancelar y el ajuste tardío tiene reserva y pago propios. Faltan: la captura de adicionales por línea en la tabla de recepción y el E2E del dueño |
 | 7. Inversores aportantes (100%) | not started |
 | 8. Reportes, conciliación en UI y cierre | not started |
 | 9. Pendientes, recordatorios y registro de faltantes | not started |
@@ -370,16 +370,44 @@ Current phase: 6 · Recommended next: 6 (cerrar los ítems de la fase antes de l
   · **Stitch.** `RECEPCIÓN — importadora y adicionales` (`8e5451984ac841128b005ab0ebb6e831`) y
     `CONFIG — costos adicionales` (`d810b6b7ab4e46cfb22b28f2f4a01d6f`), proyecto `4232822798385486487`;
     capturas en `docs/design/compras-recepcion-aterrizaje.png` y `docs/design/compras-costos-adicionales.png`.
-- **Fase 6 · dos ítems que necesitan decisión del dueño (no se inventan).**
-  1. **Reversión de costo al cancelar la recepción.** Borrar filas de costo cambia la valoración y el
-     `precio_promedio` ya ponderado no se recalcula. Dos caminos: (a) borrar las filas del vínculo y dejar
-     el importe en el historial de la compra; (b) marcarlas con una reversa que `_v2` excluya. El (a) es
-     simple y auditable pero pierde el detalle; el (b) conserva todo y obliga a tocar `_v2` (función que
-     el pase promueve desde `newa`).
-  2. **Ajustes `por_financiar`.** Requieren su propia reserva y pago (fase 4) y un documento de ajuste;
-     el resumen ya dice cuánto se aplica y cuánto falta, pero persistirlos es un flujo de dinero aparte.
+- **Fase 6 · dos decisiones del dueño, tomadas el 2026-11-23 e implementadas en 6c/6d.**
+  1. **Reversión de costo al cancelar la recepción: se marca, no se borra** (opción b). Las filas de costo
+     conservan importe y tipo y se marcan con fecha, usuario, motivo y la fila de estado que lo provocó; el
+     trigger cubre los estados 3 y 4, `_v2` las excluye, `costo_real` vuelve al de factura y el historial
+     de la compra recibe el documento con filas e importe. Límite declarado: `precio_promedio` ya ponderado
+     **no** se reconstruye (sería un recosteo completo del producto).
+  2. **Ajustes `por_financiar`:** se implementaron con la maquinaria de la fase 4. `total_financiado` se
+     congela fuera de `creada`; el ajuste nace `por_financiar`, se financia con su propia reserva y pago
+     (`id_ajuste` en reserva, pago y costo) y el costo se reparte sobre lo recibido. Límites: solo con la
+     compra **completada** y solo `origen_pago = 'fondo'`; la valoración suma `monto/unidades` al
+     `precio_promedio` y no reexpresa el COGS de lo ya vendido.
   También queda la captura de adicionales por línea en la tabla de la recepción: hoy se capturan en el
   diálogo del producto y viajan en la transacción, sin chips por línea en la pantalla.
+- **Fase 6d · reversa al cancelar y ajuste tardío aplicados en `newa` (2026-11-23).**
+  · **Reversa (06c).** Columnas `revertido_at`, `revertido_por`, `motivo_reversa`, `id_estado_reversa`
+    (FK a la fila de estado que la provocó), CHECK de motivo e índice parcial de filas vigentes. Trigger
+    `AFTER INSERT` sobre `app_dat_estado_operacion` con `WHEN (NEW.estado IN (3,4))` → marca las filas del
+    vínculo (las sin atribuir solo si la operación tiene un vínculo), devuelve `costo_real` al de factura
+    y deja el documento en `fdi_hist_estado_compra`. `_v2` se parchea **a partir de su definición viva**
+    con dos anclas exactas y aborta si el cuerpo no coincide (así una función de 200 líneas no se
+    reescribe a mano); el resumen ignora las revertidas y expone `filas_revertidas` y `estado_operacion`.
+    En la UI, un icono de revertida y el botón «Aterrizar cargo» desaparece en recepciones canceladas.
+  · **Ajuste tardío (06d).** `total_financiado` se congela al salir de `creada`. `fn_fdi_compra_ajuste_agregar`
+    crea el ajuste `por_financiar` (solo compra pagada/parcial/completa, origen fondo);
+    `fn_fdi_compra_ajuste_financiar` valida saldos, crea **su propia reserva y pago** (`id_ajuste` en
+    reserva, pago y fila de costo), mueve el ledger con `pago_compra`, reparte por valor sobre lo recibido
+    con el residuo a la línea de mayor base, suma al `precio_promedio` el costo unitario del ajuste y deja
+    el documento en el historial. Puertas declaradas: compra **completada** y solo `origen_pago = 'fondo'`.
+    UI: «Agregar costo posterior» y «Financiar ahora» (una fuente de la misma moneda, sin conversión).
+  · **Verificación.** `verify/06` **26/26** (n=24..26 de 06d); `verify/06c_pruebas_aterrizaje.sql` **23/23**
+    (reversa incluida: 0 vigentes / 2 revertidas, costos 0, `costo_real` 20, documento e idempotencia);
+    `verify/06d_pruebas_ajuste.sql` **14/14** (1.000 de financiado inmutable, 100 pagados, saldo −100,
+    movimiento, reserva y pago propios, costo 100 en 1 fila, `precio_promedio` +1 y reintento
+    `duplicada`). Los rollbacks de 06c y 06d se ejecutaron enteros con `COMMIT`→`ROLLBACK` y sus checks
+    bajan a `false`.
+  · **Nota para el pase.** El cuerpo de `_v2` en `newa` ya trae `revertido_at IS NULL`; el pase debe
+    promover ese cuerpo, no el de Main. `fn_fdi_compra_recalcular` también cambió (congelamiento), y es
+    una función que Main ya tiene: el pase la lleva con su cuerpo nuevo.
 
 ---
 
@@ -965,11 +993,11 @@ reversión al cancelar y el desvío visible. En Main no existe (fase 0b).
 - [x] Catálogo sembrado (06a)
 - [x] `origen_pago` y campos de importadora **en el vínculo** (05a; desviación documentada)
 - [x] Reparto por valor del cargo (06b) y remanente por asignar visible (06c)
-- [ ] Ajustes `por_financiar` con reserva y pago propios
+- [x] Ajustes `por_financiar` con reserva y pago propios (06d)
 - [x] Persistido dentro de la transacción (06b)
 - [ ] `costo_real` suma adicionales (la fórmula de `_v2` ya suma; falta el E2E con stock)
 - [x] `_v3` borrada (06c)
-- [ ] Reversión de costo al cancelar (**decisión pendiente del dueño**)
+- [x] Reversión de costo al cancelar (06c: se marca, no se borra)
 - [x] `id_compra` + `moneda` en facturas (06a)
 - [x] Desvío visible (06c: panel en el detalle de la compra)
 
@@ -1135,7 +1163,8 @@ reversión al cancelar y el desvío visible. En Main no existe (fase 0b).
 | X7 moneda texto libre | 1 parcial | no cubierto en lo viejo |
 | X8 libro de importadora sin moneda | 6 | cubierto |
 | X9 tasa del cliente | 2 | cubierto |
-| X10 cancelar recepción no revierte costo | 6 | **pendiente**: la reversión de costo al cancelar sigue sin documento de reversa; el reparto sí es idempotente y no borra lo ajeno (D10) |
+| X10 cancelar recepción no revierte costo | 6 | cubierto (06c: se marca, `_v2` excluye, `costo_real` vuelve al de factura y hay documento). **Límite:** `precio_promedio` ya ponderado no se reconstruye |
+| Costo tardío revaloriza el inventario | 6 | 06d suma `monto/unidades` al `precio_promedio`; el COGS de lo vendido no se reexpresa (declarado) |
 | X11 ajuste como válvula | 2 | cubierto |
 | 30.038 `costo_real` NULL en Main | 0b | cubierto vía pase + backfill |
 | `app_cont_tipo_costo` vacío | 6 | cubierto al sembrarlo |

@@ -6,6 +6,11 @@
 -- REQUIERE: 06a y 06b aplicados.
 --
 -- Qué añade:
+--   0. **Reversa del costo al cancelar/devolver una recepción** (decisión del
+--      dueño): columnas de reversa en `app_dat_recepcion_producto_costo`,
+--      trigger sobre `app_dat_estado_operacion` (estados 3 y 4),
+--      `fn_fdi_recepcion_revertir_costo` y `_v2` excluyendo las filas
+--      revertidas. Marca, no borra: el importe y el tipo se conservan.
 --   1. `fn_fdi_compra_costo_resumen(bigint)` — STABLE, JSON. Una sola fuente
 --      para lo que la UI necesita del costo aterrizado de una compra:
 --        · valor de factura vinculado y cargo de importadora aplicado;
@@ -83,7 +88,197 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------------
--- 1) Resumen del costo aterrizado de una compra (solo lectura)
+-- 1a) Reversa del costo al cancelar (o devolver) una recepción
+--
+--     Decisión del dueño (2026-11-21): **marcar**, no borrar. Las filas de
+--     costo conservan su importe y su tipo; se marcan como revertidas con la
+--     fecha, el usuario, el motivo y la fila de estado que lo provocó. Con eso:
+--       · `_v2` no vuelve a capitalizarlas (se parchea abajo),
+--       · el resumen de la compra las ignora y el costo aterrizado de la línea
+--         vuelve al de factura (`costo_real`),
+--       · queda el documento: la fila de `app_dat_estado_operacion` que dispara
+--         el trigger y una entrada en `fdi_hist_estado_compra` por compra con
+--         filas e importe revertidos.
+--
+--     LÍMITE CONOCIDO (documentado, no oculto): `precio_promedio` ya ponderado
+--     NO se reconstruye. Deshacer una ponderación exigiría recalcular el costo
+--     del producto desde sus recepciones vivas, que es un recosteo completo y
+--     no forma parte de esta fase.
+-- ---------------------------------------------------------------------------
+ALTER TABLE public.app_dat_recepcion_producto_costo
+    ADD COLUMN IF NOT EXISTS revertido_at      timestamptz,
+    ADD COLUMN IF NOT EXISTS revertido_por     uuid,
+    ADD COLUMN IF NOT EXISTS motivo_reversa    text,
+    ADD COLUMN IF NOT EXISTS id_estado_reversa bigint
+        REFERENCES public.app_dat_estado_operacion(id);
+
+ALTER TABLE public.app_dat_recepcion_producto_costo
+    DROP CONSTRAINT IF EXISTS chk_recepcion_costo_reversa_motivo;
+ALTER TABLE public.app_dat_recepcion_producto_costo
+    ADD CONSTRAINT chk_recepcion_costo_reversa_motivo
+    CHECK (revertido_at IS NULL OR motivo_reversa IS NOT NULL);
+
+CREATE INDEX IF NOT EXISTS idx_recepcion_producto_costo_vigente
+    ON public.app_dat_recepcion_producto_costo (id_recepcion_producto)
+    WHERE revertido_at IS NULL;
+
+CREATE OR REPLACE FUNCTION public.fn_fdi_recepcion_revertir_costo(
+    p_id_operacion bigint,
+    p_id_estado    bigint,
+    p_uuid         uuid,
+    p_motivo       text
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_links  integer;
+    v_filas  integer;
+    v_lineas integer;
+    v_monto  numeric;
+    v_motivo text := COALESCE(NULLIF(btrim(p_motivo), ''), 'Cancelación de la recepción');
+    v_r      record;
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM public.app_dat_operacion_recepcion
+                    WHERE id_operacion = p_id_operacion) THEN
+        RETURN jsonb_build_object('status', 'no_aplica', 'motivo', 'no_es_recepcion');
+    END IF;
+
+    SELECT count(*) INTO v_links
+      FROM public.fdi_dat_compra_recepcion
+     WHERE id_operacion = p_id_operacion;
+
+    IF v_links = 0 THEN
+        RETURN jsonb_build_object('status', 'no_aplica', 'motivo', 'sin_vinculo');
+    END IF;
+
+    SELECT count(*), count(DISTINCT c.id_recepcion_producto), COALESCE(sum(c.monto_usd), 0)
+      INTO v_filas, v_lineas, v_monto
+      FROM public.app_dat_recepcion_producto_costo c
+     WHERE c.revertido_at IS NULL
+       AND c.id_recepcion_producto IN (
+           SELECT rp.id FROM public.app_dat_recepcion_productos rp
+            WHERE rp.id_operacion = p_id_operacion)
+       AND (c.id_compra_recepcion IN (
+                SELECT r.id FROM public.fdi_dat_compra_recepcion r
+                 WHERE r.id_operacion = p_id_operacion)
+            OR (c.id_compra_recepcion IS NULL AND v_links = 1));
+
+    IF v_filas = 0 THEN
+        RETURN jsonb_build_object('status', 'no_aplica', 'motivo', 'sin_costos');
+    END IF;
+
+    UPDATE public.app_dat_recepcion_producto_costo c
+       SET revertido_at      = now(),
+           revertido_por     = p_uuid,
+           motivo_reversa    = v_motivo,
+           id_estado_reversa = p_id_estado
+     WHERE c.revertido_at IS NULL
+       AND c.id_recepcion_producto IN (
+           SELECT rp.id FROM public.app_dat_recepcion_productos rp
+            WHERE rp.id_operacion = p_id_operacion)
+       AND (c.id_compra_recepcion IN (
+                SELECT r.id FROM public.fdi_dat_compra_recepcion r
+                 WHERE r.id_operacion = p_id_operacion)
+            OR (c.id_compra_recepcion IS NULL AND v_links = 1));
+
+    -- El costo aplicado de la línea vuelve al de factura: el aterrizaje ya no
+    -- cuenta para esa recepción. Misma fórmula que el trigger NULL-safe.
+    UPDATE public.app_dat_recepcion_productos rp
+       SET costo_real = (COALESCE(rp.precio_unitario, 0) - COALESCE(rp.descuento_monto, 0))
+                        - (COALESCE(rp.precio_referencia, 0) * COALESCE(rp.descuento_porcentaje, 0) / 100)
+     WHERE rp.id IN (
+         SELECT c.id_recepcion_producto
+           FROM public.app_dat_recepcion_producto_costo c
+          WHERE c.id_estado_reversa = p_id_estado);
+
+    FOR v_r IN
+        SELECT DISTINCT r.id_compra, r.id_tienda
+          FROM public.fdi_dat_compra_recepcion r
+         WHERE r.id_operacion = p_id_operacion
+    LOOP
+        INSERT INTO public.fdi_hist_estado_compra
+            (id_compra, id_tienda, estado_anterior, estado_nuevo, origen, motivo, created_by)
+        SELECT v_r.id_compra, v_r.id_tienda, c.estado, c.estado, 'automatico',
+               format('Reversión de costo por cancelación de la recepción %s: %s fila(s), %s USD',
+                      p_id_operacion, v_filas, v_monto),
+               p_uuid
+          FROM public.fdi_dat_compra c
+         WHERE c.id = v_r.id_compra;
+    END LOOP;
+
+    RETURN jsonb_build_object(
+        'status', 'ok',
+        'id_operacion', p_id_operacion,
+        'filas', v_filas,
+        'lineas', v_lineas,
+        'monto_usd', v_monto);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.fn_fdi_recepcion_revertir_costo(bigint, bigint, uuid, text)
+    FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_fdi_recepcion_revertir_costo(bigint, bigint, uuid, text)
+    TO service_role;
+
+CREATE OR REPLACE FUNCTION public.trg_fdi_estado_revertir_costo()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    PERFORM public.fn_fdi_recepcion_revertir_costo(
+        NEW.id_operacion,
+        NEW.id,
+        NEW.uuid,
+        COALESCE(NULLIF(btrim(NEW.comentario), ''),
+                 format('Cancelación de la recepción %s (estado %s)', NEW.id_operacion, NEW.estado)));
+    RETURN NEW;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.trg_fdi_estado_revertir_costo() FROM PUBLIC, anon, authenticated;
+
+DROP TRIGGER IF EXISTS trg_fdi_estado_revertir_costo ON public.app_dat_estado_operacion;
+CREATE TRIGGER trg_fdi_estado_revertir_costo
+    AFTER INSERT ON public.app_dat_estado_operacion
+    FOR EACH ROW
+    WHEN (NEW.estado IN (3, 4))
+    EXECUTE FUNCTION public.trg_fdi_estado_revertir_costo();
+
+-- `_v2` deja de leer las filas revertidas. Se reescribe la función a partir de
+-- su definición viva con dos anclas exactas y se aborta si el cuerpo no es el
+-- esperado; así no se reescribe a mano una función de 200 líneas.
+DO $$
+DECLARE
+    v_def text;
+    v_new text;
+    v_n   integer;
+BEGIN
+    SELECT pg_get_functiondef('public.fn_actualizar_precio_promedio_recepcion_v2(bigint,jsonb)'::regprocedure)
+      INTO v_def;
+
+    v_new := replace(v_def,
+        'rpc.id_recepcion_producto = v_id_rp;',
+        'rpc.id_recepcion_producto = v_id_rp AND rpc.revertido_at IS NULL;');
+    v_new := regexp_replace(v_new,
+        '(x\.id_recepcion_producto = v_id_rp\s+AND x\.id_tipo_costo = v_costo\.id_tipo_costo)',
+        '\1 AND x.revertido_at IS NULL', 'g');
+
+    SELECT count(*) INTO v_n FROM regexp_matches(v_new, 'revertido_at IS NULL', 'g');
+    IF v_n <> 2 THEN
+        RAISE EXCEPTION '06c: no se pudo parchear _v2 para excluir las filas revertidas (anclas encontradas: %). Revise el cuerpo de fn_actualizar_precio_promedio_recepcion_v2.', v_n;
+    END IF;
+
+    EXECUTE v_new;
+END;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 1b) Resumen del costo aterrizado de una compra (solo lectura)
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.fn_fdi_compra_costo_resumen(p_id_compra bigint)
 RETURNS jsonb
@@ -170,7 +365,17 @@ BEGIN
                'confirmada_con_exceso', r.confirmada_con_exceso,
                'filas_costo', (SELECT count(*)
                                  FROM public.app_dat_recepcion_producto_costo c
-                                WHERE c.id_compra_recepcion = r.id)
+                                WHERE c.id_compra_recepcion = r.id
+                                  AND c.revertido_at IS NULL),
+               'filas_revertidas', (SELECT count(*)
+                                      FROM public.app_dat_recepcion_producto_costo c
+                                     WHERE c.id_compra_recepcion = r.id
+                                       AND c.revertido_at IS NOT NULL),
+               'estado_operacion', (SELECT e.estado
+                                      FROM public.app_dat_estado_operacion e
+                                     WHERE e.id_operacion = r.id_operacion
+                                     ORDER BY e.id DESC
+                                     LIMIT 1)
            ) ORDER BY r.id), '[]'::jsonb)
       INTO v_vinculos
       FROM public.fdi_dat_compra_recepcion r
@@ -213,6 +418,7 @@ BEGIN
                     SELECT sum(c.monto_usd) AS total
                       FROM public.app_dat_recepcion_producto_costo c
                      WHERE c.id_recepcion_producto = rp.id
+                       AND c.revertido_at IS NULL
                        AND (c.id_compra_recepcion IN (
                                 SELECT r3.id FROM public.fdi_dat_compra_recepcion r3
                                  WHERE r3.id_compra = p_id_compra)
@@ -499,6 +705,48 @@ BEGIN
         RAISE EXCEPTION '06c: se esperaba exactamente 1 política de lectura en el catálogo, hay %', v;
     END IF;
 
+    -- Reversa: columnas, CHECK, índice, función y trigger.
+    SELECT count(*) INTO v FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'app_dat_recepcion_producto_costo'
+       AND column_name IN ('revertido_at','revertido_por','motivo_reversa','id_estado_reversa');
+    IF v <> 4 THEN
+        RAISE EXCEPTION '06c: faltan columnas de reversa en el costo (% de 4)', v;
+    END IF;
+
+    SELECT count(*) INTO v FROM pg_constraint
+     WHERE conrelid = 'public.app_dat_recepcion_producto_costo'::regclass
+       AND conname = 'chk_recepcion_costo_reversa_motivo';
+    IF v <> 1 THEN
+        RAISE EXCEPTION '06c: falta el CHECK de motivo de reversa';
+    END IF;
+
+    SELECT count(*) INTO v FROM pg_indexes
+     WHERE schemaname = 'public' AND tablename = 'app_dat_recepcion_producto_costo'
+       AND indexname = 'idx_recepcion_producto_costo_vigente';
+    IF v <> 1 THEN
+        RAISE EXCEPTION '06c: falta el índice de filas vigentes';
+    END IF;
+
+    IF to_regprocedure('public.fn_fdi_recepcion_revertir_costo(bigint,bigint,uuid,text)') IS NULL THEN
+        RAISE EXCEPTION '06c: falta fn_fdi_recepcion_revertir_costo(...)';
+    END IF;
+
+    SELECT count(*) INTO v FROM pg_trigger
+     WHERE tgrelid = 'public.app_dat_estado_operacion'::regclass
+       AND tgname = 'trg_fdi_estado_revertir_costo'
+       AND NOT tgisinternal;
+    IF v <> 1 THEN
+        RAISE EXCEPTION '06c: falta el trigger de reversa en app_dat_estado_operacion';
+    END IF;
+
+    -- `_v2` excluye las filas revertidas (dos anclas).
+    SELECT count(*) INTO v FROM pg_proc p
+     WHERE p.oid = 'public.fn_actualizar_precio_promedio_recepcion_v2(bigint,jsonb)'::regprocedure
+       AND (SELECT count(*) FROM regexp_matches(p.prosrc, 'revertido_at IS NULL', 'g')) = 2;
+    IF v <> 1 THEN
+        RAISE EXCEPTION '06c: _v2 no quedó excluyendo las filas revertidas';
+    END IF;
+
     -- Prueba de humo (solo lectura) sobre una compra real, si hay.
     SELECT min(id) INTO v_id_compra FROM public.fdi_dat_compra;
     IF v_id_compra IS NOT NULL THEN
@@ -508,7 +756,7 @@ BEGIN
         END IF;
     END IF;
 
-    RAISE NOTICE '06c aplicado: resumen del costo aterrizado, catálogo bajo superadmin y _v3 retirada.';
+    RAISE NOTICE '06c aplicado: reversa de costo al cancelar, resumen del costo aterrizado, catálogo bajo superadmin y _v3 retirada.';
 END;
 $$;
 

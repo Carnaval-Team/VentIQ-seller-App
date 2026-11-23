@@ -39,14 +39,15 @@ Este directorio entrega el SQL del plan `docs/planes/fondo-inversion/PLAN.md`.
 
 `multimoneda` va por delante de las bases. Estado real verificado el 2026-11-21:
 
-- **`newa` ya tiene aplicado todo el módulo** (00 a 06c), incluida `fn_fdi_registrar_recepcion` con
+- **`newa` ya tiene aplicado todo el módulo** (00 a 06d), incluida `fn_fdi_registrar_recepcion` con
   **4 args** (`p_id_compra bigint DEFAULT NULL`), el aterrizaje del costo con su columna de vínculo
   (`app_dat_recepcion_producto_costo.id_compra_recepcion`), `fdi_dat_compra_recepcion.tasa_usd_aplicada`,
-  el resumen del costo aterrizado y el nomenclador bajo superadmin.
+  el resumen del costo aterrizado, la reversa al cancelar y los ajustes `por_financiar`.
 - **Main no tiene nada de esto**: le faltan el módulo de costos, `fn_fdi_gasto`, `costo_real` escribible
   y todas las RPC de compras. Ese paquete es la fase 0b y va por el pase del equipo.
-- La fase 6 **no está cerrada**: falta la decisión de reversión de costo al cancelar, los ajustes
-  `por_financiar` y el E2E del dueño.
+- La fase 6 **no está cerrada**: falta la captura de adicionales por línea en la tabla de recepción y el
+  E2E del dueño. El pase debe promover el cuerpo de `_v2` con el filtro `revertido_at IS NULL` y el de
+  `fn_fdi_compra_recalcular` con el congelamiento de `total_financiado`.
 
 Corrige la nota anterior, que decía que `fn_fdi_registrar_recepcion` no estaba aplicada: sí lo está en
 `newa`.

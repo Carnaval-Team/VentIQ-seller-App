@@ -331,4 +331,54 @@ class CompraService {
     );
     return _asMap(resp);
   }
+
+  /// Agrega un costo que llega **después de pagar** la compra
+  /// (`fn_fdi_compra_ajuste_agregar`). Nace en `por_financiar`: no mueve
+  /// `total_financiado`; se cubre con [financiarAjuste].
+  ///
+  /// [base]: `global` | `porcentaje` | `unidad`. [valor] es el importe (global),
+  /// el % (porcentaje) o el importe por unidad (unidad). Solo origen `fondo`.
+  Future<Map<String, dynamic>> agregarAjuste({
+    required int idCompra,
+    required int idTipoCosto,
+    required String base,
+    required double valor,
+    String reparto = 'valor',
+    bool afectaInventario = true,
+    String? idempotencyKey,
+  }) async {
+    final resp = await _supabase.rpc(
+      'fn_fdi_compra_ajuste_agregar',
+      params: {
+        'p_id_compra': idCompra,
+        'p_id_tipo_costo': idTipoCosto,
+        'p_base': base,
+        'p_valor': valor,
+        'p_reparto': reparto,
+        'p_afecta_inventario': afectaInventario,
+        'p_idempotency_key': idempotencyKey,
+      },
+    );
+    return _asMap(resp);
+  }
+
+  /// Financia un ajuste `por_financiar`: reserva y pago propios desde las
+  /// fuentes dadas (misma forma que `fn_fdi_compra_reservar`), reparte el
+  /// costo sobre lo recibido y actualiza la valoración. Requiere la compra
+  /// **completada**.
+  Future<Map<String, dynamic>> financiarAjuste({
+    required int idAjuste,
+    required List<Map<String, dynamic>> fuentes,
+    String? idempotencyKey,
+  }) async {
+    final resp = await _supabase.rpc(
+      'fn_fdi_compra_ajuste_financiar',
+      params: {
+        'p_id_ajuste': idAjuste,
+        'p_fuentes': fuentes,
+        'p_idempotency_key': idempotencyKey,
+      },
+    );
+    return _asMap(resp);
+  }
 }

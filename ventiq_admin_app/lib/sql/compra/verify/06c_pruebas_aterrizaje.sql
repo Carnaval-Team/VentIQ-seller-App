@@ -19,6 +19,8 @@
 --   5. Ajuste global (flete 100.000 con 100 u pedidas y 60 recibidas):
 --      se aplican **60.000** y quedan **40.000 por asignar**.
 --   6. El reparto es idempotente: repetirlo deja 2 filas y 150, no 4.
+--   7. Reversa al cancelar: 0 vigentes / 2 revertidas, costos 0, `costo_real`
+--      de vuelta en 20, una fila de historial y reintento idempotente.
 --
 -- No valida la UI ni el promedio (`_v2`), que necesitan stock y operación
 -- completada; eso es el E2E del dueño.
@@ -55,6 +57,8 @@ DECLARE
     v_filas    integer;
     v_aterr    numeric;
     v_otra     numeric;
+    v_cr       numeric;
+    v_hist     integer;
 BEGIN
     SELECT id INTO v_prov FROM public.app_dat_proveedor
      WHERE idtienda = 9 ORDER BY id LIMIT 1;
@@ -185,6 +189,45 @@ BEGIN
     INSERT INTO _res VALUES (14, 'reparto_idempotente', '2 filas / 150.00',
         format('%s filas / %s', v_filas, v_suma),
         v_filas = 2 AND abs(v_suma - 150) < 0.005);
+
+    -- ── Reversa al cancelar la recepción (estado 3) ───────────────────────
+    INSERT INTO public.app_dat_estado_operacion (id_operacion, estado, uuid, comentario)
+    VALUES (v_op_a, 3, '3d7bae51-d5db-4523-a196-522a41b006d9', 'prueba de reversa');
+
+    v_res := public.fn_fdi_compra_costo_resumen(v_compa);
+    INSERT INTO _res VALUES (19, 'reversa_filas', '0 vigentes / 2 revertidas',
+        coalesce(v_res->'vinculos'->0->>'filas_costo', '?') || ' / '
+          || coalesce(v_res->'vinculos'->0->>'filas_revertidas', '?'),
+        (v_res->'vinculos'->0->>'filas_costo')::int = 0
+        AND (v_res->'vinculos'->0->>'filas_revertidas')::int = 2);
+
+    SELECT max((x->>'costos_total_usd')::numeric), max((x->>'costo_aterrizado_unit')::numeric)
+      INTO v_otra, v_aterr
+      FROM jsonb_array_elements(v_res->'lineas') x;
+    INSERT INTO _res VALUES (20, 'reversa_costos', '0 / 20.0000',
+        v_otra || ' / ' || v_aterr,
+        v_otra = 0 AND v_aterr = 20);
+
+    SELECT max(rp.costo_real) INTO v_cr
+      FROM public.app_dat_recepcion_productos rp
+     WHERE rp.id_operacion = v_op_a;
+    INSERT INTO _res VALUES (21, 'reversa_costo_real', '20.00000000000000000000',
+        v_cr::text, v_cr = 20);
+
+    SELECT count(*) INTO v_hist
+      FROM public.fdi_hist_estado_compra
+     WHERE id_compra = v_compa AND motivo LIKE 'Reversión de costo%';
+    INSERT INTO _res VALUES (22, 'reversa_documento', '1 fila de historial',
+        v_hist::text, v_hist = 1);
+
+    -- Segunda cancelación: idempotente (no duplica el documento ni re-marca).
+    INSERT INTO public.app_dat_estado_operacion (id_operacion, estado, uuid, comentario)
+    VALUES (v_op_a, 3, '3d7bae51-d5db-4523-a196-522a41b006d9', 'prueba de reversa 2');
+    SELECT count(*) INTO v_hist
+      FROM public.fdi_hist_estado_compra
+     WHERE id_compra = v_compa AND motivo LIKE 'Reversión de costo%';
+    INSERT INTO _res VALUES (23, 'reversa_idempotente', '1 fila de historial',
+        v_hist::text, v_hist = 1);
 
     -- ── Compra B: flete global 100.000 con 100 u pedidas y 60 recibidas ───
     v_res := public.fn_fdi_compra_crear(

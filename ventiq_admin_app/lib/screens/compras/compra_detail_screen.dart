@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../config/app_colors.dart';
 import '../../models/compra.dart';
 import '../../services/compra_service.dart';
+import '../../services/financial_service.dart';
 import '../../widgets/admin_drawer.dart';
 import 'compra_form_screen.dart';
 import 'compra_liquidacion_screen.dart';
@@ -633,9 +634,101 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
     final filas = num.tryParse('${vinculo['filas_costo']}') ?? 0;
     final cargo = num.tryParse('${vinculo['monto_importadora']}') ?? 0;
     final origen = '${vinculo['origen_pago'] ?? ''}';
+    final estado = num.tryParse('${vinculo['estado_operacion']}');
+    // Una recepción cancelada (3) o devuelta (4) no se vuelve a aterrizar.
+    if (estado != null && (estado == 3 || estado == 4)) return false;
     return filas == 0 &&
         cargo > 0 &&
         (origen == 'wallet_importadora' || origen == 'externo');
+  }
+
+  // ==========================================================================
+  // Ajustes posteriores al pago (fase 6d)
+  // ==========================================================================
+
+  /// Agrega un costo que llega después de pagar. Nace `por_financiar` y no
+  /// mueve `total_financiado`; se cubre con el botón «Financiar ahora».
+  Future<void> _agregarAjuste() async {
+    final detalle = _detalle;
+    if (detalle == null) return;
+    List<Map<String, dynamic>> tipos;
+    try {
+      tipos = await FinancialService().getCostTypes();
+    } catch (e) {
+      _snack('No se pudieron cargar los tipos de costo: $e', error: true);
+      return;
+    }
+    if (!mounted) return;
+    final datos = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (_) => _DialogoAjusteCompra(
+        tipos: tipos,
+        moneda: detalle.compra.monedaTotal,
+      ),
+    );
+    if (datos == null || !mounted) return;
+    try {
+      await _service.agregarAjuste(
+        idCompra: widget.idCompra,
+        idTipoCosto: datos['id_tipo_costo'] as int,
+        base: datos['base'] as String,
+        valor: datos['valor'] as double,
+      );
+      _snack('Ajuste agregado: queda por financiar.');
+      await _cargar();
+    } catch (e) {
+      _snack('No se pudo agregar el ajuste: $e', error: true);
+    }
+  }
+
+  /// Financia el ajuste con una fuente del fondo en la moneda de la compra.
+  /// (El diálogo no convierte monedas: elige una fuente de la misma moneda.)
+  Future<void> _financiarAjuste(CompraAjuste ajuste) async {
+    final detalle = _detalle;
+    if (detalle == null || ajuste.id == null) return;
+    final moneda = detalle.compra.monedaTotal;
+    try {
+      final todos = await _service.disponible(detalle.compra.idTienda);
+      final fuentes = todos
+          .where((f) =>
+              f.moneda == moneda && f.disponible >= ajuste.montoCapitalizado)
+          .toList();
+      if (!mounted) return;
+      if (fuentes.isEmpty) {
+        _snack(
+          'No hay fuente en $moneda con '
+          '${formatearImporteMoneda(ajuste.montoCapitalizado, moneda)} '
+          'disponible.',
+          error: true,
+        );
+        return;
+      }
+      final elegida = await showDialog<DisponibleFondo>(
+        context: context,
+        builder: (_) => _DialogoFuenteAjuste(ajuste: ajuste, fuentes: fuentes),
+      );
+      if (elegida == null || !mounted) return;
+      final r = await _service.financiarAjuste(
+        idAjuste: ajuste.id!,
+        fuentes: [
+          {
+            'id_cuenta': elegida.idCuenta,
+            'id_medio_pago': elegida.idMedioPago,
+            'moneda': elegida.moneda,
+            'monto': ajuste.montoCapitalizado,
+            'tasa': 1,
+          },
+        ],
+      );
+      _snack(
+        r['duplicada'] == true
+            ? 'El ajuste ya estaba financiado.'
+            : 'Ajuste financiado y repartido en lo recibido.',
+      );
+      await _cargar();
+    } catch (e) {
+      _snack('No se pudo financiar el ajuste: $e', error: true);
+    }
   }
 
   Widget _panelCostoAterrizado(CompraDetalle detalle) {
@@ -810,6 +903,19 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
                         ),
                       ),
                     ),
+                    if ((num.tryParse('${v['filas_revertidas']}') ?? 0) > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 4),
+                        child: Tooltip(
+                          message:
+                              'Costo revertido: la recepción se canceló o devolvió',
+                          child: Icon(
+                            Icons.undo,
+                            size: 16,
+                            color: AppColors.warning,
+                          ),
+                        ),
+                      ),
                     if (_puedeAterrizar(v))
                       TextButton(
                         onPressed: () =>
@@ -1069,7 +1175,10 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
                     border: Border.all(color: AppColors.border),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
@@ -1127,6 +1236,38 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
                           ),
                         ],
                       ),
+                    ],
+                  ),
+                      if (a.estado == 'por_financiar')
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Row(
+                            children: [
+                              pastillaCompras(
+                                'Por financiar',
+                                denso: true,
+                                color: AppColors.warning,
+                                icono: Icons.schedule,
+                              ),
+                              const Spacer(),
+                              if (detalle.compra.estado == 'completada')
+                                TextButton(
+                                  onPressed: () => _financiarAjuste(a),
+                                  child: const Text('Financiar ahora'),
+                                ),
+                            ],
+                          ),
+                        )
+                      else if (a.estado == 'financiado')
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: pastillaCompras(
+                            'Financiado',
+                            denso: true,
+                            color: AppColors.success,
+                            icono: Icons.check_circle_outline,
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -1347,6 +1488,20 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
           onPressed: _anular,
           outlined: true,
           color: AppColors.error,
+        ),
+      );
+    }
+
+    // Costo que llega después de pagar: se agrega y se financia aparte.
+    if (c.estado == 'pagada' ||
+        c.estado == 'entrega_parcial' ||
+        c.estado == 'completada') {
+      acciones.add(
+        _botonAccion(
+          icono: Icons.add_circle_outline,
+          etiqueta: 'Agregar costo posterior',
+          onPressed: _agregarAjuste,
+          outlined: true,
         ),
       );
     }
@@ -1676,6 +1831,217 @@ class _DialogoMotivoState extends State<_DialogoMotivo> {
           ),
           onPressed: _enviando ? null : _confirmar,
           child: Text(_enviando ? 'Procesando…' : widget.etiquetaConfirmar),
+        ),
+      ],
+    );
+  }
+}
+
+/// Agregar un costo posterior al pago. El importe lo calcula el servidor a
+/// partir de la base y el valor; aquí solo se capturan.
+class _DialogoAjusteCompra extends StatefulWidget {
+  const _DialogoAjusteCompra({required this.tipos, required this.moneda});
+
+  final List<Map<String, dynamic>> tipos;
+  final String moneda;
+
+  @override
+  State<_DialogoAjusteCompra> createState() => _DialogoAjusteCompraState();
+}
+
+class _DialogoAjusteCompraState extends State<_DialogoAjusteCompra> {
+  final _formKey = GlobalKey<FormState>();
+  final _valor = TextEditingController();
+  int? _tipo;
+  String _base = 'global';
+
+  @override
+  void dispose() {
+    _valor.dispose();
+    super.dispose();
+  }
+
+  String get _etiquetaValor => switch (_base) {
+    'porcentaje' => 'Porcentaje sobre la mercancía (%)',
+    'unidad' => 'Importe por unidad',
+    _ => 'Importe (${widget.moneda})',
+  };
+
+  void _guardar() {
+    if (!_formKey.currentState!.validate()) return;
+    final valor = double.tryParse(_valor.text.replaceAll(',', '.'));
+    if (valor == null || valor <= 0 || _tipo == null) return;
+    Navigator.pop(context, {
+      'id_tipo_costo': _tipo,
+      'base': _base,
+      'valor': valor,
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Agregar costo posterior'),
+      content: SizedBox(
+        width: 420,
+        child: SingleChildScrollView(
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Queda «por financiar»: no cambia el total financiado y se '
+                  'cubre con una fuente del fondo cuando la compra esté '
+                  'completada.',
+                  style: TextStyle(fontSize: 12, height: 1.35),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<int>(
+                  initialValue: _tipo,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Concepto',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  items: [
+                    for (final t in widget.tipos)
+                      DropdownMenuItem(
+                        value: (t['id'] as num).toInt(),
+                        child: Text(t['denominacion']?.toString() ?? ''),
+                      ),
+                  ],
+                  validator: (v) => v == null ? 'Elija el concepto' : null,
+                  onChanged: (v) => setState(() => _tipo = v),
+                ),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  initialValue: _base,
+                  decoration: const InputDecoration(
+                    labelText: 'Base',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'global',
+                      child: Text('Importe global'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'porcentaje',
+                      child: Text('Porcentaje de la mercancía'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'unidad',
+                      child: Text('Importe por unidad'),
+                    ),
+                  ],
+                  onChanged: (v) => setState(() => _base = v ?? 'global'),
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _valor,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: InputDecoration(
+                    labelText: _etiquetaValor,
+                    border: const OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  validator: (v) {
+                    final t = double.tryParse((v ?? '').replaceAll(',', '.'));
+                    return t == null || t <= 0 ? 'Mayor que 0' : null;
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(onPressed: _guardar, child: const Text('Agregar')),
+      ],
+    );
+  }
+}
+
+/// Elegir la fuente del fondo que cubre el ajuste. Solo lista fuentes de la
+/// moneda de la compra con disponible suficiente (sin conversión).
+class _DialogoFuenteAjuste extends StatefulWidget {
+  const _DialogoFuenteAjuste({required this.ajuste, required this.fuentes});
+
+  final CompraAjuste ajuste;
+  final List<DisponibleFondo> fuentes;
+
+  @override
+  State<_DialogoFuenteAjuste> createState() => _DialogoFuenteAjusteState();
+}
+
+class _DialogoFuenteAjusteState extends State<_DialogoFuenteAjuste> {
+  int? _sel;
+
+  @override
+  Widget build(BuildContext context) {
+    final moneda = widget.fuentes.first.moneda;
+    return AlertDialog(
+      title: const Text('Financiar ajuste'),
+      content: SizedBox(
+        width: 460,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Se descuentan '
+                '${formatearImporteMoneda(widget.ajuste.montoCapitalizado, moneda)} '
+                'de la fuente elegida y el costo se reparte sobre lo recibido. '
+                'La valoración del producto se actualiza al confirmar.',
+                style: const TextStyle(fontSize: 13, height: 1.35),
+              ),
+              const SizedBox(height: 10),
+              for (var i = 0; i < widget.fuentes.length; i++)
+                ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    _sel == i
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                    color: _sel == i ? AppColors.primary : AppColors.textLight,
+                  ),
+                  title: Text(
+                    widget.fuentes[i].etiqueta,
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                  subtitle: Text(
+                    'Disponible '
+                    '${formatearImporteMoneda(widget.fuentes[i].disponible, moneda)}',
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                  onTap: () => setState(() => _sel = i),
+                ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: _sel == null
+              ? null
+              : () => Navigator.pop(context, widget.fuentes[_sel!]),
+          child: const Text('Financiar'),
         ),
       ],
     );

@@ -1,8 +1,9 @@
 -- ============================================================================
--- verify/06_costos.sql — Fase 6: costo aterrizado (06a + 06b + 06c)
+-- verify/06_costos.sql — Fase 6: costo aterrizado y ajustes (06a-06d)
 --
--- REQUIERE: 06a_costo_aterrizado_base.sql, 06b_aterrizaje.sql y
---           06c_aterrizaje_cierre.sql aplicados en `newa`
+-- REQUIERE: 06a_costo_aterrizado_base.sql, 06b_aterrizaje.sql,
+--           06c_aterrizaje_cierre.sql y 06d_ajustes_por_financiar.sql
+--           aplicados en `newa`
 --           (qhprswhhfasrikhawjoz).
 --
 -- SOLO LECTURA: SELECT / information_schema / pg_catalog / pg_proc. Ni DDL ni
@@ -59,6 +60,12 @@
 --   n=23  el catálogo de costos es de solo lectura para `anon`/`authenticated`
 --         (sin INSERT/UPDATE/DELETE/TRUNCATE), con RLS activa y una sola
 --         política SELECT
+--   n=24  las RPC de 06d existen y son SECURITY DEFINER (ajuste agregar y
+--         financiar)
+--   n=25  trazabilidad del ajuste: `id_ajuste` en reserva, pago y costo;
+--         `idempotency_key` en el ajuste
+--   n=26  `fn_fdi_compra_recalcular` congela `total_financiado` fuera de
+--         `creada` (los ajustes tardíos no lo mueven)
 --   n=99  resumen
 --
 -- NOTA sobre n=6 — QUÉ SE PUEDE COMPROBAR:
@@ -566,6 +573,52 @@ base as (
       where polrelid = 'public.app_cont_tipo_costo'::regclass and polcmd = 'r')
     and
     (select relrowsecurity from pg_class where oid = 'public.app_cont_tipo_costo'::regclass)
+
+  union all
+  -- 24) RPC de ajustes tardíos (06d)
+  select 24, 'funciones_06d',
+    'fn_fdi_compra_ajuste_agregar(...7 args) y fn_fdi_compra_ajuste_financiar(bigint,jsonb,uuid): SECURITY DEFINER',
+    (select count(*)::text from pg_proc p
+      where p.oid in (to_regprocedure('public.fn_fdi_compra_ajuste_agregar(bigint,bigint,text,numeric,text,boolean,uuid)'),
+                      to_regprocedure('public.fn_fdi_compra_ajuste_financiar(bigint,jsonb,uuid)'))
+        and p.prosecdef) || ' de 2 definer',
+    (select count(*) = 2 from pg_proc p
+      where p.oid in (to_regprocedure('public.fn_fdi_compra_ajuste_agregar(bigint,bigint,text,numeric,text,boolean,uuid)'),
+                      to_regprocedure('public.fn_fdi_compra_ajuste_financiar(bigint,jsonb,uuid)'))
+        and p.prosecdef)
+
+  union all
+  -- 25) Trazabilidad del ajuste
+  select 25, 'trazabilidad_ajuste',
+    'id_ajuste en reserva, pago y costo; idempotency_key en el ajuste',
+    (select count(*)::text from information_schema.columns
+      where table_schema = 'public'
+        and ((table_name = 'fdi_dat_compra_reserva' and column_name = 'id_ajuste')
+          or (table_name = 'fdi_dat_compra_pago' and column_name = 'id_ajuste')
+          or (table_name = 'app_dat_recepcion_producto_costo' and column_name = 'id_ajuste'))) || ' de 3 id_ajuste, '
+      || (select count(*)::text from information_schema.columns
+           where table_schema = 'public' and table_name = 'fdi_dat_compra_ajuste'
+             and column_name = 'idempotency_key') || ' de 1 idempotency_key',
+    (select count(*) = 3 from information_schema.columns
+      where table_schema = 'public'
+        and ((table_name = 'fdi_dat_compra_reserva' and column_name = 'id_ajuste')
+          or (table_name = 'fdi_dat_compra_pago' and column_name = 'id_ajuste')
+          or (table_name = 'app_dat_recepcion_producto_costo' and column_name = 'id_ajuste')))
+    and
+    (select count(*) = 1 from information_schema.columns
+      where table_schema = 'public' and table_name = 'fdi_dat_compra_ajuste'
+        and column_name = 'idempotency_key')
+
+  union all
+  -- 26) total_financiado se congela fuera de 'creada'
+  select 26, 'total_financiado_inmutable',
+    'fn_fdi_compra_recalcular conserva total_financiado si la compra no está en creada',
+    coalesce((select case when position('v_estado = ''creada''' in p.prosrc) > 0 then 'congelado' else 'siempre recalcula' end
+                from pg_proc p
+               where p.oid = 'public.fn_fdi_compra_recalcular(bigint)'::regprocedure), 'falta'),
+    coalesce((select position('v_estado = ''creada''' in p.prosrc) > 0
+                from pg_proc p
+               where p.oid = 'public.fn_fdi_compra_recalcular(bigint)'::regprocedure), false)
 )
 
 -- 99) Resumen: cuenta las filas con ok = false (las informativas siempre ok).
