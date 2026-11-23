@@ -1150,6 +1150,16 @@ reversión al cancelar y el desvío visible. En Main no existe (fase 0b).
 **Objetivo:** poder probar en cinco minutos que el dinero cuadra, y dejar documentación que sobreviva.
 
 **Build:**
+- **Estado real de R1-R7 en `newa` (inventario del 2026-11-23):**
+  | R | Estado | Dónde |
+  |---|---|---|
+  | R1 conciliación | **ya existe y da 0,00** (tienda 9: 3 claves, 0 descuadres; `dif_saldo_vs_mov` y `dif_saldo_vs_ultimo` en cero) | `fn_fdi_conciliacion(bigint)` |
+  | R2 saldo por cuenta y moneda | **parcial**: bruto y totales por moneda, **sin `reservado`/`disponible`** (la función es anterior a la fase 4) ni ejecutado del periodo | `fn_fdi_saldos(bigint)` |
+  | R3 compras por estado | **falta** (facturado vs aterrizado vs pagado) | — |
+  | R4 costo real vs factura | **parcial**: el desvío por compra ya lo da la fase 6; falta la vista agregada | `fn_fdi_compra_costo_resumen(bigint)` |
+  | R5 diferencias cambiarias | **falta** | — |
+  | R6 movimientos por usuario y día | **parcial**: la lista con saldo antes/después existe; falta agrupar por usuario y día | `fn_fdi_movimientos(...)` |
+  | R7 inversores | **parcial**: repartos y pagos; falta aportes vs devoluciones vs utilidad vs pendiente | `fn_fdi_historial_inversores(bigint,date,date)` |
 - Reportes **R2-R7** de `02-contabilidad.md` **§6.3**: saldo/reservado/disponible por cuenta y moneda;
   compras por estado con facturado vs aterrizado vs pagado; costo real vs factura con % de desvío;
   diferencias cambiarias por documento; movimientos por usuario y día; inversores (aportes vs devoluciones
