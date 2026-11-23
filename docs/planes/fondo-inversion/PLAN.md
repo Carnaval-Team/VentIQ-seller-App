@@ -117,11 +117,11 @@ combinada de cambio de estado.
 | 4. Reserva y liquidación (carril A, solo `al_pagar`) | **done** — backend, UI, verify 19/19 y E2E del dueño aprobado |
 | 5. Recepción: carril A y carril B | **done** — recepción contra compra, carril B cerrado, verify 21/21 y E2E del dueño aprobado |
 | 6. Costo aterrizado sobre el módulo existente | **done** — 6a/6b/6c/6d aplicados; `verify/06` **27/27**, pruebas de dinero **23/23 + 14/14**; aterrizaje al vincular, desvío, reversa, ajuste tardío con reserva/pago propios y catálogo bajo superadmin. **E2E del dueño aprobado (2026-11-23)** |
-| 7. Inversores aportantes (100%) | **en curso** — 07 aplicado en `newa`; `fdi_dat_compra_aporte` aislada, exclusividad con 6 triggers, RPC de registrar/devolver, rama de aportes en `pagar` y guardas en `anular`/`cancelar`/`liberar`; UI de aportes con restante bloqueante. `verify/07` **32/32** y pruebas de dinero **42/42**. **Falta el E2E del dueño** |
+| 7. Inversores aportantes (100%) | **done** — 07 aplicado en `newa`; `fdi_dat_compra_aporte` aislada, exclusividad con 6 triggers, RPC de registrar/devolver, rama de aportes en `pagar` y guardas en `anular`/`cancelar`/`liberar`; UI de aportes con restante bloqueante. `verify/07` **32/32**, pruebas de dinero **42/42** y **E2E del dueño aprobado (2026-11-23)** |
 | 8. Reportes, conciliación en UI y cierre | not started |
 | 9. Pendientes, recordatorios y registro de faltantes | not started |
 
-Current phase: 7 · Recommended next: 7
+Current phase: 8 · Recommended next: 8
 
 > Agente ejecutor: actualiza esta tabla al terminar y anota una línea por desviación. No marques `done`
 > sin criterios de salida corridos y OK del dueño.
@@ -465,6 +465,18 @@ Current phase: 7 · Recommended next: 7
   · **Nota para el pase.** Ver `tasks/plan_promocion_main.md` §Fase 1c: la fase 7 lleva el cambio de
     restricciones de `fdi_dat_compra_pago` y los cuatro cuerpos reescritos; sin ellos `pagar` no paga
     compras de inversores y `anular` acreditaría al fondo dinero ajeno.
+- **Fase 7 · E2E del dueño aprobado (2026-11-23).** Dos compras quedan en `newa` como evidencia: la **67**
+  («E2E-07-A», 2.000 USD) en `pagada` con X 800 + Y 700 + Z 500 y sus **3 pagos `origen='aporte'`** (sin
+  cuenta, sin medio y **sin movimiento**), y la **68** («E2E-07-B», 500 USD) en `creada` con el aporte de X
+  devuelto y su motivo. `Σ aportes` cubre el 100 % en la 67, la 68 muestra el faltante de vuelta y **el
+  fondo no movió un solo movimiento** en ninguna de las dos. Los intentos de pagar al 75 % y de aportar 100
+  de más se rechazaron con su mensaje. Nota: la creación de los inversores de prueba dejó un tercero
+  (`Z Inversores`) **inactivo** con % mínimo, porque el CHECK exige `porcentaje > 0`; no entra en el reparto
+  de utilidad mientras siga inactivo. **Fase 7 cerrada.**
+- **Fase 7 · la tienda 9 no tenía dueño (H9).** El alta de la tienda escribió gerente y trabajador pero no
+  `app_dat_dueno`, así que `fn_user_is_dueno(9)` daba `false` para su creador y la lista de inversores del
+  diálogo salía vacía. Reparado en `newa` (ver `tasks/hallazgos_pruebas_newa.md` H9); el patrón afecta a las
+  tiendas 3, 5 y 6, que siguen sin dueño a la espera de la decisión del dueño real.
 
 ---
 
