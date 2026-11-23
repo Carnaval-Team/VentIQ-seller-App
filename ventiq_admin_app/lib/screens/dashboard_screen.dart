@@ -20,6 +20,7 @@ import '../services/store_selector_service.dart';
 import '../utils/subscription_protection_mixin.dart';
 import '../utils/navigation_guard.dart';
 import '../widgets/consignaciones_widget.dart';
+import '../widgets/alerta_pendientes_card.dart';
 import '../services/fondo_inversion_service.dart';
 
 
@@ -598,6 +599,16 @@ class _DashboardScreenState extends State<DashboardScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Fase 9 (Compras): recordatorio de compras sin recepción completa.
+          // La ruta /compras/pendientes todavía no está registrada en
+          // `main.dart`; cuando lo esté, pasar aquí
+          // `rutaPendientes: '/compras/pendientes'` para habilitar el botón.
+          AlertaPendientesCard(
+            idTienda: _currentStoreId,
+            rutaPendientes: '/compras/pendientes',
+          ),
+          const SizedBox(height: 24),
+
           // Filtro de tiempo
           _buildTimeFilterSection(),
           const SizedBox(height: 24),
