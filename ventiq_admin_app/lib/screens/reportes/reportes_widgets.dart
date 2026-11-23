@@ -687,9 +687,19 @@ class FilaReporte {
 
 /// Tabla densa con cabecera en mayúsculas y bandas intercaladas (subtotales
 /// por día, avisos) que ocupan todo el ancho.
+///
+/// **Por debajo de [anchoMinimoTabla] no hay tabla ni scroll horizontal**: cada
+/// fila se pinta como una tarjeta con la primera columna de título y el resto
+/// como pares etiqueta/valor. Es lo que evita el fallo de la fase 10: una tabla
+/// de 1.200 px dentro de un scroll horizontal dejaba las cifras de dinero fuera
+/// de la pantalla en el móvil, sin ninguna pista de que había más a la derecha.
 class TablaReporte extends StatelessWidget {
   final List<ColumnaReporte> columnas;
   final List<FilaReporte> filas;
+
+  /// Ancho por debajo del cual la tabla se convierte en tarjetas. 720 px deja
+  /// respirar cinco o seis columnas; por debajo, la cabecera ya se recortaba.
+  static const double anchoMinimoTabla = 720;
 
   const TablaReporte({super.key, required this.columnas, required this.filas});
 
@@ -699,9 +709,13 @@ class TablaReporte extends StatelessWidget {
       builder: (context, constraints) {
         final base = columnas.fold<double>(0, (suma, c) => suma + c.ancho);
         if (base <= 0) return const SizedBox.shrink();
+
         final disponible = constraints.maxWidth.isFinite
             ? constraints.maxWidth
-            : base;
+            : anchoMinimoTabla;
+
+        if (disponible < anchoMinimoTabla) return _tarjetas();
+
         final factor = math.max(1.0, disponible / base);
         final anchoTotal = base * factor;
 
@@ -724,6 +738,98 @@ class TablaReporte extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+
+  /// Modo compacto: una tarjeta por fila, con la primera celda de título y el
+  /// resto como `etiqueta → valor`. Nada se esconde y nada queda a la derecha
+  /// fuera de la pantalla: el dinero sigue visible en el móvil.
+  Widget _tarjetas() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final fila in filas)
+          if (fila.banda != null)
+            fila.banda!
+          else
+            _tarjetaFila(fila),
+      ],
+    );
+  }
+
+  Widget _tarjetaFila(FilaReporte fila) {
+    final celdas = fila.celdas ?? const <Widget>[];
+
+    Widget valor(int i) => i < celdas.length ? celdas[i] : const SizedBox.shrink();
+
+    final cuerpo = Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: fila.resaltada ? AppColors.surfaceVariant : AppColors.surface,
+        border: Border.all(color: AppColors.border),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Título: la primera columna, que en todas las tablas del módulo es la
+          // que identifica la fila (cuenta, compra, factura, día...).
+          DefaultTextStyle.merge(
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textPrimary,
+            ),
+            child: valor(0),
+          ),
+          for (var i = 1; i < columnas.length; i++)
+            if (i < celdas.length)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: Text(
+                        columnas[i].titulo.toUpperCase(),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 10,
+                          height: 1.2,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.2,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      flex: 4,
+                      child: Align(
+                        alignment: columnas[i].derecha
+                            ? Alignment.centerRight
+                            : Alignment.centerLeft,
+                        child: valor(i),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+        ],
+      ),
+    );
+
+    if (fila.onTap == null) return cuerpo;
+    return InkWell(
+      onTap: fila.onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: cuerpo,
     );
   }
 

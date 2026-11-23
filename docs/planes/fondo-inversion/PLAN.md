@@ -120,8 +120,9 @@ combinada de cambio de estado.
 | 7. Inversores aportantes (100%) | **done** — 07 aplicado en `newa`; `fdi_dat_compra_aporte` aislada, exclusividad con 6 triggers, RPC de registrar/devolver, rama de aportes en `pagar` y guardas en `anular`/`cancelar`/`liberar`; UI de aportes con restante bloqueante. `verify/07` **32/32**, pruebas de dinero **42/42** y **E2E del dueño aprobado (2026-11-23)** |
 | 8. Reportes, conciliación en UI y cierre | **done** — R2-R7 (`verify/08` **14/14**), R1 programada en `pg_cron` (`verify/08b` **9/9**), pantalla `/reportes` con alarma, aging y descuadres; legado de inversión en solo lectura; índice documental y `CAPABILITY-MAP`. **E2E del dueño aprobado (2026-11-23)** |
 | 9. Pendientes, recordatorios y registro de faltantes | **en curso** — `09_pendientes.sql` (`verify/09` **14/14**), panel, detalle, facturas, exportación Excel/PDF, recordatorios con umbral y alerta en el inicio, con el almacenero sin importes. **Falta el E2E del dueño** |
+| 10. Responsive real de las vistas nuevas | **en curso** — causa raíz corregida en `TablaReporte` (modo tarjeta por debajo de 720 px, sin scroll horizontal) y test de anchura a 360/390/800 px. Faltan las auditorías por sección y la revisión en dispositivo |
 
-Current phase: 9 · Recommended next: 9
+Current phase: 10 · Recommended next: 10 (auditorías por sección), y el E2E de la 9 en paralelo
 
 > Agente ejecutor: actualiza esta tabla al terminar y anota una línea por desviación. No marques `done`
 > sin criterios de salida corridos y OK del dueño.
@@ -1325,6 +1326,60 @@ reversión al cancelar y el desvío visible. En Main no existe (fase 0b).
   · **Riesgo aceptado**: la tarjeta del inicio no distingue rol (la RPC ya valida acceso a la tienda); si
     el almacenero la ve, verá cifras hasta que se decida si se ocultan también ahí.
   · **Pendiente de la fase**: el **E2E del dueño** (los 6 pasos, incluido el almacenero sin importes).
+
+## Fase 10 — Responsive real de las vistas nuevas
+
+**Objetivo:** que **todas** las vistas que se diseñaron con Stitch (reportes, pendientes, facturas, detalle
+de faltantes, aportes de inversores, costo aterrizado y recepción con adicionales) se puedan usar en un
+móvil de 360 px **sin scroll horizontal y sin perder cifras**. Hoy no lo cumplen: en móvil «no se ven los
+números».
+
+**Causa raíz encontrada (2026-11-23).** `TablaReporte` —la tabla densa que comparten reportes, pendientes,
+detalle y facturas— calculaba `factor = max(1, disponible / base)`, es decir **nunca se hacía más estrecha
+que su ancho natural** (1.200 px largos) y se metía en un `SingleChildScrollView` horizontal. En un teléfono
+las columnas de dinero quedaban fuera de la pantalla, sin barra ni pista de que hubiera más a la derecha, y
+las cabeceras con `maxLines: 1` + `ellipsis` se recortaban. Los tests de humo no lo detectaban porque un
+scroll horizontal **no lanza excepción de desborde**: solo esconde contenido.
+
+**Build:**
+- [x] `TablaReporte` con **modo tarjeta** por debajo de `anchoMinimoTabla` (720 px): cada fila se pinta como
+      tarjeta con la primera columna de título y el resto como pares `ETIQUETA → valor`, sin scroll
+      horizontal, respetando la alineación de las columnas de dinero y las filas clicables.
+  · Arregla de una vez reportes (las tres secciones), panel de pendientes, detalle de faltantes y facturas.
+- [ ] Auditar a **360 px** cada sección de `/reportes`: franjas de KPI, banda de conciliación (que la
+      diferencia total no se corte), bloques de dos columnas y la fila de totales por moneda.
+- [ ] Auditar el **panel de aportes** (fase 7) y el **panel de costo aterrizado** (fase 6) a 360 px:
+      cortes a tarjeta y que ningún importe se recorte.
+- [ ] Auditar **recepción**: chips de adicionales por línea y tabla de productos a 360 px.
+- [ ] **Barrido sistemático**: ninguna vista de las fases 6-9 puede tener `scrollDirection:
+      Axis.horizontal` ni anchos fijos que sumen más de 360 px sin corte. Se revisa con un grep y se corrige
+      cada caso.
+- [ ] **Tests de anchura** en 360, 390, 430, 800 y 1280 px que comprueben dos cosas: que **no hay** scroll
+      horizontal y que un importe concreto es visible (no basta con que no haya excepción).
+- [ ] Revisión final de responsive del resto del módulo (compras, liquidación) en dispositivo.
+
+**Checklist:**
+- [x] Tabla densa con modo tarjeta (causa raíz)
+- [ ] Reportes: tres secciones auditadas a 360 px
+- [ ] Aportes y costo aterrizado auditados
+- [ ] Recepción (chips y tabla) auditada
+- [ ] Barrido de scroll horizontal en las fases 6-9
+- [ ] Tests de 5 anchos con importe visible
+- [ ] Responsive del módulo completo en dispositivo
+
+**Exit criteria:**
+- Ninguna vista del módulo con scroll horizontal en 360 px
+- Todos los importes visibles sin desplazar; nada recortado con puntos suspensivos en las cifras
+- `flutter test` de anchura en verde y `flutter analyze` limpio
+
+**E2E del dueño:**
+1. Con un móvil de 360 px, abrir Reportes → las tres secciones y ver la conciliación, la caja y los totales
+   **con sus cifras**.
+2. Abrir Pendientes y Facturas → cada compra es una tarjeta con su monto pendiente visible.
+3. Abrir el detalle de faltantes → comprado, recibido y pendiente se leen sin desplazar.
+4. Abrir el detalle de una compra en modo inversores → el desglose de aportes y el pendiente se leen.
+5. Rotar a horizontal y volver a vertical sin perder nada.
+6. Repetir en tablet (800 px) y comprobar que vuelve la tabla densa.
 
 ---
 
