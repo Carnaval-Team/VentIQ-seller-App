@@ -37,17 +37,24 @@ Este directorio entrega el SQL del plan `docs/planes/fondo-inversion/PLAN.md`.
 
 ## Advertencia de la rama (`multimoneda`)
 
-`multimoneda` va por delante de las bases. Estado real verificado el 2026-11-21:
+`multimoneda` va por delante de las bases. Estado real verificado el 2026-11-23:
 
-- **`newa` ya tiene aplicado todo el módulo** (00 a 06d), incluida `fn_fdi_registrar_recepcion` con
+- **`newa` ya tiene aplicado todo el módulo** (00 a 07), incluida `fn_fdi_registrar_recepcion` con
   **4 args** (`p_id_compra bigint DEFAULT NULL`), el aterrizaje del costo con su columna de vínculo
   (`app_dat_recepcion_producto_costo.id_compra_recepcion`), `fdi_dat_compra_recepcion.tasa_usd_aplicada`,
   el resumen del costo aterrizado, la reversa al cancelar y los ajustes `por_financiar`.
+- La fase 7 (`07_aportes_inversores.sql`) añade `fdi_dat_compra_aporte` con **6 triggers** de
+  exclusividad, las RPC `fn_fdi_compra_aportes` / `_aporte_registrar` / `_aporte_devolver`, y reescribe
+  los cuerpos de `fn_fdi_compra_pagar` / `_liberar` / `_cancelar` / `_anular` con su rama de aportes.
+  Deja `fdi_dat_compra_pago.id_cuenta` / `id_medio_pago` **nullable** con el CHECK `fdi_pago_fuente_check`
+  (un pago `origen='aporte'` no tiene cuenta ni medio y no lleva movimiento): el pase debe llevar ese
+  cambio de restricciones o la rama de aportes no se puede instalar.
 - **Main no tiene nada de esto**: le faltan el módulo de costos, `fn_fdi_gasto`, `costo_real` escribible
   y todas las RPC de compras. Ese paquete es la fase 0b y va por el pase del equipo.
-- La fase 6 **no está cerrada**: solo falta el E2E del dueño. El pase debe promover el cuerpo de `_v2` con
-  el filtro `revertido_at IS NULL` y el de `fn_fdi_compra_recalcular` con el congelamiento de
-  `total_financiado`.
+- La fase 6 quedó cerrada (E2E del dueño aprobado el 2026-11-23). El pase debe promover el cuerpo de
+  `_v2` con el filtro `revertido_at IS NULL` y el de `fn_fdi_compra_recalcular` con el congelamiento de
+  `total_financiado`; y, con la fase 7, los cuatro cuerpos de la fase 4 y las restricciones de
+  `fdi_dat_compra_pago`.
 
 Corrige la nota anterior, que decía que `fn_fdi_registrar_recepcion` no estaba aplicada: sí lo está en
 `newa`.

@@ -116,12 +116,12 @@ combinada de cambio de estado.
 | 3. Compra como documento | **done** — esquema, RPC, UI, verify 13/13 y E2E del dueño aprobado |
 | 4. Reserva y liquidación (carril A, solo `al_pagar`) | **done** — backend, UI, verify 19/19 y E2E del dueño aprobado |
 | 5. Recepción: carril A y carril B | **done** — recepción contra compra, carril B cerrado, verify 21/21 y E2E del dueño aprobado |
-| 6. Costo aterrizado sobre el módulo existente | **en curso** — 6a/6b/6c/6d aplicados; `verify/06` **27/27**, pruebas de dinero **23/23 + 14/14**. El aterrizaje se dispara al vincular, el desvío y el remanente se ven en el detalle, el catálogo está bajo superadmin, el costo se revierte al cancelar y el ajuste tardío tiene reserva y pago propios. Solo falta el E2E del dueño |
-| 7. Inversores aportantes (100%) | not started |
+| 6. Costo aterrizado sobre el módulo existente | **done** — 6a/6b/6c/6d aplicados; `verify/06` **27/27**, pruebas de dinero **23/23 + 14/14**; aterrizaje al vincular, desvío, reversa, ajuste tardío con reserva/pago propios y catálogo bajo superadmin. **E2E del dueño aprobado (2026-11-23)** |
+| 7. Inversores aportantes (100%) | **en curso** — 07 aplicado en `newa`; `fdi_dat_compra_aporte` aislada, exclusividad con 6 triggers, RPC de registrar/devolver, rama de aportes en `pagar` y guardas en `anular`/`cancelar`/`liberar`; UI de aportes con restante bloqueante. `verify/07` **32/32** y pruebas de dinero **42/42**. **Falta el E2E del dueño** |
 | 8. Reportes, conciliación en UI y cierre | not started |
 | 9. Pendientes, recordatorios y registro de faltantes | not started |
 
-Current phase: 6 · Recommended next: 6 (cerrar los ítems de la fase antes de la 7)
+Current phase: 7 · Recommended next: 7
 
 > Agente ejecutor: actualiza esta tabla al terminar y anota una línea por desviación. No marques `done`
 > sin criterios de salida corridos y OK del dueño.
@@ -412,6 +412,59 @@ Current phase: 6 · Recommended next: 6 (cerrar los ítems de la fase antes de l
   · **Nota para el pase.** El cuerpo de `_v2` en `newa` ya trae `revertido_at IS NULL`; el pase debe
     promover ese cuerpo, no el de Main. `fn_fdi_compra_recalcular` también cambió (congelamiento), y es
     una función que Main ya tiene: el pase la lleva con su cuerpo nuevo.
+- **Fase 6 · aprobada por el dueño (2026-11-23).** E2E en verde: 15 % de importadora con reembolso y
+  desvío, segunda recepción con otro %, chips de adicionales por línea, costo aterrizado en el producto al
+  completar, reversa al cancelar (marcada, con documento), ajuste tardío con reserva y pago propios y el
+  cargo de la wallet fuera del fondo. **Fase 6 cerrada.**
+- **Fase 7 · aportes de inversores aplicados en `newa` (2026-11-23).** `07_aportes_inversores.sql` con
+  `fdi_dat_compra_aporte` (equivalente **generado**, no escrito) y seis triggers: el aporte sólo existe en
+  modo `inversores`, en compra `creada`, sin pasar del faltante, inmutable salvo su devolución, no se borra
+  ni se reactiva; en modo `inversores` no hay reserva del fondo, ningún pago sale del fondo, ningún ajuste
+  ni cargo de recepción se declara `origen_pago = 'fondo'`; y `total_financiado` sigue congelado fuera de
+  `creada`. Tres RPC nuevas (`fn_fdi_compra_aportes`, `_aporte_registrar`, `_aporte_devolver`) y los cuatro
+  cuerpos de la fase 4 reescritos con su rama.
+  · **Estados.** En modo inversores no se usa `reservada`: la compra vive en `creada` hasta que **Σ aportes
+    vigentes = `total_financiado`** y entonces `pagar` la pasa a `pagada` escribiendo una fila de
+    `fdi_dat_compra_pago` por aporte (`origen='aporte'`, sin cuenta, sin medio y sin movimiento). Eso
+    conserva el invariante «`pagada` ⇒ Σ pagos = total» de `verify/04`, que se queda intacto.
+  · **Cambio de restricciones declarado.** `fdi_dat_compra_pago.id_cuenta` e `id_medio_pago` pasan a
+    admitir `NULL` y entra `fdi_pago_fuente_check`: en el camino del fondo siguen siendo obligatorios (más
+    `id_movimiento`); en el del aporte los tres son `NULL` y `id_aporte` es obligatorio, con FK compuesta
+    `(id_aporte, id_compra)` para que un pago no pueda apuntar al aporte de otra compra.
+  · **Devolución = cancelación del pasivo.** Marca el aporte (`devuelto`, con fecha, usuario y motivo), no
+    lo borra y **no mueve un centavo del fondo**. Se admite en `creada` y en `pagada` (el E2E lo pide); en
+    `entrega_parcial`/`completada` se rechaza, porque la mercancía ya está en inventario. Si se devuelve
+    con la compra ya pagada, la compra **queda pagada con cobertura incompleta** y el hueco se anota en el
+    historial: no se inventa caja ni se reescribe el pago. `anular` y `cancelar` exigen que no queden
+    aportes vigentes; `anular` salta las filas `origen='aporte'` (no acredita al fondo dinero que nunca
+    salió de él). Límite declarado: `interes` se guarda y se muestra estimado, pero no se contabiliza — es
+    gasto de la tienda y va con el reporte de inversores de la fase 8.
+  · **Dos defectos que la revisión adversarial encontró y se cerraron antes de dar la fase por buena.**
+    (1) El ajuste tardío de una compra de inversores era **imposible**: `fn_fdi_compra_ajuste_agregar`
+    (06d) fija `'fondo'`/`'por_financiar'` en el cuerpo y el trigger nuevo lo rechazaba, así que un flete
+    posterior dejaba el costo aterrizado corto para siempre. Ahora el cuerpo elige el origen por modo
+    (`externo`/`declarado` en inversores): el cargo capitaliza y se reparte sin que el fondo pague.
+    (2) `pagar` marcaba `pagada` una compra de inversores con `total_financiado = 0` sin escribir ningún
+    pago; ahora lo rechaza. También se corrigió el deadlock `devolver` ↔ `pagar` (orden de bloqueo
+    compra → aporte) y `puede_registrar`, que era una copia de `puede_pagar` y deshabilitaba el botón
+    justo cuando había faltante.
+  · **Verificación.** `verify/07_aportes.sql` **32/32** (solo lectura) y `verify/07_pruebas_aportes.sql`
+    **42/42** (transaccional, con dinero: 800 + 700 → faltante 500 y no deja pagar, exceso rechazado, 500
+    más → `pagada`, 3 pagos de aporte y 0 movimientos del fondo, saldo de la tienda intacto, devolución sin
+    movimiento, anulación con `devuelto = 0`, y todas las escrituras directas rechazadas). Sin regresiones:
+    `verify/04` verde, `verify/06` 27/27, `06c` 23/23 y `06d` 14/14. El rollback se ejecutó entero en
+    `newa` (`COMMIT`→ reaplicar) y devuelve los cuatro cuerpos a la fase 4 y `fn_fdi_compra_ajuste_agregar`
+    a 06d.
+  · **UI.** Panel `CompraAportesPanel` en el detalle de la compra (sólo modo inversores): cifras, bloque
+    de faltante, desglose por inversor, participación con barra y restante, `Registrar aporte` /
+    `Pagar compra` gobernados por el servidor y devolución con motivo. En modo inversores ya no se ofrece
+    «Reservar del fondo». `flutter analyze` limpio en `lib/` y tests de contrato + compilación en verde.
+  · **Stitch.** `COMPRA — aportes de inversores`
+    (`7297c9001c8f400b9d78d9c3b3230ec2`), proyecto `4232822798385486487`; captura en
+    `docs/design/compras-aportes-inversores.png`.
+  · **Nota para el pase.** Ver `tasks/plan_promocion_main.md` §Fase 1c: la fase 7 lleva el cambio de
+    restricciones de `fdi_dat_compra_pago` y los cuatro cuerpos reescritos; sin ellos `pagar` no paga
+    compras de inversores y `anular` acreditaría al fondo dinero ajeno.
 
 ---
 
@@ -999,7 +1052,7 @@ reversión al cancelar y el desvío visible. En Main no existe (fase 0b).
 - [x] Reparto por valor del cargo (06b) y remanente por asignar visible (06c)
 - [x] Ajustes `por_financiar` con reserva y pago propios (06d)
 - [x] Persistido dentro de la transacción (06b)
-- [ ] `costo_real` suma adicionales (la fórmula de `_v2` ya suma; falta el E2E con stock)
+- [x] `costo_real` suma adicionales (E2E del dueño, 2026-11-23)
 - [x] `_v3` borrada (06c)
 - [x] Reversión de costo al cancelar (06c: se marca, no se borra)
 - [x] `id_compra` + `moneda` en facturas (06a)
@@ -1028,32 +1081,41 @@ reversión al cancelar y el desvío visible. En Main no existe (fase 0b).
 **Objetivo:** que los inversores cubran una compra al 100%, sin que ese dinero se acumule en el fondo.
 
 **Build:**
-- `fdi_dat_compra_aporte` (`id_compra, id_inversor, moneda, monto, tasa_a_total, monto_eq_total,
-  naturaleza ∈ {anticipo, pasivo, capital}, estado, comprobante, idempotency_key`).
+- `fdi_dat_compra_aporte` (`id_compra, id_inversor, moneda, monto, tasa_a_total, monto_eq_total`,
+  `naturaleza ∈ {anticipo, pasivo, capital}`, `estado ∈ {aportado, devuelto}`, `comprobante`,
+  `observacion`, `idempotency_key`, devolución con fecha/usuario/motivo). `monto_eq_total` es **columna
+  generada** (`round(monto × tasa_a_total, 2)`): el equivalente no se puede falsear.
 - **Aislamiento**: no entra en `fdi_dat_saldo`, no genera saldo del inversor, no se mezcla con
-  `fdi_dat_inversor.porcentaje`. `newa` tiene 3 inversores y 12 repartos: **no se tocan**.
-- **Exclusividad 100% en BD**: en modo inversores **no puede existir pago ni reserva con `origen = fondo`**,
-  y `Σ aportes recibidos = total_financiado` antes de `pagada`.
-- `fn_fdi_compra_aporte_registrar` (no excede el faltante) y `_devolver` (**devolución = cancelación de
-  pasivo; solo el interés es gasto si `naturaleza = pasivo`**). `naturaleza` por defecto `anticipo`.
-- UI: aportes por compra con restante en vivo. Stitch: `COMPRA — aportes de inversores`.
+  `fdi_dat_inversor.porcentaje`. `newa` tiene 6 inversores y 12 repartos: **no se tocan**.
+- **Exclusividad 100% en BD**: en modo inversores **no puede existir pago ni reserva con `origen = fondo`**
+  (tampoco un ajuste o cargo de recepción declarado `origen_pago = 'fondo'`), y
+  `Σ aportes vigentes = total_financiado` antes de `pagada`. Se impone con seis triggers y con el CHECK
+  `fdi_pago_fuente_check`, no solo en las RPC.
+- `fn_fdi_compra_aportes` (lectura con faltante y motivo de bloqueo), `fn_fdi_compra_aporte_registrar` (no
+  excede el faltante; exige tasa explícita si la moneda difiere) y `_devolver` (**devolución = cancelación
+  de pasivo; solo el interés es gasto si `naturaleza = pasivo`**). `naturaleza` por defecto `anticipo`.
+  `fn_fdi_compra_pagar` gana su rama de aportes; `liberar`, `cancelar` y `anular` sus guardas.
+- UI: aportes por compra con restante en vivo. Stitch: `COMPRA — aportes de inversores`
+  (`7297c9001c8f400b9d78d9c3b3230ec2`), captura `docs/design/compras-aportes-inversores.png`.
 
 **Checklist:**
-- [ ] Entidad aislada del % y del libro del fondo
-- [ ] Validación de faltante
-- [ ] Exclusividad 100% en BD
-- [ ] Devolución como cancelación de pasivo
-- [ ] UI con restante bloqueante
+- [x] Entidad aislada del % y del libro del fondo
+- [x] Validación de faltante
+- [x] Exclusividad 100% en BD
+- [x] Devolución como cancelación de pasivo
+- [x] UI con restante bloqueante
 
 **Exit criteria:**
 - `verify/07_aportes.sql`: los aportes suman y la compra pasa a `pagada`; un exceso se rechaza; **ningún
   movimiento en `fdi_dat_saldo` originado por un aporte**; no coexisten reserva de fondo y aporte; la
-  devolución deja el saldo de aportes en cero
-- `flutter analyze` limpio
+  devolución deja el saldo de aportes en cero — **cumplido: 32/32**, y las pruebas de dinero
+  `verify/07_pruebas_aportes.sql` **42/42**
+- `flutter analyze` limpio — **cumplido** (`lib/` sin diagnósticos)
 
 **E2E del dueño:**
 1. Compra 2.000 en modo inversores: **X aporta 800, Y aporta 700** → restante **500** y **no deja pagar**.
-2. Aportar los 500 → `pagada`.
+2. Aportar los 500 → la compra queda cubierta al 100 % y `Pagar compra` se habilita; al pulsarlo, `pagada`
+   (el pago es explícito: en modo inversores no hay paso `reservada`).
 3. Aportar 100 de más → rechazo.
 4. Abrir el módulo de fondo → **ningún saldo nuevo** ni acumulado para X ni Y.
 5. Devolver el aporte de X → consistente.

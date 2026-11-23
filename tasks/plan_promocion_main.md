@@ -119,6 +119,28 @@ en esos scripts. Después, en main: `verify/06_costos.sql` (27 comprobaciones), 
 `ROLLBACK` (no dejan filas). Si `verify/06` falla en la 27, el cuerpo de `_v2` no es el de newa; si falla
 en la 26, el de `fn_fdi_compra_recalcular`.
 
+### Fase 1c — Fase 7 (aportes de inversores) que el pase debe llevar desde newa
+`07_aportes_inversores.sql` **reescribe cuatro cuerpos que main también recibirá** con el resto de la fase 4,
+así que no es un paquete aparte: va justo después de 06d.
+
+1. Objetos nuevos: tabla `fdi_dat_compra_aporte`, RPC `fn_fdi_compra_aportes`, `_aporte_registrar`,
+   `_aporte_devolver`, función `fn_fdi_aporte_validar` y cinco triggers (`trg_fdi_aporte_inversores`,
+   `trg_fdi_reserva_solo_fondo`, `trg_fdi_pago_coherente`, `trg_fdi_compra_modo_inmutable`,
+   `trg_fdi_ajuste_solo_fondo`, `trg_fdi_recepcion_solo_fondo`).
+2. **Cambio de restricciones en `fdi_dat_compra_pago`**: `id_cuenta` e `id_medio_pago` pasan a admitir
+   `NULL` y se añade `fdi_pago_fuente_check` (un pago `origen='aporte'` no tiene cuenta ni medio y no lleva
+   `id_movimiento`; uno `origen='fondo'` los exige). Sin este cambio, la rama de aportes de
+   `fn_fdi_compra_pagar` falla al insertar. Es el único punto del pase que **afloja** una restricción; el
+   CHECK nuevo es más estricto que el `NOT NULL` para el camino del fondo.
+3. Cuerpos reescritos: `fn_fdi_compra_pagar` (rama 7a de aportes), `fn_fdi_compra_liberar`,
+   `fn_fdi_compra_cancelar` y `fn_fdi_compra_anular` (salta los pagos con aporte y exige devolverlos).
+   Si el pase se llevara los cuerpos viejos, quedarían dos agujeros: `anular` acreditaría al fondo dinero
+   que nunca salió de él, y `pagar` no pagaría ninguna compra de inversores.
+4. Verificación tras aplicar: `verify/07_aportes.sql` (26 comprobaciones, incluidas las que comprueban los
+   marcadores de los cuatro cuerpos) y `verify/07_pruebas_aportes.sql` (30 comprobaciones transaccionales
+   con `ROLLBACK`). Además, reejecutar `verify/04_liquidacion.sql`, `verify/06_costos.sql` (27) y los dos
+   scripts de prueba de la fase 6 para descartar regresiones: hoy dan verde con 07 aplicado.
+
 ### Fase 2 — Publicar los clientes
 - App de ventas y Admin nuevos (llaman `_m01` con caída a la antigua). Los clientes viejos siguen en las funciones antiguas sin cambios.
 - Seguimiento diario con los logs de main: llamadas por nombre `_m01` vs. antiguo y usuarios distintos de cada uno.
