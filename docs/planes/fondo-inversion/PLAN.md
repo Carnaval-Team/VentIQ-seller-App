@@ -1198,6 +1198,28 @@ reversión al cancelar y el desvío visible. En Main no existe (fase 0b).
 7. Repetir el flujo en modo inversores y comprobar que el fondo **no** se movió.
 8. Abrir todo en móvil, tablet y PC.
 
+### Decisiones de la fase 8
+
+- **Devoluciones y notas de crédito: fase futura, no implementación.** Hoy `fn_fdi_compra_anular` devuelve
+  al fondo lo que el fondo pagó y deja la compra `anulada`, pero **no existe crédito del proveedor**: el
+  módulo no modela la nota de crédito, ni la devolución de mercancía al proveedor, ni el reembolso al
+  inversor que aportó. Implementarlo a medias sería inventar un mayor de proveedores. Queda documentado
+  como **fase 10** con este alcance mínimo: documento de nota de crédito por compra, aplicación contra lo
+  pagado, y reversa de los aportes de una compra anulada (hoy se devuelven a mano antes de anular).
+- **`precio_promedio` no lleva guardia en BD: es una columna de muchos escritores.** Se comprobó el
+  catálogo: además del módulo (`fn_actualizar_precio_promedio_recepcion_v2`), la escriben
+  `bulk_update_precios_costo`, `bulk_import_productos_excel`, `fn_corregir_costo_recepcion`,
+  `fn_admin_caja_actualizar_precios_offline`, `insert_producto_completo_v3`,
+  `fn_inicializar_precio_promedio_desde_primera_recepcion`, la consignación y la duplicación de producto
+  (casi todas `SECURITY DEFINER`, sin forma fiable de distinguir al llamador). Una guarda por trigger
+  exigiría una lista blanca de una decena de funciones y rompería la caja, la importación de Excel y la
+  consignación. **Decisión: el módulo escribe el promedio solo por su función y no compite por la
+  columna; el clobber conocido está en el fallback del cliente de ventas y se registra como deuda de esa
+  app** (`tasks/hallazgos_pruebas_newa.md` H12) con el arreglo propuesto. El efecto está acotado: el
+  módulo no lee `precio_promedio` para su propia aritmética, así que un clobber degrada la fidelidad del
+  costo de inventario, no la contabilidad del fondo. La prueba en dispositivo con las dos apps queda
+  pendiente del dueño.
+
 ---
 
 ## Fase 9 — Pendientes, recordatorios y registro de faltantes
