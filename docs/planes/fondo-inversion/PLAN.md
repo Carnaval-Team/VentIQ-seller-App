@@ -1123,11 +1123,13 @@ reversión al cancelar y el desvío visible. En Main no existe (fase 0b).
 6. Intentar reservar del fondo la misma compra → rechazo por exclusividad.
 
 > **Antes de empezar:** la tienda del E2E necesita **al menos dos inversores activos** (se crean en Fondo de
-> inversión → Inversores). La tienda 9 de `newa` no tiene ninguno: los seis existentes son de las tiendas 4
-> y 8. Límite conocido: la lista de inversores del diálogo se lee con la política de la fase 1
-> (`fn_user_is_dueno`), así que un **gerente que no sea dueño** ve la lista vacía; el alta de aportes está
-> permitida a gerente/superadmin en la RPC. Abrir la lista a gerentes es una decisión de privacidad que no
-> se toma aquí.
+> inversión → Inversores). En `newa` la tienda 9 ya tiene los dos de prueba, sembrados el 2026-11-23
+> (`X Inversores` y `Y Inversores`, 50 % cada uno: Σ activos = 100, así que la liquidación de utilidad de
+> esa tienda no queda bloqueada). Límite conocido: la lista de inversores del diálogo se lee con la política
+> de la fase 1 (`fn_user_is_dueno`), y la tienda 9 **no tiene fila en `app_dat_dueno`**: solo la ve un
+> superadmin. Se prueba con `aicemaria112@gmail.com` o `aicemaria113@gmail.com`; con el gerente
+> `aicemaria@gmail.com` el diálogo sale vacío aunque la RPC le permita registrar. Abrir la lista a gerentes
+> es una decisión de privacidad que no se toma aquí.
 
 ---
 
