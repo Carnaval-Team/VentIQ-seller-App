@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../widgets/admin_drawer.dart';
@@ -12,6 +11,7 @@ import '../services/subscription_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/navigation_guard.dart';
 import '../services/permissions_service.dart';
+import '../services/auth_service.dart';
 import '../utils/screen_protection_mixin.dart';
 import 'edit_worker_multi_role_screen.dart';
 import 'package:intl/intl.dart';
@@ -1891,98 +1891,22 @@ class _WorkersScreenState extends State<WorkersScreen>
     required String nombres,
     required String apellidos,
   }) async {
-    final supabase = Supabase.instance.client;
-
-    final adminSession = supabase.auth.currentSession;
-    final adminUserId = adminSession?.user.id;
-    final adminSessionJson =
-        adminSession == null ? null : jsonEncode(adminSession.toJson());
-
-    String? userUuid;
-    var alreadyExisted = false;
-
-    try {
-      print('🔐 Resolviendo usuario de acceso para $email ...');
-
-      // 1. Intentar registrar el usuario
-      try {
-        final authResponse = await supabase.auth.signUp(
-          email: email,
-          password: password,
-          data: {
-            'nombres': nombres,
-            'apellidos': apellidos,
-            'full_name': '$nombres $apellidos',
-          },
-          emailRedirectTo: null,
-        );
-
-        final user = authResponse.user;
-        if (user == null) {
-          throw Exception('Error al registrar usuario en Supabase Auth');
-        }
-
-        // Con protección contra enumeración de emails activa, el servidor
-        // devuelve un usuario "fantasma" (sin identities) cuando el email ya
-        // existe, en lugar de lanzar error. Se trata como usuario existente.
-        if (user.identities != null && user.identities!.isEmpty) {
-          throw StateError('user_already_exists');
-        }
-
-        userUuid = user.id;
-        print('✅ Usuario registrado con UUID: $userUuid');
-      } catch (signUpError) {
-        final msg = signUpError.toString();
-        final yaExiste =
-            msg.contains('user_already_exists') ||
-            msg.contains('User already registered');
-
-        if (!yaExiste) rethrow;
-
-        print(
-          '⚠️ Usuario ya existe, verificando credenciales para vincular...',
-        );
-
-        // 2. Ya existe: comprobar las credenciales y obtener su UUID real
-        try {
-          final loginResponse = await supabase.auth.signInWithPassword(
-            email: email,
-            password: password,
-          );
-
-          if (loginResponse.user == null) {
-            throw Exception(
-              'No se pudo obtener el UUID del usuario existente',
-            );
-          }
-
-          userUuid = loginResponse.user!.id;
-          alreadyExisted = true;
-          print('✅ Usuario existente verificado con UUID: $userUuid');
-        } catch (loginError) {
-          print('❌ Error al autenticar usuario existente: $loginError');
-          throw Exception(
-            'El email ya está registrado pero las credenciales no coinciden. '
-            'Verifica la contraseña del usuario.',
-          );
-        }
-      }
-    } finally {
-      // Restaurar la sesión del admin si fue reemplazada por la del usuario
-      if (adminSessionJson != null && adminUserId != null) {
-        try {
-          final currentUserId = supabase.auth.currentSession?.user.id;
-          if (currentUserId != adminUserId) {
-            await supabase.auth.recoverSession(adminSessionJson);
-            print('🔄 Sesión del administrador restaurada');
-          }
-        } catch (e) {
-          print('⚠️ No se pudo restaurar la sesión del administrador: $e');
-        }
-      }
-    }
-
-    return (uuid: userUuid, alreadyExisted: alreadyExisted);
+    print('🔐 Resolviendo usuario de acceso para $email ...');
+    final result = await AuthService.createOrLinkAuthUser(
+      email: email,
+      password: password,
+      data: {
+        'nombres': nombres,
+        'apellidos': apellidos,
+        'full_name': '$nombres $apellidos',
+      },
+    );
+    print(
+      result.alreadyExisted
+          ? '✅ Usuario existente verificado con UUID: ${result.uuid}'
+          : '✅ Usuario registrado con UUID: ${result.uuid}',
+    );
+    return result;
   }
 
   // 🆕 Método flexible para crear trabajador (con o sin usuario)
@@ -2308,26 +2232,14 @@ class _WorkersScreenState extends State<WorkersScreen>
     );
 
     try {
-      // Paso 1: Registrar usuario en Supabase Auth
-      print('🔐 Registrando usuario en Supabase Auth...');
-      final supabase = Supabase.instance.client;
-      final authResponse = await supabase.auth.signUp(
+      // Paso 1: Auth sin robar la sesión del admin
+      final resolucion = await _resolverUsuarioAcceso(
         email: email,
         password: password,
-        data: {
-          'nombres': nombres,
-          'apellidos': apellidos,
-          'full_name': '$nombres $apellidos',
-        },
-        emailRedirectTo: null, // No redirigir, confirmar automáticamente
+        nombres: nombres,
+        apellidos: apellidos,
       );
-
-      if (authResponse.user == null) {
-        throw Exception('Error al registrar usuario en Supabase Auth');
-      }
-
-      final userUuid = authResponse.user!.id;
-      print('✅ Usuario registrado con UUID: $userUuid');
+      final userUuid = resolucion.uuid;
 
       // Paso 2: Crear trabajador con el UUID obtenido
       print('👤 Creando trabajador...');

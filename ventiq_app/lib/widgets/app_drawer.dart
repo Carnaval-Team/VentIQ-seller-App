@@ -165,8 +165,10 @@ Future<void> _promptLogoutOrSwitchUser(BuildContext context) async {
                         'lo que no se pueda subir se conserva en este dispositivo. ¿Continuar?'
                     : '¿Cerrar sesión? Se eliminarán todos los datos locales y la caché de este dispositivo.'
                 : hasUnsynced
-                ? 'Hay ventas u operaciones sin sincronizar y se conservarán localmente. ¿Cerrar sesión?'
-                : '¿Cerrar sesión?',
+                ? 'Hay ventas u operaciones sin sincronizar y se conservarán localmente '
+                    '(incluida la configuración de la tienda). ¿Cerrar sesión?'
+                : '¿Cerrar sesión? Se conserva la configuración y el catálogo de la tienda '
+                    'en este dispositivo.',
           ),
           actions: [
             TextButton(
@@ -220,14 +222,17 @@ Future<void> _promptLogoutOrSwitchUser(BuildContext context) async {
         );
         _goAfterLogout(fullOfflineReady ? '/offline-user-switch' : '/login');
       }
-    } else if (fullOfflineReady) {
-      await prefs.clearSessionKeepingStoreOffline();
-      print('🔓 Sesión cerrada → selector local de usuarios');
-      _goAfterLogout('/offline-user-switch');
     } else {
-      await prefs.clearUserData();
-      print('🔓 Sesión cerrada → login');
-      _goAfterLogout('/login');
+      // Offline: nunca clearUserData/clearStoreConfig — se pierde la config
+      // de tienda (flags, tickets, multimoneda) y el TPV queda inutilizable.
+      await prefs.clearSessionKeepingStoreOffline();
+      if (fullOfflineReady) {
+        print('🔓 Sesión cerrada offline → selector local de usuarios');
+        _goAfterLogout('/offline-user-switch');
+      } else {
+        print('🔓 Sesión cerrada offline → login (config de tienda conservada)');
+        _goAfterLogout('/login');
+      }
     }
   } catch (e) {
     print('❌ Error al cerrar sesión: $e');

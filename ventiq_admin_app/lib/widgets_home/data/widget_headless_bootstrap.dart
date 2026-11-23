@@ -51,21 +51,18 @@ class WidgetHeadlessBootstrap {
 
   static Future<bool> _hasUsableSession() async {
     final auth = Supabase.instance.client.auth;
-    var session = auth.currentSession;
+    final session = auth.currentSession;
 
-    // Con el token vencido se intenta refrescar antes de rendirse: el refresh
-    // token persiste en SharedPreferences junto al access token.
-    if (session != null && session.isExpired) {
-      try {
-        final response = await auth.refreshSession();
-        session = response.session;
-      } catch (error) {
-        debugPrint('⚠️ Widget headless: refresh de sesión falló: $error');
-        return false;
-      }
+    // NO llamar refreshSession aquí. Un refresh fallido (red, 429, etc.) hace
+    // que gotrue emita signedOut y borre el storage compartido con la app en
+    // foreground: el usuario aparece "deslogueado" sin haber cerrado sesión.
+    // Si el access token ya venció, el widget simplemente no refresca datos
+    // hasta que la app principal rote el JWT.
+    if (session == null || session.isExpired) {
+      return false;
     }
 
-    return session != null;
+    return true;
   }
 
   static bool _isAlreadyInitialized(Object error) {

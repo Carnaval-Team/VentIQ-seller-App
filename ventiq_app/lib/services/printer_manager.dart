@@ -29,16 +29,9 @@ class PrinterManager {
   // Tipo de impresora seleccionada en móvil
   String _mobileprinterType = 'bluetooth'; // 'bluetooth' o 'wifi'
 
-  // Control desde configuración de tienda: permite recordar impresora o no
-  bool _allowRememberPrinter = true;
-
-  /// Habilita/deshabilita la opción de recordar la impresora durante el turno.
-  void setAllowRememberPrinter(bool value) {
-    _allowRememberPrinter = value;
-    print('🖨️ setAllowRememberPrinter: $value');
-  }
-
   // ── Selección guardada durante el turno ─────────────────────────────────
+  // Recordar impresora es decisión local del TPV (diálogo «Guardar para el
+  // turno»), no de la config global `guardar_impresora_por_defecto`.
   // Una vez que el trabajador elige tipo + dispositivo y confirma guardar,
   // se reutiliza automáticamente hasta que llame a clearSavedPrinter().
   String? _savedPrinterType;           // 'bluetooth' | 'wifi'
@@ -1172,11 +1165,6 @@ class PrinterManager {
     String printerType,
     dynamic deviceOrPrinter,
   ) async {
-    // Si la tienda deshabilitó recordar la impresora, comportamiento “solo esta vez”.
-    if (!_allowRememberPrinter) {
-      return false;
-    }
-
     final description = printerType == 'sunmi'
         ? 'Integrada SUNMI'
         : printerType == 'bluetooth'

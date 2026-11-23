@@ -7,7 +7,6 @@ import '../services/product_service.dart';
 import '../services/user_preferences_service.dart';
 import '../widgets/admin_bottom_navigation.dart';
 import '../utils/navigation_guard.dart';
-import '../services/permissions_service.dart';
 
 enum _StockFilter { todos, conStock, sinStock }
 
@@ -51,17 +50,11 @@ class _PreciosProductosScreenState extends State<PreciosProductosScreen> {
   }
 
   Future<void> _loadProfitPermission() async {
-    final perms = PermissionsService();
-    var allowed = await perms.canViewGanancias();
-    if (!allowed) {
-      // En esta pantalla el gerente también ve el % de ganancia.
-      final storeId = await _userPrefs.getIdTienda();
-      if (storeId != null) {
-        allowed = await perms.getUserRoleForStore(storeId) == UserRole.gerente;
-      }
-    }
+    // Estudio de % / margen en precios: visible para todos los roles con
+    // acceso a esta pantalla (dueño, gerente, supervisor, auditor, etc.).
+    // En Monitoreo → Tiempo real las ganancias siguen solo al dueño.
     if (!mounted) return;
-    setState(() => _canViewGanancias = allowed);
+    setState(() => _canViewGanancias = true);
   }
 
   @override

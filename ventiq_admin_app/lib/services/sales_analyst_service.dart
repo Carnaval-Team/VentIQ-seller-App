@@ -320,11 +320,13 @@ $question''';
     return {
       'id_proveedor': report.idProveedor,
       'proveedor': report.nombreProveedor,
+      'moneda': report.moneda,
       'total_ventas': report.totalVentas,
       if (includeProfit) 'total_costo': report.totalCosto,
       if (includeProfit) 'total_ganancia': report.totalGanancia,
       'cantidad_productos': report.cantidadProductos,
       if (includeProfit) 'margen_porcentaje': report.margenPorcentaje,
+      if (includeProfit) 'utilidad_disponible': report.utilidadDisponible,
     };
   }
 
@@ -365,21 +367,31 @@ $question''';
     List<SupplierSalesReport> reports, {
     bool includeProfit = true,
   }) {
-    double totalVentas = 0;
-    double totalCosto = 0;
-    double totalGanancia = 0;
-
+    // Totales por moneda: nunca sumar CUP con USD.
+    final porMoneda = <String, Map<String, dynamic>>{};
     for (final report in reports) {
-      totalVentas += report.totalVentas;
-      totalCosto += report.totalCosto;
-      totalGanancia += report.totalGanancia;
+      final m = porMoneda.putIfAbsent(report.moneda, () {
+        return {
+          'moneda': report.moneda,
+          'total_ventas': 0.0,
+          if (includeProfit) 'total_costo': 0.0,
+          if (includeProfit) 'total_ganancia': 0.0,
+          'filas': 0,
+        };
+      });
+      m['total_ventas'] = (m['total_ventas'] as double) + report.totalVentas;
+      m['filas'] = (m['filas'] as int) + 1;
+      if (includeProfit && report.utilidadDisponible) {
+        m['total_costo'] =
+            (m['total_costo'] as double) + report.totalCosto;
+        m['total_ganancia'] =
+            (m['total_ganancia'] as double) + report.totalGanancia;
+      }
     }
 
     return {
-      'total_proveedores': reports.length,
-      'total_ventas': totalVentas,
-      if (includeProfit) 'total_costo': totalCosto,
-      if (includeProfit) 'total_ganancia': totalGanancia,
+      'total_filas_proveedor_moneda': reports.length,
+      'por_moneda': porMoneda.values.toList(),
     };
   }
 }

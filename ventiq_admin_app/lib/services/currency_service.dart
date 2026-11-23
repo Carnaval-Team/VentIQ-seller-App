@@ -8,7 +8,7 @@ import 'store_service.dart';
 class CurrencyService {
   static const String _apiUrl = 'https://tasas.eltoque.com/v1/trmi';
   static const String _apiToken =
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1ODA0NDg1NSwianRpIjoiOWRlMmE2MjgtNzZhZC00ZTAyLTk3ZjctNTJlN2U0NjhmODdkIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjY4YzQzZDg0MGU1NmM1MDMzZDQ0Nzc4MSIsIm5iZiI6MTc1ODA0NDg1NSwiZXhwIjoxNzg5NTgwODU1fQ.L4DayrQx1LGWOEFMSG6SWdAneKwNkW5F9PiwAc8Ine0';
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc5MzExNzc3MiwianRpIjoiNmNiMzdmYTUtMmMzNi00MmUwLWFkZjgtY2YwYTRiMTNmODgwIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjY4YzQzZDg0MGU1NmM1MDMzZDQ0Nzc4MSIsIm5iZiI6MTc5MzExNzc3MiwiY3NyZiI6ImZlZDEwYmE1LTIxNzItNDJjOS05YWM0LWI2YmNjMTQyMTRjNyJ9.d7Xmkji1xOiZbLsebwj0j4dFMnCP2HPAqctRUVZZIWA';
   static final SupabaseClient _supabase = Supabase.instance.client;
   static const String _savedRatesKey = 'saved_exchange_rates';
 

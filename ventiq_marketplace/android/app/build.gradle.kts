@@ -28,7 +28,9 @@ plugins {
          !keystoreKeyAlias.isNullOrBlank() &&
          !keystoreKeyPassword.isNullOrBlank()
 
- val isReleaseBuild = gradle.startParameter.taskNames.any { it.contains("release", ignoreCase = true) }
+ val isPlayBundle = gradle.startParameter.taskNames.any {
+     it.contains("bundle", ignoreCase = true) && it.contains("release", ignoreCase = true)
+ }
 
 android {
     namespace = "com.inventtia.marketplace"
@@ -69,7 +71,7 @@ android {
 
     buildTypes {
         release {
-            if (isReleaseBuild && !hasValidReleaseSigningConfig) {
+            if (isPlayBundle && !hasValidReleaseSigningConfig) {
                 throw GradleException(
                     "Missing android/key.properties (or it is incomplete). " +
                         "Create it to enable release signing."

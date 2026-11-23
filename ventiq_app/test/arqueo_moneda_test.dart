@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ventiq_app/money/arqueo_moneda.dart';
 
@@ -44,5 +46,15 @@ void main() {
     ).last;
     expect(usd.contado, 0);
     expect(usd.estado, EstadoArqueo.falta);
+  });
+
+  test('en el diálogo, Debe haber y Falta/Sobra van en filas distintas', () {
+    final src = File('lib/widgets/cash_count_dialog.dart').readAsStringSync();
+    final card = src.substring(src.indexOf('Widget _buildArqueoCard'));
+    expect(card, contains("'Debe haber:"));
+    expect(card, contains("'Contado:"));
+    // Falta/Sobra es su propio bloque debajo de Debe haber, no un Row compartido.
+    expect(card, contains('if (textoEstado.isNotEmpty)'));
+    expect(card, isNot(contains('MainAxisAlignment.spaceBetween')));
   });
 }

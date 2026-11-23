@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../money/offline_readiness.dart';
 import 'connectivity_service.dart';
 import 'auto_sync_service.dart';
 import 'user_preferences_service.dart';
@@ -512,10 +513,11 @@ class SmartOfflineManager {
   /// Retorna `null` si OK, o un mensaje de error para mostrar al usuario.
   Future<String?> enableOfflineModeFromUi() async {
     try {
-      final hasData = await _userPreferencesService.hasOfflineData();
-      if (!hasData) {
-        return 'No hay datos offline disponibles. Sincroniza primero '
-            'estando en línea.';
+      final readiness = await OfflineReadiness.inspeccionar(
+        _userPreferencesService,
+      );
+      if (!readiness.listo) {
+        return readiness.mensaje;
       }
 
       await _autoSyncService.stopAutoSync();

@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:typed_data';
+import 'auth_service.dart';
 import 'store_service.dart';
 import 'user_preferences_service.dart';
 
@@ -1925,49 +1926,32 @@ class CarnavalService {
     String? chatId,
   }) async {
     try {
-      String? userUuid;
-      bool userAlreadyExisted = false;
+      late final String userUuid;
+      late final bool userAlreadyExisted;
 
       try {
-        final authResponse = await _supabase.auth.signUp(
+        // createOrLinkAuthUser restaura siempre la sesión del admin.
+        final resolucion = await AuthService.createOrLinkAuthUser(
           email: correo,
           password: password,
           data: {'nombre': nombre, 'rol': 'repartidor'},
         );
-        if (authResponse.user == null) {
-          return {'error': 'No se pudo registrar el usuario en Supabase Auth.'};
+        userUuid = resolucion.uuid;
+        userAlreadyExisted = resolucion.alreadyExisted;
+        print(
+          userAlreadyExisted
+              ? '✅ Repartidor: usuario existente reutilizado UUID: $userUuid'
+              : '✅ Repartidor: usuario registrado con UUID: $userUuid',
+        );
+      } catch (authError) {
+        final msg = authError.toString();
+        if (msg.contains('credenciales no coinciden')) {
+          return {
+            'error':
+                'El email ya está registrado y no se pudo autenticar (verifica la contraseña).',
+          };
         }
-        userUuid = authResponse.user!.id;
-        print('✅ Repartidor: usuario registrado con UUID: $userUuid');
-      } catch (signUpError) {
-        final msg = signUpError.toString();
-        if (msg.contains('user_already_exists') ||
-            msg.contains('User already registered')) {
-          try {
-            final loginResponse = await _supabase.auth.signInWithPassword(
-              email: correo,
-              password: password,
-            );
-            if (loginResponse.user == null) {
-              return {
-                'error':
-                    'El email ya existe pero la contraseña proporcionada es incorrecta.',
-              };
-            }
-            userUuid = loginResponse.user!.id;
-            userAlreadyExisted = true;
-            print(
-              '✅ Repartidor: usuario existente reutilizado UUID: $userUuid',
-            );
-          } catch (loginError) {
-            return {
-              'error':
-                  'El email ya está registrado y no se pudo autenticar (verifica la contraseña).',
-            };
-          }
-        } else {
-          return {'error': 'Error en signUp: $msg'};
-        }
+        return {'error': 'Error en Auth: $msg'};
       }
 
       // Insertar en carnavalapp.repartidores con UUID.
@@ -1993,7 +1977,7 @@ class CarnavalService {
             .schema('carnavalapp')
             .from('Usuarios')
             .select('id')
-            .eq('uuid', userUuid!)
+            .eq('uuid', userUuid)
             .maybeSingle();
         if (existing == null) {
           await _supabase.schema('carnavalapp').from('Usuarios').insert({

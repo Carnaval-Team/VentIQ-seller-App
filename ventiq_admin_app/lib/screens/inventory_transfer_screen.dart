@@ -80,7 +80,12 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   Future<void> _loadGerentePermission() async {
     final role = await _permissionsService.getUserRole();
     if (!mounted) return;
-    setState(() => _canRegisterAndComplete = role == UserRole.gerente);
+    setState(
+      () => _canRegisterAndComplete =
+          role == UserRole.dueno ||
+          role == UserRole.gerente ||
+          role == UserRole.supervisor,
+    );
   }
 
   void _loadPersistedValues() {

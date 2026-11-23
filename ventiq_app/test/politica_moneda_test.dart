@@ -64,6 +64,20 @@ void main() {
     );
   });
 
+  test('uuid_sujeto se compara como texto (login offline sin Auth)', () {
+    final cache = lista();
+    // JSON/RPC a veces entrega el uuid tipado distinto; toString debe bastar.
+    (cache['constancia'] as Map)['uuid_sujeto'] = 'usuario-1';
+    expect(
+      PoliticaMonedaEstado.interpretar(
+        cache: cache,
+        tiendaSesion: 4,
+        usuario: 'usuario-1',
+      ).modoActivo,
+      isTrue,
+    );
+  });
+
   test('una respuesta de otra tienda no reemplaza la sesion', () {
     expect(
       PoliticaMonedaEstado.puedeReemplazar(

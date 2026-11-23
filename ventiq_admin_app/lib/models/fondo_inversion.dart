@@ -191,6 +191,17 @@ class FdiSaldosResult {
   );
 }
 
+/// Destino de un monto dentro del módulo FDI (por moneda).
+///
+/// Inversión: [cuentaFondo] deposita en la cuenta; [liquidacion] sale en la
+/// liquidación sin depositar.
+/// Ganancia: [liquidacion] se reparte a inversores; [cuentaFondo] se retiene
+/// depositándola en la cuenta del fondo.
+enum FdiDestinoMonto {
+  liquidacion,
+  cuentaFondo,
+}
+
 /// Una fila del RPC fn_fdi_ventas_por_medio_moneda (previo a liquidar).
 class FdiVentaMedioMoneda {
   final int? idMedioPago;
@@ -202,6 +213,9 @@ class FdiVentaMedioMoneda {
   /// Cuánto de la ganancia retirar en este medio/moneda (editable en UI).
   double montoGananciaRetirada;
 
+  /// Monto de inversión a depositar en la cuenta FDI (puede ser parcial).
+  double montoInversionDepositar;
+
   FdiVentaMedioMoneda({
     this.idMedioPago,
     required this.medioPago,
@@ -209,9 +223,12 @@ class FdiVentaMedioMoneda {
     required this.montoVendido,
     required this.montoVendidoCup,
     this.montoGananciaRetirada = 0,
+    this.montoInversionDepositar = 0,
   });
 
-  double get montoInversion => montoVendido - montoGananciaRetirada;
+  bool get depositarInversion => montoInversionDepositar > 0;
+
+  double get montoInversion => montoInversionDepositar;
 
   factory FdiVentaMedioMoneda.fromJson(Map<String, dynamic> j) =>
       FdiVentaMedioMoneda(
@@ -296,15 +313,36 @@ class FdiSeleccionGanancia {
     );
   }
 
-  List<Map<String, dynamic>> get detalle => [
-    for (final medio in origenes)
-      if (medio.montoGananciaRetirada > 0)
-        {
-          'id_medio_pago': medio.idMedioPago,
-          'moneda': medio.moneda,
-          'monto_ganancia_retirada': medio.montoGananciaRetirada,
-        },
+  /// Detalle para la RPC: ganancia a inversores + inversión a depositar en FDI.
+  List<Map<String, dynamic>> detalleDe(Iterable<FdiVentaMedioMoneda> medios) => [
+    for (final medio in medios)
+      {
+        'id_medio_pago': medio.idMedioPago,
+        'moneda': medio.moneda,
+        'monto_ganancia_retirada': medio.montoGananciaRetirada,
+        'monto_inversion': medio.montoInversionDepositar,
+        'depositar_inversion': medio.depositarInversion,
+      },
   ];
+
+  List<Map<String, dynamic>> get detalle => detalleDe(origenes);
+}
+
+/// Totales nativos por moneda para el encabezado de la liquidación.
+class FdiTotalMoneda {
+  final String moneda;
+  final double venta;
+  final double inversion;
+  final double ganancia;
+  final bool utilidadCompleta;
+
+  const FdiTotalMoneda({
+    required this.moneda,
+    required this.venta,
+    required this.inversion,
+    required this.ganancia,
+    this.utilidadCompleta = true,
+  });
 }
 
 class FdiMovimiento {

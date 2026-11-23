@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../money/offline_readiness.dart';
 import 'admin_access_service.dart';
 import 'auth_service.dart';
 import 'auto_sync_service.dart';
@@ -153,6 +154,15 @@ class DeviceOfflinePrepService {
         'No hay datos offline suficientes (credenciales + categorías). '
         'Sincroniza de nuevo antes de activar.',
       );
+    }
+
+    var readiness = await OfflineReadiness.inspeccionar(_prefs);
+    if (!readiness.listo) {
+      await runPrepSync();
+      readiness = await OfflineReadiness.inspeccionar(_prefs);
+    }
+    if (!readiness.listo) {
+      throw Exception(readiness.mensaje);
     }
 
     await _prefs.setOfflineMode(true);

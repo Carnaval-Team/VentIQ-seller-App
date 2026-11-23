@@ -1,3 +1,4 @@
+import '../money/offline_readiness.dart';
 import '../money/politica_moneda.dart';
 import '../money/politica_moneda_store.dart';
 import '../money/product_currency_order.dart';
@@ -194,8 +195,11 @@ class OrderService extends ChangeNotifier {
   }) async {
     final politica = await PoliticaMonedaStore.leer();
     if (politica.bloqueaOrdenNueva) {
+      final readiness = await OfflineReadiness.inspeccionar();
       throw PoliticaMonedaException(
-        'La politica de moneda esta incompleta. No se creo una orden legacy.',
+        readiness.listo
+            ? 'La política de moneda está incompleta. No se creó la orden.'
+            : readiness.mensaje,
       );
     }
     if (politica.modoActivo && seleccion == null) {

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import '../money/offline_readiness.dart';
+import '../services/auto_sync_service.dart';
+import '../services/connectivity_service.dart';
 import '../services/smart_offline_manager.dart';
 
 /// Widget que muestra el estado de conexión y sincronización.
@@ -25,6 +28,7 @@ class _ConnectionStatusWidgetState extends State<ConnectionStatusWidget> {
   SmartOfflineStatus? _status;
   bool _isLoading = true;
   bool _isSwitching = false;
+  bool _isSyncingMissing = false;
   Timer? _refreshTimer;
 
   @override
@@ -295,6 +299,23 @@ class _ConnectionStatusWidgetState extends State<ConnectionStatusWidget> {
             style: TextStyle(fontSize: 12, color: Colors.grey[600]),
           ),
         ],
+        const SizedBox(height: 12),
+        FutureBuilder<OfflineReadiness>(
+          future: OfflineReadiness.inspeccionar(),
+          builder: (context, snap) {
+            if (!snap.hasData) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: LinearProgressIndicator(minHeight: 2),
+              );
+            }
+            return _buildOfflineReadinessSection(
+              snap.data!,
+              syncing: _isSyncingMissing,
+              onSyncMissing: _syncMissingOfflineData,
+            );
+          },
+        ),
       ],
     );
 
@@ -342,6 +363,183 @@ class _ConnectionStatusWidgetState extends State<ConnectionStatusWidget> {
     );
   }
 
+  /// Cache real para vender offline (monedas, tasas, política, catálogo…).
+  Widget _buildOfflineReadinessSection(
+    OfflineReadiness readiness, {
+    required bool syncing,
+    required Future<void> Function() onSyncMissing,
+  }) {
+    final MaterialColor tone = readiness.listo ? Colors.green : Colors.orange;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: tone.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: tone.withOpacity(0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                readiness.listo
+                    ? Icons.check_circle_outline
+                    : Icons.warning_amber,
+                size: 18,
+                color: tone[700],
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  readiness.listo
+                      ? 'Listo para trabajar offline'
+                      : 'Falta información para offline',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: tone[800],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (!readiness.listo) ...[
+            const SizedBox(height: 8),
+            Text(
+              readiness.faltantes.map((f) => '• $f').join('\n'),
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[800],
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: syncing ? null : () => onSyncMissing(),
+                icon:
+                    syncing
+                        ? SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: tone[700],
+                          ),
+                        )
+                        : Icon(Icons.sync, size: 16, color: tone[700]),
+                label: Text(
+                  syncing
+                      ? 'Sincronizando…'
+                      : 'Sincronizar información faltante',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: tone[800],
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: tone[800],
+                  side: BorderSide(color: tone.withOpacity(0.45)),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Descarga los módulos necesarios para vender offline (misma lista que Ajustes).
+  Future<void> _syncMissingOfflineData() async {
+    if (_isSyncingMissing) return;
+
+    final online = await ConnectivityService().probeInternetSilent();
+    if (!online) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Necesitas conexión a internet para sincronizar lo faltante.',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isSyncingMissing = true);
+    try {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Sincronizando información offline…'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+
+      const requiredOfflineModules = {
+        SyncModule.license,
+        SyncModule.storeConfig,
+        SyncModule.credentials,
+        SyncModule.paymentMethods,
+        SyncModule.promotions,
+        SyncModule.categories,
+        SyncModule.products,
+        SyncModule.layouts,
+        SyncModule.turno,
+        SyncModule.egresos,
+        SyncModule.orders,
+        SyncModule.shiftWorkers,
+      };
+
+      final result = await AutoSyncService().syncModules(
+        requiredOfflineModules,
+        resumeFromCheckpoint: false,
+        suspenderModoOffline: true,
+      );
+
+      if (!mounted) return;
+      final readiness = await OfflineReadiness.inspeccionar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result.success && readiness.listo
+                ? 'Listo: ya tienes la información para trabajar offline.'
+                : readiness.listo
+                ? 'Sincronización parcial, pero el cache offline ya está completo.'
+                : result.success
+                ? 'Sync terminó, pero aún falta:\n${readiness.faltantes.map((f) => '• $f').join('\n')}'
+                : 'No se pudo completar la sincronización. Revisa la conexión e inténtalo de nuevo.',
+          ),
+          backgroundColor:
+              readiness.listo
+                  ? Colors.green
+                  : result.success
+                  ? Colors.orange
+                  : Colors.red,
+          duration: Duration(seconds: readiness.listo ? 3 : 5),
+        ),
+      );
+      await _loadStatus();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al sincronizar: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSyncingMissing = false);
+    }
+  }
+
   Future<void> _showModeControlSheet() async {
     final status = _status;
     if (status == null || !mounted) return;
@@ -356,100 +554,164 @@ class _ConnectionStatusWidgetState extends State<ConnectionStatusWidget> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[300],
-                      borderRadius: BorderRadius.circular(2),
-                    ),
+        // Future local para poder reconsultar readiness tras sync sin cerrar.
+        var readinessFuture = OfflineReadiness.inspeccionar();
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[300],
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        status.isOfflineModeEnabled
+                            ? 'Modo offline activo'
+                            : 'Modo en línea',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        status.isOfflineModeEnabled
+                            ? 'Las ventas y turnos se guardan en el dispositivo. '
+                                'Al volver a online se sincronizarán con el servidor.'
+                            : 'La app usa el servidor. Si pierdes conexión, puedes '
+                                'pasar a offline para seguir vendiendo.',
+                        style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+                      ),
+                      const SizedBox(height: 12),
+                      // Estado conexión/sync (sin bloque readiness duplicado).
+                      _buildConnectionOnlyStatus(status),
+                      const SizedBox(height: 12),
+                      FutureBuilder<OfflineReadiness>(
+                        future: readinessFuture,
+                        builder: (context, snap) {
+                          if (!snap.hasData) {
+                            return const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 8),
+                              child: LinearProgressIndicator(minHeight: 2),
+                            );
+                          }
+                          return _buildOfflineReadinessSection(
+                            snap.data!,
+                            syncing: _isSyncingMissing,
+                            onSyncMissing: () async {
+                              await _syncMissingOfflineData();
+                              readinessFuture =
+                                  OfflineReadiness.inspeccionar();
+                              setSheetState(() {});
+                            },
+                          );
+                        },
+                      ),
+                      if (fullOffline) ...[
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: Colors.orange.withOpacity(0.3),
+                            ),
+                          ),
+                          child: const Text(
+                            'Este dispositivo está preparado para full-offline. '
+                            'Solo un administrador puede volver a modo en línea '
+                            '(se eliminará esa preparación).',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 16),
+                      if (status.isOfflineModeEnabled)
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            _switchToOnline();
+                          },
+                          icon: const Icon(Icons.cloud_done_outlined),
+                          label: const Text('Cambiar a modo en línea'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF4A90E2),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        )
+                      else
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            _switchToOffline();
+                          },
+                          icon: const Icon(Icons.cloud_off_outlined),
+                          label: const Text('Cambiar a modo offline'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.orange[700],
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      const SizedBox(height: 8),
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('Cerrar'),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 16),
-                Text(
-                  status.isOfflineModeEnabled
-                      ? 'Modo offline activo'
-                      : 'Modo en línea',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  status.isOfflineModeEnabled
-                      ? 'Las ventas y turnos se guardan en el dispositivo. '
-                          'Al volver a online se sincronizarán con el servidor.'
-                      : 'La app usa el servidor. Si pierdes conexión, puedes '
-                          'pasar a offline para seguir vendiendo.',
-                  style: TextStyle(fontSize: 13, color: Colors.grey[700]),
-                ),
-                const SizedBox(height: 12),
-                _buildDetailedWidget(decorated: false),
-                if (fullOffline) ...[
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.withOpacity(0.08),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.orange.withOpacity(0.3)),
-                    ),
-                    child: const Text(
-                      'Este dispositivo está preparado para full-offline. '
-                      'Solo un administrador puede volver a modo en línea '
-                      '(se eliminará esa preparación).',
-                      style: TextStyle(fontSize: 12),
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 16),
-                if (status.isOfflineModeEnabled)
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      _switchToOnline();
-                    },
-                    icon: const Icon(Icons.cloud_done_outlined),
-                    label: const Text('Cambiar a modo en línea'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF4A90E2),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  )
-                else
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      _switchToOffline();
-                    },
-                    icon: const Icon(Icons.cloud_off_outlined),
-                    label: const Text('Cambiar a modo offline'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange[700],
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  ),
-                const SizedBox(height: 8),
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Cerrar'),
-                ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
+    );
+  }
+
+  Widget _buildConnectionOnlyStatus(SmartOfflineStatus status) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildStatusRow(
+          'Conexión',
+          status.isConnected ? 'Conectado' : 'Desconectado',
+          status.isConnected ? Colors.green : Colors.red,
+        ),
+        _buildStatusRow(
+          'Modo Offline',
+          status.isOfflineModeEnabled ? 'Activado' : 'Desactivado',
+          status.isOfflineModeEnabled ? Colors.orange : Colors.grey,
+        ),
+        _buildStatusRow(
+          'Sincronización Auto',
+          status.isAutoSyncRunning ? 'Ejecutándose' : 'Detenida',
+          status.isAutoSyncRunning ? Colors.blue : Colors.grey,
+        ),
+        if (status.syncStats['lastSyncTime'] != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Última sincronización: ${_formatDateTime(DateTime.parse(status.syncStats['lastSyncTime']))}',
+            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+          ),
+        ],
+      ],
     );
   }
 

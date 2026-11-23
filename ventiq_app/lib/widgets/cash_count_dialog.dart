@@ -272,6 +272,8 @@ class _CashCountDialogState extends State<CashCountDialog> {
 
     final selectedDenoms = _denominationsByCurrency[_selectedCurrency] ?? [];
 
+    final altoMax = MediaQuery.sizeOf(context).height * 0.7;
+
     return AlertDialog(
       title: Row(
         children: [
@@ -284,13 +286,23 @@ class _CashCountDialogState extends State<CashCountDialog> {
       ),
       content: SizedBox(
         width: double.maxFinite,
+        height: altoMax.clamp(320.0, 560.0),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Un registro por moneda: contado, lo que debe haber y su
-            // diferencia. Tocar uno elige la planilla de billetes que se edita.
-            // Cada moneda se verifica sola: no se suman ni se compensan.
-            for (final arqueo in _arqueos) _buildArqueoCard(arqueo),
+            // Un registro por moneda: contado, debe haber y diferencia en
+            // filas propias (evita overflow en pantallas estrechas). Tocar
+            // uno elige la planilla. Cada moneda se verifica sola.
+            ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: altoMax * 0.35),
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    for (final arqueo in _arqueos) _buildArqueoCard(arqueo),
+                  ],
+                ),
+              ),
+            ),
             const SizedBox(height: 4),
             Text(
               'Billetes de $_selectedCurrency',
@@ -303,9 +315,8 @@ class _CashCountDialogState extends State<CashCountDialog> {
             const SizedBox(height: 4),
 
             // Lista de denominaciones
-            Flexible(
+            Expanded(
               child: ListView.builder(
-                shrinkWrap: true,
                 itemCount: selectedDenoms.length,
                 itemBuilder: (context, index) {
                   final denom = selectedDenoms[index];
@@ -315,17 +326,19 @@ class _CashCountDialogState extends State<CashCountDialog> {
                   final controller = _controllersByCurrency[currency]![id]!;
 
                   return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    padding: const EdgeInsets.symmetric(vertical: 4),
                     child: Row(
                       children: [
                         SizedBox(
-                          width: 90,
+                          width: 72,
                           child: Text(
                             '\$${value.toMoneyString(value % 1 == 0 ? 0 : 2)}',
                             style: const TextStyle(
-                              fontSize: 16,
+                              fontSize: 15,
                               fontWeight: FontWeight.w600,
                             ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         Expanded(
@@ -337,7 +350,8 @@ class _CashCountDialogState extends State<CashCountDialog> {
                               FilteringTextInputFormatter.digitsOnly,
                             ],
                             decoration: InputDecoration(
-                              labelText: 'Cantidad',
+                              labelText: 'Cant.',
+                              isDense: true,
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(8),
                               ),
@@ -352,6 +366,12 @@ class _CashCountDialogState extends State<CashCountDialog> {
                           ),
                         ),
                         IconButton(
+                          visualDensity: VisualDensity.compact,
+                          constraints: const BoxConstraints(
+                            minWidth: 36,
+                            minHeight: 36,
+                          ),
+                          padding: EdgeInsets.zero,
                           icon: const Icon(
                             Icons.remove_circle_outline,
                             color: Colors.red,
@@ -364,6 +384,12 @@ class _CashCountDialogState extends State<CashCountDialog> {
                           },
                         ),
                         IconButton(
+                          visualDensity: VisualDensity.compact,
+                          constraints: const BoxConstraints(
+                            minWidth: 36,
+                            minHeight: 36,
+                          ),
+                          padding: EdgeInsets.zero,
                           icon: const Icon(
                             Icons.add_circle_outline,
                             color: VentiqHomeTheme.primary,
@@ -455,7 +481,6 @@ class _CashCountDialogState extends State<CashCountDialog> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
                     arqueo.moneda,
@@ -464,37 +489,41 @@ class _CashCountDialogState extends State<CashCountDialog> {
                       fontWeight: FontWeight.w800,
                     ),
                   ),
-                  Text(
-                    '\$${arqueo.contado.toMoneyString(2)}',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Contado: \$${arqueo.contado.toMoneyString(2)}',
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ],
               ),
               if (arqueo.esperado != null) ...[
                 const SizedBox(height: 4),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Debe haber: \$${arqueo.esperado!.toMoneyString(2)}',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: VentiqHomeTheme.textSecondary,
-                      ),
-                    ),
-                    Text(
-                      textoEstado,
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w700,
-                        color: color,
-                      ),
-                    ),
-                  ],
+                Text(
+                  'Debe haber: \$${arqueo.esperado!.toMoneyString(2)}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: VentiqHomeTheme.textSecondary,
+                  ),
                 ),
+                if (textoEstado.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    textoEstado,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: color,
+                    ),
+                  ),
+                ],
               ],
             ],
           ),

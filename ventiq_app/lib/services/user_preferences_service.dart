@@ -703,8 +703,9 @@ class UserPreferencesService {
     // Limpiar promociones al cerrar sesión
     await clearPromotionData();
 
-    // Limpiar configuración de tienda al cerrar sesión
-    await clearStoreConfig();
+    // No borrar store_config / monedas / tasas aquí: un logout (sobre todo
+    // offline) debe poder volver a entrar sin re-sincronizar toda la tienda.
+    // El wipe total queda en clearAllCachedDataForOnlineLogout → prefs.clear().
 
     // Limpiar órdenes al cerrar sesión
     await _clearOrdersOnLogout();

@@ -1,9 +1,26 @@
 # Referencia multimoneda: intención confirmada y plan preliminar
 
 - Fecha de creación: 2026-11-13.
-- Última actualización: 2026-11-19. El párrafo de «Estado» que sigue es histórico (llega hasta el script 47 y dice que el flag sigue apagado). Lo vigente está en «Estado al 2026-11-19 — cambios desde la redacción», justo debajo.
+- Última actualización: 2026-11-21. El párrafo de «Estado» bajo el título sigue siendo histórico (scripts 1–47). Lo vigente: «Estado al 2026-11-21» y, debajo, «Estado al 2026-11-19».
 - Estado: contrato de venta, plan técnico y desglose MC aprobados; MC-001–MC-004 completados y REP aprobada. MC-005 cerrada el 2026-11-14 por orden del usuario. En newa el usuario aplicó los scripts 1–24. El harness de rol pasó en una sesión: vendedor de otra tienda, escalación y replay secuencial, con ROLLBACK. No se probó la carrera de dos sesiones ni el anónimo; newa no tiene superadmin inactivo. Los cortes R0h de Admin Lite quedan fuera. MC-006 a MC-011 quedaron aplicadas en newa. MC-012 a MC-015 y MC-018 a MC-021 están en el cliente. Los scripts 32 a 38 quedaron aplicados en newa. MC-029 a MC-033 leen la política sin encenderla: el flag sigue apagado y una caché incompleta bloquea la orden nueva. MC-034 a MC-038 están en el cliente: el cobro nuevo agrupa netos ya fijados, el envío guarda la clave y no cae al registro anterior, y el script 39 quedó aplicado en newa: la guarda existe, solo actúa al insertar y el flag sigue apagado. MC-039 a MC-046 quedaron en el cliente y el usuario aplicó los scripts 40 a 44 en newa. La lectura de catálogo devuelve las funciones, el RLS de las tablas nuevas y el flag apagado. el usuario aplicó los scripts 45 y 46: anon ya no ejecuta esas funciones y la comanda queda solo en cocina al pedido. MC-049 a MC-051 quedaron en la decisión local y en la lectura de newa: el flag sigue apagado, no hay venta v1 aceptada, no hay autorización para encender una tienda y no hay ticket físico. MC-016 de Admin Lite queda fuera. MC-017 y main siguen cerrados. El script 47 está para pegar y no está aplicado: no enciende ninguna tienda. El detalle del vendedor elige CUP o USD cuando la tienda lo tiene activo y rechaza la moneda sin precio configurado. S01 de configuración ya estaba aplicado.
 - Apps implicadas en el alcance inmediato: `ventiq_app`, configuración de tienda en `ventiq_admin_app` y persistencia/RPC en Supabase.
+
+## Estado al 2026-11-21 — pendientes en newa (antes de main)
+
+Concentración actual: **terminar y smokear newa**; el pase a main espera.
+
+| Tema | Estado |
+|---|---|
+| C17 Tiempo real / Proveedores por moneda | SQL + cliente en newa. Smoke dispositivo pendiente |
+| C17 Liquidación FDI (destinos, sin tasa) | SQL + diálogo en newa. Smoke dispositivo pendiente |
+| C17 Sesión admin | Cliente en newa. Smoke: crear trabajador sin logout |
+| Hallazgos C1–C16, H7–H8 | Código/SQL mayormente listo; **checklist de smoke** en hallazgos. C1 PDF + H1 datos + smoke impresora C1/C1b/C3 OK (2026-11-21) |
+| Decisión egreso en RPC (C14) | Abierta: ¿saldo por moneda solo cliente o también en RPC? |
+| Monedas extra en apertura (nota H5) | Abierta: catálogo newa solo CUP+USD |
+| Promoción a main / M01 | **No autorizada aún.** Ver `plan_promocion_main.md` y checklist de hallazgos |
+| Preflight md5 scripts 14/17/56 | Sigue pendiente antes del pase (punto 2 abajo) |
+
+R03/R04 C17: ver ampliación más abajo en el documento (script aplicado en newa).
 
 ## Estado al 2026-11-19 — cambios desde la redacción
 
@@ -570,6 +587,8 @@ R01: entregado `ventiq_admin_app/lib/models/report_envelope.dart` — envelope e
 R03: entregado en `sales_service.getProductSalesReport` — (a) el fallback por-turnos a la RPC vieja solo se dispara cuando la función no existe (PGRST202/404/"does not exist"/"Could not find"), nunca ante error de red o permisos; (b) un payload que no sea lista lanza `ReporteContratoException` en vez de devolver `[]`; (c) el catch externo propaga (rethrow) en vez de fabricar «0 productos» — los tres llamadores ya tienen try/catch; (d) `ProductSalesReport.usaPreciosActuales` declara si la fila es análisis con precios vigentes o histórico, dos magnitudes no reetiquetables. Verificación: `test/product_sales_report_contract_test.dart` (2 tests) + suite R01 en verde; analyze sin errores nuevos (solo `avoid_print` preexistente). Pendiente de la tarea: la lectura estricta por versión de cada fila queda para R02/R04 — el parseo de fila actual sigue tolerante a ceros (contrato legacy).
 
 R04: entregado en `sales_screen.dart` — (a) `_productSalesError` distingue «reporte no disponible» de «cero ventas»: un fallo de `getProductSalesReport` limpia filas y KPIs y muestra estado de error con reintento, en vez de presentar la lista vacía o totales del período anterior como dato válido; (b) el resto del contrato ya estaba: tarjeta «Ventas» etiquetada en moneda base, bloque «Por moneda» con consolidado y moneda de consolidación declaradas, aviso de tasa faltante, y PDF/Excel declaran el método de cálculo («Precios cobrados» vs «Precios de lista actuales») y la divisa en cabecera. Verificación: analyze de `sales_screen.dart` sin errores (solo warnings/infos preexistentes).
+
+R03/R04 ampliación C17 (2026-11-21): utilidad por moneda en Tiempo real + Proveedores; liquidación FDI con destinos cuenta/liquidación/fondo (sin tasa); sesión admin endurecida. SQL **aplicado en newa**. Scripts en `sql_updates/`. Tests de contrato/widget OK. Pendiente newa: smoke en dispositivo. Main: no tocar hasta el pase.
 
 R02: propuesta `docs/plan-multimoneda/m01_r31_reporte_ordenes_v1_propuesta.sql` (script 54, borrador — no ejecutada). Función NUEVA `reporte_ordenes_json_v2(bigint,timestamptz,timestamptz,bigint)`: items con `version_monetaria` + `linea_v1` (id_linea_cliente, componentes nativos/equivalentes como cadenas decimales, medio seleccionado separado del cobrado), pagos por identidad con `aplicaciones` a línea (sin fan-out, LEFT JOIN a medios — desactivar no borra cobros), `totales_por_moneda` por orden y envelope R01 con completitud `V1_SIN_METADATA_DE_LINEA`. Añade validación de tienda en servidor (`fn_config_tienda_puede_leer`) que la v1 no tenía, y revoca anon. Contrato en `m01_r13_r16_sql_contract_test` (11 tests verdes). Adaptador cliente en `SalesService.getReporteOrdenesJson`: la auditoría de Ventas prefiere `reporte_ordenes_json_v2` y cae a la v1 solo si la función no existe (PGRST202/404); permisos y red no abren la v1. La v2 rellena `created_at` desde `fecha_operacion` y las líneas producto-v1 muestran el neto nativo en vez de `importe` NULL como 0. Pendiente: aplicar el script en newa.
 
