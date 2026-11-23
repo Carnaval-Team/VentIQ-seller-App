@@ -6,6 +6,7 @@ import '../../models/compra.dart';
 import '../../services/compra_service.dart';
 import '../../services/financial_service.dart';
 import '../../widgets/admin_drawer.dart';
+import '../../widgets/compra_aportes_panel.dart';
 import 'compra_form_screen.dart';
 import 'compra_liquidacion_screen.dart';
 import 'compras_widgets.dart';
@@ -394,6 +395,7 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         _panelTotales(detalle),
+                        _panelAportes(detalle),
                         _panelCostoAterrizado(detalle),
                         const SizedBox(height: 12),
                         _panelAcciones(detalle),
@@ -413,6 +415,7 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
             children: [
               _panelCabecera(detalle),
               _panelTotales(detalle),
+              _panelAportes(detalle),
               _panelCostoAterrizado(detalle),
               const SizedBox(height: 12),
               _panelLineas(detalle, tamano),
@@ -598,6 +601,30 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
           style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
         ),
       ],
+    );
+  }
+
+  // ==========================================================================
+  // Aportes de inversores (fase 7)
+  // ==========================================================================
+
+  /// Panel de aportes. Solo se monta con `modo_liquidacion = 'inversores'`: en
+  /// modo fondo el total lo paga el fondo y no hay nada que cubrir.
+  ///
+  /// El panel relee sus cifras con `fn_fdi_compra_aportes` y avisa por
+  /// [CompraAportesPanel.onCambio] cuando registra un aporte, lo devuelve o
+  /// paga la compra; aquí solo se recarga el detalle, igual que en el resto de
+  /// acciones.
+  Widget _panelAportes(CompraDetalle detalle) {
+    final c = detalle.compra;
+    if (c.modoLiquidacion != 'inversores') return const SizedBox.shrink();
+    return CompraAportesPanel(
+      idCompra: c.id,
+      moneda: c.monedaTotal,
+      estado: c.estado,
+      modoLiquidacion: c.modoLiquidacion,
+      idTienda: c.idTienda,
+      onCambio: () => _cargar(),
     );
   }
 
@@ -1439,13 +1466,18 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
     final acciones = <Widget>[];
 
     if (c.estado == 'creada') {
-      acciones.add(
-        _botonAccion(
-          icono: Icons.lock_open_outlined,
-          etiqueta: 'Reservar del fondo',
-          onPressed: _reservar,
-        ),
-      );
+      // En modo inversores no hay nada que reservar del fondo: el dinero llega
+      // por aportes y se paga desde el panel de aportes. Ofrecer «Reservar del
+      // fondo» solo producía un error del servidor.
+      if (c.modoLiquidacion != 'inversores') {
+        acciones.add(
+          _botonAccion(
+            icono: Icons.lock_open_outlined,
+            etiqueta: 'Reservar del fondo',
+            onPressed: _reservar,
+          ),
+        );
+      }
       acciones.add(
         _botonAccion(
           icono: Icons.edit_outlined,
@@ -1534,7 +1566,7 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
           acciones[i],
         ],
         const SizedBox(height: 8),
-        textoMetaCompras(_notaAcciones(c.estado)),
+        textoMetaCompras(_notaAcciones(c.estado, modoLiquidacion: c.modoLiquidacion)),
       ],
     );
   }
@@ -1576,10 +1608,17 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
   }
 
   /// Qué hace cada acción, en una línea. No se explica el «¿seguro?»: se
-  /// explica la consecuencia.
-  String _notaAcciones(String estado) {
+  /// explica la consecuencia. En modo inversores el dinero no es del fondo, así
+  /// que el texto cambia con el modo.
+  String _notaAcciones(String estado, {String modoLiquidacion = 'fondo'}) {
+    final inversores = modoLiquidacion == 'inversores';
     switch (estado) {
       case 'creada':
+        if (inversores) {
+          return 'La compra se cubre con aportes de inversores al 100 %: se '
+              'registran en el panel de arriba y no tocan el fondo. Solo se '
+              'edita y se cancela en «Creada» y sin recepciones.';
+        }
         return 'Reservar congela el disponible del fondo según las fuentes que '
             'elijas. Solo se edita y se cancela en «Creada» y sin recepciones; '
             'el servidor valida ambas cosas.';
@@ -1588,6 +1627,11 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
             '«Pagada». Liberar devuelve el disponible sin pagar y la compra '
             'vuelve a «Creada»; ambas exigen confirmación.';
       case 'pagada':
+        if (inversores) {
+          return 'Anular exige que los aportes estén devueltos: no se acredita '
+              'al fondo dinero que nunca salió de él. Queda en el historial y '
+              'no se puede deshacer.';
+        }
         return 'Anular devuelve al fondo lo pagado y exige motivo. Queda en el '
             'historial y no se puede deshacer.';
       default:

@@ -381,4 +381,94 @@ class CompraService {
     );
     return _asMap(resp);
   }
+
+  // ==========================================================================
+  // Aportes de inversores (fase 7)
+  // ==========================================================================
+  //
+  // Solo aplican a compras con `modo_liquidacion = 'inversores'`: los aportes
+  // cubren el total y `fn_fdi_compra_pagar` no debita el fondo. El pago sigue
+  // siendo [pagar]: la RPC tiene una rama propia para ese modo.
+
+  /// Desglose de aportes de la compra, tal cual lo arma el servidor
+  /// (`fn_fdi_compra_aportes`): `{id_compra, modo_liquidacion, estado, moneda,
+  /// total, aportado, devuelto, faltante, pct, puede_registrar, puede_pagar,
+  /// motivo_bloqueo, aportes[]}`.
+  ///
+  /// `motivo_bloqueo` es `null` cuando se puede pagar; si no, trae el texto
+  /// real del bloqueo («Faltan 500.00 USD», «La compra ya está pagada», ...).
+  /// Es de solo lectura y se relee antes de cada operación: no se cachea.
+  Future<Map<String, dynamic>> aportesCompra(int idCompra) async {
+    final resp = await _supabase.rpc(
+      'fn_fdi_compra_aportes',
+      params: {'p_id_compra': idCompra},
+    );
+    return _asMap(resp);
+  }
+
+  /// Registra el aporte de un inversor (`fn_fdi_compra_aporte_registrar`).
+  ///
+  /// [monto] va en [moneda] y [tasaATotal] la lleva a la moneda del total de la
+  /// compra; si [moneda] ya es la de la compra la RPC fuerza la tasa a 1. La
+  /// RPC rechaza que el equivalente supere el faltante.
+  ///
+  /// [naturaleza]: `anticipo | pasivo | capital`; [tasaInteres] solo tiene
+  /// sentido con `pasivo`.
+  ///
+  /// Devuelve `{status, id, id_compra, id_inversor, inversor, moneda, monto,
+  /// tasa_a_total, monto_eq_total, aportado, faltante, total}` o
+  /// `{status:'ok', duplicada:true, id, id_compra, monto_eq_total, estado}`
+  /// cuando la [idempotencyKey] ya se usó.
+  ///
+  /// [idempotencyKey] se genera **una vez por formulario** (ver
+  /// [newIdempotencyKey]) y se reutiliza en los reintentos: si el diálogo la
+  /// volviera a crear, un reintento tras un timeout duplicaría el aporte.
+  Future<Map<String, dynamic>> registrarAporte({
+    required int idCompra,
+    required int idInversor,
+    required String moneda,
+    required double monto,
+    double tasaATotal = 1,
+    String naturaleza = 'anticipo',
+    double? tasaInteres,
+    String? comprobante,
+    String? observacion,
+    String? idempotencyKey,
+  }) async {
+    final resp = await _supabase.rpc(
+      'fn_fdi_compra_aporte_registrar',
+      params: {
+        'p_id_compra': idCompra,
+        'p_id_inversor': idInversor,
+        'p_moneda': moneda,
+        'p_monto': monto,
+        'p_tasa_a_total': tasaATotal,
+        'p_naturaleza': naturaleza,
+        'p_tasa_interes': tasaInteres,
+        'p_comprobante': comprobante,
+        'p_observacion': observacion,
+        'p_idempotency_key': idempotencyKey,
+      },
+    );
+    return _asMap(resp);
+  }
+
+  /// Marca un aporte como devuelto (`fn_fdi_compra_aporte_devolver`). El monto
+  /// vuelve a contar como faltante; **el dinero no regresa al fondo**, porque
+  /// nunca salió de él.
+  ///
+  /// [motivo] es obligatorio. Devuelve `{status, id, id_compra, id_inversor,
+  /// devuelto_monto, aportado, devuelto, faltante, estado_compra,
+  /// estado_cambiado}` o `{status:'ok', duplicada:true, id}` si el aporte ya
+  /// estaba devuelto.
+  Future<Map<String, dynamic>> devolverAporte({
+    required int idAporte,
+    required String motivo,
+  }) async {
+    final resp = await _supabase.rpc(
+      'fn_fdi_compra_aporte_devolver',
+      params: {'p_id_aporte': idAporte, 'p_motivo': motivo},
+    );
+    return _asMap(resp);
+  }
 }
