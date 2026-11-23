@@ -118,10 +118,10 @@ combinada de cambio de estado.
 | 5. Recepción: carril A y carril B | **done** — recepción contra compra, carril B cerrado, verify 21/21 y E2E del dueño aprobado |
 | 6. Costo aterrizado sobre el módulo existente | **done** — 6a/6b/6c/6d aplicados; `verify/06` **27/27**, pruebas de dinero **23/23 + 14/14**; aterrizaje al vincular, desvío, reversa, ajuste tardío con reserva/pago propios y catálogo bajo superadmin. **E2E del dueño aprobado (2026-11-23)** |
 | 7. Inversores aportantes (100%) | **done** — 07 aplicado en `newa`; `fdi_dat_compra_aporte` aislada, exclusividad con 6 triggers, RPC de registrar/devolver, rama de aportes en `pagar` y guardas en `anular`/`cancelar`/`liberar`; UI de aportes con restante bloqueante. `verify/07` **32/32**, pruebas de dinero **42/42** y **E2E del dueño aprobado (2026-11-23)** |
-| 8. Reportes, conciliación en UI y cierre | not started |
+| 8. Reportes, conciliación en UI y cierre | **en curso** — R2-R7 (`verify/08` **14/14**), R1 programada en `pg_cron` (`verify/08b` **9/9**), pantalla `/reportes` con alarma, aging y descuadres; legado de inversión en solo lectura; índice documental y `CAPABILITY-MAP`. **Falta el E2E integral del dueño** |
 | 9. Pendientes, recordatorios y registro de faltantes | not started |
 
-Current phase: 8 · Recommended next: 8
+Current phase: 8 · Recommended next: 8 (solo el E2E integral), después 9
 
 > Agente ejecutor: actualiza esta tabla al terminar y anota una línea por desviación. No marques `done`
 > sin criterios de salida corridos y OK del dueño.
@@ -1174,13 +1174,14 @@ reversión al cancelar y el desvío visible. En Main no existe (fase 0b).
 - Revisión final de responsive.
 
 **Checklist:**
-- [ ] R2-R7 implementados y enlazados
-- [ ] Conciliación en UI con alarma y job
-- [ ] Aging y descuadre declarado
-- [ ] Alta de inversión retirada; legado de solo lectura
-- [ ] `precio_promedio` decidido y probado con las dos apps
-- [ ] Devoluciones: decisión explícita
-- [ ] Índice documental
+- [x] R2-R7 implementados y enlazados
+- [x] Conciliación en UI con alarma y job
+- [x] Aging y descuadre declarado
+- [x] Alta de inversión retirada; legado de solo lectura
+- [x] `precio_promedio` decidido y probado con las dos apps — **decidido** (ver «Decisiones»); la prueba en
+      dispositivo sigue pendiente del dueño, y el clobber conocido queda como H12 con su arreglo propuesto
+- [x] Devoluciones: decisión explícita — fase 10 documentada
+- [x] Índice documental
 
 **Exit criteria:**
 - **Todos los reportes cuadran con los datos de prueba de las fases 3-7**
@@ -1219,6 +1220,45 @@ reversión al cancelar y el desvío visible. En Main no existe (fase 0b).
   módulo no lee `precio_promedio` para su propia aritmética, así que un clobber degrada la fidelidad del
   costo de inventario, no la contabilidad del fondo. La prueba en dispositivo con las dos apps queda
   pendiente del dueño.
+
+- **Fase 8 · reportes, conciliación programada y cierre documental (2026-11-23).**
+  · **`08_reportes.sql`** con siete RPC de solo lectura: `fn_fdi_reporte_caja` (bruto, **reservado**,
+    **disponible** y ejecutado de la ventana, que es lo que faltaba a `fn_fdi_saldos`), `_compras`
+    (facturado vs aterrizado vs pagado por estado), `_costo` (mercancía + adicionales = aterrizado con
+    % de desvío y % recibido), `_cambiario` (tasa de factura vs tasa de pago, equivalente real vs a tasa
+    de factura, diferencia con signo), `_movimientos` (por día, usuario y moneda), `_inversores`
+    (aportes, devoluciones, utilidad repartida/pagada/pendiente por moneda) y `_aging` (reservas activas
+    con antigüedad + compras con descuadre y su último motivo). **Ningún reporte suma monedas distintas.**
+    `verify/08_reportes.sql` **14/14** contrastando cada cifra **contra las tablas** de las tres tiendas
+    con datos; se probó en negativo (romper R2 a propósito hace fallar el chequeo), se corrió el rollback
+    (las 7 desaparecen) y se reaplicó.
+  · **`08b_conciliacion_job.sql`**: R1 dejaba de correr si nadie abría la pantalla. Ahora
+    `fdi_dat_conciliacion_ejecucion` guarda cada corrida, `fn_fdi_conciliacion_registrar()` recorre las
+    tiendas con saldo y poda a 90 días, `fn_fdi_conciliacion_ultima(bigint)` alimenta la nota de la UI y
+    el job `fdi-conciliacion-diaria` de `pg_cron` lo lanza a las 03:00. **R1 sigue siendo
+    `fn_fdi_conciliacion`**: no se reescribió. `verify/08b_job.sql` **9/9**.
+  · **UI `/reportes`** (diseño en `docs/design/reportes-*.png`): conciliación con **alarma de dos
+    niveles** que recalcula en el cliente (`descuadresEfectivos = max(servidor, filas no ok)`, umbral sin
+    redondear antes), caja con reservado/disponible, compras/costo/cambiario, movimientos por día y
+    usuario, inversores y las dos tarjetas de pendientes con contadores que salen de las mismas listas.
+    Navegación por `/reportes` en el cajón tras «Compras», permiso dueño/gerente. `flutter analyze`
+    limpio y **28 tests** en verde (`reportes_contract_test`, `reportes_ui_smoke_test` a 390 y 800 px, más
+    `app_compile_test`).
+  · **Legado**: se retiró el alta de inversión, el cambio de estado y la resolución de revisión (UI y
+    servicio); queda listado y detalle consultables con un aviso que manda a Compras para comprometer
+    dinero y a los aportes para lo de inversores. `vincularRecepcion` se conserva porque lo usa la
+    recepción financiada.
+  · **Hallazgo de los reportes (H11).** El criterio «pagado = financiado» aplicado a todos los estados
+    marcaba como descuadre toda compra no pagada (3 falsos positivos en `newa`). Ahora el criterio de
+    pagos solo aplica a `pagada`, `entrega_parcial`, `completada` y `anulada`; el de financiado sigue
+    siendo literal en todos los estados.
+  · **Cierre documental**: nuevo `docs/planes/fondo-inversion/README.md` (estado por fase, qué es cada
+    documento, dónde vive el SQL y qué verifica cada script) y el módulo completo con sus contratos en
+    `CAPABILITY-MAP.md`.
+  · **Pendiente de la fase**: el **E2E integral del dueño** (los 8 pasos) y la revisión final de
+    responsive en dispositivo. El clobber de `precio_promedio` del TPV queda como deuda documentada
+    (H12) porque la guardia en BD se descartó con evidencia: la columna la escriben una decena de
+    funciones legítimas.
 
 ---
 
