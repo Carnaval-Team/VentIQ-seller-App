@@ -119,7 +119,7 @@ combinada de cambio de estado.
 | 6. Costo aterrizado sobre el módulo existente | **done** — 6a/6b/6c/6d aplicados; `verify/06` **27/27**, pruebas de dinero **23/23 + 14/14**; aterrizaje al vincular, desvío, reversa, ajuste tardío con reserva/pago propios y catálogo bajo superadmin. **E2E del dueño aprobado (2026-11-23)** |
 | 7. Inversores aportantes (100%) | **done** — 07 aplicado en `newa`; `fdi_dat_compra_aporte` aislada, exclusividad con 6 triggers, RPC de registrar/devolver, rama de aportes en `pagar` y guardas en `anular`/`cancelar`/`liberar`; UI de aportes con restante bloqueante. `verify/07` **32/32**, pruebas de dinero **42/42** y **E2E del dueño aprobado (2026-11-23)** |
 | 8. Reportes, conciliación en UI y cierre | **done** — R2-R7 (`verify/08` **14/14**), R1 programada en `pg_cron` (`verify/08b` **9/9**), pantalla `/reportes` con alarma, aging y descuadres; legado de inversión en solo lectura; índice documental y `CAPABILITY-MAP`. **E2E del dueño aprobado (2026-11-23)** |
-| 9. Pendientes, recordatorios y registro de faltantes | **en curso** |
+| 9. Pendientes, recordatorios y registro de faltantes | **en curso** — `09_pendientes.sql` (`verify/09` **14/14**), panel, detalle, facturas, exportación Excel/PDF, recordatorios con umbral y alerta en el inicio, con el almacenero sin importes. **Falta el E2E del dueño** |
 
 Current phase: 9 · Recommended next: 9
 
@@ -1286,8 +1286,9 @@ reversión al cancelar y el desvío visible. En Main no existe (fase 0b).
 
 **Exit criteria:**
 - `verify/09_pendientes.sql`: pendiente por línea = comprado − recibido; una compra `completada` **no**
-  aparece; el monto pendiente cuadra
-- `flutter test` de los servicios en verde; `flutter analyze` limpio
+  aparece; el monto pendiente cuadra — **cumplido: 14/14**
+- `flutter test` de los servicios en verde; `flutter analyze` limpio — **cumplido: 75 tests y `lib` sin
+  diagnósticos**
 
 **E2E del dueño:**
 1. Dejar una compra con 40 de 100 → aparece en el panel con su antigüedad.
@@ -1295,6 +1296,35 @@ reversión al cancelar y el desvío visible. En Main no existe (fase 0b).
 3. Forzar el umbral de días → llega la notificación.
 4. Exportar → el archivo abre y los totales coinciden con la pantalla.
 5. Abrir el detalle por producto → coincide con el pendiente por línea.
+6. Entrar como almacenero → ve el panel y las facturas **sin ninguna cifra de dinero**; dueño y gerente ven
+   montos y exportan.
+
+- **Fase 9 · pendientes, faltantes y recordatorios construidos (2026-11-23).**
+  · **`09_pendientes.sql`** con cuatro RPC de solo lectura: `fn_fdi_pendientes_panel` (compras **abiertas**
+    con antigüedad, `recibido_pct`, **monto pendiente**, última recepción y días sin movimiento, ordenable
+    por `antiguedad` o `monto` **en el servidor**), `fn_fdi_pendientes_detalle` (por producto y línea),
+    `fn_fdi_recepciones_historial` y `fn_fdi_facturas` (incluye cerradas, con estado de recepción
+    `sin recibir`/`parcial`/`completa`). Criterio fijado: `pendiente = GREATEST(0, cantidad − recibido)`
+    **por línea** (un exceso en una línea no tapa un pendiente en otra) y `monto_total` = Σ `costo_linea`
+    para que panel y detalle sumen lo mismo. `verify/09_pendientes.sql` **14/14** contra las tablas; se
+    probó en negativo mutando cuatro esperados y saltaron exactamente las filas afectadas.
+  · **UI**: `/compras/pendientes` (tabla densa en ancho, tarjetas en estrecho, resumen con el pendiente por
+    moneda), detalle por línea con las recepciones de la compra, y `/compras/facturas`. Diseño en
+    `docs/design/pendientes-*.png`. La fila abre el detalle y el detalle ofrece **una sola** pareja
+    `Ir a recepción` / `Ver factura`.
+  · **Exportación** a Excel y PDF en un servicio propio (`pendientes_export_service.dart`): hoja de
+    pendientes, totales por moneda en hoja aparte y detalle por línea. Se generan bytes de verdad en los
+    tests (firma `PK` y `%PDF`), aunque el guardado/compartido en dispositivo no se pudo probar aquí.
+  · **Recordatorios**: umbral configurable (15 por defecto, 1..365) en `SharedPreferences`, lógica pura en
+    `recordatorios_calculo.dart`, aviso **una vez al día** y notificación local con id fijo. La tarjeta del
+    inicio (`AlertaPendientesCard`, dashboard móvil **y** web) muestra compras sin completar, la más
+    antigua con su chip y el pendiente **por moneda**, con enlace al panel y ajuste del umbral.
+  · **Permisos**: el **almacenero** entra a pendientes y facturas pero **sin importes** (las columnas de
+    dinero desaparecen sin dejar huecos y los bloques de monto se sustituyen por conteos); la regla sale de
+    `rolesConImportesCompras` y del rol de la tienda, nunca de un toggle. Exportar solo con importes.
+  · **Riesgo aceptado**: la tarjeta del inicio no distingue rol (la RPC ya valida acceso a la tienda); si
+    el almacenero la ve, verá cifras hasta que se decida si se ocultan también ahí.
+  · **Pendiente de la fase**: el **E2E del dueño** (los 6 pasos, incluido el almacenero sin importes).
 
 ---
 

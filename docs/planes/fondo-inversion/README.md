@@ -16,8 +16,8 @@ antes o en paralelo y que sigue mandando donde no lo contradiga el plan.
 | 5. Recepción: carril A y carril B | **done** |
 | 6. Costo aterrizado | **done** |
 | 7. Inversores aportantes (100 %) | **done** |
-| 8. Reportes, conciliación y cierre | en curso |
-| 9. Pendientes, recordatorios y faltantes | no empezada |
+| 8. Reportes, conciliación y cierre | **done** |
+| 9. Pendientes, recordatorios y faltantes | **en curso** — construida y verificada; falta el E2E del dueño |
 
 ## Documentos
 
@@ -59,6 +59,7 @@ Cada script tiene su `_rollback.sql` y cada verificación su archivo en `verify/
 | `07_aportes_inversores.sql` | Aportes de inversores al 100 % | `verify/07_aportes.sql` (32) + `verify/07_pruebas_aportes.sql` (42) |
 | `08_reportes.sql` | R2-R7 | `verify/08_reportes.sql` (14) |
 | `08b_conciliacion_job.sql` | R1 programada en `pg_cron` | `verify/08b_job.sql` (9) |
+| `09_pendientes.sql` | Panel de pendientes, detalle por línea, histórico de recepciones y facturas | `verify/09_pendientes.sql` (14) |
 
 Las «pruebas con dinero» son scripts transaccionales que crean sus datos y terminan en `ROLLBACK`: no
 dejan filas y son la única prueba de que las cifras cuadran de verdad.
