@@ -1346,6 +1346,12 @@ scroll horizontal **no lanza excepción de desborde**: solo esconde contenido.
       tarjeta con la primera columna de título y el resto como pares `ETIQUETA → valor`, sin scroll
       horizontal, respetando la alineación de las columnas de dinero y las filas clicables.
   · Arregla de una vez reportes (las tres secciones), panel de pendientes, detalle de faltantes y facturas.
+- [x] **Pestañas de Reportes en estrecho**: los tres títulos sumaban ≈600 px, así que en un móvil solo se veía
+      el primero y parecía que la pantalla tenía una sola sección. Por debajo de 600 px se usan etiquetas
+      cortas (`Conciliación`, `Compras`, `Movimientos`) y caben las tres.
+- [x] **Barrido de `Axis.horizontal` en `lib/`**: en las vistas del módulo (fases 6-9) solo quedaba el de la
+      tabla ancha, que ahora solo se usa por encima de 720 px. Los demás son de pantallas ajenas al módulo
+      (ventas, RRHH, carnaval, consignación) y no se tocan aquí.
 - [ ] Auditar a **360 px** cada sección de `/reportes`: franjas de KPI, banda de conciliación (que la
       diferencia total no se corte), bloques de dos columnas y la fila de totales por moneda.
 - [ ] Auditar el **panel de aportes** (fase 7) y el **panel de costo aterrizado** (fase 6) a 360 px:
@@ -1353,7 +1359,7 @@ scroll horizontal **no lanza excepción de desborde**: solo esconde contenido.
 - [ ] Auditar **recepción**: chips de adicionales por línea y tabla de productos a 360 px.
 - [ ] **Barrido sistemático**: ninguna vista de las fases 6-9 puede tener `scrollDirection:
       Axis.horizontal` ni anchos fijos que sumen más de 360 px sin corte. Se revisa con un grep y se corrige
-      cada caso.
+      cada caso. — **barrido hecho** (solo quedaba el de la tabla ancha); falta confirmar en dispositivo.
 - [ ] **Tests de anchura** en 360, 390, 430, 800 y 1280 px que comprueben dos cosas: que **no hay** scroll
       horizontal y que un importe concreto es visible (no basta con que no haya excepción).
 - [ ] Revisión final de responsive del resto del módulo (compras, liquidación) en dispositivo.

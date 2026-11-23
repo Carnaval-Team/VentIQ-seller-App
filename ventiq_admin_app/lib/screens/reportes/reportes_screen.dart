@@ -538,6 +538,12 @@ class _ReportesScreenState extends State<ReportesScreen> {
       'Compras, costo y cambiario',
       'Movimientos y pendientes',
     ];
+    // En un móvil los tres títulos no caben (≈600 px) y con el scroll horizontal
+    // el usuario solo ve el primero: parece que la pantalla tiene una sola
+    // sección. En estrecho se usan etiquetas cortas y siguen cabiendo las tres.
+    final estrecho = MediaQuery.sizeOf(context).width < 600;
+    const titulosCortos = ['Conciliación', 'Compras', 'Movimientos'];
+    final etiquetas = estrecho ? titulosCortos : titulos;
     return Container(
       width: double.infinity,
       decoration: const BoxDecoration(
@@ -564,7 +570,7 @@ class _ReportesScreenState extends State<ReportesScreen> {
                     ),
                   ),
                   child: Text(
-                    titulos[i],
+                    etiquetas[i],
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: i == _seccion
