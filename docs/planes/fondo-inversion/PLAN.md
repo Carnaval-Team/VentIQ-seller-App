@@ -1118,8 +1118,16 @@ reversión al cancelar y el desvío visible. En Main no existe (fase 0b).
    (el pago es explícito: en modo inversores no hay paso `reservada`).
 3. Aportar 100 de más → rechazo.
 4. Abrir el módulo de fondo → **ningún saldo nuevo** ni acumulado para X ni Y.
-5. Devolver el aporte de X → consistente.
+5. Devolver el aporte de X → consistente (la compra sigue `pagada` con cobertura incompleta, con el hueco
+   anotado en el historial; el fondo no mueve un centavo).
 6. Intentar reservar del fondo la misma compra → rechazo por exclusividad.
+
+> **Antes de empezar:** la tienda del E2E necesita **al menos dos inversores activos** (se crean en Fondo de
+> inversión → Inversores). La tienda 9 de `newa` no tiene ninguno: los seis existentes son de las tiendas 4
+> y 8. Límite conocido: la lista de inversores del diálogo se lee con la política de la fase 1
+> (`fn_user_is_dueno`), así que un **gerente que no sea dueño** ve la lista vacía; el alta de aportes está
+> permitida a gerente/superadmin en la RPC. Abrir la lista a gerentes es una decisión de privacidad que no
+> se toma aquí.
 
 ---
 
