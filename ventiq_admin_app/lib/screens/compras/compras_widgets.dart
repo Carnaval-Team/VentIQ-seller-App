@@ -11,6 +11,7 @@ import 'package:intl/intl.dart';
 
 import '../../config/app_colors.dart';
 import '../../models/compra.dart';
+import '../../models/pendientes.dart' show EstadoRecepcion;
 
 // ===========================================================================
 // Cortes de layout
@@ -96,8 +97,59 @@ IconData iconoEstadoCompra(String estado) =>
     _iconosEstadoCompra[estado] ?? Icons.help_outline;
 
 /// Chip de estado: icono + texto, nunca solo color.
-Widget chipEstadoCompra(String estado, {bool denso = false}) {
-  final color = colorEstadoCompra(estado);
+Widget chipEstadoCompra(String estado, {bool denso = false}) => _chipEstado(
+  CompraEstado.etiquetaDe(estado),
+  colorEstadoCompra(estado),
+  iconoEstadoCompra(estado),
+  denso,
+);
+
+/// Chip del **estado de recepción** de una factura (`fn_fdi_facturas`:
+/// `sin recibir` / `parcial` / `completa`).
+///
+/// Sale de la misma paleta que los estados de compra —no hay una segunda
+/// paleta para el mismo semáforo— y el texto siempre acompaña al color.
+Widget chipEstadoRecepcion(String estado, {bool denso = false}) {
+  final recepcion = EstadoRecepcion.desde(estado);
+  return _chipEstado(
+    recepcion.etiqueta,
+    colorEstadoRecepcion(recepcion),
+    iconoEstadoRecepcion(recepcion),
+    denso,
+  );
+}
+
+/// Color de un estado de recepción, tomado de la paleta de estados de compra:
+/// completa = `completada`, parcial = `entrega_parcial`, sin recibir = `creada`.
+Color colorEstadoRecepcion(EstadoRecepcion estado) {
+  switch (estado) {
+    case EstadoRecepcion.completa:
+      return colorEstadoCompra('completada');
+    case EstadoRecepcion.parcial:
+      return colorEstadoCompra('entrega_parcial');
+    case EstadoRecepcion.sinRecibir:
+      return colorEstadoCompra('creada');
+  }
+}
+
+IconData iconoEstadoRecepcion(EstadoRecepcion estado) {
+  switch (estado) {
+    case EstadoRecepcion.completa:
+      return iconoEstadoCompra('completada');
+    case EstadoRecepcion.parcial:
+      return iconoEstadoCompra('entrega_parcial');
+    case EstadoRecepcion.sinRecibir:
+      return iconoEstadoCompra('creada');
+  }
+}
+
+/// Pastilla de 22 px compartida por los chips de estado de compras.
+Widget _chipEstado(
+  String etiqueta,
+  Color color,
+  IconData icono,
+  bool denso,
+) {
   return Container(
     padding: EdgeInsets.symmetric(
       horizontal: denso ? 8 : 10,
@@ -111,11 +163,11 @@ Widget chipEstadoCompra(String estado, {bool denso = false}) {
     child: Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(iconoEstadoCompra(estado), size: denso ? 12 : 14, color: color),
+        Icon(icono, size: denso ? 12 : 14, color: color),
         const SizedBox(width: 4),
         Flexible(
           child: Text(
-            CompraEstado.etiquetaDe(estado),
+            etiqueta,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(

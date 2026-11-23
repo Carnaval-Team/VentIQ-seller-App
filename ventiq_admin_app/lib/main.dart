@@ -55,6 +55,9 @@ import 'screens/consignacion_screen.dart';
 import 'screens/cuentas_por_cobrar_screen.dart';
 import 'screens/fondo_inversion_screen.dart';
 import 'screens/compras/compras_list_screen.dart';
+import 'screens/compras/pendientes_screen.dart';
+import 'screens/compras/pendiente_detalle_screen.dart';
+import 'screens/compras/facturas_screen.dart';
 import 'screens/reportes/reportes_screen.dart';
 import 'screens/wapi_notifications_screen.dart';
 import 'screens/interacciones_clientes_screen.dart';
@@ -278,6 +281,19 @@ class MyApp extends StatelessWidget {
         '/cuentas-por-cobrar': (context) => const CuentasPorCobrarScreen(),
         '/fondo-inversion': (context) => const FondoInversionScreen(),
         '/compras': (context) => const ComprasListScreen(),
+        // Fase 9 de Compras: panel de pendientes de recepción, detalle de
+        // faltantes por línea y vista documental de facturas. El detalle
+        // también se abre por `MaterialPageRoute` desde el panel; la ruta
+        // nombrada acepta un `int` (id de compra) o un `Map` con `id_compra`.
+        '/compras/pendientes': (context) => const PendientesScreen(),
+        '/compras/pendientes/detalle': (context) {
+          final argumentos = ModalRoute.of(context)?.settings.arguments;
+          final detalle = PendienteDetalleScreen.desdeArgumentos(argumentos);
+          if (detalle != null) return detalle;
+          // Sin id de compra no hay detalle: se cae al panel.
+          return const PendientesScreen();
+        },
+        '/compras/facturas': (context) => const FacturasScreen(),
         '/reportes': (context) => const ReportesScreen(),
         '/wapi-notifications': (context) => const WapiNotificationsScreen(),
         '/wifi-printers': (context) => const WiFiPrintersScreen(),

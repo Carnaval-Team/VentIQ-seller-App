@@ -669,10 +669,20 @@ class FilaReporte {
   final Widget? banda;
   final bool resaltada;
 
-  const FilaReporte(List<Widget> this.celdas, {this.resaltada = false})
-    : banda = null;
+  /// Fila clicable (una compra de pendientes abre su detalle). Se pinta con
+  /// `InkWell` sobre las celdas; las bandas lo ignoran.
+  final VoidCallback? onTap;
 
-  const FilaReporte.banda(Widget this.banda) : celdas = null, resaltada = false;
+  const FilaReporte(
+    List<Widget> this.celdas, {
+    this.resaltada = false,
+    this.onTap,
+  }) : banda = null;
+
+  const FilaReporte.banda(Widget this.banda)
+    : celdas = null,
+      resaltada = false,
+      onTap = null;
 }
 
 /// Tabla densa con cabecera en mayúsculas y bandas intercaladas (subtotales
@@ -753,7 +763,7 @@ class TablaReporte extends StatelessWidget {
 
   Widget _filaCeldas(FilaReporte fila, double factor) {
     final celdas = fila.celdas ?? const <Widget>[];
-    return Container(
+    final contenido = Container(
       padding: const EdgeInsets.symmetric(vertical: 9),
       decoration: BoxDecoration(
         color: fila.resaltada ? AppColors.surfaceVariant : null,
@@ -779,5 +789,7 @@ class TablaReporte extends StatelessWidget {
         ],
       ),
     );
+    if (fila.onTap == null) return contenido;
+    return InkWell(onTap: fila.onTap, child: contenido);
   }
 }
