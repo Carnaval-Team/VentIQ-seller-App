@@ -526,61 +526,24 @@ class FondoInversionService {
   }
 
   // ==========================================================================
-  // Inversiones
+  // Inversiones — LEGADO DE SOLO LECTURA
   // ==========================================================================
+  //
+  // `fdi_dat_inversion` quedó congelada como legado del carril B: el módulo de
+  // compras no la usa. Desde aquí solo se consulta.
+  //
+  // Los métodos de escritura del legado (`crearInversion`,
+  // `cambiarEstadoInversion`, `resolverRevision`) se retiraron a propósito en
+  // la fase 8, junto con el alta en la UI: el dinero del fondo se compromete
+  // ahora desde Compras (reserva y pago) y los aportes de inversores desde el
+  // detalle de cada compra. Sin métodos aquí no hay forma de reintroducir una
+  // escritura por accidente. La tabla y sus RPC
+  // (`fn_fdi_crear_inversion`, `fn_fdi_cambiar_estado_inversion`,
+  // `fn_fdi_inversion_anular`, `fn_fdi_recalcular_inversion`) siguen existiendo
+  // porque otra app o una consulta manual pueden necesitarlas; la app no las
+  // llama.
 
-  /// [fuentes]: [{id_cuenta, id_medio_pago, moneda, monto, tasa_a_ref}]
-  Future<Map<String, dynamic>> crearInversion({
-    required int idTienda,
-    required String identificador,
-    String? detalles,
-    String? descripcion,
-    required String monedaReferencia,
-    required List<Map<String, dynamic>> fuentes,
-    String? idempotencyKey,
-  }) async {
-    final resp = await _supabase.rpc(
-      'fn_fdi_crear_inversion',
-      params: {
-        'p_id_tienda': idTienda,
-        'p_identificador': identificador,
-        'p_detalles': detalles,
-        'p_descripcion': descripcion,
-        'p_moneda_referencia': monedaReferencia,
-        'p_fuentes': fuentes,
-        'p_idempotency_key': idempotencyKey,
-      },
-    );
-    return _asMap(resp);
-  }
-
-  Future<Map<String, dynamic>> cambiarEstadoInversion({
-    required int idInversion,
-    required String estado,
-    String? motivo,
-  }) async {
-    final resp = await _supabase.rpc(
-      'fn_fdi_cambiar_estado_inversion',
-      params: {
-        'p_id_inversion': idInversion,
-        'p_estado': estado,
-        'p_motivo': motivo,
-      },
-    );
-    return _asMap(resp);
-  }
-
-  Future<Map<String, dynamic>> resolverRevision({
-    required int idInversion,
-    required String nota,
-  }) async {
-    final resp = await _supabase.rpc(
-      'fn_fdi_resolver_revision',
-      params: {'p_id_inversion': idInversion, 'p_nota': nota},
-    );
-    return _asMap(resp);
-  }
-
+  /// Listado de inversiones del legado (solo lectura).
   Future<List<FdiInversion>> listInversiones(
     int idTienda, {
     String? estado,
@@ -599,6 +562,8 @@ class FondoInversionService {
         .toList();
   }
 
+  /// Detalle del legado (fuentes, recepciones vinculadas e historial de
+  /// estados). Solo lectura: el diálogo de la app lo muestra y nada más.
   Future<Map<String, dynamic>> detalleInversion(int idInversion) async {
     final resp = await _supabase.rpc(
       'fn_fdi_detalle_inversion',
@@ -611,6 +576,11 @@ class FondoInversionService {
   /// Devuelve status `requires_confirmation`/`exceso_recepcion` si supera el
   /// total esperado — reintentar con [confirmarExceso] = true tras confirmar
   /// en UI.
+  ///
+  /// Se conserva aunque el alta del legado esté retirada: lo usa la recepción
+  /// financiada con el fondo (`inventory_reception_screen.dart`), que vincula
+  /// la operación a una inversión ya existente. No se ofrece desde la pestaña
+  /// «Inversiones».
   Future<Map<String, dynamic>> vincularRecepcion({
     required int idOperacion,
     required int idInversion,
