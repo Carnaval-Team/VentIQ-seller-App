@@ -66,6 +66,9 @@
 --         `idempotency_key` en el ajuste
 --   n=26  `fn_fdi_compra_recalcular` congela `total_financiado` fuera de
 --         `creada` (los ajustes tardíos no lo mueven)
+--   n=27  el cuerpo de `_v2` excluye las filas revertidas (`revertido_at IS
+--         NULL` dos veces): sin esto, una recepción cancelada volvería a
+--         capitalizar su costo al completar otra
 --   n=99  resumen
 --
 -- NOTA sobre n=6 — QUÉ SE PUEDE COMPROBAR:
@@ -619,6 +622,17 @@ base as (
     coalesce((select position('v_estado = ''creada''' in p.prosrc) > 0
                 from pg_proc p
                where p.oid = 'public.fn_fdi_compra_recalcular(bigint)'::regprocedure), false)
+
+  union all
+  -- 27) `_v2` excluye las filas revertidas (dos anclas en el cuerpo)
+  select 27, 'v2_excluye_revertidas',
+    'fn_actualizar_precio_promedio_recepcion_v2 menciona revertido_at IS NULL dos veces',
+    (select count(*)::text
+       from pg_proc p, regexp_matches(p.prosrc, 'revertido_at IS NULL', 'g') m
+      where p.oid = 'public.fn_actualizar_precio_promedio_recepcion_v2(bigint,jsonb)'::regprocedure) || ' ancla(s)',
+    (select count(*) = 2
+       from pg_proc p, regexp_matches(p.prosrc, 'revertido_at IS NULL', 'g') m
+      where p.oid = 'public.fn_actualizar_precio_promedio_recepcion_v2(bigint,jsonb)'::regprocedure)
 )
 
 -- 99) Resumen: cuenta las filas con ok = false (las informativas siempre ok).

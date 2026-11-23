@@ -45,9 +45,9 @@ Este directorio entrega el SQL del plan `docs/planes/fondo-inversion/PLAN.md`.
   el resumen del costo aterrizado, la reversa al cancelar y los ajustes `por_financiar`.
 - **Main no tiene nada de esto**: le faltan el módulo de costos, `fn_fdi_gasto`, `costo_real` escribible
   y todas las RPC de compras. Ese paquete es la fase 0b y va por el pase del equipo.
-- La fase 6 **no está cerrada**: falta la captura de adicionales por línea en la tabla de recepción y el
-  E2E del dueño. El pase debe promover el cuerpo de `_v2` con el filtro `revertido_at IS NULL` y el de
-  `fn_fdi_compra_recalcular` con el congelamiento de `total_financiado`.
+- La fase 6 **no está cerrada**: solo falta el E2E del dueño. El pase debe promover el cuerpo de `_v2` con
+  el filtro `revertido_at IS NULL` y el de `fn_fdi_compra_recalcular` con el congelamiento de
+  `total_financiado`.
 
 Corrige la nota anterior, que decía que `fn_fdi_registrar_recepcion` no estaba aplicada: sí lo está en
 `newa`.

@@ -97,6 +97,28 @@ Solo crea o agrega. No altera, revoca ni borra nada existente.
 5. Preservar lo propio de main: `trg_bloquear_operaciones_maria`, WhatsApp, referidos, crons.
 6. Verificación inmediata: los conteos de errores 4xx/5xx por ruta en los logs de main deben quedar iguales que la hora anterior; `fn_check_update` y una venta de prueba.
 
+### Fase 1b — Cuerpos de la fase 6 (costos) que el pase debe llevar desde newa
+La fase 6 de `docs/planes/fondo-inversion/PLAN.md` cambió **dos cuerpos que ya existen en main**. No son
+columnas ni tablas: son el mismo nombre con otro cuerpo, así que entran en el punto 3 de la Fase 1 y se
+verifican con los scripts del plan, no con un script aparte.
+
+1. `fn_actualizar_precio_promedio_recepcion_v2(bigint, jsonb)`. El cuerpo de newa filtra
+   `revertido_at IS NULL` en las dos lecturas de `app_dat_recepcion_producto_costo` (la suma de costos por
+   línea y el `NOT EXISTS` que evita duplicar). **Si main se queda con el cuerpo viejo, una recepción
+   cancelada vuelve a capitalizar su costo revertido** en cuanto se complete otra recepción del producto.
+   Depende de la columna `revertido_at` (06c), así que la columna va antes que el cuerpo.
+2. `fn_fdi_compra_recalcular(bigint)`. El cuerpo de newa congela `total_financiado` cuando la compra no
+   está en `creada` y sigue actualizando `total_ajustes` y `costo_aterrizado`. **Sin ese cambio, un ajuste
+   posterior al pago (`por_financiar`, 06d) mutaría el total financiado** y rompería la inmutabilidad de
+   la fase 4 y sus reservas.
+
+Orden dentro del pase: 06a (catálogo y columnas de factura) → 06b (aterrizaje) → 06c (reversa + resumen +
+catálogo bajo superadmin) → 06d (ajustes) → cuerpos de `_v2` y `fn_fdi_compra_recalcular`, que ya vienen
+en esos scripts. Después, en main: `verify/06_costos.sql` (27 comprobaciones), y los dos scripts de prueba
+`verify/06c_pruebas_aterrizaje.sql` y `verify/06d_pruebas_ajuste.sql`, que crean sus datos y terminan en
+`ROLLBACK` (no dejan filas). Si `verify/06` falla en la 27, el cuerpo de `_v2` no es el de newa; si falla
+en la 26, el de `fn_fdi_compra_recalcular`.
+
 ### Fase 2 — Publicar los clientes
 - App de ventas y Admin nuevos (llaman `_m01` con caída a la antigua). Los clientes viejos siguen en las funciones antiguas sin cambios.
 - Seguimiento diario con los logs de main: llamadas por nombre `_m01` vs. antiguo y usuarios distintos de cada uno.

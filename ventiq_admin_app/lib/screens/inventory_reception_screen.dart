@@ -21,6 +21,7 @@ import '../services/fondo_inversion_service.dart';
 import '../widgets/fdi_recepcion_fuentes.dart';
 import '../models/compra.dart';
 import '../services/compra_service.dart';
+import '../services/financial_service.dart';
 
 class InventoryReceptionScreen extends StatefulWidget {
   const InventoryReceptionScreen({super.key});
@@ -57,6 +58,10 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
     return _monedasValidas.contains(moneda) ? moneda : _monedaSinCompra;
   }
   List<Map<String, dynamic>> _selectedProducts = [];
+  /// Nombres del catálogo de costos (id → denominación) para los chips de
+  /// costos adicionales por línea. Si falla, el chip muestra el id y la
+  /// recepción sigue: no es un dato que bloquee el guardado.
+  Map<int, String> _nombresCosto = {};
   List<Map<String, dynamic>> _motivoOptions = [];
   Map<String, dynamic>? _selectedMotivo;
   WarehouseZone? _selectedLocation;
@@ -200,6 +205,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
     _loadInversionesAbiertas();
     _loadSaldosFondo();
     _loadCompras();
+    _cargarNombresCosto();
     _searchController.addListener(_onSearchChanged);
 
     // Load persisted values from previous entries
@@ -210,6 +216,24 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
     _entregadoPorController.text = _lastEntregadoPor;
     _recibidoPorController.text = _lastRecibidoPor;
     _observacionesController.text = _lastObservaciones;
+  }
+
+  /// Catálogo de tipos de costo, solo para poner nombre a los chips de la
+  /// línea (el importe y el id son los que viajan a la RPC).
+  Future<void> _cargarNombresCosto() async {
+    try {
+      final tipos = await FinancialService().getCostTypes();
+      if (!mounted) return;
+      setState(() {
+        _nombresCosto = {
+          for (final t in tipos)
+            if ((t['id'] as num?) != null)
+              (t['id'] as num).toInt(): t['denominacion']?.toString() ?? '',
+        };
+      });
+    } catch (_) {
+      // Sin catálogo, el chip cae al id. No bloquea nada.
+    }
   }
 
   void _savePersistedValues() {
@@ -2000,6 +2024,40 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
     );
   }
 
+  /// Costos adicionales capturados en el diálogo del producto para esa línea.
+  List<Map<String, dynamic>> _costosDe(Map<String, dynamic> item) {
+    final costos = item['costos'];
+    if (costos is! List) return const [];
+    return [
+      for (final c in costos)
+        if (c is Map) Map<String, dynamic>.from(c),
+    ];
+  }
+
+  /// Chip de una línea: nombre del concepto (o id si el catálogo no cargó) y
+  /// su importe en USD, que es como los guarda el módulo de costos.
+  Widget _chipCosto(Map<String, dynamic> costo) {
+    final id = (costo['id_tipo_costo'] as num?)?.toInt() ?? 0;
+    final nombre = _nombresCosto[id] ?? 'Costo #$id';
+    final monto = _numeroDe('${costo['monto_usd']}');
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppColors.info.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: AppColors.info.withValues(alpha: 0.35)),
+      ),
+      child: Text(
+        '$nombre ${monto.toStringAsFixed(2)} USD',
+        style: const TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: AppColors.primary,
+        ),
+      ),
+    );
+  }
+
   Widget _buildSelectedProductsSection() {
     return Card(
       child: Padding(
@@ -2052,6 +2110,16 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                           _buildPriceDisplay(item),
                           style: TextStyle(fontWeight: FontWeight.w500),
                         ),
+                        if (_costosDe(item).isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            children: [
+                              for (final c in _costosDe(item)) _chipCosto(c),
+                            ],
+                          ),
+                        ],
                         if (item['id_compra_pendiente'] != null)
                           Text(
                             'Pendiente de la compra: '

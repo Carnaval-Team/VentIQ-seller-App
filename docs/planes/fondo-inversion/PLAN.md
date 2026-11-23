@@ -116,7 +116,7 @@ combinada de cambio de estado.
 | 3. Compra como documento | **done** — esquema, RPC, UI, verify 13/13 y E2E del dueño aprobado |
 | 4. Reserva y liquidación (carril A, solo `al_pagar`) | **done** — backend, UI, verify 19/19 y E2E del dueño aprobado |
 | 5. Recepción: carril A y carril B | **done** — recepción contra compra, carril B cerrado, verify 21/21 y E2E del dueño aprobado |
-| 6. Costo aterrizado sobre el módulo existente | **en curso** — 6a/6b/6c/6d aplicados; `verify/06` **26/26**, pruebas de dinero **23/23 + 14/14**. El aterrizaje se dispara al vincular, el desvío y el remanente se ven en el detalle, el catálogo está bajo superadmin, el costo se revierte al cancelar y el ajuste tardío tiene reserva y pago propios. Faltan: la captura de adicionales por línea en la tabla de recepción y el E2E del dueño |
+| 6. Costo aterrizado sobre el módulo existente | **en curso** — 6a/6b/6c/6d aplicados; `verify/06` **27/27**, pruebas de dinero **23/23 + 14/14**. El aterrizaje se dispara al vincular, el desvío y el remanente se ven en el detalle, el catálogo está bajo superadmin, el costo se revierte al cancelar y el ajuste tardío tiene reserva y pago propios. Solo falta el E2E del dueño |
 | 7. Inversores aportantes (100%) | not started |
 | 8. Reportes, conciliación en UI y cierre | not started |
 | 9. Pendientes, recordatorios y registro de faltantes | not started |
@@ -381,8 +381,12 @@ Current phase: 6 · Recommended next: 6 (cerrar los ítems de la fase antes de l
      (`id_ajuste` en reserva, pago y costo) y el costo se reparte sobre lo recibido. Límites: solo con la
      compra **completada** y solo `origen_pago = 'fondo'`; la valoración suma `monto/unidades` al
      `precio_promedio` y no reexpresa el COGS de lo ya vendido.
-  También queda la captura de adicionales por línea en la tabla de la recepción: hoy se capturan en el
-  diálogo del producto y viajan en la transacción, sin chips por línea en la pantalla.
+  - **Fase 6 · chips por línea y nota del pase (2026-11-23).** La tabla de productos de la recepción muestra
+  un chip por costo adicional de la línea («Flete 12,00 USD»), con el nombre del catálogo cargado en la
+  pantalla (si no carga, cae al id; no bloquea). El pase a Main queda documentado en
+  `tasks/plan_promocion_main.md` §Fase 1b: `_v2` y `fn_fdi_compra_recalcular` cambian de cuerpo y el orden
+  es 06a→06d y después los cuerpos; `verify/06` gana la comprobación **n=27** para detectar un `_v2` viejo
+  en Main.
 - **Fase 6d · reversa al cancelar y ajuste tardío aplicados en `newa` (2026-11-23).**
   · **Reversa (06c).** Columnas `revertido_at`, `revertido_por`, `motivo_reversa`, `id_estado_reversa`
     (FK a la fila de estado que la provocó), CHECK de motivo e índice parcial de filas vigentes. Trigger
@@ -399,7 +403,7 @@ Current phase: 6 · Recommended next: 6 (cerrar los ítems de la fase antes de l
     con el residuo a la línea de mayor base, suma al `precio_promedio` el costo unitario del ajuste y deja
     el documento en el historial. Puertas declaradas: compra **completada** y solo `origen_pago = 'fondo'`.
     UI: «Agregar costo posterior» y «Financiar ahora» (una fuente de la misma moneda, sin conversión).
-  · **Verificación.** `verify/06` **26/26** (n=24..26 de 06d); `verify/06c_pruebas_aterrizaje.sql` **23/23**
+  · **Verificación.** `verify/06` **27/27** (n=24..27: 06d y el filtro de `_v2`); `verify/06c_pruebas_aterrizaje.sql` **23/23**
     (reversa incluida: 0 vigentes / 2 revertidas, costos 0, `costo_real` 20, documento e idempotencia);
     `verify/06d_pruebas_ajuste.sql` **14/14** (1.000 de financiado inmutable, 100 pagados, saldo −100,
     movimiento, reserva y pago propios, costo 100 en 1 fila, `precio_promedio` +1 y reintento
