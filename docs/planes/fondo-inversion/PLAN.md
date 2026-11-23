@@ -118,10 +118,10 @@ combinada de cambio de estado.
 | 5. Recepción: carril A y carril B | **done** — recepción contra compra, carril B cerrado, verify 21/21 y E2E del dueño aprobado |
 | 6. Costo aterrizado sobre el módulo existente | **done** — 6a/6b/6c/6d aplicados; `verify/06` **27/27**, pruebas de dinero **23/23 + 14/14**; aterrizaje al vincular, desvío, reversa, ajuste tardío con reserva/pago propios y catálogo bajo superadmin. **E2E del dueño aprobado (2026-11-23)** |
 | 7. Inversores aportantes (100%) | **done** — 07 aplicado en `newa`; `fdi_dat_compra_aporte` aislada, exclusividad con 6 triggers, RPC de registrar/devolver, rama de aportes en `pagar` y guardas en `anular`/`cancelar`/`liberar`; UI de aportes con restante bloqueante. `verify/07` **32/32**, pruebas de dinero **42/42** y **E2E del dueño aprobado (2026-11-23)** |
-| 8. Reportes, conciliación en UI y cierre | **en curso** — R2-R7 (`verify/08` **14/14**), R1 programada en `pg_cron` (`verify/08b` **9/9**), pantalla `/reportes` con alarma, aging y descuadres; legado de inversión en solo lectura; índice documental y `CAPABILITY-MAP`. **Falta el E2E integral del dueño** |
-| 9. Pendientes, recordatorios y registro de faltantes | not started |
+| 8. Reportes, conciliación en UI y cierre | **done** — R2-R7 (`verify/08` **14/14**), R1 programada en `pg_cron` (`verify/08b` **9/9**), pantalla `/reportes` con alarma, aging y descuadres; legado de inversión en solo lectura; índice documental y `CAPABILITY-MAP`. **E2E del dueño aprobado (2026-11-23)** |
+| 9. Pendientes, recordatorios y registro de faltantes | **en curso** |
 
-Current phase: 8 · Recommended next: 8 (solo el E2E integral), después 9
+Current phase: 9 · Recommended next: 9
 
 > Agente ejecutor: actualiza esta tabla al terminar y anota una línea por desviación. No marques `done`
 > sin criterios de salida corridos y OK del dueño.
@@ -1259,6 +1259,12 @@ reversión al cancelar y el desvío visible. En Main no existe (fase 0b).
     responsive en dispositivo. El clobber de `precio_promedio` del TPV queda como deuda documentada
     (H12) porque la guardia en BD se descartó con evidencia: la columna la escriben una decena de
     funciones legítimas.
+- **Fase 8 · aprobada por el dueño (2026-11-23).** E2E en verde sobre la pantalla `/reportes`:
+  conciliación en verde con la nota de la última revisión automática, caja con `disponible = saldo −
+  reservado` y totales por moneda, compras por estado con facturado/aterrizado/pagado, costo con el
+  desvío de cada compra, cambiario con su signo, movimientos cuyo neto cuadra con la caja, inversores con
+  los aportes de la 67 y la devolución de la 68, y los pendientes con contadores coherentes. **Fase 8
+  cerrada.** El E2E integral de las ocho fases queda para el cierre del proyecto (fase 9).
 
 ---
 
