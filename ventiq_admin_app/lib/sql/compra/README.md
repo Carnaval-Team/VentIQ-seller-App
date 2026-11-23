@@ -39,10 +39,15 @@ Este directorio entrega el SQL del plan `docs/planes/fondo-inversion/PLAN.md`.
 
 `multimoneda` va por delante de las bases. Estado real verificado el 2026-11-23:
 
-- **`newa` ya tiene aplicado todo el módulo** (00 a 07), incluida `fn_fdi_registrar_recepcion` con
+- **`newa` ya tiene aplicado todo el módulo** (00 a 08b), incluida `fn_fdi_registrar_recepcion` con
   **4 args** (`p_id_compra bigint DEFAULT NULL`), el aterrizaje del costo con su columna de vínculo
   (`app_dat_recepcion_producto_costo.id_compra_recepcion`), `fdi_dat_compra_recepcion.tasa_usd_aplicada`,
   el resumen del costo aterrizado, la reversa al cancelar y los ajustes `por_financiar`.
+- La fase 8 añade **`08_reportes.sql`** con los reportes R2-R7 (`fn_fdi_reporte_caja`, `_compras`,
+  `_costo`, `_cambiario`, `_movimientos`, `_inversores`, `_aging`) y **`08b_conciliacion_job.sql`**, que
+  programa R1 en `pg_cron` (`fdi-conciliacion-diaria`, 03:00) y guarda cada corrida en
+  `fdi_dat_conciliacion_ejecucion`. R1 en sí sigue siendo `fn_fdi_conciliacion`, de la fase 1: **no se
+  reescribe**, es la única verdad.
 - La fase 7 (`07_aportes_inversores.sql`) añade `fdi_dat_compra_aporte` con **6 triggers** de
   exclusividad, las RPC `fn_fdi_compra_aportes` / `_aporte_registrar` / `_aporte_devolver`, y reescribe
   los cuerpos de `fn_fdi_compra_pagar` / `_liberar` / `_cancelar` / `_anular` con su rama de aportes.
