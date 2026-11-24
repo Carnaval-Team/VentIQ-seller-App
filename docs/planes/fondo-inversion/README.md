@@ -63,6 +63,10 @@ Cada script tiene su `_rollback.sql` y cada verificación su archivo en `verify/
 | `08b_conciliacion_job.sql` | R1 programada en `pg_cron` | `verify/08b_job.sql` (9) |
 | `09_pendientes.sql` | Panel de pendientes, detalle por línea, histórico de recepciones y facturas | `verify/09_pendientes.sql` (14) |
 
+**Prerrequisito del pase**: `sql_updates/costos_adicionales_producto.sql` (tabla de costos por recepción,
+`costo_real` como columna normal y `_v2` leyendo la tabla de costos). Sin él, `06c` no puede parchear `_v2`
+y la reversa del costo falla en main. Se comprueba con `verify/00_prerrequisito_costos.sql`.
+
 Las «pruebas con dinero» son scripts transaccionales que crean sus datos y terminan en `ROLLBACK`: no
 dejan filas y son la única prueba de que las cifras cuadran de verdad.
 

@@ -27,6 +27,7 @@ El detalle largo está en `tasks/plan_promocion_main.md`.
 
 | # | Script | Qué hace | Verify |
 |---|---|---|---|
+| 0 | `sql_updates/costos_adicionales_producto.sql` | **Prerrequisito.** `app_dat_producto_costo`, auditoría de costo por línea, `costo_real` deja de ser `GENERATED` (pasa a columna normal + trigger) y `fn_actualizar_precio_promedio_recepcion_v2` aprende a leer la tabla de costos | `verify/00_prerrequisito_costos.sql` |
 | 1 | `01_motor_dinero.sql` | Escala 2 del libro, restricciones de tienda y conciliación R1 | `verify/01_motor_dinero.sql` |
 | 2 | `02a_idempotencia.sql` | Claves de idempotencia en las operaciones de dinero | — |
 | 3 | `02b_transferir_v2.sql` | `fn_fdi_transferir_v2` (par de tasa explícito) | — |
@@ -74,6 +75,14 @@ Y comprobar a mano:
 - `select * from cron.job where jobname = 'fdi-conciliacion-diaria';` → una fila, `0 3 * * *`.
 
 ## Si algo falla
+
+**«06c: no se pudo parchear _v2 … anclas encontradas: 0»** — falta el paso 0. El `_v2` de main es
+anterior a la tabla de costos (calcula el promedio con `cant_base`, no lee
+`app_dat_recepcion_producto_costo`), así que no hay nada que parchear. Aplicar
+`sql_updates/costos_adicionales_producto.sql`, comprobar con `verify/00_prerrequisito_costos.sql`
+(`costo_real_normal` y `trigger_costo_real` en 1, `v2_lee_costos` en true) y **repetir 06c**. Sin ese
+paso, además, la reversa del costo fallaría: en main `costo_real` sigue siendo `GENERATED` y no se puede
+escribir.
 
 Cada script tiene su `_rollback.sql`; se aplican en orden inverso al de la tabla. Los pasos 2, 4 y 9
 no tienen rollback propio: van cubiertos por el de su fase (`03a`, `06a`/`06b`, `07`).
