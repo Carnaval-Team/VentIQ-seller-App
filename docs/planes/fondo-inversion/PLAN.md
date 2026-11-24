@@ -1181,7 +1181,7 @@ reversión al cancelar y el desvío visible. En Main no existe (fase 0b).
 - [x] Alta de inversión retirada; legado de solo lectura
 - [x] `precio_promedio` decidido y probado con las dos apps — **decidido** (ver «Decisiones»); la prueba en
       dispositivo sigue pendiente del dueño, y el clobber conocido queda como H12 con su arreglo propuesto
-- [x] Devoluciones: decisión explícita — fase 10 documentada
+- [x] Devoluciones: decisión explícita — fase futura documentada (F11)
 - [x] Índice documental
 
 **Exit criteria:**
@@ -1206,8 +1206,9 @@ reversión al cancelar y el desvío visible. En Main no existe (fase 0b).
   al fondo lo que el fondo pagó y deja la compra `anulada`, pero **no existe crédito del proveedor**: el
   módulo no modela la nota de crédito, ni la devolución de mercancía al proveedor, ni el reembolso al
   inversor que aportó. Implementarlo a medias sería inventar un mayor de proveedores. Queda documentado
-  como **fase 10** con este alcance mínimo: documento de nota de crédito por compra, aplicación contra lo
-  pagado, y reversa de los aportes de una compra anulada (hoy se devuelven a mano antes de anular).
+  como **F11** (la siguiente después de la 10) con este alcance mínimo: documento de nota de crédito por
+  compra, aplicación contra lo pagado, y reversa de los aportes de una compra anulada (hoy se devuelven a
+  mano antes de anular).
 - **`precio_promedio` no lleva guardia en BD: es una columna de muchos escritores.** Se comprobó el
   catálogo: además del módulo (`fn_actualizar_precio_promedio_recepcion_v2`), la escriben
   `bulk_update_precios_costo`, `bulk_import_productos_excel`, `fn_corregir_costo_recepcion`,
