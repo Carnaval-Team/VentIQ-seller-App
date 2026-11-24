@@ -86,8 +86,23 @@ Cambios frente a lo anterior:
 - Paso 2 con el mapa al lado en ≥1000 px y debajo en móvil.
 - Paso 3 con las tarjetas de almacén/TPV/personal en la misma piel.
 - Paso 4 como resumen en dos columnas con filas «etiqueta : valor».
-- Login a dos paneles: marca a la izquierda, formulario a la derecha; en móvil
-  el panel se cae y queda un encabezado compacto con el logo.
+
+## Login
+
+- **Escritorio (≥980 px):** dos paneles. A la izquierda la marca sobre el
+  gradiente azul (logo blanco + «Tu tienda, bajo control.» + tres argumentos);
+  a la derecha el formulario.
+- **Móvil y tablet estrecha:** el mismo patrón que el login de VentiQ Caja —
+  fondo azul a pantalla completa y el formulario en una **tarjeta blanca**
+  (radio 20, sombra suave), con el logo en un disco azul claro encima del
+  título. No es un formulario suelto sobre el fondo.
+- El logo es siempre `assets/images/inventia.png`, el mismo PNG de la marca. En
+  el panel azul se tiñe de blanco con `ColorFiltered(srcIn)`; en la tarjeta va
+  con el color corporativo. **No usar `Icons.storefront` como sustituto**: un
+  test lo comprueba (`el login perdió el logo de Inventtia`).
+- El separador «¿Todavía no tienes tienda?» se degrada: si la caja mide menos
+  de 260 px, se cae a texto centrado sin las líneas. Antes desbordaba 44 px a
+  390 px de ancho.
 
 ## 3. Tutorial guiado
 
@@ -121,10 +136,11 @@ flutter test --no-pub test/store_registration_dueno_tutorial_test.dart \
 ```
 
 `test/store_registration_dueno_tutorial_test.dart` cubre: el SQL escribe en
-`app_dat_dueno`, es idempotente, enlaza el trabajador, no tumba el alta; el
-login y el paso 1 no desbordan a 390 px; la burbuja arranca el recorrido; un
-paso con `alEntrar` cambia de página antes de medir; cerrar la burbuja dos veces
-no lanza.
+`app_dat_dueno`, es idempotente, enlaza el trabajador, no tumba el alta; cada
+`GlobalKey` de un paso del tutorial está anclada a un widget; el login y el paso
+1 no desbordan a 390 px; el login conserva el logo PNG y la tarjeta redondeada;
+la burbuja arranca el recorrido; un paso con `alEntrar` cambia de página antes
+de medir; cerrar la burbuja dos veces no lanza.
 
 Las pruebas de contrato SQL inspeccionan el archivo; **no sustituyen** una
 ejecución real en PostgreSQL. La verificación transaccional descrita arriba es

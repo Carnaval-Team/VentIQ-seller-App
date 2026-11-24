@@ -106,6 +106,30 @@ void main() {
       expect(find.text('Entrar'), findsOneWidget);
       expect(find.text('Crear mi tienda'), findsOneWidget);
 
+      // El logo tiene que ser el PNG de la marca, no un icono genérico.
+      final logos = tester
+          .widgetList<Image>(find.byType(Image))
+          .where(
+            (i) =>
+                i.image is AssetImage &&
+                (i.image as AssetImage).assetName ==
+                    'assets/images/inventia.png',
+          );
+      expect(logos, isNotEmpty, reason: 'el login perdió el logo de Inventtia');
+
+      // En móvil el formulario va dentro de una tarjeta blanca redondeada.
+      final tarjetas = tester.widgetList<Container>(find.byType(Container));
+      expect(
+        tarjetas.any(
+          (c) =>
+              c.decoration is BoxDecoration &&
+              (c.decoration! as BoxDecoration).borderRadius ==
+                  BorderRadius.circular(20),
+        ),
+        isTrue,
+        reason: 'la tarjeta del login móvil desapareció',
+      );
+
       // Desmontaje limpio: el auto-login deja un `Future` pendiente.
       await tester.pumpWidget(const SizedBox());
       await tester.pumpAndSettle();

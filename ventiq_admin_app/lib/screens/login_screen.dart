@@ -97,53 +97,136 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  /// Logo de la marca.
+  ///
+  /// [blanco] lo tiñe de blanco para fondos azules (panel de marca); sin él va
+  /// en sus colores originales, como en la tarjeta del login móvil.
+  Widget _logo({required double tamano, bool blanco = false}) {
+    final imagen = Image.asset(
+      'assets/images/inventia.png',
+      width: tamano,
+      height: tamano,
+      fit: BoxFit.contain,
+    );
+    if (!blanco) return imagen;
+    return ColorFiltered(
+      colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+      child: imagen,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ancho = MediaQuery.sizeOf(context).width;
     final dosColumnas = ancho >= 980;
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: dosColumnas
-            ? Row(
-                children: [
-                  // Panel de marca: solo en pantallas anchas. Es lo que hace
-                  // que el login parezca un producto y no un formulario suelto.
-                  Expanded(flex: 5, child: _panelMarca()),
-                  Expanded(
-                    flex: 4,
-                    child: Center(
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 40,
-                          vertical: 32,
-                        ),
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 380),
-                          child: _formulario(compacto: false),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              )
-            : SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+    if (dosColumnas) {
+      return Scaffold(
+        backgroundColor: AppColors.background,
+        body: SafeArea(
+          child: Row(
+            children: [
+              // Panel de marca: solo en pantallas anchas. Es lo que hace que el
+              // login parezca un producto y no un formulario suelto.
+              Expanded(flex: 5, child: _panelMarca()),
+              Expanded(
+                flex: 4,
                 child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 420),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _encabezadoCompacto(),
-                        const SizedBox(height: 28),
-                        _formulario(compacto: true),
-                      ],
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 40,
+                      vertical: 32,
+                    ),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 380),
+                      child: _formulario(compacto: false),
                     ),
                   ),
                 ),
               ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Móvil y tablet estrecha: el mismo patrón que el login de VentiQ Caja —
+    // fondo azul y el formulario en una tarjeta blanca flotante.
+    return Scaffold(
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: const BoxDecoration(gradient: AppColors.primaryGradient),
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 440),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(28, 32, 28, 28),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.22),
+                        blurRadius: 28,
+                        offset: const Offset(0, 12),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Logo en disco azul claro, como en la app de caja.
+                      Center(
+                        child: Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withValues(alpha: 0.10),
+                            shape: BoxShape.circle,
+                          ),
+                          child: ColorFiltered(
+                            colorFilter: const ColorFilter.mode(
+                              AppColors.primary,
+                              BlendMode.srcIn,
+                            ),
+                            child: _logo(tamano: 64),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      const Text(
+                        'Inventtia Gestión',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.4,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Inicia sesión en tu cuenta',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 26),
+                      _formulario(compacto: true),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -159,18 +242,7 @@ class _LoginScreenState extends State<LoginScreen> {
           children: [
             Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(
-                    Icons.storefront,
-                    size: 20,
-                    color: Colors.white,
-                  ),
-                ),
+                _logo(tamano: 40, blanco: true),
                 const SizedBox(width: 12),
                 const Text(
                   'Inventtia Gestión',
@@ -250,53 +322,13 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  /// Encabezado de la versión de una columna (móvil y tablet estrecha).
-  Widget _encabezadoCompacto() {
-    return Column(
-      children: [
-        Container(
-          width: 64,
-          height: 64,
-          decoration: BoxDecoration(
-            gradient: AppColors.primaryGradient,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.primary.withValues(alpha: 0.22),
-                blurRadius: 16,
-                offset: const Offset(0, 6),
-              ),
-            ],
-          ),
-          child: const Icon(Icons.storefront, size: 30, color: Colors.white),
-        ),
-        const SizedBox(height: 18),
-        const Text(
-          'Inventtia Gestión',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.5,
-            color: AppColors.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 6),
-        const Text(
-          'Entra para gestionar tu tienda',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
-        ),
-      ],
-    );
-  }
-
   Widget _formulario({required bool compacto}) {
     return Form(
       key: _formKey,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // En la tarjeta móvil el título ya va fuera, encima del formulario.
           if (!compacto) ...[
             const Text(
               'Iniciar sesión',
@@ -526,21 +558,36 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           const SizedBox(height: 24),
 
-          Row(
-            children: [
-              const Expanded(child: Divider(color: AppColors.border)),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Text(
-                  '¿Todavía no tienes tienda?',
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    color: AppColors.textSecondary.withValues(alpha: 0.9),
-                  ),
+          // Separador con el texto en medio. El texto no se encoge: si la caja
+          // es estrecha (tarjeta móvil), los `Divider` desaparecen en vez de
+          // empujar la fila fuera del ancho. Antes desbordaba 44 px a 390.
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final etiqueta = Text(
+                '¿Todavía no tienes tienda?',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: AppColors.textSecondary.withValues(alpha: 0.9),
                 ),
-              ),
-              const Expanded(child: Divider(color: AppColors.border)),
-            ],
+              );
+              // 220 px cubre el texto a 11.5 px con holgura.
+              if (constraints.maxWidth < 260) {
+                return Center(child: etiqueta);
+              }
+              return Row(
+                children: [
+                  const Expanded(child: Divider(color: AppColors.border)),
+                  Flexible(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: etiqueta,
+                    ),
+                  ),
+                  const Expanded(child: Divider(color: AppColors.border)),
+                ],
+              );
+            },
           ),
           const SizedBox(height: 16),
 
