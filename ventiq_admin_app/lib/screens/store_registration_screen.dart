@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:dropdown_search/dropdown_search.dart';
 import 'package:country_flags/country_flags.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -10,6 +11,7 @@ import '../services/store_registration_service.dart';
 import '../services/warehouse_service.dart';
 import '../services/geonames_service.dart';
 import '../widgets/ai_store_generator_sheet.dart';
+import '../widgets/tutorial_guiado.dart';
 
 class StoreRegistrationScreen extends StatefulWidget {
   const StoreRegistrationScreen({super.key});
@@ -17,6 +19,26 @@ class StoreRegistrationScreen extends StatefulWidget {
   @override
   State<StoreRegistrationScreen> createState() =>
       _StoreRegistrationScreenState();
+}
+
+/// Etiqueta de campo con el mismo peso visual en todos los pasos.
+class _EtiquetaCampo extends StatelessWidget {
+  const _EtiquetaCampo(this.texto);
+
+  final String texto;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      texto,
+      style: const TextStyle(
+        fontSize: 12.5,
+        fontWeight: FontWeight.w600,
+        color: AppColors.textPrimary,
+        letterSpacing: 0.01,
+      ),
+    );
+  }
 }
 
 class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
@@ -27,6 +49,42 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
 
   int _currentStep = 0;
   bool _isLoading = false;
+
+  // ---------------------------------------------------------------------------
+  // Tutorial guiado
+  // ---------------------------------------------------------------------------
+
+  // Claves de los campos que resalta el tutorial. Son `GlobalKey` porque el
+  // recorrido mide el widget real en pantalla, no solo su posición teórica.
+  final _claveBotonTutorial = GlobalKey();
+  final _claveNombre = GlobalKey();
+  final _claveTelefono = GlobalKey();
+  final _claveEmail = GlobalKey();
+  final _clavePassword = GlobalKey();
+  final _claveConfirmPassword = GlobalKey();
+  final _claveAsistenteIa = GlobalKey();
+  final _claveNombreTienda = GlobalKey();
+  final _claveDireccion = GlobalKey();
+  final _clavePais = GlobalKey();
+  final _claveMapa = GlobalKey();
+  final _claveAlmacenes = GlobalKey();
+  final _claveTpvs = GlobalKey();
+  final _clavePersonal = GlobalKey();
+  final _claveResumen = GlobalKey();
+  final _claveBotonSiguiente = GlobalKey();
+
+  /// Burbuja «¿Tienes dudas?» viva sobre el AppBar.
+  AvisoTutorial? _avisoTutorial;
+  bool _avisoTutorialAbierto = false;
+
+  /// Ya se mostró en esta visita: no insiste cada vez que se pulsa el icono.
+  bool _avisoTutorialMostrado = false;
+
+  /// El tutorial arranca solo la primera vez que se abre la pantalla.
+  bool _tutorialAutoLanzado = false;
+
+  bool _obscurePassword = true;
+  bool _obscureConfirm = true;
 
   // Formulario controllers
   final _userFormKey = GlobalKey<FormState>();
@@ -67,12 +125,6 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
   List<Map<String, dynamic>> _personalData = [];
 
   // Los roles y layout types se manejan directamente en los métodos
-
-  @override
-  void initState() {
-    super.initState();
-    _loadCountries();
-  }
 
   Future<void> _openAiStoreAssistant() async {
     final plan = await showModalBottomSheet<StoreAiPlan>(
@@ -121,47 +173,44 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
       _storeLatitude = plan.location.latitude;
       _storeLogitude = plan.location.longitude;
 
-      _almacenesData =
-          plan.warehouses
-              .map(
-                (w) => {
-                  'denominacion': (w.name ?? '').trim(),
-                  'direccion': (w.address ?? '').trim(),
-                  'ubicacion': (w.location ?? '').trim(),
-                },
-              )
-              .where((w) => (w['denominacion'] ?? '').toString().isNotEmpty)
-              .toList();
+      _almacenesData = plan.warehouses
+          .map(
+            (w) => {
+              'denominacion': (w.name ?? '').trim(),
+              'direccion': (w.address ?? '').trim(),
+              'ubicacion': (w.location ?? '').trim(),
+            },
+          )
+          .where((w) => (w['denominacion'] ?? '').toString().isNotEmpty)
+          .toList();
 
-      _layoutsData =
-          plan.layouts
-              .map(
-                (l) => {
-                  'denominacion': (l.name ?? '').trim(),
-                  'codigo': (l.code ?? '').trim(),
-                  'almacen_asignado': (l.warehouseName ?? '').trim(),
-                  'id_tipo_layout': l.tipoLayoutId ?? 1,
-                  'id_layout_padre': null,
-                  'tipo_nombre': 'Zona',
-                },
-              )
-              .where(
-                (l) =>
-                    (l['denominacion'] ?? '').toString().isNotEmpty &&
-                    (l['codigo'] ?? '').toString().isNotEmpty,
-              )
-              .toList();
+      _layoutsData = plan.layouts
+          .map(
+            (l) => {
+              'denominacion': (l.name ?? '').trim(),
+              'codigo': (l.code ?? '').trim(),
+              'almacen_asignado': (l.warehouseName ?? '').trim(),
+              'id_tipo_layout': l.tipoLayoutId ?? 1,
+              'id_layout_padre': null,
+              'tipo_nombre': 'Zona',
+            },
+          )
+          .where(
+            (l) =>
+                (l['denominacion'] ?? '').toString().isNotEmpty &&
+                (l['codigo'] ?? '').toString().isNotEmpty,
+          )
+          .toList();
 
-      _tpvData =
-          plan.tpvs
-              .map(
-                (t) => {
-                  'denominacion': (t.name ?? '').trim(),
-                  'almacen_asignado': (t.warehouseName ?? '').trim(),
-                },
-              )
-              .where((t) => (t['denominacion'] ?? '').toString().isNotEmpty)
-              .toList();
+      _tpvData = plan.tpvs
+          .map(
+            (t) => {
+              'denominacion': (t.name ?? '').trim(),
+              'almacen_asignado': (t.warehouseName ?? '').trim(),
+            },
+          )
+          .where((t) => (t['denominacion'] ?? '').toString().isNotEmpty)
+          .toList();
 
       _personalData = [];
       _addMainUserToPersonal();
@@ -347,14 +396,13 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
           child: IconButton.outlined(
             onPressed: isLoading ? null : onReload,
             tooltip: reloadTooltip,
-            icon:
-                isLoading
-                    ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                    : const Icon(Icons.refresh),
+            icon: isLoading
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh),
           ),
         ),
       ],
@@ -455,10 +503,9 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                 attributions: [
                   TextSourceAttribution(
                     'OpenStreetMap contributors',
-                    onTap:
-                        () => launchUrl(
-                          Uri.parse('https://openstreetmap.org/copyright'),
-                        ),
+                    onTap: () => launchUrl(
+                      Uri.parse('https://openstreetmap.org/copyright'),
+                    ),
                   ),
                 ],
               ),
@@ -575,179 +622,184 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
 
     showDialog(
       context: context,
-      builder:
-          (context) => StatefulBuilder(
-            builder:
-                (context, setState) => AlertDialog(
-                  title: const Text('Ajustar Localización'),
-                  content: SizedBox(
-                    width: double.maxFinite,
-                    height: 450,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Ajustar Localización'),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 450,
+            child: Column(
+              children: [
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                     child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Expanded(
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade100,
-                              border: Border.all(color: Colors.grey.shade300),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Icon(
-                                  Icons.map,
-                                  size: 64,
-                                  color: AppColors.primary,
-                                ),
-                                const SizedBox(height: 16),
-                                const Text(
-                                  'OpenStreetMap',
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.textPrimary,
-                                  ),
-                                ),
-                                const SizedBox(height: 24),
-                                Container(
-                                  padding: const EdgeInsets.all(16),
-                                  decoration: BoxDecoration(
-                                    color: Colors.blue.shade50,
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: Colors.blue.shade200,
-                                    ),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      const Text(
-                                        'Coordenadas Actuales:',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 12),
-                                      Row(
-                                        children: [
-                                          const Icon(
-                                            Icons.location_on,
-                                            color: AppColors.primary,
-                                            size: 18,
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Expanded(
-                                            child: Text(
-                                              'Latitud: ${tempLat.toStringAsFixed(6)}',
-                                              style: const TextStyle(
-                                                fontSize: 13,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Row(
-                                        children: [
-                                          const Icon(
-                                            Icons.location_on,
-                                            color: AppColors.primary,
-                                            size: 18,
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Expanded(
-                                            child: Text(
-                                              'Longitud: ${tempLng.toStringAsFixed(6)}',
-                                              style: const TextStyle(
-                                                fontSize: 13,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(height: 24),
-                                Container(
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: Colors.orange.shade50,
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: Colors.orange.shade200,
-                                    ),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        Icons.info,
-                                        color: Colors.orange.shade700,
-                                        size: 20,
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Text(
-                                          'Ejecuta: flutter pub get\npara activar el mapa interactivo',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.orange.shade700,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                        const Icon(
+                          Icons.map,
+                          size: 64,
+                          color: AppColors.primary,
                         ),
                         const SizedBox(height: 16),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context),
-                              child: const Text('Cancelar'),
-                            ),
-                            ElevatedButton.icon(
-                              onPressed: () {
-                                // Guardar coordenadas temporales
-                                this._storeLatitude = tempLat;
-                                this._storeLogitude = tempLng;
-                                Navigator.pop(context);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      'Coordenadas guardadas: ${tempLat.toStringAsFixed(4)}, ${tempLng.toStringAsFixed(4)}',
-                                    ),
-                                    duration: const Duration(seconds: 2),
-                                    backgroundColor: Colors.green,
-                                  ),
-                                );
-                              },
-                              icon: const Icon(Icons.check),
-                              label: const Text('Guardar'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: AppColors.primary,
-                                foregroundColor: Colors.white,
+                        const Text(
+                          'OpenStreetMap',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.blue.shade200),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Coordenadas Actuales:',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
                               ),
-                            ),
-                          ],
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  const Icon(
+                                    Icons.location_on,
+                                    color: AppColors.primary,
+                                    size: 18,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Latitud: ${tempLat.toStringAsFixed(6)}',
+                                      style: const TextStyle(fontSize: 13),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  const Icon(
+                                    Icons.location_on,
+                                    color: AppColors.primary,
+                                    size: 18,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Longitud: ${tempLng.toStringAsFixed(6)}',
+                                      style: const TextStyle(fontSize: 13),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.orange.shade200),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.info,
+                                color: Colors.orange.shade700,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'Ejecuta: flutter pub get\npara activar el mapa interactivo',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.orange.shade700,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
                   ),
                 ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancelar'),
+                    ),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        // Guardar coordenadas temporales
+                        this._storeLatitude = tempLat;
+                        this._storeLogitude = tempLng;
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Coordenadas guardadas: ${tempLat.toStringAsFixed(4)}, ${tempLng.toStringAsFixed(4)}',
+                            ),
+                            duration: const Duration(seconds: 2),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.check),
+                      label: const Text('Guardar'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
+        ),
+      ),
     );
   }
 
   @override
+  void initState() {
+    super.initState();
+    _loadCountries();
+    // La burbuja «¿Tienes dudas?» aparece sola al entrar: es la única forma de
+    // que un cliente nuevo descubra que hay un recorrido explicativo.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _tutorialAutoLanzado) return;
+      _tutorialAutoLanzado = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _mostrarAvisoTutorial();
+      });
+    });
+  }
+
+  @override
   void dispose() {
+    _cerrarAvisoTutorial(notificar: false);
     _pageController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
@@ -760,38 +812,303 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
     super.dispose();
   }
 
+  // ==========================================================================
+  // Tutorial: burbuja del AppBar + recorrido campo por campo
+  // ==========================================================================
+
+  Widget _botonTutorial() {
+    return IconButton(
+      key: _claveBotonTutorial,
+      icon: const Icon(Icons.school_outlined),
+      tooltip: 'Tutorial de esta pantalla',
+      onPressed: () {
+        if (_avisoTutorialAbierto) {
+          _cerrarAvisoTutorial();
+        } else {
+          _mostrarAvisoTutorial();
+        }
+      },
+    );
+  }
+
+  void _mostrarAvisoTutorial() {
+    if (_avisoTutorialAbierto) return;
+    _avisoTutorialMostrado = true;
+    final aviso = insertarAvisoTutorial(
+      context,
+      ancla: _claveBotonTutorial,
+      alAceptar: _abrirTutorial,
+      alCerrar: _alCerrarAvisoPorUsuario,
+      titulo: '¿Tienes dudas?',
+      descripcion:
+          'Ve el tutorial: recorre el alta campo por campo, resaltando cada '
+          'uno sobre la pantalla mientras te explica qué se pone.',
+      textoBoton: 'Ver tutorial',
+    );
+    if (aviso == null) return;
+    _avisoTutorial = aviso;
+    setState(() => _avisoTutorialAbierto = true);
+  }
+
+  /// La burbuja ya retiró su entrada: aquí solo se sincroniza el estado.
+  void _alCerrarAvisoPorUsuario() {
+    _avisoTutorial = null;
+    if (!mounted) return;
+    if (!_avisoTutorialAbierto) return;
+    setState(() => _avisoTutorialAbierto = false);
+  }
+
+  /// Retirada programática (al salir de la pantalla, al arrancar el recorrido).
+  /// `AvisoTutorial.cerrar` es idempotente.
+  ///
+  /// [notificar] es `false` desde [dispose]: tocar `setState` con el elemento ya
+  /// desmontado revienta con «setState() called after dispose()».
+  void _cerrarAvisoTutorial({bool notificar = true}) {
+    final aviso = _avisoTutorial;
+    _avisoTutorial = null;
+    if (aviso != null && !aviso.cerrada) aviso.cerrar();
+    if (!notificar || !mounted) return;
+    if (!_avisoTutorialAbierto) return;
+    setState(() => _avisoTutorialAbierto = false);
+  }
+
+  Future<void> _abrirTutorial() async {
+    _cerrarAvisoTutorial();
+    if (!mounted) return;
+    // La página la cambia cada paso con su `alEntrar`: forzar el paso 1 aquí
+    // rompería el recorrido cuando el usuario ya está en otra página.
+    await mostrarTutorialGuiado(context, pasos: _pasosTutorial());
+  }
+
+  /// Lleva el asistente a un paso concreto y espera a que la página esté
+  /// montada. Lo llama cada `PasoGuiado.alEntrar`.
+  Future<void> _irAPasoAsistente(int paso) async {
+    if (!mounted || _currentStep == paso) {
+      // Ya está montada: un frame para que el layout esté asentado.
+      await Future<void>.delayed(const Duration(milliseconds: 90));
+      return;
+    }
+    setState(() => _currentStep = paso);
+    _pageController.jumpToPage(paso);
+    await Future<void>.delayed(const Duration(milliseconds: 260));
+  }
+
+  /// Pasos del recorrido. Todos viven en el asistente: cada uno lleva su
+  /// `alEntrar` para que el recorrido pueda saltar entre páginas.
+  List<PasoGuiado> _pasosTutorial() {
+    Future<void> Function() en(int paso) =>
+        () => _irAPasoAsistente(paso);
+
+    return [
+      PasoGuiado(
+        clave: _claveNombre,
+        titulo: 'Nombre completo',
+        icono: Icons.badge_outlined,
+        texto:
+            'Tu nombre y apellidos, como quieres aparecer en la app y en los '
+            'reportes. No es el nombre de la tienda: ese va en el paso '
+            'siguiente.',
+        alEntrar: en(0),
+      ),
+      PasoGuiado(
+        clave: _claveTelefono,
+        titulo: 'Teléfono de contacto',
+        icono: Icons.phone_outlined,
+        texto:
+            'Un número donde podamos localizarte si hay un problema con tu '
+            'cuenta o tu suscripción. No se muestra a los clientes.',
+        alEntrar: en(0),
+      ),
+      PasoGuiado(
+        clave: _claveEmail,
+        titulo: 'Email de acceso',
+        icono: Icons.alternate_email,
+        texto:
+            'Con este correo entras a la app. Escríbelo bien: es donde llegan '
+            'los avisos y desde donde se recupera la contraseña.',
+        alEntrar: en(0),
+      ),
+      PasoGuiado(
+        clave: _clavePassword,
+        titulo: 'Contraseña',
+        icono: Icons.lock_outline,
+        texto:
+            'Mínimo 6 caracteres. La barra de debajo dice si es débil o fuerte '
+            'mientras escribes. El ojo a la derecha la muestra para que '
+            'compruebes que no hay erratas.',
+        alEntrar: en(0),
+      ),
+      PasoGuiado(
+        clave: _claveConfirmPassword,
+        titulo: 'Confirmar contraseña',
+        icono: Icons.lock_reset_outlined,
+        texto:
+            'La misma contraseña otra vez. Si no coinciden, la app no te deja '
+            'avanzar: es la última red antes de quedarte sin acceso.',
+        alEntrar: en(0),
+      ),
+      PasoGuiado(
+        clave: _claveAsistenteIa,
+        titulo: 'Crear tienda asistida (IA)',
+        icono: Icons.auto_awesome,
+        texto:
+            'Si prefieres no rellenar todo a mano, describe tu negocio y la IA '
+            'propone almacenes, cajas y personal. Lo revisas antes de crear '
+            'nada.',
+        alEntrar: en(0),
+      ),
+      PasoGuiado(
+        clave: _claveNombreTienda,
+        titulo: 'Nombre de la tienda',
+        icono: Icons.storefront_outlined,
+        texto:
+            'El nombre comercial que verán tus clientes y tu equipo en todas '
+            'las pantallas. Piensa que puede haber más de una tienda tuya: '
+            'mejor uno que se distinga.',
+        alEntrar: en(1),
+      ),
+      PasoGuiado(
+        clave: _claveDireccion,
+        titulo: 'Dirección',
+        icono: Icons.location_on_outlined,
+        texto:
+            'Calle y número del local. Aparece en los tickets y sirve para que '
+            'el repartidor o el cliente lleguen. Puedes afinarla abajo, en el '
+            'mapa.',
+        alEntrar: en(1),
+      ),
+      PasoGuiado(
+        clave: _clavePais,
+        titulo: 'País, provincia y ciudad',
+        icono: Icons.public,
+        texto:
+            'Se eligen en cascada: primero el país, luego la provincia y por '
+            'último la ciudad. Cada uno se carga al elegir el anterior. Si una '
+            'lista llega vacía, el botón de recargar está a la derecha.',
+        alEntrar: en(1),
+      ),
+      PasoGuiado(
+        clave: _claveMapa,
+        titulo: 'Ubicación en el mapa',
+        icono: Icons.my_location,
+        texto:
+            'Toca el mapa para mover el alfiler a tu puerta exacta. Esa '
+            'coordenada se guarda con la tienda y la usan las apps de reparto y '
+            'las rutas.',
+        alEntrar: en(1),
+      ),
+      PasoGuiado(
+        clave: _claveAlmacenes,
+        titulo: 'Almacenes y zonas',
+        icono: Icons.warehouse_outlined,
+        texto:
+            'Un almacén es donde guardas la mercancía; las zonas, las '
+            'estanterías o áreas dentro de él. Necesitas al menos un almacén '
+            'con una zona: el sistema no deja crear la tienda sin eso.',
+        alEntrar: en(2),
+      ),
+      PasoGuiado(
+        clave: _claveTpvs,
+        titulo: 'TPV (cajas)',
+        icono: Icons.point_of_sale_outlined,
+        texto:
+            'Cada TPV es un punto de venta: una caja física o una caja virtual. '
+            'Cada uno se asigna a un almacén, que es de donde descuenta el '
+            'stock al vender.',
+        alEntrar: en(2),
+      ),
+      PasoGuiado(
+        clave: _clavePersonal,
+        titulo: 'Personal',
+        icono: Icons.groups_outlined,
+        texto:
+            'Tu usuario aparece ya como administrador. Aquí añades al resto: '
+            'gerentes ven todo, supervisores controlan, almaceneros mueven '
+            'inventario y vendedores solo cobran en su caja.',
+        alEntrar: en(2),
+      ),
+      PasoGuiado(
+        clave: _claveResumen,
+        titulo: 'Resumen antes de crear',
+        icono: Icons.fact_check_outlined,
+        texto:
+            'Todo lo que has puesto, junto. Si algo está mal, vuelve con '
+            '«Anterior»; cuando pulses «Crear tienda», se crea el usuario, la '
+            'tienda y sus almacenes de una vez.',
+        alEntrar: en(3),
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text(
-          'Registrar Nueva Tienda',
-          style: TextStyle(fontWeight: FontWeight.w600),
-        ),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
+        backgroundColor: AppColors.surface,
+        foregroundColor: AppColors.textPrimary,
         elevation: 0,
-        centerTitle: true,
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
+        shape: const Border(
+          bottom: BorderSide(color: AppColors.border, width: 1),
+        ),
+        titleSpacing: 16,
+        title: Row(
+          children: [
+            Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                gradient: AppColors.primaryGradient,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.storefront,
+                size: 17,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(width: 10),
+            const Flexible(
+              child: Text(
+                'Nueva tienda',
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          _botonTutorial(),
+          IconButton(
+            icon: const Icon(Icons.close),
+            tooltip: 'Salir',
+            onPressed: _isLoading
+                ? null
+                : () {
+                    _cerrarAvisoTutorial();
+                    Navigator.of(context).maybePop();
+                  },
+          ),
+          const SizedBox(width: 4),
+        ],
       ),
       body: Column(
         children: [
-          // Header con gradiente
+          // Stepper sobre fondo blanco: el azul se reserva para lo accionable.
           Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [AppColors.primary, AppColors.primary.withOpacity(0.8)],
+            decoration: const BoxDecoration(
+              color: AppColors.surface,
+              border: Border(
+                bottom: BorderSide(color: AppColors.border, width: 1),
               ),
             ),
-            child: Column(
-              children: [
-                // Progress indicator mejorado
-                _buildModernProgressIndicator(),
-                const SizedBox(height: 16),
-              ],
-            ),
+            child: _buildModernProgressIndicator(),
           ),
 
           // Content: ancho adaptable (móvil → web)
@@ -838,833 +1155,1200 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
   }
 
   Widget _buildModernProgressIndicator() {
-    final steps = [
-      {'title': 'Usuario', 'icon': Icons.person},
-      {'title': 'Tienda', 'icon': Icons.store},
-      {'title': 'Configuración', 'icon': Icons.settings},
-      {'title': 'Confirmación', 'icon': Icons.check_circle},
+    const steps = [
+      ('Tu cuenta', Icons.person_outline),
+      ('Tu tienda', Icons.storefront_outlined),
+      ('Configuración', Icons.tune),
+      ('Listo', Icons.check),
     ];
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Column(
-        children: [
-          // Indicador de progreso centrado - VERSIÓN COMPACTA
-          Center(
-            child: Container(
-              constraints: BoxConstraints(
-                maxWidth: _isWideLayout ? 640 : 400,
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(steps.length, (index) {
-                  final isActive = index <= _currentStep;
-                  final isCompleted = index < _currentStep;
-                  final isCurrent = index == _currentStep;
+    // En móvil el texto de los pasos no cabe: quedan solo los círculos
+    // conectados, que siguen diciendo dónde estás.
+    final compacto = MediaQuery.sizeOf(context).width < 520;
 
-                  return Expanded(
-                    child: Row(
-                      children: [
-                        // Círculo del paso - MÁS PEQUEÑO
-                        Container(
-                          width: isCurrent ? 32 : 28,
-                          height: isCurrent ? 32 : 28,
-                          decoration: BoxDecoration(
-                            color:
-                                isCompleted
-                                    ? Colors.green
-                                    : isActive
-                                    ? Colors.white
-                                    : Colors.white.withOpacity(0.3),
-                            shape: BoxShape.circle,
-                            border:
-                                isCurrent
-                                    ? Border.all(color: Colors.white, width: 2)
-                                    : null,
-                            boxShadow:
-                                isCurrent
-                                    ? [
-                                      BoxShadow(
-                                        color: Colors.black.withOpacity(0.2),
-                                        blurRadius: 4,
-                                        offset: const Offset(0, 1),
-                                      ),
-                                    ]
-                                    : null,
-                          ),
-                          child: Icon(
-                            isCompleted
-                                ? Icons.check
-                                : steps[index]['icon'] as IconData,
-                            color:
-                                isCompleted
-                                    ? Colors.white
-                                    : isActive
-                                    ? AppColors.primary
-                                    : Colors.white.withOpacity(0.6),
-                            size: isCurrent ? 16 : 14,
-                          ),
-                        ),
-
-                        // Línea conectora - MÁS DELGADA
-                        if (index < steps.length - 1)
-                          Expanded(
-                            child: Container(
-                              height: 2,
-                              margin: const EdgeInsets.symmetric(horizontal: 4),
-                              decoration: BoxDecoration(
-                                color:
-                                    index < _currentStep
-                                        ? Colors.green
-                                        : Colors.white.withOpacity(0.3),
-                                borderRadius: BorderRadius.circular(1),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  );
-                }),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildUserRegistrationStep() {
-    return SingleChildScrollView(
+    return Padding(
       padding: EdgeInsets.symmetric(
-        horizontal: _isWideLayout ? 32 : 24,
-        vertical: 24,
+        horizontal: _isWideLayout ? 24 : 16,
+        vertical: compacto ? 12 : 16,
       ),
       child: Center(
-        child: Container(
-          constraints: BoxConstraints(maxWidth: _isWideLayout ? 720 : 520),
-          child: Form(
-            key: _userFormKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Header del paso
-                Center(
-                  child: Column(
-                    children: [
-                      // Container(
-                      //   width: 80,
-                      //   height: 80,
-                      //   decoration: BoxDecoration(
-                      //     gradient: AppColors.primaryGradient,
-                      //     borderRadius: BorderRadius.circular(20),
-                      //     boxShadow: [
-                      //       BoxShadow(
-                      //         color: AppColors.primary.withOpacity(0.3),
-                      //         blurRadius: 15,
-                      //         offset: const Offset(0, 5),
-                      //       ),
-                      //     ],
-                      //   ),
-                      //   // child: const Icon(
-                      //   //   Icons.person_add,
-                      //   //   size: 40,
-                      //   //   color: Colors.white,
-                      //   // ),
-                      // ),
-                      const SizedBox(height: 20),
-                      const Text(
-                        'Registro de Usuario',
-                        style: TextStyle(
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.textPrimary,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: _isWideLayout ? 660 : 440),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: List.generate(steps.length, (index) {
+              final (titulo, icono) = steps[index];
+              final completado = index < _currentStep;
+              final actual = index == _currentStep;
+
+              return Expanded(
+                flex: index == steps.length - 1 ? 0 : 1,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 220),
+                          curve: Curves.easeOut,
+                          width: 30,
+                          height: 30,
+                          decoration: BoxDecoration(
+                            color: completado
+                                ? AppColors.primary
+                                : actual
+                                ? AppColors.primary.withValues(alpha: 0.10)
+                                : AppColors.surfaceVariant,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: completado || actual
+                                  ? AppColors.primary
+                                  : AppColors.border,
+                              width: actual ? 2 : 1,
+                            ),
+                          ),
+                          child: completado
+                              ? const Icon(
+                                  Icons.check,
+                                  size: 15,
+                                  color: Colors.white,
+                                )
+                              : Icon(
+                                  icono,
+                                  size: 14,
+                                  color: actual
+                                      ? AppColors.primary
+                                      : AppColors.textLight,
+                                ),
+                        ),
+                        if (!compacto) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            titulo,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: actual
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
+                              color: actual || completado
+                                  ? AppColors.primary
+                                  : AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    if (index < steps.length - 1)
+                      Expanded(
+                        child: Padding(
+                          padding: EdgeInsets.only(
+                            top: 14,
+                            left: 6,
+                            right: 6,
+                            bottom: compacto ? 0 : 22,
+                          ),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 220),
+                            height: 2,
+                            decoration: BoxDecoration(
+                              color: index < _currentStep
+                                  ? AppColors.primary
+                                  : AppColors.border,
+                              borderRadius: BorderRadius.circular(1),
+                            ),
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Crea la cuenta del administrador de la tienda',
-                        style: TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 16,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
+                  ],
                 ),
-                const SizedBox(height: 40),
-
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: _isLoading ? null : _openAiStoreAssistant,
-                    icon: const Icon(Icons.auto_awesome, size: 20),
-                    label: const Text(
-                      'Crear tienda asistida (IA)',
-                      style: TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.primary,
-                      side: const BorderSide(
-                        color: AppColors.primary,
-                        width: 2,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-
-                TextFormField(
-                  controller: _fullNameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Nombre Completo',
-                    prefixIcon: Icon(Icons.person),
-                  ),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Ingresa el nombre completo';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-
-                TextFormField(
-                  controller: _phoneController,
-                  keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(
-                    labelText: 'Número de Teléfono',
-                    prefixIcon: Icon(Icons.phone),
-                    hintText: 'Ej: +1234567890',
-                    helperText:
-                        'Necesario para que nuestro equipo pueda contactarte',
-                    helperMaxLines: 2,
-                  ),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Ingresa un número de teléfono';
-                    }
-                    if (value.trim().length < 8) {
-                      return 'Ingresa un número de teléfono válido';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-
-                TextFormField(
-                  controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(
-                    labelText: 'Email',
-                    prefixIcon: Icon(Icons.email),
-                  ),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Ingresa un email';
-                    }
-                    if (!value.contains('@')) {
-                      return 'Ingresa un email válido';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-
-                TextFormField(
-                  controller: _passwordController,
-                  obscureText: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Contraseña',
-                    prefixIcon: Icon(Icons.lock),
-                  ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Ingresa una contraseña';
-                    }
-                    if (value.length < 6) {
-                      return 'La contraseña debe tener al menos 6 caracteres';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-
-                TextFormField(
-                  controller: _confirmPasswordController,
-                  obscureText: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Confirmar Contraseña',
-                    prefixIcon: Icon(Icons.lock_outline),
-                  ),
-                  validator: (value) {
-                    if (value != _passwordController.text) {
-                      return 'Las contraseñas no coinciden';
-                    }
-                    return null;
-                  },
-                ),
-              ],
-            ),
+              );
+            }),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildStoreInfoStep() {
-    return SingleChildScrollView(
-      padding: EdgeInsets.symmetric(
-        horizontal: _isWideLayout ? 32 : 24,
-        vertical: 24,
+  /// Campo de texto con la estética del asistente: etiqueta propia encima,
+  /// altura 56, radio 8 y el anillo de foco en azul corporativo.
+  Widget _campo({
+    required GlobalKey clave,
+    required TextEditingController controller,
+    required String etiqueta,
+    required IconData icono,
+    String? ayuda,
+    String? pista,
+    TextInputType? teclado,
+    bool oscuro = false,
+    VoidCallback? alternarOscuro,
+    TextInputAction accionTeclado = TextInputAction.next,
+    String? Function(String?)? validador,
+    List<TextInputFormatter>? formateadores,
+    void Function(String)? alCambiar,
+    void Function(String)? alEnviar,
+  }) {
+    return Column(
+      key: clave,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          etiqueta,
+          style: const TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textPrimary,
+            letterSpacing: 0.01,
+          ),
+        ),
+        const SizedBox(height: 6),
+        TextFormField(
+          controller: controller,
+          keyboardType: teclado,
+          obscureText: oscuro,
+          textInputAction: accionTeclado,
+          inputFormatters: formateadores,
+          validator: validador,
+          onChanged: alCambiar,
+          onFieldSubmitted: alEnviar,
+          style: const TextStyle(fontSize: 14.5, color: AppColors.textPrimary),
+          decoration: _decoracionCampo(
+            icono: icono,
+            pista: pista,
+            ayuda: ayuda,
+            sufijo: alternarOscuro == null
+                ? null
+                : IconButton(
+                    icon: Icon(
+                      oscuro
+                          ? Icons.visibility_outlined
+                          : Icons.visibility_off_outlined,
+                      size: 19,
+                    ),
+                    color: AppColors.textSecondary,
+                    tooltip: oscuro ? 'Mostrar' : 'Ocultar',
+                    onPressed: alternarOscuro,
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  InputDecoration _decoracionCampo({
+    required IconData icono,
+    String? pista,
+    String? ayuda,
+    Widget? sufijo,
+  }) {
+    final borde = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(8),
+      borderSide: const BorderSide(color: AppColors.border),
+    );
+    return InputDecoration(
+      isDense: true,
+      hintText: pista,
+      hintStyle: const TextStyle(fontSize: 14, color: AppColors.textLight),
+      helperText: ayuda,
+      helperMaxLines: 2,
+      helperStyle: const TextStyle(
+        fontSize: 11.5,
+        height: 1.3,
+        color: AppColors.textSecondary,
       ),
+      prefixIcon: Icon(icono, size: 19, color: AppColors.textSecondary),
+      suffixIcon: sufijo,
+      filled: true,
+      fillColor: AppColors.surface,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+      border: borde,
+      enabledBorder: borde,
+      focusedBorder: borde.copyWith(
+        borderSide: const BorderSide(color: AppColors.primary, width: 1.6),
+      ),
+      errorBorder: borde.copyWith(
+        borderSide: const BorderSide(color: AppColors.error, width: 1.2),
+      ),
+      focusedErrorBorder: borde.copyWith(
+        borderSide: const BorderSide(color: AppColors.error, width: 1.6),
+      ),
+    );
+  }
+
+  /// Tarjeta blanca con borde fino y sombra suave: la unidad visual del
+  /// asistente. Nada de `Card` con elevación por defecto.
+  Widget _tarjeta({required Widget child, EdgeInsets? padding}) {
+    return Container(
+      width: double.infinity,
+      padding: padding ?? const EdgeInsets.all(28),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0A1F2937),
+            blurRadius: 3,
+            offset: Offset(0, 1),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+
+  /// Cabecera del paso: título, subtítulo y, si se pasa, una acción a la
+  /// derecha. Es el mismo bloque en los cuatro pasos.
+  Widget _cabeceraPaso({
+    required String titulo,
+    required String subtitulo,
+    Widget? accion,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                titulo,
+                style: TextStyle(
+                  fontSize: _isWideLayout ? 26 : 22,
+                  height: 1.2,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.4,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ),
+            if (accion != null) ...[const SizedBox(width: 12), accion],
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          subtitulo,
+          style: const TextStyle(
+            fontSize: 14,
+            height: 1.45,
+            color: AppColors.textSecondary,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Tarjeta de valor del panel lateral (`solo en pantallas anchas`).
+  Widget _panelLateral() {
+    const beneficios = [
+      (
+        Icons.storefront_outlined,
+        'Tu tienda con sus datos',
+        'Nombre, dirección y ubicación en el mapa, listos para los tickets.',
+      ),
+      (
+        Icons.inventory_2_outlined,
+        'Almacenes y zonas',
+        'Donde vive el inventario. Cada zona agrupa los productos.',
+      ),
+      (
+        Icons.point_of_sale_outlined,
+        'Cajas listas para vender',
+        'Cada TPV descuenta del almacén que le asignes.',
+      ),
+      (
+        Icons.groups_outlined,
+        'Equipo con permisos',
+        'Gerentes, supervisores, almaceneros y vendedores.',
+      ),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: const Color(0xFFEFF4FF),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFDBEAFE)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Qué vas a conseguir',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 16),
+              for (final (icono, titulo, detalle) in beneficios) ...[
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 30,
+                      height: 30,
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(icono, size: 16, color: AppColors.primary),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            titulo,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            detalle,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              height: 1.35,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: const Row(
+            children: [
+              Icon(
+                Icons.schedule_outlined,
+                size: 18,
+                color: AppColors.textSecondary,
+              ),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Tiempo estimado: 3 minutos',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.school_outlined, size: 18, color: AppColors.primary),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '¿Primera vez? Pulsa el birrete de arriba y te lo explico '
+                  'campo por campo.',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    height: 1.4,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Medidor de fortaleza de la contraseña. No bloquea: informa.
+  Widget _medidorPassword() {
+    final valor = _passwordController.text;
+    var fuerza = 0;
+    if (valor.length >= 6) fuerza++;
+    if (valor.length >= 10) fuerza++;
+    if (RegExp(r'[A-Z]').hasMatch(valor) && RegExp(r'[0-9]').hasMatch(valor)) {
+      fuerza++;
+    }
+    const etiquetas = ['Muy corta', 'Débil', 'Aceptable', 'Fuerte'];
+    const colores = [
+      AppColors.border,
+      Color(0xFFEF4444),
+      Color(0xFFF59E0B),
+      AppColors.success,
+    ];
+    final indice = fuerza.clamp(0, 3);
+
+    return Row(
+      children: [
+        for (var i = 0; i < 3; i++) ...[
+          Expanded(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              height: 3,
+              decoration: BoxDecoration(
+                color: i < fuerza ? colores[indice] : AppColors.border,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          if (i < 2) const SizedBox(width: 4),
+        ],
+        const SizedBox(width: 10),
+        Text(
+          valor.isEmpty ? '' : etiquetas[indice],
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: colores[indice],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildUserRegistrationStep() {
+    final ancho = MediaQuery.sizeOf(context).width;
+    final dosColumnas = ancho >= 1080;
+    final margen = ancho >= 720 ? 32.0 : 16.0;
+
+    final formulario = _tarjeta(
+      child: Form(
+        key: _userFormKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _cabeceraPaso(
+              titulo: 'Crea la cuenta del administrador',
+              subtitulo:
+                  'Serás el Dueño de la tienda: verás las ganancias y podrás '
+                  'invitar a tu equipo después.',
+            ),
+            const SizedBox(height: 26),
+
+            _campo(
+              clave: _claveNombre,
+              controller: _fullNameController,
+              etiqueta: 'Nombre completo',
+              icono: Icons.badge_outlined,
+              pista: 'Ej: Ana Pérez',
+              ayuda: 'Como quieres aparecer en la app y en los reportes.',
+              validador: (valor) {
+                if (valor == null || valor.trim().isEmpty) {
+                  return 'Ingresa tu nombre completo';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 18),
+
+            _campo(
+              clave: _claveTelefono,
+              controller: _phoneController,
+              etiqueta: 'Teléfono de contacto',
+              icono: Icons.phone_outlined,
+              pista: 'Ej: +53 5555 1234',
+              ayuda: 'Solo lo usamos para contactarte si hay un problema.',
+              teclado: TextInputType.phone,
+              validador: (valor) {
+                if (valor == null || valor.trim().isEmpty) {
+                  return 'Ingresa un número de teléfono';
+                }
+                if (valor.trim().length < 8) {
+                  return 'Ingresa un número de teléfono válido';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 18),
+
+            _campo(
+              clave: _claveEmail,
+              controller: _emailController,
+              etiqueta: 'Email de acceso',
+              icono: Icons.alternate_email,
+              pista: 'tu@correo.com',
+              ayuda:
+                  'Con este correo entras a la app y recuperas la contraseña.',
+              teclado: TextInputType.emailAddress,
+              validador: (valor) {
+                if (valor == null || valor.trim().isEmpty) {
+                  return 'Ingresa tu email';
+                }
+                final email = valor.trim();
+                if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+                  return 'Ingresa un email válido';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 18),
+
+            _campo(
+              clave: _clavePassword,
+              controller: _passwordController,
+              etiqueta: 'Contraseña',
+              icono: Icons.lock_outline,
+              pista: 'Mínimo 6 caracteres',
+              oscuro: _obscurePassword,
+              alternarOscuro: () =>
+                  setState(() => _obscurePassword = !_obscurePassword),
+              alCambiar: (_) => setState(() {}),
+              validador: (valor) {
+                if (valor == null || valor.isEmpty) {
+                  return 'Ingresa una contraseña';
+                }
+                if (valor.length < 6) {
+                  return 'La contraseña debe tener al menos 6 caracteres';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 8),
+            _medidorPassword(),
+            const SizedBox(height: 18),
+
+            _campo(
+              clave: _claveConfirmPassword,
+              controller: _confirmPasswordController,
+              etiqueta: 'Confirmar contraseña',
+              icono: Icons.lock_reset_outlined,
+              pista: 'Repite la contraseña',
+              oscuro: _obscureConfirm,
+              alternarOscuro: () =>
+                  setState(() => _obscureConfirm = !_obscureConfirm),
+              accionTeclado: TextInputAction.done,
+              validador: (valor) {
+                if (valor != _passwordController.text) {
+                  return 'Las contraseñas no coinciden';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 26),
+
+            // Atajo: la IA rellena todo esto y salta al resumen.
+            Container(
+              key: _claveAsistenteIa,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF5F8FF),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: AppColors.primary.withValues(alpha: 0.25),
+                  width: 1.2,
+                ),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.10),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.auto_awesome,
+                      size: 18,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Crear tienda asistida (IA)',
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        const Text(
+                          'Describe tu negocio y preparamos almacenes, cajas y '
+                          'personal. Lo revisas antes de crear nada.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            height: 1.4,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        OutlinedButton.icon(
+                          onPressed: _isLoading ? null : _openAiStoreAssistant,
+                          icon: const Icon(Icons.auto_awesome, size: 16),
+                          label: const Text('Configurar con IA'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.primary,
+                            side: const BorderSide(
+                              color: AppColors.primary,
+                              width: 1.2,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            textStyle: const TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    return SingleChildScrollView(
+      padding: EdgeInsets.symmetric(horizontal: margen, vertical: 24),
       child: Center(
-        child: Container(
-          constraints: BoxConstraints(maxWidth: _isWideLayout ? 900 : 520),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1080),
+          child: dosColumnas
+              ? Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(flex: 6, child: formulario),
+                    const SizedBox(width: 24),
+                    Expanded(flex: 4, child: _panelLateral()),
+                  ],
+                )
+              : formulario,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStoreInfoStep() {
+    final ancho = MediaQuery.sizeOf(context).width;
+    final margen = ancho >= 720 ? 32.0 : 16.0;
+    final dosColumnasMapa = ancho >= 1000;
+
+    final campos = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _campo(
+          clave: _claveNombreTienda,
+          controller: _storeNameController,
+          etiqueta: 'Nombre de la tienda',
+          icono: Icons.storefront_outlined,
+          pista: 'Ej: Mercado Central',
+          ayuda: 'El nombre que verán tus clientes y tu equipo.',
+          validador: (valor) {
+            if (valor == null || valor.trim().isEmpty) {
+              return 'Ingresa el nombre de la tienda';
+            }
+            return null;
+          },
+        ),
+        const SizedBox(height: 18),
+        _campo(
+          clave: _claveDireccion,
+          controller: _storeAddressController,
+          etiqueta: 'Dirección',
+          icono: Icons.location_on_outlined,
+          pista: 'Calle, número, referencia',
+          ayuda: 'Sale en los tickets. Puedes afinarla en el mapa.',
+          validador: (valor) {
+            if (valor == null || valor.trim().isEmpty) {
+              return 'Ingresa la dirección';
+            }
+            return null;
+          },
+        ),
+        const SizedBox(height: 18),
+
+        // País → provincia → ciudad: cada uno carga el siguiente.
+        Column(
+          key: _clavePais,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const _EtiquetaCampo('País, provincia y ciudad'),
+            const SizedBox(height: 6),
+            _buildLocationSelectorRow(
+              isLoading: _loadingCountries,
+              onReload: _reloadCountries,
+              reloadTooltip: 'Recargar países',
+              child: _loadingCountries && _countries.isEmpty
+                  ? _locationLoadingIndicator()
+                  : DropdownSearch<Map<String, dynamic>>(
+                      items: _countries,
+                      itemAsString: (item) => item['countryName'] ?? '',
+                      selectedItem: _selectedCountry,
+                      popupProps: PopupProps.menu(
+                        showSearchBox: true,
+                        searchFieldProps: const TextFieldProps(
+                          decoration: InputDecoration(
+                            hintText: 'Buscar país...',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                            contentPadding: EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 12,
+                            ),
+                          ),
+                        ),
+                        itemBuilder: (context, item, isSelected) {
+                          final countryCode = item['countryCode'] ?? '';
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            child: Row(
+                              children: [
+                                CountryFlag.fromCountryCode(
+                                  countryCode,
+                                  height: 20,
+                                  width: 28,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    item['countryName'] ?? '',
+                                    style: const TextStyle(fontSize: 14),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                        menuProps: const MenuProps(
+                          borderRadius: BorderRadius.vertical(
+                            bottom: Radius.circular(8),
+                          ),
+                          elevation: 8,
+                        ),
+                      ),
+                      dropdownDecoratorProps: DropDownDecoratorProps(
+                        dropdownSearchDecoration:
+                            _decoracionCampo(
+                              icono: Icons.public,
+                              pista: 'Selecciona un país',
+                            ).copyWith(
+                              prefixIcon: _selectedCountry != null
+                                  ? Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 12,
+                                      ),
+                                      child: CountryFlag.fromCountryCode(
+                                        _selectedCountry!['countryCode'] ?? '',
+                                        height: 18,
+                                        width: 26,
+                                      ),
+                                    )
+                                  : const Icon(
+                                      Icons.public,
+                                      size: 19,
+                                      color: AppColors.textSecondary,
+                                    ),
+                            ),
+                      ),
+                      onChanged: (country) {
+                        if (country != null) {
+                          setState(() => _selectedCountry = country);
+                          _loadStates(country['countryCode']);
+                        }
+                      },
+                      validator: (value) {
+                        if (value == null) return 'Selecciona un país';
+                        return null;
+                      },
+                    ),
+            ),
+            const SizedBox(height: 12),
+            _buildLocationSelectorRow(
+              isLoading: _loadingStates,
+              onReload: _selectedCountry != null ? _reloadStates : null,
+              reloadTooltip: 'Recargar provincias',
+              child: _selectedCountry == null
+                  ? _locationPlaceholder('Selecciona un país primero')
+                  : _loadingStates && _states.isEmpty
+                  ? _locationLoadingIndicator()
+                  : _states.isEmpty
+                  ? _locationPlaceholder(
+                      'Este país no tiene provincias registradas',
+                    )
+                  : DropdownSearch<Map<String, dynamic>>(
+                      items: _states,
+                      itemAsString: (item) => item['name'] ?? '',
+                      selectedItem: _selectedState,
+                      popupProps: PopupProps.menu(
+                        showSearchBox: true,
+                        searchFieldProps: const TextFieldProps(
+                          decoration: InputDecoration(
+                            hintText: 'Buscar provincia...',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                            contentPadding: EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 12,
+                            ),
+                          ),
+                        ),
+                        itemBuilder: (context, item, isSelected) {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  item['name'] ?? '',
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                if (item['adminName1'] != null &&
+                                    item['adminName1'] != item['name'])
+                                  Text(
+                                    item['adminName1'],
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          );
+                        },
+                        menuProps: const MenuProps(
+                          borderRadius: BorderRadius.vertical(
+                            bottom: Radius.circular(8),
+                          ),
+                          elevation: 8,
+                        ),
+                      ),
+                      dropdownDecoratorProps: DropDownDecoratorProps(
+                        dropdownSearchDecoration: _decoracionCampo(
+                          icono: Icons.map_outlined,
+                          pista: 'Selecciona una provincia',
+                        ),
+                      ),
+                      validator: (value) {
+                        if (_states.isNotEmpty && value == null) {
+                          return 'Selecciona una provincia';
+                        }
+                        return null;
+                      },
+                      onChanged: (state) {
+                        setState(() => _selectedState = state);
+                        if (state != null && _selectedCountry != null) {
+                          _loadCities(
+                            _selectedCountry!['countryCode'],
+                            state['adminCode1'] ?? '',
+                          );
+                        }
+                      },
+                    ),
+            ),
+            const SizedBox(height: 12),
+            _buildLocationSelectorRow(
+              isLoading: _loadingCities,
+              onReload: _selectedState != null ? _reloadCities : null,
+              reloadTooltip: 'Recargar ciudades',
+              child: _selectedState == null
+                  ? _locationPlaceholder('Selecciona una provincia primero')
+                  : _loadingCities && _cities.isEmpty
+                  ? _locationLoadingIndicator()
+                  : _cities.isEmpty
+                  ? _locationPlaceholder(
+                      'No hay ciudades disponibles para esta provincia',
+                    )
+                  : DropdownSearch<Map<String, dynamic>>(
+                      items: _cities,
+                      itemAsString: (item) {
+                        final name = item['name'] ?? '';
+                        final population = item['population'] ?? 0;
+                        return population > 0
+                            ? '$name (${_formatPopulation(population)})'
+                            : name;
+                      },
+                      selectedItem: _selectedCity,
+                      popupProps: PopupProps.menu(
+                        showSearchBox: true,
+                        searchFieldProps: const TextFieldProps(
+                          decoration: InputDecoration(
+                            hintText: 'Buscar ciudad...',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                            contentPadding: EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 12,
+                            ),
+                          ),
+                        ),
+                        itemBuilder: (context, item, isSelected) {
+                          final name = item['name'] ?? '';
+                          final population = item['population'] ?? 0;
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  name,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                if (population > 0)
+                                  Text(
+                                    'Población: ${_formatPopulation(population)}',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          );
+                        },
+                        menuProps: const MenuProps(
+                          borderRadius: BorderRadius.vertical(
+                            bottom: Radius.circular(8),
+                          ),
+                          elevation: 8,
+                        ),
+                      ),
+                      dropdownDecoratorProps: DropDownDecoratorProps(
+                        dropdownSearchDecoration: _decoracionCampo(
+                          icono: Icons.location_city_outlined,
+                          pista: 'Selecciona una ciudad',
+                        ),
+                      ),
+                      onChanged: (city) {
+                        setState(() {
+                          _selectedCity = city;
+                          if (city != null) {
+                            _storeLatitude =
+                                double.tryParse(
+                                  city['lat']?.toString() ?? '',
+                                ) ??
+                                _storeLatitude;
+                            _storeLogitude =
+                                double.tryParse(
+                                  city['lng']?.toString() ?? '',
+                                ) ??
+                                _storeLogitude;
+                          }
+                        });
+                      },
+                      validator: (value) {
+                        if (_cities.isNotEmpty && value == null) {
+                          return 'Selecciona una ciudad';
+                        }
+                        return null;
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ],
+    );
+
+    final mapa = KeyedSubtree(
+      key: _claveMapa,
+      child: _tarjeta(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(
+                  Icons.my_location,
+                  size: 17,
+                  color: AppColors.textSecondary,
+                ),
+                SizedBox(width: 8),
+                Text(
+                  'Ubicación en el mapa',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Toca el mapa para mover el alfiler a tu puerta.',
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: SizedBox(
+                height: dosColumnasMapa ? 380 : 260,
+                child: _selectedCity == null && _storeLatitude == null
+                    ? Container(
+                        color: AppColors.surfaceVariant,
+                        child: const Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.map_outlined,
+                                size: 40,
+                                color: AppColors.textLight,
+                              ),
+                              SizedBox(height: 10),
+                              Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 24),
+                                child: Text(
+                                  'Elige una ciudad y aquí aparece el mapa',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : _buildMapPreview(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Icon(
+                  Icons.place_outlined,
+                  size: 16,
+                  color: AppColors.textSecondary,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    _storeLatitude == null || _storeLogitude == null
+                        ? 'Sin coordenadas todavía'
+                        : '${_storeLatitude!.toStringAsFixed(5)}, '
+                              '${_storeLogitude!.toStringAsFixed(5)}',
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+                if (_storeLatitude != null)
+                  TextButton(
+                    onPressed: () {
+                      final city = _selectedCity;
+                      if (city == null) return;
+                      setState(() {
+                        _storeLatitude = double.tryParse(
+                          city['lat']?.toString() ?? '',
+                        );
+                        _storeLogitude = double.tryParse(
+                          city['lng']?.toString() ?? '',
+                        );
+                      });
+                    },
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      foregroundColor: AppColors.primary,
+                    ),
+                    child: const Text(
+                      'Centrar',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+
+    return SingleChildScrollView(
+      padding: EdgeInsets.symmetric(horizontal: margen, vertical: 24),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1080),
           child: Form(
             key: _storeFormKey,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Header del paso
-                Center(
-                  child: Column(
-                    children: [
-                      // Container(
-                      //   width: 80,
-                      //   height: 80,
-                      //   decoration: BoxDecoration(
-                      //     gradient: AppColors.primaryGradient,
-                      //     borderRadius: BorderRadius.circular(20),
-                      //     boxShadow: [
-                      //       BoxShadow(
-                      //         color: AppColors.primary.withOpacity(0.3),
-                      //         blurRadius: 15,
-                      //         offset: const Offset(0, 5),
-                      //       ),
-                      //     ],
-                      //   ),
-                      //   child: const Icon(
-                      //     Icons.store,
-                      //     size: 40,
-                      //     color: Colors.white,
-                      //   ),
-                      // ),
-                      const SizedBox(height: 20),
-                      const Text(
-                        'Información de la Tienda',
-                        style: TextStyle(
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Configura los datos básicos de tu tienda',
-                        style: TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 16,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 40),
-
-                TextFormField(
-                  controller: _storeNameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Nombre de la Tienda',
-                    prefixIcon: Icon(Icons.store),
-                  ),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Ingresa el nombre de la tienda';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-
-                TextFormField(
-                  controller: _storeAddressController,
-                  decoration: const InputDecoration(
-                    labelText: 'Dirección',
-                    prefixIcon: Icon(Icons.location_on),
-                  ),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Ingresa la dirección';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-
-                // Dropdown de País con búsqueda y bandera
-                _buildLocationSelectorRow(
-                  isLoading: _loadingCountries,
-                  onReload: _reloadCountries,
-                  reloadTooltip: 'Recargar países',
-                  child:
-                      _loadingCountries && _countries.isEmpty
-                          ? _locationLoadingIndicator()
-                          : DropdownSearch<Map<String, dynamic>>(
-                            items: _countries,
-                            itemAsString: (item) => item['countryName'] ?? '',
-                            selectedItem: _selectedCountry,
-                            popupProps: PopupProps.menu(
-                              showSearchBox: true,
-                              searchFieldProps: const TextFieldProps(
-                                decoration: InputDecoration(
-                                  hintText: 'Buscar país...',
-                                  border: OutlineInputBorder(),
-                                  contentPadding: EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 8,
-                                  ),
-                                ),
-                              ),
-                              itemBuilder: (context, item, isSelected) {
-                                final countryCode = item['countryCode'] ?? '';
-                                return Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 8,
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      CountryFlag.fromCountryCode(
-                                        countryCode,
-                                        height: 24,
-                                        width: 32,
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Text(
-                                          item['countryName'] ?? '',
-                                          style: const TextStyle(fontSize: 14),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              },
-                              menuProps: const MenuProps(
-                                borderRadius: BorderRadius.vertical(
-                                  bottom: Radius.circular(8),
-                                ),
-                                elevation: 8,
-                              ),
-                            ),
-                            dropdownDecoratorProps: DropDownDecoratorProps(
-                              dropdownSearchDecoration: InputDecoration(
-                                labelText: 'País',
-                                prefixIcon:
-                                    _selectedCountry != null
-                                        ? Padding(
-                                          padding: const EdgeInsets.all(8),
-                                          child: CountryFlag.fromCountryCode(
-                                            _selectedCountry!['countryCode'] ??
-                                                '',
-                                            height: 24,
-                                            width: 32,
-                                          ),
-                                        )
-                                        : const Icon(Icons.public),
-                                border: const OutlineInputBorder(),
-                              ),
-                            ),
-                            onChanged: (country) {
-                              if (country != null) {
-                                setState(() {
-                                  _selectedCountry = country;
-                                });
-                                _loadStates(country['countryCode']);
-                              }
-                            },
-                            validator: (value) {
-                              if (value == null) {
-                                return 'Selecciona un país';
-                              }
-                              return null;
-                            },
-                          ),
-                ),
-                const SizedBox(height: 16),
-
-                // Dropdown de Estado con búsqueda
-                _buildLocationSelectorRow(
-                  isLoading: _loadingStates,
-                  onReload: _selectedCountry != null ? _reloadStates : null,
-                  reloadTooltip: 'Recargar estados',
-                  child:
-                      _selectedCountry == null
-                          ? _locationPlaceholder('Selecciona un país primero')
-                          : _loadingStates && _states.isEmpty
-                          ? _locationLoadingIndicator()
-                          : _states.isEmpty
-                          ? _locationPlaceholder(
-                            'Este país no tiene estados registrados',
-                          )
-                          : DropdownSearch<Map<String, dynamic>>(
-                            items: _states,
-                            itemAsString: (item) => item['name'] ?? '',
-                            selectedItem: _selectedState,
-                            popupProps: PopupProps.menu(
-                              showSearchBox: true,
-                              searchFieldProps: const TextFieldProps(
-                                decoration: InputDecoration(
-                                  hintText: 'Buscar estado...',
-                                  border: OutlineInputBorder(),
-                                  contentPadding: EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 8,
-                                  ),
-                                ),
-                              ),
-                              itemBuilder: (context, item, isSelected) {
-                                return Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 8,
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        item['name'] ?? '',
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                      if (item['adminName1'] != null &&
-                                          item['adminName1'] != item['name'])
-                                        Text(
-                                          item['adminName1'],
-                                          style: const TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.grey,
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                );
-                              },
-                              menuProps: const MenuProps(
-                                borderRadius: BorderRadius.vertical(
-                                  bottom: Radius.circular(8),
-                                ),
-                                elevation: 8,
-                              ),
-                            ),
-                            dropdownDecoratorProps: DropDownDecoratorProps(
-                              dropdownSearchDecoration: const InputDecoration(
-                                labelText: 'Estado/Provincia',
-                                prefixIcon: Icon(Icons.location_city),
-                                border: OutlineInputBorder(),
-                              ),
-                            ),
-                            validator: (value) {
-                              if (_states.isNotEmpty && value == null) {
-                                return 'Selecciona un estado';
-                              }
-                              return null;
-                            },
-                            onChanged: (state) {
-                              setState(() {
-                                _selectedState = state;
-                              });
-                              if (state != null && _selectedCountry != null) {
-                                _loadCities(
-                                  _selectedCountry!['countryCode'],
-                                  state['adminCode1'] ?? '',
-                                );
-                              }
-                            },
-                          ),
-                ),
-                const SizedBox(height: 16),
-
-                // Dropdown de Ciudad con búsqueda
-                _buildLocationSelectorRow(
-                  isLoading: _loadingCities,
-                  onReload: _selectedState != null ? _reloadCities : null,
-                  reloadTooltip: 'Recargar ciudades',
-                  child:
-                      _selectedState == null
-                          ? _locationPlaceholder('Selecciona un estado primero')
-                          : _loadingCities && _cities.isEmpty
-                          ? _locationLoadingIndicator()
-                          : _cities.isEmpty
-                          ? _locationPlaceholder(
-                            'No hay ciudades disponibles para este estado',
-                          )
-                          : DropdownSearch<Map<String, dynamic>>(
-                            items: _cities,
-                            itemAsString: (item) {
-                              final name = item['name'] ?? '';
-                              final population = item['population'] ?? 0;
-                              return population > 0
-                                  ? '$name (${_formatPopulation(population)})'
-                                  : name;
-                            },
-                            selectedItem: _selectedCity,
-                            popupProps: PopupProps.menu(
-                              showSearchBox: true,
-                              searchFieldProps: const TextFieldProps(
-                                decoration: InputDecoration(
-                                  hintText: 'Buscar ciudad...',
-                                  border: OutlineInputBorder(),
-                                  contentPadding: EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 8,
-                                  ),
-                                ),
-                              ),
-                              itemBuilder: (context, item, isSelected) {
-                                final name = item['name'] ?? '';
-                                final population = item['population'] ?? 0;
-                                return Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 8,
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        name,
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                      if (population > 0)
-                                        Text(
-                                          'Población: ${_formatPopulation(population)}',
-                                          style: const TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.grey,
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                );
-                              },
-                              menuProps: const MenuProps(
-                                borderRadius: BorderRadius.vertical(
-                                  bottom: Radius.circular(8),
-                                ),
-                                elevation: 8,
-                              ),
-                            ),
-                            dropdownDecoratorProps: DropDownDecoratorProps(
-                              dropdownSearchDecoration: const InputDecoration(
-                                labelText: 'Ciudad',
-                                prefixIcon: Icon(Icons.location_on),
-                                border: OutlineInputBorder(),
-                              ),
-                            ),
-                            onChanged: (city) {
-                              setState(() {
-                                _selectedCity = city;
-                                if (city != null) {
-                                  try {
-                                    _storeLatitude =
-                                        double.tryParse(
-                                          city['lat'].toString(),
-                                        ) ??
-                                        0.0;
-                                    _storeLogitude =
-                                        double.tryParse(
-                                          city['lng'].toString(),
-                                        ) ??
-                                        0.0;
-                                  } catch (e) {
-                                    print('Error al convertir coordenadas: $e');
-                                    _storeLatitude = 0.0;
-                                    _storeLogitude = 0.0;
-                                  }
-                                }
-                              });
-                            },
-                            validator: (value) {
-                              if (_cities.isNotEmpty && value == null) {
-                                return 'Selecciona una ciudad';
-                              }
-                              return null;
-                            },
-                          ),
+                _cabeceraPaso(
+                  titulo: 'Datos de la tienda',
+                  subtitulo:
+                      'Dónde está y cómo se llama. La dirección sale impresa '
+                      'en los tickets.',
                 ),
                 const SizedBox(height: 24),
-
-                // Sección de localización en mapa
-                if (_selectedCity != null)
-                  Column(
+                if (dosColumnasMapa)
+                  Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Localización en Mapa',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Container(
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.grey.shade300),
-                          borderRadius: BorderRadius.circular(8),
-                          color: Colors.white,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.05),
-                              blurRadius: 4,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Mapa interactivo
-                            Container(
-                              height: 350,
-                              decoration: const BoxDecoration(
-                                borderRadius: BorderRadius.only(
-                                  topLeft: Radius.circular(8),
-                                  topRight: Radius.circular(8),
-                                ),
-                                color: Colors.grey,
-                              ),
-                              child: ClipRRect(
-                                borderRadius: const BorderRadius.only(
-                                  topLeft: Radius.circular(8),
-                                  topRight: Radius.circular(8),
-                                ),
-                                child: _buildMapPreview(),
-                              ),
-                            ),
-                            // Información de la localización
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Colors.blue.shade50,
-                                borderRadius: const BorderRadius.only(
-                                  bottomLeft: Radius.circular(0),
-                                  bottomRight: Radius.circular(0),
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(
-                                    Icons.location_on,
-                                    color: AppColors.primary,
-                                    size: 20,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          _selectedCity?['name'] ?? 'Ciudad',
-                                          style: const TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.bold,
-                                            color: AppColors.textPrimary,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          'Lat: ${_storeLatitude?.toStringAsFixed(6) ?? "N/A"} | Lng: ${_storeLogitude?.toStringAsFixed(6) ?? "N/A"}',
-                                          style: const TextStyle(
-                                            fontSize: 11,
-                                            color: Colors.grey,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            // Resumen de datos
-                            Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  _buildLocationSummaryRow(
-                                    'País',
-                                    _selectedCountry?['countryName'] ??
-                                        'No seleccionado',
-                                    Icons.public,
-                                  ),
-                                  const SizedBox(height: 8),
-                                  _buildLocationSummaryRow(
-                                    'Estado',
-                                    _selectedState?['name'] ??
-                                        'No seleccionado',
-                                    Icons.location_city,
-                                  ),
-                                  const SizedBox(height: 8),
-                                  _buildLocationSummaryRow(
-                                    'Ciudad',
-                                    _selectedCity?['name'] ?? 'No seleccionado',
-                                    Icons.location_on,
-                                  ),
-                                  const SizedBox(height: 8),
-                                  _buildLocationSummaryRow(
-                                    'Dirección',
-                                    _storeAddressController.text.isNotEmpty
-                                        ? _storeAddressController.text
-                                        : 'No ingresada',
-                                    Icons.home,
-                                  ),
-                                  /* const SizedBox(height: 16),
-                              SizedBox(
-                                width: double.infinity,
-                                child: ElevatedButton.icon(
-                                  onPressed: () {
-                                    _showMapPicker = true;
-                                    setState(() {});
-                                    _showMapPickerDialog();
-                                  },
-                                  icon: const Icon(Icons.map),
-                                  label: const Text('Ajustar Localización en Mapa'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: AppColors.primary,
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(vertical: 12),
-                                  ),
-                                ),
-                              ), */
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                      Expanded(flex: 6, child: _tarjeta(child: campos)),
+                      const SizedBox(width: 20),
+                      Expanded(flex: 5, child: mapa),
                     ],
-                  ),
+                  )
+                else ...[
+                  _tarjeta(child: campos),
+                  const SizedBox(height: 16),
+                  mapa,
+                ],
               ],
             ),
           ),
@@ -1674,104 +2358,101 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
   }
 
   Widget _buildOptionalDataStep() {
-    final wide = _isWideLayout;
-    return SingleChildScrollView(
-      padding: EdgeInsets.symmetric(
-        horizontal: wide ? 32 : 24,
-        vertical: 24,
-      ),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: wide ? 1100 : 600),
-          child: Column(
+    final wide = MediaQuery.sizeOf(context).width >= 1024;
+    final margen = MediaQuery.sizeOf(context).width >= 720 ? 32.0 : 16.0;
+
+    Widget campos() => Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _cabeceraPaso(
+          titulo: 'Configura tu operación',
+          subtitulo:
+              'Dónde guardas la mercancía, con qué cobras y quién trabaja '
+              'contigo. Puedes ajustarlo después desde Configuración.',
+        ),
+        const SizedBox(height: 24),
+        // Almacenes con sus zonas anidándose en la misma tarjeta.
+        KeyedSubtree(
+          key: _claveAlmacenes,
+          child: _buildAlmacenesConLayoutsSection(),
+        ),
+        const SizedBox(height: 16),
+        if (wide)
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Center(
-                child: Column(
-                  children: [
-                    const SizedBox(height: 12),
-                    Text(
-                      'Configuración Adicional',
-                      style: TextStyle(
-                        fontSize: wide ? 30 : 28,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Configura almacenes con sus zonas, TPVs y personal',
-                      style: TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 16,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
+              Expanded(
+                child: KeyedSubtree(
+                  key: _claveTpvs,
+                  child: _buildSectionCard(
+                    title: 'TPVs (cajas)',
+                    icon: Icons.point_of_sale_outlined,
+                    count: _tpvData.length,
+                    items: _tpvData,
+                    onAdd: _showAddTPVDialog,
+                    onEdit: (index) => _showEditTPVDialog(index),
+                    onDelete: (index) => _deleteTPV(index),
+                    required: true,
+                  ),
                 ),
               ),
-              const SizedBox(height: 32),
-
-              // Almacenes con layouts anidados
-              _buildAlmacenesConLayoutsSection(),
-              const SizedBox(height: 16),
-
-              if (wide)
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: _buildSectionCard(
-                        title: 'TPVs(Cajas)',
-                        icon: Icons.point_of_sale,
-                        count: _tpvData.length,
-                        items: _tpvData,
-                        onAdd: _showAddTPVDialog,
-                        onEdit: (index) => _showEditTPVDialog(index),
-                        onDelete: (index) => _deleteTPV(index),
-                        required: true,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: _buildSectionCard(
-                        title: 'Personal',
-                        icon: Icons.people,
-                        count: _personalData.length,
-                        items: _personalData,
-                        onAdd: _showAddPersonalDialog,
-                        onEdit: (index) => _showEditPersonalDialog(index),
-                        onDelete: (index) => _deletePersonal(index),
-                        required: true,
-                      ),
-                    ),
-                  ],
-                )
-              else ...[
-                _buildSectionCard(
-                  title: 'TPVs(Cajas)',
-                  icon: Icons.point_of_sale,
-                  count: _tpvData.length,
-                  items: _tpvData,
-                  onAdd: _showAddTPVDialog,
-                  onEdit: (index) => _showEditTPVDialog(index),
-                  onDelete: (index) => _deleteTPV(index),
-                  required: true,
+              const SizedBox(width: 16),
+              Expanded(
+                child: KeyedSubtree(
+                  key: _clavePersonal,
+                  child: _buildSectionCard(
+                    title: 'Personal',
+                    icon: Icons.groups_outlined,
+                    count: _personalData.length,
+                    items: _personalData,
+                    onAdd: _showAddPersonalDialog,
+                    onEdit: (index) => _showEditPersonalDialog(index),
+                    onDelete: (index) => _deletePersonal(index),
+                    required: true,
+                  ),
                 ),
-                const SizedBox(height: 16),
-                _buildSectionCard(
-                  title: 'Personal',
-                  icon: Icons.people,
-                  count: _personalData.length,
-                  items: _personalData,
-                  onAdd: _showAddPersonalDialog,
-                  onEdit: (index) => _showEditPersonalDialog(index),
-                  onDelete: (index) => _deletePersonal(index),
-                  required: true,
-                ),
-              ],
+              ),
             ],
+          )
+        else ...[
+          KeyedSubtree(
+            key: _claveTpvs,
+            child: _buildSectionCard(
+              title: 'TPVs (cajas)',
+              icon: Icons.point_of_sale_outlined,
+              count: _tpvData.length,
+              items: _tpvData,
+              onAdd: _showAddTPVDialog,
+              onEdit: (index) => _showEditTPVDialog(index),
+              onDelete: (index) => _deleteTPV(index),
+              required: true,
+            ),
           ),
+          const SizedBox(height: 16),
+          KeyedSubtree(
+            key: _clavePersonal,
+            child: _buildSectionCard(
+              title: 'Personal',
+              icon: Icons.groups_outlined,
+              count: _personalData.length,
+              items: _personalData,
+              onAdd: _showAddPersonalDialog,
+              onEdit: (index) => _showEditPersonalDialog(index),
+              onDelete: (index) => _deletePersonal(index),
+              required: true,
+            ),
+          ),
+        ],
+        const SizedBox(height: 8),
+      ],
+    );
+
+    return SingleChildScrollView(
+      padding: EdgeInsets.symmetric(horizontal: margen, vertical: 24),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1080),
+          child: campos(),
         ),
       ),
     );
@@ -1795,117 +2476,134 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
     final hasMissingLayouts = _almacenesData.any((almacen) {
       final nombre = (almacen['denominacion'] ?? '').toString();
       return !_layoutsData.any(
-        (layout) =>
-            (layout['almacen_asignado'] ?? '').toString() == nombre,
+        (layout) => (layout['almacen_asignado'] ?? '').toString() == nombre,
       );
     });
+    final alerta = _almacenesData.isEmpty || hasMissingLayouts;
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.warehouse, color: AppColors.primary),
-                const SizedBox(width: 8),
-                const Expanded(
-                  child: Text(
-                    'Almacenes y Layouts/Zonas',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                if (_almacenesData.isEmpty || hasMissingLayouts)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.red.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.red.withOpacity(0.3)),
-                    ),
-                    child: Text(
-                      _almacenesData.isEmpty
-                          ? 'REQUERIDO'
-                          : 'FALTAN ZONAS',
-                      style: const TextStyle(
-                        color: Colors.red,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                const SizedBox(width: 8),
-                SizedBox(
-                  width: 40,
-                  height: 40,
-                  child: ElevatedButton(
-                    onPressed: _showAddAlmacenDialog,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      shape: const CircleBorder(),
-                      padding: EdgeInsets.zero,
-                      elevation: 2,
-                    ),
-                    child: const Icon(Icons.add, size: 20),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Cada almacén debe tener al menos un layout/zona.',
-              style: TextStyle(
-                fontSize: 13,
-                color: Colors.grey.shade700,
-              ),
-            ),
-            const SizedBox(height: 12),
-            if (_almacenesData.isEmpty)
+    return _tarjeta(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
               Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
+                width: 30,
+                height: 30,
                 decoration: BoxDecoration(
-                  color: Colors.grey.withOpacity(0.1),
+                  color: AppColors.primary.withValues(alpha: 0.10),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.grey.withOpacity(0.3)),
                 ),
-                child: const Text(
-                  'No hay almacenes configurados. Agrega uno para empezar.',
+                child: const Icon(
+                  Icons.warehouse_outlined,
+                  size: 16,
+                  color: AppColors.primary,
+                ),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Almacenes y zonas',
                   style: TextStyle(
-                    color: Colors.grey,
-                    fontStyle: FontStyle.italic,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
                   ),
                 ),
-              )
-            else
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final useGrid = wide && constraints.maxWidth >= 640;
-                  final cardWidth = useGrid
-                      ? (constraints.maxWidth - 16) / 2
-                      : constraints.maxWidth;
-                  return Wrap(
-                    spacing: 16,
-                    runSpacing: 12,
-                    children: List.generate(_almacenesData.length, (index) {
-                      return SizedBox(
-                        width: cardWidth,
-                        child: _buildAlmacenConLayoutsCard(index),
-                      );
-                    }),
-                  );
-                },
               ),
-          ],
-        ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: alerta
+                      ? AppColors.error.withValues(alpha: 0.08)
+                      : AppColors.surfaceVariant,
+                  borderRadius: BorderRadius.circular(20),
+                  border: alerta
+                      ? Border.all(
+                          color: AppColors.error.withValues(alpha: 0.25),
+                        )
+                      : null,
+                ),
+                child: Text(
+                  _almacenesData.isEmpty
+                      ? 'REQUERIDO'
+                      : hasMissingLayouts
+                      ? 'FALTAN ZONAS'
+                      : '${_almacenesData.length}',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.3,
+                    color: alerta ? AppColors.error : AppColors.textSecondary,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              IconButton(
+                onPressed: _showAddAlmacenDialog,
+                icon: const Icon(Icons.add, size: 18),
+                tooltip: 'Agregar almacén',
+                style: IconButton.styleFrom(
+                  backgroundColor: AppColors.primary.withValues(alpha: 0.08),
+                  foregroundColor: AppColors.primary,
+                  minimumSize: const Size(34, 34),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Un almacén es donde guardas la mercancía. Cada uno necesita al '
+            'menos una zona.',
+            style: TextStyle(
+              fontSize: 12.5,
+              height: 1.4,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 14),
+          if (_almacenesData.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceVariant.withValues(alpha: 0.6),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: const Text(
+                'Todavía no hay almacenes. Usa el + para añadir el primero.',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  height: 1.4,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            )
+          else
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final useGrid = wide && constraints.maxWidth >= 640;
+                final cardWidth = useGrid
+                    ? (constraints.maxWidth - 16) / 2
+                    : constraints.maxWidth;
+                return Wrap(
+                  spacing: 16,
+                  runSpacing: 12,
+                  children: List.generate(_almacenesData.length, (index) {
+                    return SizedBox(
+                      width: cardWidth,
+                      child: _buildAlmacenConLayoutsCard(index),
+                    );
+                  }),
+                );
+              },
+            ),
+        ],
       ),
     );
   }
@@ -2022,8 +2720,11 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
               ),
               child: const Row(
                 children: [
-                  Icon(Icons.warning_amber_rounded,
-                      color: Colors.orange, size: 18),
+                  Icon(
+                    Icons.warning_amber_rounded,
+                    color: Colors.orange,
+                    size: 18,
+                  ),
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -2093,6 +2794,9 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
     );
   }
 
+  /// Tarjeta de una colección (TPVs, personal): cabecera con icono, contador y
+  /// botón de alta, y una fila por elemento. Misma piel que el resto del
+  /// asistente: borde fino, radio 12 y cero elevación.
   Widget _buildSectionCard({
     required String title,
     required IconData icon,
@@ -2103,621 +2807,698 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
     required Function(int) onDelete,
     required bool required,
   }) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(icon, color: AppColors.primary),
-                const SizedBox(width: 8),
-                Expanded(
+    final falta = required && count == 0;
+
+    return _tarjeta(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, size: 16, color: AppColors.primary),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+              if (falta)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: AppColors.error.withValues(alpha: 0.25),
+                    ),
+                  ),
+                  child: const Text(
+                    'REQUERIDO',
+                    style: TextStyle(
+                      color: AppColors.error,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                )
+              else
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceVariant,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
                   child: Text(
-                    title,
+                    '$count',
                     style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textSecondary,
                     ),
                   ),
                 ),
-                if (required && count == 0)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.red.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.red.withOpacity(0.3)),
-                    ),
-                    child: const Text(
-                      'REQUERIDO',
-                      style: TextStyle(
-                        color: Colors.red,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
+              const SizedBox(width: 6),
+              IconButton(
+                onPressed: onAdd,
+                icon: const Icon(Icons.add, size: 18),
+                tooltip: 'Agregar',
+                style: IconButton.styleFrom(
+                  backgroundColor: AppColors.primary.withValues(alpha: 0.08),
+                  foregroundColor: AppColors.primary,
+                  minimumSize: const Size(34, 34),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          if (items.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceVariant.withValues(alpha: 0.6),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Text(
+                'Todavía no hay ${title.toLowerCase()}. Usa el + para añadir.',
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  height: 1.4,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            )
+          else
+            for (final entry in items.asMap().entries)
+              _filaElemento(
+                item: entry.value,
+                onEdit: () => onEdit(entry.key),
+                onDelete: () => onDelete(entry.key),
+              ),
+        ],
+      ),
+    );
+  }
+
+  /// Fila de un TPV o de una persona. El usuario principal no se edita ni se
+  /// borra: se marca como Dueño.
+  Widget _filaElemento({
+    required Map<String, dynamic> item,
+    required VoidCallback onEdit,
+    required VoidCallback onDelete,
+  }) {
+    final esPrincipal = item['is_main_user'] == true;
+    final titulo =
+        item['denominacion'] ??
+        '${item['nombres'] ?? ''} ${item['apellidos'] ?? ''}'.trim();
+    final detalles = <String>[
+      if (item['direccion'] != null) item['direccion'].toString(),
+      if (item['tipo_rol'] != null) 'Rol: ${item['tipo_rol']}',
+      if (item['almacen_asignado'] != null && item['tipo_rol'] == 'almacenero')
+        'Almacén: ${item['almacen_asignado']}',
+      if (item['tpv_asignado'] != null && item['tipo_rol'] == 'vendedor')
+        'TPV: ${item['tpv_asignado']}',
+    ];
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: esPrincipal
+            ? AppColors.primary.withValues(alpha: 0.04)
+            : AppColors.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: esPrincipal
+              ? AppColors.primary.withValues(alpha: 0.25)
+              : AppColors.border,
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        titulo.isEmpty ? 'Sin nombre' : titulo,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
                       ),
                     ),
-                  ),
-                const SizedBox(width: 8),
-                Container(
-                  width: 40,
-                  height: 40,
-                  child: ElevatedButton(
-                    onPressed: onAdd,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      shape: const CircleBorder(),
-                      padding: EdgeInsets.zero,
-                      elevation: 2,
+                    if (esPrincipal) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Text(
+                          'DUEÑO',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.4,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                if (detalles.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    detalles.join(' · '),
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      height: 1.35,
+                      color: AppColors.textSecondary,
                     ),
-                    child: const Icon(Icons.add, size: 20),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (!esPrincipal)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  onPressed: onEdit,
+                  icon: const Icon(Icons.edit_outlined, size: 17),
+                  tooltip: 'Editar',
+                  visualDensity: VisualDensity.compact,
+                  color: AppColors.textSecondary,
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
+                ),
+                IconButton(
+                  onPressed: onDelete,
+                  icon: const Icon(Icons.delete_outline, size: 17),
+                  tooltip: 'Eliminar',
+                  visualDensity: VisualDensity.compact,
+                  color: AppColors.error,
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+        ],
+      ),
+    );
+  }
 
-            if (items.isEmpty)
+  /// Fila «etiqueta : valor» del resumen. Sin adornos: solo jerarquía.
+  Widget _filaResumen(String etiqueta, String valor) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 108,
+            child: Text(
+              etiqueta,
+              style: const TextStyle(
+                fontSize: 12.5,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              valor.trim().isEmpty ? '—' : valor,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Bloque del resumen: cabecera con icono y las filas de esa sección.
+  Widget _bloqueResumen({
+    required IconData icono,
+    required String titulo,
+    required List<Widget> hijos,
+    Widget? pie,
+  }) {
+    return _tarjeta(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
               Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
+                width: 30,
+                height: 30,
                 decoration: BoxDecoration(
-                  color: Colors.grey.withOpacity(0.1),
+                  color: AppColors.primary.withValues(alpha: 0.10),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.grey.withOpacity(0.3)),
                 ),
+                child: Icon(icono, size: 16, color: AppColors.primary),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
                 child: Text(
-                  'No hay ${title.toLowerCase()} configurados',
-                  textAlign: TextAlign.start,
+                  titulo,
                   style: const TextStyle(
-                    color: Colors.grey,
-                    fontStyle: FontStyle.italic,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
                   ),
                 ),
-              )
-            else
-              ...items.asMap().entries.map((entry) {
-                final index = entry.key;
-                final item = entry.value;
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withOpacity(0.05),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.blue.withOpacity(0.2)),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    item['denominacion'] ??
-                                        '${item['nombres']} ${item['apellidos']}' ??
-                                        'Sin nombre',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      color:
-                                          item['is_main_user'] == true
-                                              ? Colors.green.shade700
-                                              : Colors.black,
-                                    ),
-                                  ),
-                                ),
-                                if (item['is_main_user'] == true)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 6,
-                                      vertical: 2,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.blue.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: const Text(
-                                      'PROPIETARIO',
-                                      style: TextStyle(
-                                        fontSize: 8,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.blue,
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            if (item['direccion'] != null)
-                              Text(
-                                item['direccion'],
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey,
-                                ),
-                              ),
-                            if (item['tipo_rol'] != null)
-                              Text(
-                                'Rol: ${item['tipo_rol']}',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color:
-                                      item['is_main_user'] == true
-                                          ? Colors.green.shade600
-                                          : Colors.grey,
-                                  fontWeight:
-                                      item['is_main_user'] == true
-                                          ? FontWeight.w500
-                                          : FontWeight.normal,
-                                ),
-                              ),
-                            if (item['almacen_asignado'] != null &&
-                                item['tipo_rol'] == 'almacenero')
-                              Text(
-                                'Almacén: ${item['almacen_asignado']}',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.blue,
-                                ),
-                              ),
-                            if (item['tpv_asignado'] != null &&
-                                item['tipo_rol'] == 'vendedor')
-                              Text(
-                                'TPV: ${item['tpv_asignado']}',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.blue,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                      // Solo mostrar botones de editar/eliminar si no es el usuario principal
-                      if (items[index]['is_main_user'] != true) ...[
-                        IconButton(
-                          onPressed: () => onEdit(index),
-                          icon: const Icon(Icons.edit, size: 20),
-                          color: Colors.blue,
-                        ),
-                        IconButton(
-                          onPressed: () => onDelete(index),
-                          icon: const Icon(Icons.delete, size: 20),
-                          color: Colors.red,
-                        ),
-                      ] else ...[
-                        // Mostrar indicador de usuario principal
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.green.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: Colors.green.withOpacity(0.3),
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: const [
-                              Icon(
-                                Icons.admin_panel_settings,
-                                size: 16,
-                                color: Colors.green,
-                              ),
-                              SizedBox(width: 4),
-                              Text(
-                                'ADMIN',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.green,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                );
-              }).toList(),
-          ],
-        ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ...hijos,
+          if (pie != null) ...[const SizedBox(height: 10), pie],
+        ],
       ),
     );
   }
 
   Widget _buildConfirmationStep() {
-    return SingleChildScrollView(
-      padding: EdgeInsets.symmetric(
-        horizontal: _isWideLayout ? 32 : 24,
-        vertical: 24,
-      ),
-      child: Center(
-        child: Container(
-          constraints: BoxConstraints(maxWidth: _isWideLayout ? 900 : 600),
-          child: Column(
+    final wide = MediaQuery.sizeOf(context).width >= 1080;
+    final margen = MediaQuery.sizeOf(context).width >= 720 ? 32.0 : 16.0;
+
+    final personal = _personalData.isEmpty
+        ? const Text(
+            'Sin personal configurado',
+            style: TextStyle(fontSize: 12.5, color: AppColors.warning),
+          )
+        : Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header del paso
-              Center(
+              for (final p in _personalData)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.only(top: 2),
+                        child: Icon(
+                          Icons.circle,
+                          size: 6,
+                          color: AppColors.textLight,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '${p['nombres'] ?? ''} ${p['apellidos'] ?? ''}'
+                          ' · ${p['tipo_rol'] ?? ''}'
+                          '${p['is_main_user'] == true ? ' (tú, Dueño)' : ''}',
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            height: 1.35,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          );
+
+    final almacenes = _almacenesData.isEmpty
+        ? const Text(
+            'Sin almacenes',
+            style: TextStyle(fontSize: 12.5, color: AppColors.warning),
+          )
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final a in _almacenesData)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        a['denominacion']?.toString() ?? 'Almacén',
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      for (final l in _layoutsData.where(
+                        (l) =>
+                            (l['almacen_asignado'] ?? '').toString() ==
+                            (a['denominacion'] ?? '').toString(),
+                      ))
+                        Padding(
+                          padding: const EdgeInsets.only(left: 12, top: 2),
+                          child: Text(
+                            '↳ ${l['denominacion']} · ${l['codigo'] ?? '-'}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+            ],
+          );
+
+    final resumen = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _cabeceraPaso(
+          titulo: 'Revisa antes de crear',
+          subtitulo:
+              'Si algo no cuadra, vuelve con «Anterior». Al crear, se crea el '
+              'usuario, la tienda, sus almacenes y sus cajas de una vez.',
+        ),
+        const SizedBox(height: 24),
+        if (wide)
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
                 child: Column(
                   children: [
-                    // Container(
-                    //   width: 80,
-                    //   height: 80,
-                    //   decoration: BoxDecoration(
-                    //     gradient: AppColors.primaryGradient,
-                    //     borderRadius: BorderRadius.circular(20),
-                    //     boxShadow: [
-                    //       BoxShadow(
-                    //         color: AppColors.primary.withOpacity(0.3),
-                    //         blurRadius: 15,
-                    //         offset: const Offset(0, 5),
-                    //       ),
-                    //     ],
-                    //   ),
-                    //   child: const Icon(
-                    //     Icons.check_circle,
-                    //     size: 40,
-                    //     color: Colors.white,
-                    //   ),
-                    // ),
-                    const SizedBox(height: 20),
-                    const Text(
-                      'Confirmación',
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
+                    _bloqueResumen(
+                      icono: Icons.person_outline,
+                      titulo: 'Tu cuenta (Dueño)',
+                      hijos: [
+                        _filaResumen('Nombre', _fullNameController.text),
+                        _filaResumen('Teléfono', _phoneController.text),
+                        _filaResumen('Email', _emailController.text),
+                      ],
+                      pie: const Text(
+                        'Entrarás como Dueño: ves las ganancias y gestionas el '
+                        'equipo.',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          height: 1.4,
+                          color: AppColors.textSecondary,
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Revisa la información antes de crear la tienda',
-                      style: TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 16,
-                      ),
-                      textAlign: TextAlign.center,
+                    const SizedBox(height: 16),
+                    _bloqueResumen(
+                      icono: Icons.storefront_outlined,
+                      titulo: 'La tienda',
+                      hijos: [
+                        _filaResumen('Nombre', _storeNameController.text),
+                        _filaResumen('Dirección', _storeAddressController.text),
+                        _filaResumen(
+                          'País',
+                          _selectedCountry?['countryName']?.toString() ?? '—',
+                        ),
+                        _filaResumen(
+                          'Provincia',
+                          _selectedState?['name']?.toString() ?? '—',
+                        ),
+                        _filaResumen(
+                          'Ciudad',
+                          _selectedCity?['name']?.toString() ?? '—',
+                        ),
+                        _filaResumen(
+                          'Coordenadas',
+                          _storeLatitude == null || _storeLogitude == null
+                              ? 'Sin ubicar en el mapa'
+                              : '${_storeLatitude!.toStringAsFixed(5)}, '
+                                    '${_storeLogitude!.toStringAsFixed(5)}',
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 40),
-
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Información del Usuario',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text('Nombre: ${_fullNameController.text}'),
-                      Text('Teléfono: ${_phoneController.text}'),
-                      Text('Email: ${_emailController.text}'),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Información de la Tienda',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text('Nombre: ${_storeNameController.text}'),
-                      Text('Dirección: ${_storeAddressController.text}'),
-                      const SizedBox(height: 12),
-                      const Text(
-                        'Ubicación Geográfica',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'País: ${_selectedCountry?['countryName'] ?? 'No seleccionado'}',
-                      ),
-                      Text(
-                        'Provincia: ${_selectedState?['name'] ?? 'No seleccionada'}',
-                      ),
-                      Text(
-                        'Ciudad: ${_selectedCity?['name'] ?? 'No seleccionada'}',
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Coordenadas: ${_storeLatitude?.toStringAsFixed(6) ?? 'N/A'}, ${_storeLogitude?.toStringAsFixed(6) ?? 'N/A'}',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Configuración Inicial',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-
-                      // TPVs
-                      Text(
-                        'TPVs (${_tpvData.length}):',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      ..._tpvData
-                          .map(
-                            (tpv) => Padding(
-                              padding: const EdgeInsets.only(left: 16, top: 4),
-                              child: Text(
-                                '• ${tpv['denominacion']} (Almacén: ${tpv['almacen_asignado'] ?? 'No asignado'})',
-                              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  children: [
+                    _bloqueResumen(
+                      icono: Icons.warehouse_outlined,
+                      titulo: 'Almacenes y zonas (${_almacenesData.length})',
+                      hijos: [almacenes],
+                    ),
+                    const SizedBox(height: 16),
+                    _bloqueResumen(
+                      icono: Icons.point_of_sale_outlined,
+                      titulo: 'TPVs (${_tpvData.length})',
+                      hijos: [
+                        if (_tpvData.isEmpty)
+                          const Text(
+                            'Sin cajas',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: AppColors.warning,
                             ),
                           )
-                          .toList(),
-                      const SizedBox(height: 8),
-
-                      // Almacenes con layouts anidados
-                      Text(
-                        'Almacenes y zonas (${_almacenesData.length}):',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      ..._almacenesData.map((almacen) {
-                        final nombre =
-                            (almacen['denominacion'] ?? '').toString();
-                        final layouts = _layoutsData
-                            .where(
-                              (l) =>
-                                  (l['almacen_asignado'] ?? '').toString() ==
-                                  nombre,
-                            )
-                            .toList();
-                        return Padding(
-                          padding: const EdgeInsets.only(left: 16, top: 6),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '• $nombre${(almacen['direccion'] ?? '').toString().isNotEmpty ? ' - ${almacen['direccion']}' : ''}',
+                        else
+                          for (final t in _tpvData)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 4),
+                              child: Text(
+                                '• ${t['denominacion']} · '
+                                '${t['almacen_asignado'] ?? 'sin almacén'}',
                                 style: const TextStyle(
-                                  fontWeight: FontWeight.w500,
+                                  fontSize: 12.5,
+                                  color: AppColors.textPrimary,
                                 ),
                               ),
-                              if (layouts.isEmpty)
-                                const Padding(
-                                  padding: EdgeInsets.only(left: 12, top: 2),
-                                  child: Text(
-                                    '⚠ Sin layouts/zonas',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.orange,
-                                    ),
-                                  ),
-                                )
-                              else
-                                ...layouts.map(
-                                  (layout) => Padding(
-                                    padding: const EdgeInsets.only(
-                                      left: 12,
-                                      top: 2,
-                                    ),
-                                    child: Text(
-                                      '↳ ${layout['denominacion']} (${layout['tipo_nombre'] ?? 'Zona'}) · ${layout['codigo']}',
-                                      style: const TextStyle(fontSize: 13),
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        );
-                      }),
-                      const SizedBox(height: 8),
-
-                      // Personal
-                      Text(
-                        'Personal (${_personalData.length}):',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      ..._personalData.map((personal) {
-                        String asignacion = '';
-                        if (personal['almacen_asignado'] != null) {
-                          asignacion =
-                              ' (Almacén: ${personal['almacen_asignado']})';
-                        } else if (personal['tpv_asignado'] != null) {
-                          asignacion = ' (TPV: ${personal['tpv_asignado']})';
-                        }
-                        return Padding(
-                          padding: const EdgeInsets.only(left: 16, top: 4),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '• ${personal['nombres']} ${personal['apellidos']} - ${personal['tipo_rol']}$asignacion',
-                              ),
-                              if (personal['email'] != null)
-                                Padding(
-                                  padding: const EdgeInsets.only(
-                                    left: 12,
-                                    top: 2,
-                                  ),
-                                  child: Text(
-                                    'Email: ${personal['email']}',
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.grey,
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        );
-                      }).toList(),
-                    ],
-                  ),
-                ),
-              ),
-
-              if (_isLoading)
-                const Padding(
-                  padding: EdgeInsets.all(32),
-                  child: Center(
-                    child: Column(
-                      children: [
-                        CircularProgressIndicator(),
-                        SizedBox(height: 16),
-                        Text('Creando tienda...'),
+                            ),
                       ],
                     ),
-                  ),
+                    const SizedBox(height: 16),
+                    _bloqueResumen(
+                      icono: Icons.groups_outlined,
+                      titulo: 'Personal (${_personalData.length})',
+                      hijos: [personal],
+                    ),
+                  ],
                 ),
+              ),
+            ],
+          )
+        else
+          Column(
+            children: [
+              _bloqueResumen(
+                icono: Icons.person_outline,
+                titulo: 'Tu cuenta (Dueño)',
+                hijos: [
+                  _filaResumen('Nombre', _fullNameController.text),
+                  _filaResumen('Teléfono', _phoneController.text),
+                  _filaResumen('Email', _emailController.text),
+                ],
+              ),
+              const SizedBox(height: 12),
+              _bloqueResumen(
+                icono: Icons.storefront_outlined,
+                titulo: 'La tienda',
+                hijos: [
+                  _filaResumen('Nombre', _storeNameController.text),
+                  _filaResumen('Dirección', _storeAddressController.text),
+                  _filaResumen(
+                    'Ciudad',
+                    _selectedCity?['name']?.toString() ?? '—',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              _bloqueResumen(
+                icono: Icons.warehouse_outlined,
+                titulo: 'Almacenes y zonas (${_almacenesData.length})',
+                hijos: [almacenes],
+              ),
+              const SizedBox(height: 12),
+              _bloqueResumen(
+                icono: Icons.point_of_sale_outlined,
+                titulo:
+                    'TPVs (${_tpvData.length}) · '
+                    'Personal (${_personalData.length})',
+                hijos: [personal],
+              ),
             ],
           ),
+        if (_isLoading) ...[
+          const SizedBox(height: 24),
+          const Center(
+            child: Column(
+              children: [
+                SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2.2),
+                ),
+                SizedBox(height: 12),
+                Text(
+                  'Creando tu tienda...',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+
+    return SingleChildScrollView(
+      padding: EdgeInsets.symmetric(horizontal: margen, vertical: 24),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1080),
+          child: KeyedSubtree(key: _claveResumen, child: resumen),
         ),
       ),
     );
   }
 
   Widget _buildModernNavigationButtons() {
+    final ancho = MediaQuery.sizeOf(context).width;
+    final esUltimo = _currentStep == 3;
+
     return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(20),
-          topRight: Radius.circular(20),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, -5),
-          ),
-        ],
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        border: Border(top: BorderSide(color: AppColors.border)),
       ),
       child: SafeArea(
+        top: false,
         child: Center(
-          child: Container(
-            constraints: BoxConstraints(
-              maxWidth: _isWideLayout ? 720 : 400,
-            ),
-            child: Row(
-              children: [
-                // Botón Anterior
-                if (_currentStep > 0)
-                  Expanded(
-                    child: Container(
-                      height: 56,
-                      child: OutlinedButton.icon(
-                        onPressed: _isLoading ? null : _previousStep,
-                        icon: const Icon(Icons.arrow_back, size: 20),
-                        label: const Text(
-                          'Anterior',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1080),
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: ancho >= 720 ? 32 : 16,
+                vertical: 14,
+              ),
+              child: Row(
+                children: [
+                  if (_currentStep > 0 && ancho >= 480) ...[
+                    OutlinedButton.icon(
+                      onPressed: _isLoading ? null : _previousStep,
+                      icon: const Icon(Icons.arrow_back, size: 18),
+                      label: const Text('Anterior'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.textPrimary,
+                        side: const BorderSide(color: AppColors.border),
+                        minimumSize: const Size(0, 48),
+                        padding: const EdgeInsets.symmetric(horizontal: 18),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
                         ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.primary,
-                          side: BorderSide(color: AppColors.primary, width: 2),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-
-                if (_currentStep > 0) const SizedBox(width: 16),
-
-                // Botón Siguiente/Crear
-                Expanded(
-                  flex: _currentStep == 0 ? 1 : 1,
-                  child: Container(
-                    height: 56,
-                    child: ElevatedButton.icon(
-                      onPressed: _isLoading ? null : _nextStep,
-                      icon:
-                          _isLoading
-                              ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                              : Icon(
-                                _currentStep == 3
-                                    ? Icons.check_circle
-                                    : Icons.arrow_forward,
-                                size: 20,
-                              ),
-                      label: Text(
-                        _isLoading
-                            ? 'Procesando...'
-                            : _currentStep == 3
-                            ? 'Crear Tienda'
-                            : 'Siguiente',
-                        style: const TextStyle(
-                          fontSize: 16,
+                        textStyle: const TextStyle(
+                          fontSize: 14,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
-                        elevation: 2,
-                        shadowColor: AppColors.primary.withOpacity(0.3),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                    ),
+                    const SizedBox(width: 12),
+                  ],
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 320),
+                        child: SizedBox(
+                          key: esUltimo ? _claveBotonSiguiente : null,
+                          height: 48,
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: _isLoading ? null : _nextStep,
+                            icon: _isLoading
+                                ? const SizedBox(
+                                    width: 17,
+                                    height: 17,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : Icon(
+                                    esUltimo
+                                        ? Icons.check
+                                        : Icons.arrow_forward,
+                                    size: 18,
+                                  ),
+                            label: Text(
+                              _isLoading
+                                  ? 'Procesando...'
+                                  : esUltimo
+                                  ? 'Crear tienda'
+                                  : 'Siguiente',
+                            ),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              textStyle: const TextStyle(
+                                fontSize: 14.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -2855,6 +3636,24 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
 
       if (result['success'] == true) {
         final userAlreadyExisted = result['user_already_existed'] == true;
+        // La RPC nueva devuelve si el Dueño quedó registrado. Si no, la tienda
+        // existe pero el usuario no verá ganancias: hay que decirlo, no
+        // celebrar un éxito a medias.
+        final datos = result['store_data'];
+        final duenoRegistrado = datos is Map
+            ? datos['dueno_registrado'] != false
+            : true;
+        if (!duenoRegistrado) {
+          final detalle = datos is Map ? datos['dueno_error'] : null;
+          _showErrorDialog(
+            'La tienda se creó, pero tu usuario no quedó registrado como '
+            'Dueño.\n\n'
+            'Entra a la app igual: un administrador puede asignarte el rol '
+            'desde Configuración → Personal. No vuelvas a crear la tienda.'
+            '${detalle == null ? '' : '\n\nDetalle: $detalle'}',
+          );
+          return;
+        }
         _showSuccessDialog(userAlreadyExisted: userAlreadyExisted);
       } else {
         _showErrorDialog(result['message'] ?? 'Error desconocido');
@@ -2872,89 +3671,188 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder:
-          (context) => AlertDialog(
-            title: const Row(
-              children: [
-                Icon(Icons.check_circle, color: Colors.green),
-                SizedBox(width: 8),
-                Text('¡Éxito!'),
-              ],
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+        contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+        title: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: AppColors.success.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.check_rounded,
+                color: AppColors.success,
+                size: 20,
+              ),
             ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  userAlreadyExisted
-                      ? 'La tienda ha sido creada exitosamente. El usuario ya existía en el sistema y fue autenticado correctamente.'
-                      : 'La tienda ha sido creada exitosamente. Ya puedes comenzar a usar la aplicación.',
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Tu tienda está lista',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
                 ),
-                if (userAlreadyExisted) ...[
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.shade50,
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: Colors.orange.shade200),
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                userAlreadyExisted
+                    ? 'Creamos la tienda con sus almacenes y cajas. Tu usuario '
+                          'ya existía: lo vinculamos como Dueño de esta tienda.'
+                    : 'Creamos tu usuario, la tienda, sus almacenes y sus cajas. '
+                          'Ya puedes entrar a la app.',
+                style: const TextStyle(
+                  fontSize: 13.5,
+                  height: 1.5,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF4FF),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFDBEAFE)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(
+                      Icons.workspace_premium_outlined,
+                      size: 18,
+                      color: AppColors.primary,
                     ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.info_outline,
-                          color: Colors.orange.shade700,
-                          size: 16,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Nota: El usuario con este email ya existía en el sistema.',
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Entras como Dueño',
                             style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.orange.shade700,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.primary,
                             ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 3),
+                          Text(
+                            'Eso significa que ves las ganancias y puedes '
+                            'asignar el rol Dueño a otra persona. Los demás '
+                            'roles operan sin ver esas cifras.',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              height: 1.45,
+                              color: AppColors.textSecondary.withValues(
+                                alpha: 0.95,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop(); // Cerrar diálogo
-                  Navigator.of(context).pop(); // Volver al login
-                },
-                child: const Text('OK'),
+                  ],
+                ),
               ),
             ],
           ),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
+        actions: [
+          SizedBox(
+            width: double.infinity,
+            height: 46,
+            child: FilledButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Cerrar diálogo
+                Navigator.of(context).pop(); // Volver al login
+              },
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                textStyle: const TextStyle(
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              child: const Text('Ir a iniciar sesión'),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   void _showErrorDialog(String message) {
     showDialog(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Row(
-              children: [
-                Icon(Icons.error, color: Colors.red),
-                SizedBox(width: 8),
-                Text('Error'),
-              ],
-            ),
-            content: Text(message),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('OK'),
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+        contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+        title: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: AppColors.error.withValues(alpha: 0.10),
+                shape: BoxShape.circle,
               ),
-            ],
+              child: const Icon(
+                Icons.error_outline,
+                color: AppColors.error,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'No se pudo continuar',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Text(
+            message,
+            style: const TextStyle(
+              fontSize: 13.5,
+              height: 1.5,
+              color: AppColors.textPrimary,
+            ),
           ),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Entendido'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -2965,80 +3863,77 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
 
     showDialog(
       context: context,
-      builder:
-          (context) => StatefulBuilder(
-            builder:
-                (context, setDialogState) => AlertDialog(
-                  title: const Text('Agregar TPV'),
-                  content: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextField(
-                        controller: nameController,
-                        decoration: const InputDecoration(
-                          labelText: 'Nombre del TPV',
-                          hintText: 'Ej: TPV Principal, Caja 1',
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      DropdownButtonFormField<String>(
-                        value: selectedAlmacen,
-                        decoration: const InputDecoration(
-                          labelText: 'Almacén Asignado',
-                        ),
-                        items:
-                            _almacenesData.map((almacen) {
-                              return DropdownMenuItem<String>(
-                                value: almacen['denominacion'],
-                                child: Text(almacen['denominacion']),
-                              );
-                            }).toList(),
-                        onChanged: (value) {
-                          setDialogState(() {
-                            selectedAlmacen = value;
-                          });
-                        },
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Selecciona un almacén';
-                          }
-                          return null;
-                        },
-                      ),
-                      if (_almacenesData.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.only(top: 8),
-                          child: Text(
-                            'Debes crear al menos un almacén primero',
-                            style: TextStyle(color: Colors.red, fontSize: 12),
-                          ),
-                        ),
-                    ],
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Cancelar'),
-                    ),
-                    ElevatedButton(
-                      onPressed: () {
-                        if (nameController.text.trim().isNotEmpty &&
-                            selectedAlmacen != null &&
-                            _almacenesData.isNotEmpty) {
-                          setState(() {
-                            _tpvData.add({
-                              'denominacion': nameController.text.trim(),
-                              'almacen_asignado': selectedAlmacen,
-                            });
-                          });
-                          Navigator.pop(context);
-                        }
-                      },
-                      child: const Text('Agregar'),
-                    ),
-                  ],
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Agregar TPV'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Nombre del TPV',
+                  hintText: 'Ej: TPV Principal, Caja 1',
                 ),
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: selectedAlmacen,
+                decoration: const InputDecoration(
+                  labelText: 'Almacén Asignado',
+                ),
+                items: _almacenesData.map((almacen) {
+                  return DropdownMenuItem<String>(
+                    value: almacen['denominacion'],
+                    child: Text(almacen['denominacion']),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  setDialogState(() {
+                    selectedAlmacen = value;
+                  });
+                },
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Selecciona un almacén';
+                  }
+                  return null;
+                },
+              ),
+              if (_almacenesData.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: Text(
+                    'Debes crear al menos un almacén primero',
+                    style: TextStyle(color: Colors.red, fontSize: 12),
+                  ),
+                ),
+            ],
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (nameController.text.trim().isNotEmpty &&
+                    selectedAlmacen != null &&
+                    _almacenesData.isNotEmpty) {
+                  setState(() {
+                    _tpvData.add({
+                      'denominacion': nameController.text.trim(),
+                      'almacen_asignado': selectedAlmacen,
+                    });
+                  });
+                  Navigator.pop(context);
+                }
+              },
+              child: const Text('Agregar'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -3049,93 +3944,86 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
 
     showDialog(
       context: context,
-      builder:
-          (context) => StatefulBuilder(
-            builder:
-                (context, setDialogState) => AlertDialog(
-                  title: const Text('Editar TPV'),
-                  content: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextField(
-                        controller: nameController,
-                        decoration: const InputDecoration(
-                          labelText: 'Nombre del TPV',
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      DropdownButtonFormField<String>(
-                        value: selectedAlmacen,
-                        decoration: const InputDecoration(
-                          labelText: 'Almacén Asignado',
-                        ),
-                        items:
-                            _almacenesData.map((almacen) {
-                              return DropdownMenuItem<String>(
-                                value: almacen['denominacion'],
-                                child: Text(almacen['denominacion']),
-                              );
-                            }).toList(),
-                        onChanged: (value) {
-                          setDialogState(() {
-                            selectedAlmacen = value;
-                          });
-                        },
-                      ),
-                    ],
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Cancelar'),
-                    ),
-                    ElevatedButton(
-                      onPressed: () {
-                        if (nameController.text.trim().isNotEmpty &&
-                            selectedAlmacen != null) {
-                          setState(() {
-                            _tpvData[index]['denominacion'] =
-                                nameController.text.trim();
-                            _tpvData[index]['almacen_asignado'] =
-                                selectedAlmacen;
-                          });
-                          Navigator.pop(context);
-                        }
-                      },
-                      child: const Text('Guardar'),
-                    ),
-                  ],
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Editar TPV'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(labelText: 'Nombre del TPV'),
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: selectedAlmacen,
+                decoration: const InputDecoration(
+                  labelText: 'Almacén Asignado',
                 ),
+                items: _almacenesData.map((almacen) {
+                  return DropdownMenuItem<String>(
+                    value: almacen['denominacion'],
+                    child: Text(almacen['denominacion']),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  setDialogState(() {
+                    selectedAlmacen = value;
+                  });
+                },
+              ),
+            ],
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (nameController.text.trim().isNotEmpty &&
+                    selectedAlmacen != null) {
+                  setState(() {
+                    _tpvData[index]['denominacion'] = nameController.text
+                        .trim();
+                    _tpvData[index]['almacen_asignado'] = selectedAlmacen;
+                  });
+                  Navigator.pop(context);
+                }
+              },
+              child: const Text('Guardar'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
   void _deleteTPV(int index) {
     showDialog(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Eliminar TPV'),
-            content: Text(
-              '¿Estás seguro de eliminar "${_tpvData[index]['denominacion']}"?',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancelar'),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  setState(() {
-                    _tpvData.removeAt(index);
-                  });
-                  Navigator.pop(context);
-                },
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                child: const Text('Eliminar'),
-              ),
-            ],
+      builder: (context) => AlertDialog(
+        title: const Text('Eliminar TPV'),
+        content: Text(
+          '¿Estás seguro de eliminar "${_tpvData[index]['denominacion']}"?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
           ),
+          ElevatedButton(
+            onPressed: () {
+              setState(() {
+                _tpvData.removeAt(index);
+              });
+              Navigator.pop(context);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -3147,59 +4035,58 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
 
     showDialog(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Agregar Almacén'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Nombre del Almacén',
-                    hintText: 'Ej: Almacén Principal',
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: addressController,
-                  decoration: const InputDecoration(
-                    labelText: 'Dirección',
-                    hintText: 'Dirección del almacén',
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: locationController,
-                  decoration: const InputDecoration(
-                    labelText: 'Ubicación',
-                    hintText: 'Ciudad, País',
-                  ),
-                ),
-              ],
+      builder: (context) => AlertDialog(
+        title: const Text('Agregar Almacén'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(
+                labelText: 'Nombre del Almacén',
+                hintText: 'Ej: Almacén Principal',
+              ),
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancelar'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: addressController,
+              decoration: const InputDecoration(
+                labelText: 'Dirección',
+                hintText: 'Dirección del almacén',
               ),
-              ElevatedButton(
-                onPressed: () {
-                  if (nameController.text.trim().isNotEmpty) {
-                    setState(() {
-                      _almacenesData.add({
-                        'denominacion': nameController.text.trim(),
-                        'direccion': addressController.text.trim(),
-                        'ubicacion': locationController.text.trim(),
-                      });
-                    });
-                    Navigator.pop(context);
-                  }
-                },
-                child: const Text('Agregar'),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: locationController,
+              decoration: const InputDecoration(
+                labelText: 'Ubicación',
+                hintText: 'Ciudad, País',
               ),
-            ],
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
           ),
+          ElevatedButton(
+            onPressed: () {
+              if (nameController.text.trim().isNotEmpty) {
+                setState(() {
+                  _almacenesData.add({
+                    'denominacion': nameController.text.trim(),
+                    'direccion': addressController.text.trim(),
+                    'ubicacion': locationController.text.trim(),
+                  });
+                });
+                Navigator.pop(context);
+              }
+            },
+            child: const Text('Agregar'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -3213,79 +4100,76 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
 
     showDialog(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Editar Almacén'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Nombre del Almacén',
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: addressController,
-                  decoration: const InputDecoration(labelText: 'Dirección'),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: locationController,
-                  decoration: const InputDecoration(labelText: 'Ubicación'),
-                ),
-              ],
+      builder: (context) => AlertDialog(
+        title: const Text('Editar Almacén'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(
+                labelText: 'Nombre del Almacén',
+              ),
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancelar'),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  if (nameController.text.trim().isNotEmpty) {
-                    final oldName =
-                        (_almacenesData[index]['denominacion'] ?? '')
-                            .toString();
-                    final newName = nameController.text.trim();
-                    setState(() {
-                      _almacenesData[index]['denominacion'] = newName;
-                      _almacenesData[index]['direccion'] =
-                          addressController.text.trim();
-                      _almacenesData[index]['ubicacion'] =
-                          locationController.text.trim();
-
-                      // Mantener relaciones por nombre al renombrar
-                      if (oldName != newName) {
-                        for (final layout in _layoutsData) {
-                          if ((layout['almacen_asignado'] ?? '').toString() ==
-                              oldName) {
-                            layout['almacen_asignado'] = newName;
-                          }
-                        }
-                        for (final tpv in _tpvData) {
-                          if ((tpv['almacen_asignado'] ?? '').toString() ==
-                              oldName) {
-                            tpv['almacen_asignado'] = newName;
-                          }
-                        }
-                        for (final personal in _personalData) {
-                          if ((personal['almacen_asignado'] ?? '')
-                                  .toString() ==
-                              oldName) {
-                            personal['almacen_asignado'] = newName;
-                          }
-                        }
-                      }
-                    });
-                    Navigator.pop(context);
-                  }
-                },
-                child: const Text('Guardar'),
-              ),
-            ],
+            const SizedBox(height: 16),
+            TextField(
+              controller: addressController,
+              decoration: const InputDecoration(labelText: 'Dirección'),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: locationController,
+              decoration: const InputDecoration(labelText: 'Ubicación'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
           ),
+          ElevatedButton(
+            onPressed: () {
+              if (nameController.text.trim().isNotEmpty) {
+                final oldName = (_almacenesData[index]['denominacion'] ?? '')
+                    .toString();
+                final newName = nameController.text.trim();
+                setState(() {
+                  _almacenesData[index]['denominacion'] = newName;
+                  _almacenesData[index]['direccion'] = addressController.text
+                      .trim();
+                  _almacenesData[index]['ubicacion'] = locationController.text
+                      .trim();
+
+                  // Mantener relaciones por nombre al renombrar
+                  if (oldName != newName) {
+                    for (final layout in _layoutsData) {
+                      if ((layout['almacen_asignado'] ?? '').toString() ==
+                          oldName) {
+                        layout['almacen_asignado'] = newName;
+                      }
+                    }
+                    for (final tpv in _tpvData) {
+                      if ((tpv['almacen_asignado'] ?? '').toString() ==
+                          oldName) {
+                        tpv['almacen_asignado'] = newName;
+                      }
+                    }
+                    for (final personal in _personalData) {
+                      if ((personal['almacen_asignado'] ?? '').toString() ==
+                          oldName) {
+                        personal['almacen_asignado'] = newName;
+                      }
+                    }
+                  }
+                });
+                Navigator.pop(context);
+              }
+            },
+            child: const Text('Guardar'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -3300,47 +4184,44 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
 
     showDialog(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Eliminar Almacén'),
-            content: Text(
-              layoutsAsociados > 0 || tpvsAsociados > 0
-                  ? '¿Eliminar "$nombre"? También se eliminarán $layoutsAsociados zona(s) y se desasignarán $tpvsAsociados TPV(s) vinculados.'
-                  : '¿Estás seguro de eliminar "$nombre"?',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancelar'),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  setState(() {
-                    _layoutsData.removeWhere(
-                      (l) =>
-                          (l['almacen_asignado'] ?? '').toString() == nombre,
-                    );
-                    for (final tpv in _tpvData) {
-                      if ((tpv['almacen_asignado'] ?? '').toString() ==
-                          nombre) {
-                        tpv['almacen_asignado'] = null;
-                      }
-                    }
-                    for (final personal in _personalData) {
-                      if ((personal['almacen_asignado'] ?? '').toString() ==
-                          nombre) {
-                        personal['almacen_asignado'] = null;
-                      }
-                    }
-                    _almacenesData.removeAt(index);
-                  });
-                  Navigator.pop(context);
-                },
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                child: const Text('Eliminar'),
-              ),
-            ],
+      builder: (context) => AlertDialog(
+        title: const Text('Eliminar Almacén'),
+        content: Text(
+          layoutsAsociados > 0 || tpvsAsociados > 0
+              ? '¿Eliminar "$nombre"? También se eliminarán $layoutsAsociados zona(s) y se desasignarán $tpvsAsociados TPV(s) vinculados.'
+              : '¿Estás seguro de eliminar "$nombre"?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
           ),
+          ElevatedButton(
+            onPressed: () {
+              setState(() {
+                _layoutsData.removeWhere(
+                  (l) => (l['almacen_asignado'] ?? '').toString() == nombre,
+                );
+                for (final tpv in _tpvData) {
+                  if ((tpv['almacen_asignado'] ?? '').toString() == nombre) {
+                    tpv['almacen_asignado'] = null;
+                  }
+                }
+                for (final personal in _personalData) {
+                  if ((personal['almacen_asignado'] ?? '').toString() ==
+                      nombre) {
+                    personal['almacen_asignado'] = null;
+                  }
+                }
+                _almacenesData.removeAt(index);
+              });
+              Navigator.pop(context);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -3357,266 +4238,253 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
 
     showDialog(
       context: context,
-      builder:
-          (context) => StatefulBuilder(
-            builder:
-                (context, setDialogState) => AlertDialog(
-                  title: const Text('Agregar Personal'),
-                  content: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        TextField(
-                          controller: nombresController,
-                          decoration: const InputDecoration(
-                            labelText: 'Nombres',
-                            hintText: 'Nombres del empleado',
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        TextField(
-                          controller: apellidosController,
-                          decoration: const InputDecoration(
-                            labelText: 'Apellidos',
-                            hintText: 'Apellidos del empleado',
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        TextField(
-                          controller: emailController,
-                          keyboardType: TextInputType.emailAddress,
-                          decoration: const InputDecoration(
-                            labelText: 'Email',
-                            hintText:
-                                'Email del empleado para acceso al sistema',
-                            prefixIcon: Icon(Icons.email),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        TextField(
-                          controller: passwordController,
-                          obscureText: true,
-                          decoration: const InputDecoration(
-                            labelText: 'Contraseña',
-                            hintText:
-                                'Contraseña de acceso (mínimo 6 caracteres)',
-                            prefixIcon: Icon(Icons.lock),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        TextField(
-                          controller: confirmPasswordController,
-                          obscureText: true,
-                          decoration: const InputDecoration(
-                            labelText: 'Confirmar Contraseña',
-                            hintText: 'Repetir la contraseña',
-                            prefixIcon: Icon(Icons.lock_outline),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        DropdownButtonFormField<String>(
-                          value: selectedRole,
-                          decoration: const InputDecoration(labelText: 'Rol'),
-                          items: [
-                            const DropdownMenuItem(
-                              value: 'gerente',
-                              child: Text('Gerente'),
-                            ),
-                            const DropdownMenuItem(
-                              value: 'supervisor',
-                              child: Text('Supervisor'),
-                            ),
-                            const DropdownMenuItem(
-                              value: 'almacenero',
-                              child: Text('Almacenero'),
-                            ),
-                            const DropdownMenuItem(
-                              value: 'vendedor',
-                              child: Text('Vendedor'),
-                            ),
-                          ],
-                          onChanged: (value) {
-                            setDialogState(() {
-                              selectedRole = value;
-                              // Reset assignments when role changes
-                              selectedAlmacen = null;
-                              selectedTPV = null;
-                            });
-                          },
-                        ),
-                        const SizedBox(height: 16),
-
-                        // Mostrar dropdown de almacén para almaceneros
-                        if (selectedRole == 'almacenero')
-                          DropdownButtonFormField<String>(
-                            value: selectedAlmacen,
-                            decoration: const InputDecoration(
-                              labelText: 'Almacén Asignado',
-                            ),
-                            items:
-                                _almacenesData.map((almacen) {
-                                  return DropdownMenuItem<String>(
-                                    value: almacen['denominacion'],
-                                    child: Text(almacen['denominacion']),
-                                  );
-                                }).toList(),
-                            onChanged: (value) {
-                              setDialogState(() {
-                                selectedAlmacen = value;
-                              });
-                            },
-                          ),
-
-                        // Mostrar dropdown de TPV para vendedores
-                        if (selectedRole == 'vendedor')
-                          DropdownButtonFormField<String>(
-                            value: selectedTPV,
-                            decoration: const InputDecoration(
-                              labelText: 'TPV Asignado',
-                            ),
-                            items:
-                                _tpvData.map((tpv) {
-                                  return DropdownMenuItem<String>(
-                                    value: tpv['denominacion'],
-                                    child: Text(tpv['denominacion']),
-                                  );
-                                }).toList(),
-                            onChanged: (value) {
-                              setDialogState(() {
-                                selectedTPV = value;
-                              });
-                            },
-                          ),
-
-                        // Mostrar advertencias si no hay almacenes o TPVs
-                        if (selectedRole == 'almacenero' &&
-                            _almacenesData.isEmpty)
-                          const Padding(
-                            padding: EdgeInsets.only(top: 8),
-                            child: Text(
-                              'Debes crear al menos un almacén primero',
-                              style: TextStyle(color: Colors.red, fontSize: 12),
-                            ),
-                          ),
-
-                        if (selectedRole == 'vendedor' && _tpvData.isEmpty)
-                          const Padding(
-                            padding: EdgeInsets.only(top: 8),
-                            child: Text(
-                              'Debes crear al menos un TPV primero',
-                              style: TextStyle(color: Colors.red, fontSize: 12),
-                            ),
-                          ),
-                      ],
-                    ),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Agregar Personal'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nombresController,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombres',
+                    hintText: 'Nombres del empleado',
                   ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Cancelar'),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: apellidosController,
+                  decoration: const InputDecoration(
+                    labelText: 'Apellidos',
+                    hintText: 'Apellidos del empleado',
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(
+                    labelText: 'Email',
+                    hintText: 'Email del empleado para acceso al sistema',
+                    prefixIcon: Icon(Icons.email),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: passwordController,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Contraseña',
+                    hintText: 'Contraseña de acceso (mínimo 6 caracteres)',
+                    prefixIcon: Icon(Icons.lock),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: confirmPasswordController,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Confirmar Contraseña',
+                    hintText: 'Repetir la contraseña',
+                    prefixIcon: Icon(Icons.lock_outline),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  value: selectedRole,
+                  decoration: const InputDecoration(labelText: 'Rol'),
+                  items: [
+                    const DropdownMenuItem(
+                      value: 'gerente',
+                      child: Text('Gerente'),
                     ),
-                    ElevatedButton(
-                      onPressed: () {
-                        bool canAdd =
-                            nombresController.text.trim().isNotEmpty &&
-                            apellidosController.text.trim().isNotEmpty &&
-                            emailController.text.trim().isNotEmpty &&
-                            passwordController.text.trim().isNotEmpty &&
-                            confirmPasswordController.text.trim().isNotEmpty &&
-                            selectedRole != null;
-
-                        // Validaciones de email y contraseña
-                        if (canAdd) {
-                          if (!emailController.text.contains('@')) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Ingresa un email válido'),
-                              ),
-                            );
-                            return;
-                          }
-
-                          if (passwordController.text.length < 6) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'La contraseña debe tener al menos 6 caracteres',
-                                ),
-                              ),
-                            );
-                            return;
-                          }
-
-                          if (passwordController.text !=
-                              confirmPasswordController.text) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Las contraseñas no coinciden'),
-                              ),
-                            );
-                            return;
-                          }
-
-                          // Verificar que el email no esté duplicado
-                          final emailExists = _personalData.any(
-                            (p) => p['email'] == emailController.text.trim(),
-                          );
-                          if (emailExists) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Este email ya está registrado'),
-                              ),
-                            );
-                            return;
-                          }
-                        }
-
-                        // Validaciones específicas por rol
-                        if (selectedRole == 'almacenero') {
-                          canAdd =
-                              canAdd &&
-                              selectedAlmacen != null &&
-                              _almacenesData.isNotEmpty;
-                        } else if (selectedRole == 'vendedor') {
-                          canAdd =
-                              canAdd &&
-                              selectedTPV != null &&
-                              _tpvData.isNotEmpty;
-                        }
-
-                        if (canAdd) {
-                          setState(() {
-                            final personalItem = {
-                              'nombres': nombresController.text.trim(),
-                              'apellidos': apellidosController.text.trim(),
-                              'email': emailController.text.trim(),
-                              'password': passwordController.text.trim(),
-                              'tipo_rol': selectedRole,
-                              'id_roll': _getRoleId(selectedRole!),
-                              'uuid':
-                                  'PLACEHOLDER_USER_UUID', // Se reemplazará con el UUID real
-                            };
-
-                            // Agregar asignaciones específicas
-                            if (selectedRole == 'almacenero' &&
-                                selectedAlmacen != null) {
-                              personalItem['almacen_asignado'] =
-                                  selectedAlmacen;
-                            } else if (selectedRole == 'vendedor' &&
-                                selectedTPV != null) {
-                              personalItem['tpv_asignado'] = selectedTPV;
-                            }
-
-                            _personalData.add(personalItem);
-                          });
-                          Navigator.pop(context);
-                        }
-                      },
-                      child: const Text('Agregar'),
+                    const DropdownMenuItem(
+                      value: 'supervisor',
+                      child: Text('Supervisor'),
+                    ),
+                    const DropdownMenuItem(
+                      value: 'almacenero',
+                      child: Text('Almacenero'),
+                    ),
+                    const DropdownMenuItem(
+                      value: 'vendedor',
+                      child: Text('Vendedor'),
                     ),
                   ],
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedRole = value;
+                      // Reset assignments when role changes
+                      selectedAlmacen = null;
+                      selectedTPV = null;
+                    });
+                  },
                 ),
+                const SizedBox(height: 16),
+
+                // Mostrar dropdown de almacén para almaceneros
+                if (selectedRole == 'almacenero')
+                  DropdownButtonFormField<String>(
+                    value: selectedAlmacen,
+                    decoration: const InputDecoration(
+                      labelText: 'Almacén Asignado',
+                    ),
+                    items: _almacenesData.map((almacen) {
+                      return DropdownMenuItem<String>(
+                        value: almacen['denominacion'],
+                        child: Text(almacen['denominacion']),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      setDialogState(() {
+                        selectedAlmacen = value;
+                      });
+                    },
+                  ),
+
+                // Mostrar dropdown de TPV para vendedores
+                if (selectedRole == 'vendedor')
+                  DropdownButtonFormField<String>(
+                    value: selectedTPV,
+                    decoration: const InputDecoration(
+                      labelText: 'TPV Asignado',
+                    ),
+                    items: _tpvData.map((tpv) {
+                      return DropdownMenuItem<String>(
+                        value: tpv['denominacion'],
+                        child: Text(tpv['denominacion']),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      setDialogState(() {
+                        selectedTPV = value;
+                      });
+                    },
+                  ),
+
+                // Mostrar advertencias si no hay almacenes o TPVs
+                if (selectedRole == 'almacenero' && _almacenesData.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 8),
+                    child: Text(
+                      'Debes crear al menos un almacén primero',
+                      style: TextStyle(color: Colors.red, fontSize: 12),
+                    ),
+                  ),
+
+                if (selectedRole == 'vendedor' && _tpvData.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 8),
+                    child: Text(
+                      'Debes crear al menos un TPV primero',
+                      style: TextStyle(color: Colors.red, fontSize: 12),
+                    ),
+                  ),
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                bool canAdd =
+                    nombresController.text.trim().isNotEmpty &&
+                    apellidosController.text.trim().isNotEmpty &&
+                    emailController.text.trim().isNotEmpty &&
+                    passwordController.text.trim().isNotEmpty &&
+                    confirmPasswordController.text.trim().isNotEmpty &&
+                    selectedRole != null;
+
+                // Validaciones de email y contraseña
+                if (canAdd) {
+                  if (!emailController.text.contains('@')) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Ingresa un email válido')),
+                    );
+                    return;
+                  }
+
+                  if (passwordController.text.length < 6) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'La contraseña debe tener al menos 6 caracteres',
+                        ),
+                      ),
+                    );
+                    return;
+                  }
+
+                  if (passwordController.text !=
+                      confirmPasswordController.text) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Las contraseñas no coinciden'),
+                      ),
+                    );
+                    return;
+                  }
+
+                  // Verificar que el email no esté duplicado
+                  final emailExists = _personalData.any(
+                    (p) => p['email'] == emailController.text.trim(),
+                  );
+                  if (emailExists) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Este email ya está registrado'),
+                      ),
+                    );
+                    return;
+                  }
+                }
+
+                // Validaciones específicas por rol
+                if (selectedRole == 'almacenero') {
+                  canAdd =
+                      canAdd &&
+                      selectedAlmacen != null &&
+                      _almacenesData.isNotEmpty;
+                } else if (selectedRole == 'vendedor') {
+                  canAdd = canAdd && selectedTPV != null && _tpvData.isNotEmpty;
+                }
+
+                if (canAdd) {
+                  setState(() {
+                    final personalItem = {
+                      'nombres': nombresController.text.trim(),
+                      'apellidos': apellidosController.text.trim(),
+                      'email': emailController.text.trim(),
+                      'password': passwordController.text.trim(),
+                      'tipo_rol': selectedRole,
+                      'id_roll': _getRoleId(selectedRole!),
+                      'uuid':
+                          'PLACEHOLDER_USER_UUID', // Se reemplazará con el UUID real
+                    };
+
+                    // Agregar asignaciones específicas
+                    if (selectedRole == 'almacenero' &&
+                        selectedAlmacen != null) {
+                      personalItem['almacen_asignado'] = selectedAlmacen;
+                    } else if (selectedRole == 'vendedor' &&
+                        selectedTPV != null) {
+                      personalItem['tpv_asignado'] = selectedTPV;
+                    }
+
+                    _personalData.add(personalItem);
+                  });
+                  Navigator.pop(context);
+                }
+              },
+              child: const Text('Agregar'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -3631,154 +4499,141 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
 
     showDialog(
       context: context,
-      builder:
-          (context) => StatefulBuilder(
-            builder:
-                (context, setDialogState) => AlertDialog(
-                  title: const Text('Editar Personal'),
-                  content: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        TextField(
-                          controller: nombresController,
-                          decoration: const InputDecoration(
-                            labelText: 'Nombres',
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        TextField(
-                          controller: apellidosController,
-                          decoration: const InputDecoration(
-                            labelText: 'Apellidos',
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        TextField(
-                          controller: emailController,
-                          keyboardType: TextInputType.emailAddress,
-                          decoration: const InputDecoration(
-                            labelText: 'Email',
-                            prefixIcon: Icon(Icons.email),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        DropdownButtonFormField<String>(
-                          value: selectedRole,
-                          decoration: const InputDecoration(labelText: 'Rol'),
-                          items: [
-                            const DropdownMenuItem(
-                              value: 'gerente',
-                              child: Text('Gerente'),
-                            ),
-                            const DropdownMenuItem(
-                              value: 'supervisor',
-                              child: Text('Supervisor'),
-                            ),
-                            const DropdownMenuItem(
-                              value: 'almacenero',
-                              child: Text('Almacenero'),
-                            ),
-                            const DropdownMenuItem(
-                              value: 'vendedor',
-                              child: Text('Vendedor'),
-                            ),
-                          ],
-                          onChanged: (value) {
-                            setDialogState(() {
-                              selectedRole = value;
-                            });
-                          },
-                        ),
-                      ],
-                    ),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Editar Personal'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nombresController,
+                  decoration: const InputDecoration(labelText: 'Nombres'),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: apellidosController,
+                  decoration: const InputDecoration(labelText: 'Apellidos'),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(
+                    labelText: 'Email',
+                    prefixIcon: Icon(Icons.email),
                   ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Cancelar'),
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  value: selectedRole,
+                  decoration: const InputDecoration(labelText: 'Rol'),
+                  items: [
+                    const DropdownMenuItem(
+                      value: 'gerente',
+                      child: Text('Gerente'),
                     ),
-                    ElevatedButton(
-                      onPressed: () {
-                        if (nombresController.text.trim().isNotEmpty &&
-                            apellidosController.text.trim().isNotEmpty &&
-                            emailController.text.trim().isNotEmpty &&
-                            selectedRole != null) {
-                          // Validar email
-                          if (!emailController.text.contains('@')) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Ingresa un email válido'),
-                              ),
-                            );
-                            return;
-                          }
-
-                          // Verificar que el email no esté duplicado (excepto el actual)
-                          final emailExists = _personalData.asMap().entries.any(
-                            (entry) =>
-                                entry.key != index &&
-                                entry.value['email'] ==
-                                    emailController.text.trim(),
-                          );
-                          if (emailExists) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Este email ya está registrado'),
-                              ),
-                            );
-                            return;
-                          }
-
-                          setState(() {
-                            _personalData[index]['nombres'] =
-                                nombresController.text.trim();
-                            _personalData[index]['apellidos'] =
-                                apellidosController.text.trim();
-                            _personalData[index]['email'] =
-                                emailController.text.trim();
-                            _personalData[index]['tipo_rol'] = selectedRole;
-                            _personalData[index]['id_roll'] = _getRoleId(
-                              selectedRole!,
-                            );
-                          });
-                          Navigator.pop(context);
-                        }
-                      },
-                      child: const Text('Guardar'),
+                    const DropdownMenuItem(
+                      value: 'supervisor',
+                      child: Text('Supervisor'),
+                    ),
+                    const DropdownMenuItem(
+                      value: 'almacenero',
+                      child: Text('Almacenero'),
+                    ),
+                    const DropdownMenuItem(
+                      value: 'vendedor',
+                      child: Text('Vendedor'),
                     ),
                   ],
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedRole = value;
+                    });
+                  },
                 ),
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (nombresController.text.trim().isNotEmpty &&
+                    apellidosController.text.trim().isNotEmpty &&
+                    emailController.text.trim().isNotEmpty &&
+                    selectedRole != null) {
+                  // Validar email
+                  if (!emailController.text.contains('@')) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Ingresa un email válido')),
+                    );
+                    return;
+                  }
+
+                  // Verificar que el email no esté duplicado (excepto el actual)
+                  final emailExists = _personalData.asMap().entries.any(
+                    (entry) =>
+                        entry.key != index &&
+                        entry.value['email'] == emailController.text.trim(),
+                  );
+                  if (emailExists) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Este email ya está registrado'),
+                      ),
+                    );
+                    return;
+                  }
+
+                  setState(() {
+                    _personalData[index]['nombres'] = nombresController.text
+                        .trim();
+                    _personalData[index]['apellidos'] = apellidosController.text
+                        .trim();
+                    _personalData[index]['email'] = emailController.text.trim();
+                    _personalData[index]['tipo_rol'] = selectedRole;
+                    _personalData[index]['id_roll'] = _getRoleId(selectedRole!);
+                  });
+                  Navigator.pop(context);
+                }
+              },
+              child: const Text('Guardar'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
   void _deletePersonal(int index) {
     showDialog(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Eliminar Personal'),
-            content: Text(
-              '¿Estás seguro de eliminar a "${_personalData[index]['nombres']} ${_personalData[index]['apellidos']}"?',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancelar'),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  setState(() {
-                    _personalData.removeAt(index);
-                  });
-                  Navigator.pop(context);
-                },
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                child: const Text('Eliminar'),
-              ),
-            ],
+      builder: (context) => AlertDialog(
+        title: const Text('Eliminar Personal'),
+        content: Text(
+          '¿Estás seguro de eliminar a "${_personalData[index]['nombres']} ${_personalData[index]['apellidos']}"?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
           ),
+          ElevatedButton(
+            onPressed: () {
+              setState(() {
+                _personalData.removeAt(index);
+              });
+              Navigator.pop(context);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -3797,7 +4652,9 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
     }
   }
 
-  // Agregar automáticamente al usuario principal con roles de gerente y supervisor
+  // Agrega automáticamente al usuario principal como Dueño (y como Gerente y
+  // Supervisor, para que las RPC históricas que comprueban esos roles lo
+  // autoricen). El Dueño lo escribe la RPC; aquí solo se refleja en la lista.
   void _addMainUserToPersonal() {
     final fullName = _fullNameController.text.trim();
     if (fullName.isEmpty) return;
@@ -3805,54 +4662,48 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
     // Separar nombres y apellidos (simple split por espacio)
     final nameParts = fullName.split(' ');
     final nombres = nameParts.isNotEmpty ? nameParts.first : 'Usuario';
-    final apellidos =
-        nameParts.length > 1 ? nameParts.sublist(1).join(' ') : 'Principal';
+    final apellidos = nameParts.length > 1
+        ? nameParts.sublist(1).join(' ')
+        : 'Principal';
 
     // Verificar si ya existe el usuario principal para evitar duplicados
-    final existingMainUser =
-        _personalData.where((p) => p['is_main_user'] == true).toList();
+    final existingMainUser = _personalData
+        .where((p) => p['is_main_user'] == true)
+        .toList();
     if (existingMainUser.isNotEmpty) {
       return; // Ya existe, no agregar duplicados
     }
 
-    // Agregar como Gerente
-    final gerenteItem = {
+    final principal = {
       'nombres': nombres,
       'apellidos': apellidos,
-      'email': _emailController.text.trim(), // Email del usuario principal
-      'password': _passwordController.text, // Contraseña del usuario principal
+      'email': _emailController.text.trim(),
+      'password': _passwordController.text,
       'tipo_rol': 'gerente',
       'id_roll': 1,
-      'uuid':
-          'MAIN_USER_UUID', // Se reemplazará con el UUID real del usuario creado
-      'is_main_user':
-          true, // Marca especial para identificar al usuario principal
-      'is_editable': false, // No se puede editar
+      'uuid': 'MAIN_USER_UUID', // Se reemplaza con el UUID real
+      'is_main_user': true,
+      'is_editable': false,
     };
 
-    // Agregar como Supervisor
     final supervisorItem = {
       'nombres': nombres,
       'apellidos': apellidos,
-      'email': _emailController.text.trim(), // Email del usuario principal
-      'password': _passwordController.text, // Contraseña del usuario principal
+      'email': _emailController.text.trim(),
+      'password': _passwordController.text,
       'tipo_rol': 'supervisor',
       'id_roll': 2,
-      'uuid':
-          'MAIN_USER_UUID', // Se reemplazará con el UUID real del usuario creado
-      'is_main_user':
-          true, // Marca especial para identificar al usuario principal
-      'is_editable': false, // No se puede editar
+      'uuid': 'MAIN_USER_UUID',
+      'is_main_user': true,
+      'is_editable': false,
     };
 
     setState(() {
-      _personalData.insert(0, gerenteItem); // Insertar al inicio
-      _personalData.insert(1, supervisorItem); // Insertar después del gerente
+      _personalData.insert(0, principal);
+      _personalData.insert(1, supervisorItem);
     });
 
-    print(
-      '✅ Usuario principal agregado automáticamente como Gerente y Supervisor',
-    );
+    print('✅ Usuario principal agregado como Dueño, Gerente y Supervisor');
     print('   - Nombres: $nombres');
     print('   - Apellidos: $apellidos');
   }
@@ -3865,200 +4716,194 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
     int? selectedTipoLayout;
     List<Map<String, dynamic>> layoutTypes = [];
     bool loadingTypes = true;
-    final lockAlmacen = preselectedAlmacen != null &&
-        preselectedAlmacen.trim().isNotEmpty;
+    final lockAlmacen =
+        preselectedAlmacen != null && preselectedAlmacen.trim().isNotEmpty;
 
     showDialog(
       context: context,
-      builder:
-          (context) => StatefulBuilder(
-            builder: (context, setDialogState) {
-              // Cargar tipos de layout cuando se abre el diálogo
-              if (loadingTypes) {
-                _warehouseService
-                    .getTiposLayout()
-                    .then((types) {
-                      setDialogState(() {
-                        layoutTypes.clear();
-                        layoutTypes.addAll(types);
-                        loadingTypes = false;
-                        // Seleccionar el primer tipo por defecto
-                        if (layoutTypes.isNotEmpty) {
-                          selectedTipoLayout = layoutTypes.first['id'];
-                        }
-                      });
-                    })
-                    .catchError((e) {
-                      print('Error cargando tipos de layout: $e');
-                      setDialogState(() {
-                        loadingTypes = false;
-                        // Fallback a tipo por defecto
-                        layoutTypes = [
-                          {'id': 1, 'denominacion': 'Zona'},
-                        ];
-                        selectedTipoLayout = 1;
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          // Cargar tipos de layout cuando se abre el diálogo
+          if (loadingTypes) {
+            _warehouseService
+                .getTiposLayout()
+                .then((types) {
+                  setDialogState(() {
+                    layoutTypes.clear();
+                    layoutTypes.addAll(types);
+                    loadingTypes = false;
+                    // Seleccionar el primer tipo por defecto
+                    if (layoutTypes.isNotEmpty) {
+                      selectedTipoLayout = layoutTypes.first['id'];
+                    }
+                  });
+                })
+                .catchError((e) {
+                  print('Error cargando tipos de layout: $e');
+                  setDialogState(() {
+                    loadingTypes = false;
+                    // Fallback a tipo por defecto
+                    layoutTypes = [
+                      {'id': 1, 'denominacion': 'Zona'},
+                    ];
+                    selectedTipoLayout = 1;
+                  });
+                });
+          }
+
+          return AlertDialog(
+            title: Text(
+              lockAlmacen
+                  ? 'Agregar zona en $preselectedAlmacen'
+                  : 'Agregar Layout/Zona',
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    lockAlmacen
+                        ? 'Crea una zona dentro de este almacén para organizar los productos.'
+                        : 'Crea una zona dentro del almacén para organizar los productos.',
+                    style: const TextStyle(fontSize: 14, color: Colors.grey),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: nameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Nombre del Layout/Zona',
+                      hintText: 'Ej: Zona Principal, Estantería A',
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: codeController,
+                    decoration: const InputDecoration(
+                      labelText: 'Código',
+                      hintText: 'Ej: ZP-001, EST-A-001',
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  if (loadingTypes)
+                    const Padding(
+                      padding: EdgeInsets.all(16.0),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          SizedBox(width: 8),
+                          Text('Cargando tipos de layout...'),
+                        ],
+                      ),
+                    )
+                  else
+                    DropdownButtonFormField<int?>(
+                      value: selectedTipoLayout,
+                      decoration: const InputDecoration(
+                        labelText: 'Tipo de Layout',
+                        prefixIcon: Icon(Icons.category),
+                      ),
+                      isExpanded: true,
+                      items: layoutTypes.map((tipo) {
+                        return DropdownMenuItem<int?>(
+                          value: tipo['id'],
+                          child: Text(
+                            tipo['denominacion'] ?? 'Sin nombre',
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        setDialogState(() {
+                          selectedTipoLayout = value;
+                        });
+                      },
+                    ),
+                  const SizedBox(height: 16),
+                  if (lockAlmacen)
+                    InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'Almacén',
+                        prefixIcon: Icon(Icons.warehouse),
+                      ),
+                      child: Text(
+                        selectedAlmacen ?? '',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    )
+                  else
+                    DropdownButtonFormField<String>(
+                      value: selectedAlmacen,
+                      decoration: const InputDecoration(
+                        labelText: 'Almacén Asignado',
+                      ),
+                      isExpanded: true,
+                      items: _almacenesData.map((almacen) {
+                        return DropdownMenuItem<String>(
+                          value: almacen['denominacion'],
+                          child: Text(
+                            almacen['denominacion'],
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        setDialogState(() {
+                          selectedAlmacen = value;
+                        });
+                      },
+                    ),
+                  if (_almacenesData.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 8),
+                      child: Text(
+                        'Debes crear al menos un almacén primero',
+                        style: TextStyle(color: Colors.red, fontSize: 12),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  if (nameController.text.trim().isNotEmpty &&
+                      codeController.text.trim().isNotEmpty &&
+                      selectedAlmacen != null &&
+                      selectedTipoLayout != null &&
+                      _almacenesData.isNotEmpty) {
+                    setState(() {
+                      _layoutsData.add({
+                        'denominacion': nameController.text.trim(),
+                        'codigo': codeController.text.trim(),
+                        'almacen_asignado': selectedAlmacen,
+                        'id_tipo_layout': selectedTipoLayout,
+                        'id_layout_padre': null,
+                        'tipo_nombre': layoutTypes.firstWhere(
+                          (t) => t['id'] == selectedTipoLayout,
+                          orElse: () => {'denominacion': 'Desconocido'},
+                        )['denominacion'],
                       });
                     });
-              }
-
-              return AlertDialog(
-                title: Text(
-                  lockAlmacen
-                      ? 'Agregar zona en $preselectedAlmacen'
-                      : 'Agregar Layout/Zona',
-                ),
-                content: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        lockAlmacen
-                            ? 'Crea una zona dentro de este almacén para organizar los productos.'
-                            : 'Crea una zona dentro del almacén para organizar los productos.',
-                        style: const TextStyle(fontSize: 14, color: Colors.grey),
-                      ),
-                      const SizedBox(height: 16),
-                      TextField(
-                        controller: nameController,
-                        decoration: const InputDecoration(
-                          labelText: 'Nombre del Layout/Zona',
-                          hintText: 'Ej: Zona Principal, Estantería A',
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      TextField(
-                        controller: codeController,
-                        decoration: const InputDecoration(
-                          labelText: 'Código',
-                          hintText: 'Ej: ZP-001, EST-A-001',
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      if (loadingTypes)
-                        const Padding(
-                          padding: EdgeInsets.all(16.0),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              ),
-                              SizedBox(width: 8),
-                              Text('Cargando tipos de layout...'),
-                            ],
-                          ),
-                        )
-                      else
-                        DropdownButtonFormField<int?>(
-                          value: selectedTipoLayout,
-                          decoration: const InputDecoration(
-                            labelText: 'Tipo de Layout',
-                            prefixIcon: Icon(Icons.category),
-                          ),
-                          isExpanded: true,
-                          items:
-                              layoutTypes.map((tipo) {
-                                return DropdownMenuItem<int?>(
-                                  value: tipo['id'],
-                                  child: Text(
-                                    tipo['denominacion'] ?? 'Sin nombre',
-                                    overflow: TextOverflow.ellipsis,
-                                    maxLines: 1,
-                                  ),
-                                );
-                              }).toList(),
-                          onChanged: (value) {
-                            setDialogState(() {
-                              selectedTipoLayout = value;
-                            });
-                          },
-                        ),
-                      const SizedBox(height: 16),
-                      if (lockAlmacen)
-                        InputDecorator(
-                          decoration: const InputDecoration(
-                            labelText: 'Almacén',
-                            prefixIcon: Icon(Icons.warehouse),
-                          ),
-                          child: Text(
-                            selectedAlmacen ?? '',
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                        )
-                      else
-                        DropdownButtonFormField<String>(
-                          value: selectedAlmacen,
-                          decoration: const InputDecoration(
-                            labelText: 'Almacén Asignado',
-                          ),
-                          isExpanded: true,
-                          items:
-                              _almacenesData.map((almacen) {
-                                return DropdownMenuItem<String>(
-                                  value: almacen['denominacion'],
-                                  child: Text(
-                                    almacen['denominacion'],
-                                    overflow: TextOverflow.ellipsis,
-                                    maxLines: 1,
-                                  ),
-                                );
-                              }).toList(),
-                          onChanged: (value) {
-                            setDialogState(() {
-                              selectedAlmacen = value;
-                            });
-                          },
-                        ),
-                      if (_almacenesData.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.only(top: 8),
-                          child: Text(
-                            'Debes crear al menos un almacén primero',
-                            style: TextStyle(color: Colors.red, fontSize: 12),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Cancelar'),
-                  ),
-                  ElevatedButton(
-                    onPressed: () {
-                      if (nameController.text.trim().isNotEmpty &&
-                          codeController.text.trim().isNotEmpty &&
-                          selectedAlmacen != null &&
-                          selectedTipoLayout != null &&
-                          _almacenesData.isNotEmpty) {
-                        setState(() {
-                          _layoutsData.add({
-                            'denominacion': nameController.text.trim(),
-                            'codigo': codeController.text.trim(),
-                            'almacen_asignado': selectedAlmacen,
-                            'id_tipo_layout': selectedTipoLayout,
-                            'id_layout_padre': null,
-                            'tipo_nombre':
-                                layoutTypes.firstWhere(
-                                  (t) => t['id'] == selectedTipoLayout,
-                                  orElse: () => {'denominacion': 'Desconocido'},
-                                )['denominacion'],
-                          });
-                        });
-                        Navigator.pop(context);
-                      }
-                    },
-                    child: const Text('Agregar'),
-                  ),
-                ],
-              );
-            },
-          ),
+                    Navigator.pop(context);
+                  }
+                },
+                child: const Text('Agregar'),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -4070,105 +4915,99 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
 
     showDialog(
       context: context,
-      builder:
-          (context) => StatefulBuilder(
-            builder:
-                (context, setDialogState) => AlertDialog(
-                  title: const Text('Editar Layout/Zona'),
-                  content: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextField(
-                        controller: nameController,
-                        decoration: const InputDecoration(
-                          labelText: 'Nombre del Layout/Zona',
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      TextField(
-                        controller: codeController,
-                        decoration: const InputDecoration(labelText: 'Código'),
-                      ),
-                      const SizedBox(height: 16),
-                      DropdownButtonFormField<String>(
-                        value: selectedAlmacen,
-                        decoration: const InputDecoration(
-                          labelText: 'Almacén Asignado',
-                        ),
-                        items:
-                            _almacenesData.map((almacen) {
-                              return DropdownMenuItem<String>(
-                                value: almacen['denominacion'],
-                                child: Text(almacen['denominacion']),
-                              );
-                            }).toList(),
-                        onChanged: (value) {
-                          setDialogState(() {
-                            selectedAlmacen = value;
-                          });
-                        },
-                      ),
-                    ],
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Cancelar'),
-                    ),
-                    ElevatedButton(
-                      onPressed: () {
-                        if (nameController.text.trim().isNotEmpty &&
-                            codeController.text.trim().isNotEmpty &&
-                            selectedAlmacen != null) {
-                          setState(() {
-                            _layoutsData[index]['denominacion'] =
-                                nameController.text.trim();
-                            _layoutsData[index]['codigo'] =
-                                codeController.text.trim();
-                            _layoutsData[index]['almacen_asignado'] =
-                                selectedAlmacen;
-                            // Mantener los campos necesarios si no existen
-                            _layoutsData[index]['id_tipo_layout'] ??= 1;
-                            _layoutsData[index]['id_layout_padre'] ??= null;
-                            _layoutsData[index]['tipo_nombre'] ??= 'Zona';
-                          });
-                          Navigator.pop(context);
-                        }
-                      },
-                      child: const Text('Guardar'),
-                    ),
-                  ],
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Editar Layout/Zona'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Nombre del Layout/Zona',
                 ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: codeController,
+                decoration: const InputDecoration(labelText: 'Código'),
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: selectedAlmacen,
+                decoration: const InputDecoration(
+                  labelText: 'Almacén Asignado',
+                ),
+                items: _almacenesData.map((almacen) {
+                  return DropdownMenuItem<String>(
+                    value: almacen['denominacion'],
+                    child: Text(almacen['denominacion']),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  setDialogState(() {
+                    selectedAlmacen = value;
+                  });
+                },
+              ),
+            ],
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (nameController.text.trim().isNotEmpty &&
+                    codeController.text.trim().isNotEmpty &&
+                    selectedAlmacen != null) {
+                  setState(() {
+                    _layoutsData[index]['denominacion'] = nameController.text
+                        .trim();
+                    _layoutsData[index]['codigo'] = codeController.text.trim();
+                    _layoutsData[index]['almacen_asignado'] = selectedAlmacen;
+                    // Mantener los campos necesarios si no existen
+                    _layoutsData[index]['id_tipo_layout'] ??= 1;
+                    _layoutsData[index]['id_layout_padre'] ??= null;
+                    _layoutsData[index]['tipo_nombre'] ??= 'Zona';
+                  });
+                  Navigator.pop(context);
+                }
+              },
+              child: const Text('Guardar'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
   void _deleteLayout(int index) {
     showDialog(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Eliminar Layout/Zona'),
-            content: Text(
-              '¿Estás seguro de eliminar "${_layoutsData[index]['denominacion']}"?',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancelar'),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  setState(() {
-                    _layoutsData.removeAt(index);
-                  });
-                  Navigator.pop(context);
-                },
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                child: const Text('Eliminar'),
-              ),
-            ],
+      builder: (context) => AlertDialog(
+        title: const Text('Eliminar Layout/Zona'),
+        content: Text(
+          '¿Estás seguro de eliminar "${_layoutsData[index]['denominacion']}"?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
           ),
+          ElevatedButton(
+            onPressed: () {
+              setState(() {
+                _layoutsData.removeAt(index);
+              });
+              Navigator.pop(context);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
     );
   }
 }

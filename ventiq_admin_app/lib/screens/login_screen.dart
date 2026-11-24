@@ -99,158 +99,288 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final ancho = MediaQuery.sizeOf(context).width;
+    final dosColumnas = ancho >= 980;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: 60),
-
-              // Logo y título
-              _buildHeader(),
-              const SizedBox(height: 60),
-
-              // Formulario de login
-              _buildLoginForm(),
-              const SizedBox(height: 32),
-
-              // Error message
-              if (_errorMessage != null)
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: AppColors.error.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.error.withOpacity(0.3)),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.error_outline,
-                        color: AppColors.error,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          _errorMessage!,
-                          style: TextStyle(
-                            color: AppColors.error,
-                            fontSize: 14,
-                          ),
+        child: dosColumnas
+            ? Row(
+                children: [
+                  // Panel de marca: solo en pantallas anchas. Es lo que hace
+                  // que el login parezca un producto y no un formulario suelto.
+                  Expanded(flex: 5, child: _panelMarca()),
+                  Expanded(
+                    flex: 4,
+                    child: Center(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 40,
+                          vertical: 32,
+                        ),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 380),
+                          child: _formulario(compacto: false),
                         ),
                       ),
-                    ],
+                    ),
+                  ),
+                ],
+              )
+            : SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 420),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _encabezadoCompacto(),
+                        const SizedBox(height: 28),
+                        _formulario(compacto: true),
+                      ],
+                    ),
                   ),
                 ),
+              ),
+      ),
+    );
+  }
 
-              // Botón de login
-              _buildLoginButton(),
-              const SizedBox(height: 24),
-
-              // Enlaces adicionales
-              _buildFooterLinks(),
+  /// Panel izquierdo con la marca y los tres argumentos del producto.
+  Widget _panelMarca() {
+    return Container(
+      decoration: const BoxDecoration(gradient: AppColors.primaryGradient),
+      child: Padding(
+        padding: const EdgeInsets.all(48),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.storefront,
+                    size: 20,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Text(
+                  'Inventtia Gestión',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ],
+            ),
+            const Spacer(),
+            const Text(
+              'Tu tienda,\n bajo control.',
+              style: TextStyle(
+                fontSize: 40,
+                height: 1.12,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -1.1,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Inventario, ventas, caja y equipo en un solo sitio. '
+              'Sin cuadernos y sin sorpresas al cerrar el día.',
+              style: TextStyle(
+                fontSize: 15,
+                height: 1.55,
+                color: Colors.white.withValues(alpha: 0.82),
+              ),
+            ),
+            const SizedBox(height: 36),
+            for (final (icono, texto) in const [
+              (Icons.speed_outlined, 'Cobra rápido, incluso sin internet'),
+              (Icons.inventory_2_outlined, 'Sabes qué tienes y dónde está'),
+              (Icons.insights_outlined, 'Ves tus ganancias reales del día'),
+            ]) ...[
+              Row(
+                children: [
+                  Container(
+                    width: 30,
+                    height: 30,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.13),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(icono, size: 16, color: Colors.white),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      texto,
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        height: 1.4,
+                        color: Colors.white.withValues(alpha: 0.9),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
             ],
-          ),
+            const Spacer(),
+            Text(
+              '© ${DateTime.now().year} Inventtia',
+              style: TextStyle(
+                fontSize: 11.5,
+                color: Colors.white.withValues(alpha: 0.55),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildHeader() {
+  /// Encabezado de la versión de una columna (móvil y tablet estrecha).
+  Widget _encabezadoCompacto() {
     return Column(
       children: [
-        Image.asset(
-          'assets/images/inventia.png',
-          width: 120,
-          height: 120,
-          fit: BoxFit.contain,
+        Container(
+          width: 64,
+          height: 64,
+          decoration: BoxDecoration(
+            gradient: AppColors.primaryGradient,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primary.withValues(alpha: 0.22),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: const Icon(Icons.storefront, size: 30, color: Colors.white),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 18),
         const Text(
           'Inventtia Gestión',
+          textAlign: TextAlign.center,
           style: TextStyle(
-            fontSize: 32,
-            fontWeight: FontWeight.bold,
+            fontSize: 24,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.5,
             color: AppColors.textPrimary,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         const Text(
-          'Panel de Gestión',
-          style: TextStyle(fontSize: 16, color: AppColors.textSecondary),
+          'Entra para gestionar tu tienda',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
         ),
       ],
     );
   }
 
-  Widget _buildLoginForm() {
+  Widget _formulario({required bool compacto}) {
     return Form(
       key: _formKey,
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Email
+          if (!compacto) ...[
+            const Text(
+              'Iniciar sesión',
+              style: TextStyle(
+                fontSize: 26,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.5,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Usa el correo con el que registraste tu tienda.',
+              style: TextStyle(fontSize: 13.5, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 28),
+          ],
+
+          const Text(
+            'Email',
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 6),
           TextFormField(
             controller: _emailController,
             keyboardType: TextInputType.emailAddress,
-            decoration: InputDecoration(
-              labelText: 'Email',
-              hintText: 'admin@ventiq.com',
-              prefixIcon: const Icon(Icons.email_outlined),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: AppColors.primary),
-              ),
+            textInputAction: TextInputAction.next,
+            style: const TextStyle(fontSize: 14.5),
+            decoration: _decoracionCampo(
+              icono: Icons.alternate_email,
+              pista: 'tu@correo.com',
             ),
             validator: (value) {
-              if (value == null || value.isEmpty) {
-                return 'Por favor ingresa tu email';
+              if (value == null || value.trim().isEmpty) {
+                return 'Ingresa tu email';
               }
-              if (!value.contains('@')) {
+              if (!RegExp(
+                r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
+              ).hasMatch(value.trim())) {
                 return 'Ingresa un email válido';
               }
               return null;
             },
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 18),
 
-          // Password
+          const Text(
+            'Contraseña',
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 6),
           TextFormField(
             controller: _passwordController,
             obscureText: _obscurePassword,
-            decoration: InputDecoration(
-              labelText: 'Contraseña',
-              hintText: '••••••••',
-              prefixIcon: const Icon(Icons.lock_outlined),
-              suffixIcon: IconButton(
+            textInputAction: TextInputAction.done,
+            style: const TextStyle(fontSize: 14.5),
+            decoration: _decoracionCampo(
+              icono: Icons.lock_outline,
+              pista: '••••••••',
+              sufijo: IconButton(
                 icon: Icon(
-                  _obscurePassword ? Icons.visibility : Icons.visibility_off,
+                  _obscurePassword
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined,
+                  size: 19,
                 ),
-                onPressed: () {
-                  setState(() {
-                    _obscurePassword = !_obscurePassword;
-                  });
-                },
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: AppColors.primary),
+                color: AppColors.textSecondary,
+                tooltip: _obscurePassword ? 'Mostrar' : 'Ocultar',
+                onPressed: () =>
+                    setState(() => _obscurePassword = !_obscurePassword),
               ),
             ),
             onFieldSubmitted: (_) => _handleLogin(),
             validator: (value) {
               if (value == null || value.isEmpty) {
-                return 'Por favor ingresa tu contraseña';
+                return 'Ingresa tu contraseña';
               }
               if (value.length < 6) {
                 return 'La contraseña debe tener al menos 6 caracteres';
@@ -258,126 +388,233 @@ class _LoginScreenState extends State<LoginScreen> {
               return null;
             },
           ),
+          const SizedBox(height: 10),
+
+          // En 390 px la fila «Recordarme | ¿Olvidaste?» no cabe: el enlace
+          // baja a su propia línea en pantallas estrechas.
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final recordarme = Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: Checkbox(
+                      value: _rememberMe,
+                      onChanged: (value) =>
+                          setState(() => _rememberMe = value ?? false),
+                      activeColor: AppColors.primary,
+                      side: const BorderSide(
+                        color: AppColors.border,
+                        width: 1.4,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(5),
+                      ),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: () => setState(() => _rememberMe = !_rememberMe),
+                    child: const Text(
+                      'Recordarme',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+
+              final olvido = TextButton(
+                onPressed: () => _showComingSoonDialog('Recuperar contraseña'),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  minimumSize: const Size(0, 32),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  textStyle: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                child: const Text('¿Olvidaste tu contraseña?'),
+              );
+
+              if (constraints.maxWidth < 340) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [recordarme, olvido],
+                );
+              }
+              return Row(
+                children: [
+                  recordarme,
+                  const Spacer(),
+                  Flexible(child: olvido),
+                ],
+              );
+            },
+          ),
           const SizedBox(height: 16),
 
-          // Remember me checkbox
+          if (_errorMessage != null) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: AppColors.error.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: AppColors.error.withValues(alpha: 0.25),
+                ),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.error_outline,
+                    color: AppColors.error,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _errorMessage!,
+                      style: const TextStyle(
+                        color: AppColors.error,
+                        fontSize: 12.5,
+                        height: 1.45,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          SizedBox(
+            height: 50,
+            child: FilledButton(
+              onPressed: _isLoading ? null : _handleLogin,
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                textStyle: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              child: _isLoading
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : const Text('Entrar'),
+            ),
+          ),
+          const SizedBox(height: 24),
+
           Row(
             children: [
-              Checkbox(
-                value: _rememberMe,
-                onChanged: (value) {
-                  setState(() {
-                    _rememberMe = value ?? false;
-                  });
-                },
-                activeColor: AppColors.primary,
+              const Expanded(child: Divider(color: AppColors.border)),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Text(
+                  '¿Todavía no tienes tienda?',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: AppColors.textSecondary.withValues(alpha: 0.9),
+                  ),
+                ),
               ),
-              const Text(
-                'Recordarme',
-                style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
-              ),
+              const Expanded(child: Divider(color: AppColors.border)),
             ],
+          ),
+          const SizedBox(height: 16),
+
+          SizedBox(
+            height: 48,
+            child: OutlinedButton.icon(
+              onPressed: () =>
+                  Navigator.pushNamed(context, '/store-registration'),
+              icon: const Icon(Icons.add_business_outlined, size: 18),
+              label: const Text('Crear mi tienda'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.primary,
+                side: BorderSide(
+                  color: AppColors.primary.withValues(alpha: 0.45),
+                  width: 1.2,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                textStyle: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          Center(
+            child: TextButton.icon(
+              onPressed: _showSupportDialog,
+              icon: const Icon(Icons.support_agent, size: 16),
+              label: const Text('Contactar soporte'),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.textSecondary,
+                visualDensity: VisualDensity.compact,
+                textStyle: const TextStyle(fontSize: 12.5),
+              ),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildLoginButton() {
-    return SizedBox(
-      height: 56,
-      child: ElevatedButton(
-        onPressed: _isLoading ? null : _handleLogin,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primary,
-          foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          elevation: 2,
-        ),
-        child:
-            _isLoading
-                ? const SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(
-                    color: Colors.white,
-                    strokeWidth: 2,
-                  ),
-                )
-                : const Text(
-                  'Iniciar Sesión',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
-      ),
+  InputDecoration _decoracionCampo({
+    required IconData icono,
+    String? pista,
+    Widget? sufijo,
+  }) {
+    final borde = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(10),
+      borderSide: const BorderSide(color: AppColors.border),
     );
-  }
-
-  Widget _buildFooterLinks() {
-    return Column(
-      children: [
-        TextButton(
-          onPressed: () {
-            // TODO: Implementar recuperación de contraseña
-            _showComingSoonDialog('Recuperar Contraseña');
-          },
-          child: const Text(
-            '¿Olvidaste tu contraseña?',
-            style: TextStyle(
-              color: AppColors.primary,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-
-        // Botón para registrar nueva tienda
-        Container(
-          width: double.infinity,
-          height: 48,
-          child: OutlinedButton.icon(
-            onPressed: () {
-              Navigator.pushNamed(context, '/store-registration');
-            },
-            icon: const Icon(Icons.store, size: 20),
-            label: const Text(
-              'Registrar Nueva Tienda',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-            ),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.primary,
-              side: const BorderSide(color: AppColors.primary, width: 2),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 24),
-
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text(
-              '¿Necesitas ayuda? ',
-              style: TextStyle(color: AppColors.textSecondary),
-            ),
-            TextButton(
-              onPressed: () {
-                _showSupportDialog();
-              },
-              child: const Text(
-                'Contactar Soporte',
-                style: TextStyle(
-                  color: AppColors.primary,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
+    return InputDecoration(
+      isDense: true,
+      hintText: pista,
+      hintStyle: const TextStyle(fontSize: 14, color: AppColors.textLight),
+      prefixIcon: Icon(icono, size: 19, color: AppColors.textSecondary),
+      suffixIcon: sufijo,
+      filled: true,
+      fillColor: AppColors.surface,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+      border: borde,
+      enabledBorder: borde,
+      focusedBorder: borde.copyWith(
+        borderSide: const BorderSide(color: AppColors.primary, width: 1.6),
+      ),
+      errorBorder: borde.copyWith(
+        borderSide: const BorderSide(color: AppColors.error, width: 1.2),
+      ),
+      focusedErrorBorder: borde.copyWith(
+        borderSide: const BorderSide(color: AppColors.error, width: 1.6),
+      ),
     );
   }
 
@@ -444,12 +681,11 @@ class _LoginScreenState extends State<LoginScreen> {
       // Obtener información de todas las tiendas donde el usuario tiene acceso
       for (final storeId in adminRolesByStore.keys) {
         try {
-          final tiendaData =
-              await supabase
-                  .from('app_dat_tienda')
-                  .select('id, denominacion')
-                  .eq('id', storeId)
-                  .maybeSingle();
+          final tiendaData = await supabase
+              .from('app_dat_tienda')
+              .select('id, denominacion')
+              .eq('id', storeId)
+              .maybeSingle();
 
           if (tiendaData != null) {
             userStores.add({
@@ -494,18 +730,17 @@ class _LoginScreenState extends State<LoginScreen> {
       }
 
       // Paso 6: Preparar datos para guardar
-      final storesForPreferences =
-          userStores
-              .map(
-                (store) => {
-                  'id_tienda': store['id_tienda'],
-                  'denominacion':
-                      store['app_dat_tienda']?['denominacion'] ??
-                      'Tienda ${store['id_tienda']}',
-                  'id': store['app_dat_tienda']?['id'] ?? store['id_tienda'],
-                },
-              )
-              .toList();
+      final storesForPreferences = userStores
+          .map(
+            (store) => {
+              'id_tienda': store['id_tienda'],
+              'denominacion':
+                  store['app_dat_tienda']?['denominacion'] ??
+                  'Tienda ${store['id_tienda']}',
+              'id': store['app_dat_tienda']?['id'] ?? store['id_tienda'],
+            },
+          )
+          .toList();
 
       // Paso 7: Guardar datos del usuario
       await _userPreferencesService.saveUserData(
@@ -644,145 +879,137 @@ class _LoginScreenState extends State<LoginScreen> {
   void _showSupportDialog() {
     showDialog(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Row(
-              children: [
-                Icon(Icons.support_agent, color: AppColors.primary),
-                SizedBox(width: 8),
-                Text('Contactar Soporte'),
-              ],
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.support_agent, color: AppColors.primary),
+            SizedBox(width: 8),
+            Text('Contactar Soporte'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Nuestro equipo de soporte está disponible para ayudarte:',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
             ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Nuestro equipo de soporte está disponible para ayudarte:',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-                ),
-                const SizedBox(height: 20),
+            const SizedBox(height: 20),
 
-                // Teléfono
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: AppColors.primary.withOpacity(0.3),
-                    ),
-                  ),
-                  child: Row(
+            // Teléfono
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.phone, color: AppColors.primary),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.phone, color: AppColors.primary),
-                      const SizedBox(width: 12),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Teléfono - Via Whatsapp',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: AppColors.textSecondary,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            '+53 53765120',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textPrimary,
-                            ),
-                          ),
-                        ],
+                      const Text(
+                        'Teléfono - Via Whatsapp',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                // Email
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: AppColors.primary.withOpacity(0.3),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.email, color: AppColors.primary),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Email',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: AppColors.textSecondary,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'soporteinventtia@gmail.com',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.textPrimary,
-                              ),
-                            ),
-                          ],
+                      const SizedBox(height: 2),
+                      Text(
+                        '+53 53765120',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
                         ),
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(height: 16),
-
-                const Text(
-                  'Horarios de atención: Lunes a Viernes de 9:00 AM a 6:00 PM',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textSecondary,
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cerrar'),
+                ],
               ),
-            ],
+            ),
+            const SizedBox(height: 12),
+
+            // Email
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.email, color: AppColors.primary),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Email',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textSecondary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'soporteinventtia@gmail.com',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            const Text(
+              'Horarios de atención: Lunes a Viernes de 9:00 AM a 6:00 PM',
+              style: TextStyle(
+                fontSize: 12,
+                color: AppColors.textSecondary,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cerrar'),
           ),
+        ],
+      ),
     );
   }
 
   void _showComingSoonDialog(String feature) {
     showDialog(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: Text(feature),
-            content: const Text(
-              'Esta funcionalidad se implementará próximamente.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('OK'),
-              ),
-            ],
+      builder: (context) => AlertDialog(
+        title: Text(feature),
+        content: const Text('Esta funcionalidad se implementará próximamente.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
           ),
+        ],
+      ),
     );
   }
 
@@ -806,12 +1033,11 @@ class _LoginScreenState extends State<LoginScreen> {
         String nombreTienda = 'Tu tienda';
 
         try {
-          final tiendaData =
-              await Supabase.instance.client
-                  .from('app_dat_tienda')
-                  .select('denominacion')
-                  .eq('id', idTienda)
-                  .single();
+          final tiendaData = await Supabase.instance.client
+              .from('app_dat_tienda')
+              .select('denominacion')
+              .eq('id', idTienda)
+              .single();
           nombreTienda = tiendaData['denominacion'] ?? nombreTienda;
         } catch (e) {
           print('⚠️ No se pudo obtener nombre de tienda: $e');
@@ -823,116 +1049,111 @@ class _LoginScreenState extends State<LoginScreen> {
         await showDialog(
           context: context,
           barrierDismissible: false,
-          builder:
-              (context) => AlertDialog(
-                title: Row(
-                  children: [
-                    Icon(
-                      Icons.warning_amber_rounded,
-                      color:
-                          diasRestantes == 0 ? AppColors.error : Colors.orange,
-                      size: 28,
-                    ),
-                    const SizedBox(width: 12),
-                    const Expanded(
-                      child: Text(
-                        '⚠️ Suscripción Próxima a Vencer',
-                        style: TextStyle(fontSize: 18),
+          builder: (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(
+                  Icons.warning_amber_rounded,
+                  color: diasRestantes == 0 ? AppColors.error : Colors.orange,
+                  size: 28,
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    '⚠️ Suscripción Próxima a Vencer',
+                    style: TextStyle(fontSize: 18),
+                  ),
+                ),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: diasRestantes == 0
+                          ? AppColors.error.withOpacity(0.1)
+                          : Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: diasRestantes == 0
+                            ? AppColors.error.withOpacity(0.3)
+                            : Colors.orange.shade200,
                       ),
                     ),
-                  ],
-                ),
-                content: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color:
-                              diasRestantes == 0
-                                  ? AppColors.error.withOpacity(0.1)
-                                  : Colors.orange.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color:
-                                diasRestantes == 0
-                                    ? AppColors.error.withOpacity(0.3)
-                                    : Colors.orange.shade200,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          diasRestantes == 0
+                              ? '¡Tu suscripción vence HOY!'
+                              : diasRestantes == 1
+                              ? '¡Tu suscripción vence MAÑANA!'
+                              : 'Tu suscripción vence en $diasRestantes días',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            color: diasRestantes == 0
+                                ? AppColors.error
+                                : Colors.orange.shade700,
                           ),
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              diasRestantes == 0
-                                  ? '¡Tu suscripción vence HOY!'
-                                  : diasRestantes == 1
-                                  ? '¡Tu suscripción vence MAÑANA!'
-                                  : 'Tu suscripción vence en $diasRestantes días',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                                color:
-                                    diasRestantes == 0
-                                        ? AppColors.error
-                                        : Colors.orange.shade700,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            const Divider(),
-                            const SizedBox(height: 8),
-                            _buildInfoRow('🏪 Tienda:', nombreTienda),
-                            const SizedBox(height: 6),
-                            _buildInfoRow('📦 Plan:', planNombre),
-                            const SizedBox(height: 6),
-                            _buildInfoRow('📊 Estado:', estado),
-                            const SizedBox(height: 6),
-                            _buildInfoRow(
-                              '📅 Fecha de vencimiento:',
-                              dateFormat.format(fechaFin),
-                            ),
-                            const SizedBox(height: 6),
-                            _buildInfoRow(
-                              '⏰ Días restantes:',
-                              diasRestantes == 0
-                                  ? 'Vence hoy'
-                                  : '$diasRestantes días',
-                            ),
-                          ],
+                        const SizedBox(height: 8),
+                        const Divider(),
+                        const SizedBox(height: 8),
+                        _buildInfoRow('🏪 Tienda:', nombreTienda),
+                        const SizedBox(height: 6),
+                        _buildInfoRow('📦 Plan:', planNombre),
+                        const SizedBox(height: 6),
+                        _buildInfoRow('📊 Estado:', estado),
+                        const SizedBox(height: 6),
+                        _buildInfoRow(
+                          '📅 Fecha de vencimiento:',
+                          dateFormat.format(fechaFin),
                         ),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Por favor, renueva tu suscripción para continuar disfrutando de todos los servicios sin interrupciones.',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: AppColors.textSecondary,
+                        const SizedBox(height: 6),
+                        _buildInfoRow(
+                          '⏰ Días restantes:',
+                          diasRestantes == 0
+                              ? 'Vence hoy'
+                              : '$diasRestantes días',
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Entendido'),
-                  ),
-                  ElevatedButton(
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                      // Navegar a la pantalla de suscripción
-                      Navigator.of(context).pushNamed('/subscription-detail');
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
+                      ],
                     ),
-                    child: const Text('Ver Suscripción'),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Por favor, renueva tu suscripción para continuar disfrutando de todos los servicios sin interrupciones.',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: AppColors.textSecondary,
+                    ),
                   ),
                 ],
               ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Entendido'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  // Navegar a la pantalla de suscripción
+                  Navigator.of(context).pushNamed('/subscription-detail');
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Ver Suscripción'),
+              ),
+            ],
+          ),
         );
       } else {
         print('✅ Suscripción no requiere advertencia');
