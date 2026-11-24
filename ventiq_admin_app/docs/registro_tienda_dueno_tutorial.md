@@ -94,12 +94,19 @@ Cambios frente a lo anterior:
   a la derecha el formulario.
 - **Móvil y tablet estrecha:** el mismo patrón que el login de VentiQ Caja —
   fondo azul a pantalla completa y el formulario en una **tarjeta blanca**
-  (radio 20, sombra suave), con el logo en un disco azul claro encima del
-  título. No es un formulario suelto sobre el fondo.
-- El logo es siempre `assets/images/inventia.png`, el mismo PNG de la marca. En
-  el panel azul se tiñe de blanco con `ColorFiltered(srcIn)`; en la tarjeta va
-  con el color corporativo. **No usar `Icons.storefront` como sustituto**: un
-  test lo comprueba (`el login perdió el logo de Inventtia`).
+  (radio 20, sombra suave), con el logo encima del título.
+- El logo es `assets/images/ic.png`, el icono de **Inventtia Gestión** (el mismo
+  de `flutter_launcher_icons`). Viene sobre blanco y sin wordmark, con márgenes
+  amplios: el contenido ocupa ~50 % del lienzo, por eso se pide más ancho del
+  que se quiere ver. Sobre el panel azul va dentro de una pastilla blanca
+  (`enPastilla`); sobre la tarjeta blanca va suelto y se funde.
+- **No usar otros dos PNG**, y esto costó dos vueltas:
+  - `inventia.png` es RGBA pero ~99 % opaco (un cuadro blanco con el icono
+    dentro). Teñirlo con `BlendMode.srcIn` pintaba el bloque entero: eso era el
+    azul del móvil y el gris del escritorio.
+  - `inventia_logo.png` sí es transparente, pero es el logo de **VentiQ Caja**
+    (otro producto, turquesa), no de Gestión.
+  Un test vigila qué asset usa el login y cuál está en `pubspec.yaml`.
 - El separador «¿Todavía no tienes tienda?» se degrada: si la caja mide menos
   de 260 px, se cae a texto centrado sin las líneas. Antes desbordaba 44 px a
   390 px de ancho.

@@ -107,15 +107,35 @@ void main() {
       expect(find.text('Crear mi tienda'), findsOneWidget);
 
       // El logo tiene que ser el PNG de la marca, no un icono genérico.
+      // El logo de Gestión es `ic.png` (icono de esta app). `inventia_logo.png`
+      // pertenece a VentiQ Caja y `inventia.png` es el cuadro opaco que dejaba
+      // un bloque de color al teñirlo.
       final logos = tester
           .widgetList<Image>(find.byType(Image))
           .where(
             (i) =>
                 i.image is AssetImage &&
-                (i.image as AssetImage).assetName ==
-                    'assets/images/inventia.png',
+                (i.image as AssetImage).assetName == 'assets/images/ic.png',
           );
       expect(logos, isNotEmpty, reason: 'el login perdió el logo de Inventtia');
+
+      final ajenos = tester
+          .widgetList<Image>(find.byType(Image))
+          .where(
+            (i) =>
+                i.image is AssetImage &&
+                const [
+                  'assets/images/inventia_logo.png',
+                  'assets/images/inventia.png',
+                ].contains((i.image as AssetImage).assetName),
+          );
+      expect(
+        ajenos,
+        isEmpty,
+        reason:
+            'inventia_logo.png es el logo de VentiQ Caja e inventia.png es un '
+            'cuadro opaco; el login debe usar ic.png',
+      );
 
       // En móvil el formulario va dentro de una tarjeta blanca redondeada.
       final tarjetas = tester.widgetList<Container>(find.byType(Container));
@@ -154,6 +174,34 @@ void main() {
       // el árbol se destruye y Flutter lo reporta como error del test.
       await tester.pumpWidget(const SizedBox());
       await tester.pumpAndSettle();
+    });
+  });
+
+  group('Assets del logo', () {
+    // Regresión real, en dos vueltas:
+    //   1. `inventia.png` es RGBA pero ~99 % opaco (un cuadro blanco con el
+    //      icono dentro). Teñirlo con `srcIn` pintaba el cuadro entero: bloque
+    //      azul en móvil y gris en escritorio.
+    //   2. `inventia_logo.png` **sí** es transparente, pero es el logo de
+    //      VentiQ Caja (otro producto, turquesa). El de esta app es `ic.png`.
+    test('el login usa ic.png, el icono de Inventtia Gestión', () {
+      final fuente = File('lib/screens/login_screen.dart').readAsStringSync();
+      expect(fuente, contains('assets/images/ic.png'));
+      expect(
+        fuente,
+        isNot(contains('assets/images/inventia_logo.png')),
+        reason: 'inventia_logo.png es el logo de VentiQ Caja, no de Gestión',
+      );
+      expect(
+        fuente,
+        isNot(contains('assets/images/inventia.png')),
+        reason: 'inventia.png es un cuadro opaco: no sirve sobre azul',
+      );
+    });
+
+    test('ic.png está declarado en pubspec', () {
+      final pubspec = File('pubspec.yaml').readAsStringSync();
+      expect(pubspec, contains('assets/images/ic.png'));
     });
   });
 

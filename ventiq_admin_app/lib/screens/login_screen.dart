@@ -97,20 +97,33 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  /// Logo de la marca.
+  /// Logo de Inventtia Gestión.
   ///
-  /// [blanco] lo tiñe de blanco para fondos azules (panel de marca); sin él va
-  /// en sus colores originales, como en la tarjeta del login móvil.
-  Widget _logo({required double tamano, bool blanco = false}) {
+  /// Es `ic.png`, el icono de esta app (el mismo de `flutter_launcher_icons`).
+  /// **No** usar `inventia_logo.png` (ese es el de VentiQ Caja, otro producto y
+  /// otro color) ni `inventia.png` (cuadro casi opaco: al teñirlo con `srcIn`
+  /// pintaba el bloque entero, que era el azul del móvil y el gris del
+  /// escritorio).
+  ///
+  /// `ic.png` viene sobre fondo blanco, sin wordmark, con márgenes amplios: el
+  /// contenido ocupa ~50 % del lienzo. Por eso las llamadas piden un ancho
+  /// mayor del que se quiere ver.
+  ///
+  /// [enPastilla] lo monta sobre una pastilla blanca (panel azul). Sin él va
+  /// suelto: sobre la tarjeta blanca del móvil se funde solo.
+  Widget _logo({required double ancho, bool enPastilla = false}) {
     final imagen = Image.asset(
-      'assets/images/inventia.png',
-      width: tamano,
-      height: tamano,
+      'assets/images/ic.png',
+      width: ancho,
       fit: BoxFit.contain,
     );
-    if (!blanco) return imagen;
-    return ColorFiltered(
-      colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+    if (!enPastilla) return imagen;
+    return Container(
+      padding: const EdgeInsets.all(6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+      ),
       child: imagen,
     );
   }
@@ -181,24 +194,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Logo en disco azul claro, como en la app de caja.
-                      Center(
-                        child: Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withValues(alpha: 0.10),
-                            shape: BoxShape.circle,
-                          ),
-                          child: ColorFiltered(
-                            colorFilter: const ColorFilter.mode(
-                              AppColors.primary,
-                              BlendMode.srcIn,
-                            ),
-                            child: _logo(tamano: 64),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 18),
+                      // `ic.png` no trae wordmark y tiene márgenes blancos: el
+                      // contenido ocupa ~50 % del lienzo, así que se pide más
+                      // ancho del que se quiere ver.
+                      Center(child: _logo(ancho: 132)),
+                      const SizedBox(height: 14),
                       const Text(
                         'Inventtia Gestión',
                         textAlign: TextAlign.center,
@@ -240,9 +240,10 @@ class _LoginScreenState extends State<LoginScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // `ic.png` es un cuadro blanco: sobre el azul va en pastilla.
             Row(
               children: [
-                _logo(tamano: 40, blanco: true),
+                _logo(ancho: 56, enPastilla: true),
                 const SizedBox(width: 12),
                 const Text(
                   'Inventtia Gestión',
