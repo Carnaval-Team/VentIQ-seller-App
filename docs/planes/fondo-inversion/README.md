@@ -17,7 +17,8 @@ antes o en paralelo y que sigue mandando donde no lo contradiga el plan.
 | 6. Costo aterrizado | **done** |
 | 7. Inversores aportantes (100 %) | **done** |
 | 8. Reportes, conciliación y cierre | **done** |
-| 9. Pendientes, recordatorios y faltantes | **en curso** — construida y verificada; falta el E2E del dueño |
+| 9. Pendientes, recordatorios y faltantes | **en curso** — construida y verificada; pendiente el E2E del dueño |
+| 10. Responsive real de las vistas nuevas | **done** |
 
 ## Documentos
 

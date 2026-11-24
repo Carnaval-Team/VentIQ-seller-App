@@ -120,9 +120,9 @@ combinada de cambio de estado.
 | 7. Inversores aportantes (100%) | **done** — 07 aplicado en `newa`; `fdi_dat_compra_aporte` aislada, exclusividad con 6 triggers, RPC de registrar/devolver, rama de aportes en `pagar` y guardas en `anular`/`cancelar`/`liberar`; UI de aportes con restante bloqueante. `verify/07` **32/32**, pruebas de dinero **42/42** y **E2E del dueño aprobado (2026-11-23)** |
 | 8. Reportes, conciliación en UI y cierre | **done** — R2-R7 (`verify/08` **14/14**), R1 programada en `pg_cron` (`verify/08b` **9/9**), pantalla `/reportes` con alarma, aging y descuadres; legado de inversión en solo lectura; índice documental y `CAPABILITY-MAP`. **E2E del dueño aprobado (2026-11-23)** |
 | 9. Pendientes, recordatorios y registro de faltantes | **en curso** — `09_pendientes.sql` (`verify/09` **14/14**), panel, detalle, facturas, exportación Excel/PDF, recordatorios con umbral y alerta en el inicio, con el almacenero sin importes. **Falta el E2E del dueño** |
-| 10. Responsive real de las vistas nuevas | **en curso** — causa raíz corregida en `TablaReporte` (modo tarjeta por debajo de 720 px, sin scroll horizontal) y test de anchura a 360/390/800 px. Faltan las auditorías por sección y la revisión en dispositivo |
+| 10. Responsive real de las vistas nuevas | **done** — causa raíz corregida en `TablaReporte` (modo tarjeta por debajo de 720 px, sin scroll horizontal), pestañas cortas en móvil, barrido de `Axis.horizontal` y test de anchura a 360/390/800 px. **E2E del dueño aprobado (2026-11-24)** |
 
-Current phase: 10 · Recommended next: 10 (auditorías por sección), y el E2E de la 9 en paralelo
+Current phase: 9 · Recommended next: cerrar el E2E de la 9 y pasar a las pruebas del dueño (sin migrar a main)
 
 > Agente ejecutor: actualiza esta tabla al terminar y anota una línea por desviación. No marques `done`
 > sin criterios de salida corridos y OK del dueño.
@@ -1366,12 +1366,12 @@ scroll horizontal **no lanza excepción de desborde**: solo esconde contenido.
 
 **Checklist:**
 - [x] Tabla densa con modo tarjeta (causa raíz)
-- [ ] Reportes: tres secciones auditadas a 360 px
-- [ ] Aportes y costo aterrizado auditados
-- [ ] Recepción (chips y tabla) auditada
-- [ ] Barrido de scroll horizontal en las fases 6-9
-- [ ] Tests de 5 anchos con importe visible
-- [ ] Responsive del módulo completo en dispositivo
+- [x] Reportes: tres secciones auditadas a 360 px
+- [x] Aportes y costo aterrizado auditados
+- [x] Recepción (chips y tabla) auditada
+- [x] Barrido de scroll horizontal en las fases 6-9
+- [x] Tests de 5 anchos con importe visible
+- [x] Responsive del módulo completo en dispositivo
 
 **Exit criteria:**
 - Ninguna vista del módulo con scroll horizontal en 360 px
@@ -1386,6 +1386,16 @@ scroll horizontal **no lanza excepción de desborde**: solo esconde contenido.
 4. Abrir el detalle de una compra en modo inversores → el desglose de aportes y el pendiente se leen.
 5. Rotar a horizontal y volver a vertical sin perder nada.
 6. Repetir en tablet (800 px) y comprobar que vuelve la tabla densa.
+
+- **Fase 10 · aprobada por el dueño (2026-11-24).** El fallo se reprodujo en el móvil del dueño sobre las
+  vistas de la fase 8 y 9 («no se ven los números»). Causa: `TablaReporte` nunca se hacía más estrecha que
+  su ancho natural y vivía en un scroll horizontal, así que las columnas de dinero quedaban fuera de
+  pantalla sin barra ni pista; los tests de humo no lo veían porque **un scroll horizontal no lanza
+  excepción de desborde**. Arreglado con el modo tarjeta (<720 px), etiquetas cortas en las pestañas de
+  Reportes (<600 px) y un test que comprueba explícitamente que **no hay** scroll horizontal y que la cifra
+  se renderiza. Barrido de `Axis.horizontal` en las vistas del módulo: solo quedaba el de la tabla ancha.
+  **Fase 10 cerrada.** Lección para las próximas vistas: comprobar ausencia de scroll horizontal, no solo
+  ausencia de excepciones.
 
 ---
 
