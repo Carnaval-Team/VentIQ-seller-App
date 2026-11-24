@@ -217,19 +217,25 @@ class _OfflineMapSettingsCardState extends State<OfflineMapSettingsCard> {
   /// Marca la fuente como activa y enciende el mapa offline.
   Future<bool> _activate(OfflineMapSource source) async {
     final service = MbTilesService.instance;
+    _log('activar: intentando', source.id);
     final selected = await service.selectSource(source.id);
     if (selected && !service.useOffline) {
+      _log('activar: encendiendo mapa offline');
       await service.toggleOffline(true);
     }
+    _log('activar: resultado', 'id=${source.id} seleccionada=$selected '
+        'offline=${service.useOffline} disponible=${service.isAvailable}');
     return selected;
   }
 
   Future<void> _selectSource(OfflineMapSource source) async {
     final service = MbTilesService.instance;
+    _log('toque: tarjeta', 'id=${source.id} activa=${service.activeSource.id}');
     if (service.activeSource.id == source.id) return;
 
     final selected = await _activate(source);
     if (selected || !mounted) return;
+    _log('toque: la fuente no está en el teléfono, mostrando diálogo');
 
     final action = await showDialog<String>(
       context: context,
@@ -263,6 +269,7 @@ class _OfflineMapSettingsCardState extends State<OfflineMapSettingsCard> {
     );
 
     if (!mounted) return;
+    _log('toque: el usuario eligió', action ?? 'nada (diálogo cerrado)');
     if (action == 'download') {
       await _downloadSource(source);
     } else if (action == 'import') {
@@ -271,6 +278,7 @@ class _OfflineMapSettingsCardState extends State<OfflineMapSettingsCard> {
   }
 
   Future<void> _downloadSource(OfflineMapSource source) async {
+    _log('descargar: comienza', 'id=${source.id} remote=${source.remotePath}');
     await _runTask(
       title: 'Descargando ${source.label}',
       task: (onProgress) => MbTilesService.instance.downloadSource(
@@ -282,19 +290,37 @@ class _OfflineMapSettingsCardState extends State<OfflineMapSettingsCard> {
   }
 
   Future<void> _importSource(OfflineMapSource source) async {
+    _log('importar: abriendo selector de archivos', 'para ${source.id}');
     FilePickerResult? picked;
     try {
       picked = await FilePicker.platform.pickFiles(
         allowMultiple: false,
         type: FileType.any,
       );
-    } catch (_) {
+    } catch (e) {
+      _log('importar: FALLA abriendo el selector', e);
       _snack('No se pudo abrir el selector de archivos.', error: true);
       return;
     }
-    final pickedPath = picked?.files.single.path;
-    if (pickedPath == null) return;
+    if (picked == null) {
+      _log('importar: cancelado por el usuario');
+      return;
+    }
+    _log('importar: seleccionado', '${picked.files.length} archivo(s)');
+    for (final f in picked.files) {
+      _log('importar: archivo', 'name=${f.name} size=${f.size} path=${f.path}');
+    }
+
+    final pickedPath = picked.files.single.path;
+    if (pickedPath == null) {
+      // En Android pasa con proveedores que sólo dan un descriptor, y en iOS el
+      // path se pierde si el archivo se copia a la caché.
+      _log('importar: FALLA', 'el selector no devolvió path (sólo name/size)');
+      _snack('No se pudo acceder al archivo elegido.', error: true);
+      return;
+    }
     final String filePath = pickedPath;
+    _log('importar: path elegido', filePath);
 
     await _runTask(
       title: 'Importando ${source.label}',
@@ -335,9 +361,14 @@ class _OfflineMapSettingsCardState extends State<OfflineMapSettingsCard> {
         ],
       ),
     );
-    if (confirmed != true || !mounted) return;
+    if (confirmed != true || !mounted) {
+      _log('eliminar: cancelado');
+      return;
+    }
 
+    _log('eliminar: confirmado', source.id);
     final ok = await MbTilesService.instance.deleteSource(source.id);
+    _log('eliminar: resultado', 'id=${source.id} ok=$ok');
     if (!mounted) return;
     _snack(ok ? 'Mapa eliminado' : 'No se pudo eliminar el mapa', error: !ok);
   }
@@ -395,13 +426,22 @@ class _OfflineMapSettingsCardState extends State<OfflineMapSettingsCard> {
     );
 
     OfflineMapOperationResult result;
+    final reloj = Stopwatch()..start();
+    _log('tarea: inicio', title);
     try {
       result = await task((value) => progress.value = value);
-    } catch (e) {
+    } catch (e, st) {
+      // Antes se tragaba la excepción: el usuario veía "error inesperado" y el
+      // log no decía nada.
+      _log('tarea: EXCEPCIÓN en "$title"', e);
+      _log('tarea: stack', st.toString().split('\n').take(4).join(' | '));
       result = const OfflineMapOperationResult.failure(
         'Ocurrió un error inesperado.',
       );
     }
+    reloj.stop();
+    _log('tarea: fin', '"$title" ok=${result.ok} '
+        'ms=${reloj.elapsedMilliseconds} msg=${result.message ?? '—'}');
 
     if (dialogOpen && mounted) {
       dialogOpen = false;
@@ -413,7 +453,10 @@ class _OfflineMapSettingsCardState extends State<OfflineMapSettingsCard> {
     if (result.ok) {
       try {
         await afterSuccess?.call();
-      } catch (_) {}
+      } catch (e) {
+        // Se ignora a propósito (la operación ya estaba bien), pero se registra.
+        _log('tarea: afterSuccess lanzó', e);
+      }
       if (!mounted) return;
       setState(() => _working = false);
       _snack('Mapa listo');
@@ -427,6 +470,7 @@ class _OfflineMapSettingsCardState extends State<OfflineMapSettingsCard> {
   }
 
   void _snack(String message, {bool error = false}) {
+    _log(error ? 'UI: error mostrado' : 'UI: aviso mostrado', message);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -434,6 +478,17 @@ class _OfflineMapSettingsCardState extends State<OfflineMapSettingsCard> {
         backgroundColor: error ? AppTheme.error : AppTheme.success,
         behavior: SnackBarBehavior.floating,
       ),
+    );
+  }
+
+  /// Log del flujo de mapa offline visto desde la pantalla. Comparte prefijo
+  /// con el servicio para que un solo filtro muestre el flujo completo:
+  ///   flutter logs | Select-String '\[MBTiles\]'
+  static void _log(String paso, [Object? detalle]) {
+    debugPrint(
+      detalle == null
+          ? '[MBTiles][UI] $paso'
+          : '[MBTiles][UI] $paso · $detalle',
     );
   }
 

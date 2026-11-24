@@ -853,64 +853,37 @@ class FinancialService {
     }
   }
 
-  /// Crear nuevo tipo de costo
-  Future<void> createCostType(
-    String name,
-    String description, {
-    int naturaleza = 1,
+  /// Crear o actualizar un tipo de costo (nomenclador global).
+  ///
+  /// La tabla `app_cont_tipo_costo` es de **solo lectura** para el cliente: la
+  /// escritura va por `fn_cont_tipo_costo_guardar`, que exige superadmin y
+  /// valida duplicados y el nombre de «Importadora». [id] nulo = crear.
+  Future<Map<String, dynamic>> saveCostType({
+    int? id,
+    required String name,
+    String? description,
     bool afectaMargen = true,
   }) async {
-    try {
-      await _supabase.from('app_cont_tipo_costo').insert({
-        'denominacion': name,
-        'descripcion': description,
-        'naturaleza': naturaleza,
-        'afecta_margen': afectaMargen,
-      });
-    } catch (e) {
-      print('❌ Error creando tipo de costo: $e');
-      rethrow;
-    }
+    final resp = await _supabase.rpc(
+      'fn_cont_tipo_costo_guardar',
+      params: {
+        'p_id': id,
+        'p_denominacion': name,
+        'p_descripcion': description,
+        'p_afecta_margen': afectaMargen,
+      },
+    );
+    return Map<String, dynamic>.from(resp as Map);
   }
 
-  /// Actualizar tipo de costo
-  Future<void> updateCostType(
-    int id,
-    String name,
-    String description, {
-    int? naturaleza,
-    bool? afectaMargen,
-  }) async {
-    try {
-      final updateData = <String, dynamic>{
-        'denominacion': name,
-        'descripcion': description,
-      };
-
-      if (naturaleza != null) updateData['naturaleza'] = naturaleza;
-      if (afectaMargen != null) updateData['afecta_margen'] = afectaMargen;
-
-      await _supabase
-          .from('app_cont_tipo_costo')
-          .update(updateData)
-          .filter('id', 'eq', id);
-    } catch (e) {
-      print('❌ Error actualizando tipo de costo: $e');
-      rethrow;
-    }
-  }
-
-  /// Eliminar tipo de costo
-  Future<void> deleteCostType(int id) async {
-    try {
-      await _supabase
-          .from('app_cont_tipo_costo')
-          .delete()
-          .filter('id', 'eq', id);
-    } catch (e) {
-      print('❌ Error eliminando tipo de costo: $e');
-      rethrow;
-    }
+  /// Eliminar un tipo de costo. La RPC rechaza los que están en uso y el
+  /// concepto «Importadora» (el aterrizaje lo resuelve por nombre).
+  Future<Map<String, dynamic>> deleteCostType(int id) async {
+    final resp = await _supabase.rpc(
+      'fn_cont_tipo_costo_eliminar',
+      params: {'p_id': id},
+    );
+    return Map<String, dynamic>.from(resp as Map);
   }
 
   // ==================== CENTROS DE COSTO ====================

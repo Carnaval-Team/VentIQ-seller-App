@@ -641,6 +641,137 @@ class _AdminDrawerState extends State<AdminDrawer> {
                   },
                 ),
 
+                // Compras (solo gerente): documento que precede al pago a
+                // proveedores y que puede financiar el Fondo de Inversión.
+                FutureBuilder<bool>(
+                  future: NavigationGuard.canNavigate(
+                    '/compras',
+                    context,
+                    showDialog: false,
+                  ),
+                  builder: (context, snapshot) {
+                    if (snapshot.data == true) {
+                      return Column(
+                        children: [
+                          _buildDrawerItem(
+                            context,
+                            icon: Icons.shopping_cart_outlined,
+                            title: 'Compras',
+                            subtitle: 'Facturas, ajustes y costo aterrizado',
+                            onTap: () {
+                              Navigator.pop(context);
+                              NavigationGuard.navigateWithPermission(
+                                context,
+                                '/compras',
+                              );
+                            },
+                          ),
+                          const Divider(height: 1),
+                        ],
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  },
+                ),
+
+                // Pendientes de recepción y facturas (fase 9 de Compras).
+                // El almacenero entra a las dos: es quien recibe, pero sin
+                // importes (lo resuelve la propia pantalla con el permiso).
+                FutureBuilder<bool>(
+                  future: NavigationGuard.canNavigate(
+                    '/compras/pendientes',
+                    context,
+                    showDialog: false,
+                  ),
+                  builder: (context, snapshot) {
+                    if (snapshot.data == true) {
+                      return Column(
+                        children: [
+                          _buildDrawerItem(
+                            context,
+                            icon: Icons.hourglass_bottom,
+                            title: 'Pendientes de recepción',
+                            subtitle: 'Qué falta por recibir y desde cuándo',
+                            onTap: () {
+                              Navigator.pop(context);
+                              NavigationGuard.navigateWithPermission(
+                                context,
+                                '/compras/pendientes',
+                              );
+                            },
+                          ),
+                          const Divider(height: 1),
+                        ],
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  },
+                ),
+
+                FutureBuilder<bool>(
+                  future: NavigationGuard.canNavigate(
+                    '/compras/facturas',
+                    context,
+                    showDialog: false,
+                  ),
+                  builder: (context, snapshot) {
+                    if (snapshot.data == true) {
+                      return Column(
+                        children: [
+                          _buildDrawerItem(
+                            context,
+                            icon: Icons.receipt_long,
+                            title: 'Facturas',
+                            subtitle: 'Estado de recepción de cada compra',
+                            onTap: () {
+                              Navigator.pop(context);
+                              NavigationGuard.navigateWithPermission(
+                                context,
+                                '/compras/facturas',
+                              );
+                            },
+                          ),
+                          const Divider(height: 1),
+                        ],
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  },
+                ),
+
+                // Reportes del fondo y de compras (solo gerente): conciliación,
+                // caja, costo y cambiario, movimientos, inversores y pendientes.
+                FutureBuilder<bool>(
+                  future: NavigationGuard.canNavigate(
+                    '/reportes',
+                    context,
+                    showDialog: false,
+                  ),
+                  builder: (context, snapshot) {
+                    if (snapshot.data == true) {
+                      return Column(
+                        children: [
+                          _buildDrawerItem(
+                            context,
+                            icon: Icons.insights_outlined,
+                            title: 'Reportes',
+                            subtitle: 'Conciliación, costo y pendientes',
+                            onTap: () {
+                              Navigator.pop(context);
+                              NavigationGuard.navigateWithPermission(
+                                context,
+                                '/reportes',
+                              );
+                            },
+                          ),
+                          const Divider(height: 1),
+                        ],
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  },
+                ),
+
                 // Notificación a Clientes — Difusión WhatsApp.
                 // Visible para todos los clientes; el acceso real se valida
                 // dentro de la pantalla contra la licencia WAPI específica.

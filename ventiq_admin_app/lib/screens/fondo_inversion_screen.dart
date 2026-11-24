@@ -8,10 +8,11 @@ import '../services/user_preferences_service.dart';
 import '../widgets/admin_drawer.dart';
 import '../widgets/fdi_inversores_section.dart';
 import '../widgets/fdi_liquidacion_detalle_dialog.dart';
+import 'compras/compras_widgets.dart';
 
 /// Vista principal del Fondo de Inversión (solo gerente).
 /// Tabs: Saldos · Movimientos · Liquidaciones · Transferencias ·
-/// Inversiones · Inversores · Configuración.
+/// Inversiones (legado de solo lectura) · Inversores · Configuración.
 class FondoInversionScreen extends StatefulWidget {
   const FondoInversionScreen({super.key});
 
@@ -49,7 +50,7 @@ class _FondoInversionScreenState extends State<FondoInversionScreen>
     super.initState();
     _tabs = TabController(length: 7, vsync: this);
     _tabs.addListener(() {
-      // Reconstruye el FAB al cambiar de tab (Transferir / Inversión).
+      // Reconstruye el FAB al cambiar de tab (Transferir).
       if (mounted) setState(() {});
     });
     _load();
@@ -198,13 +199,7 @@ class _FondoInversionScreenState extends State<FondoInversionScreen>
         label: const Text('Transferir'),
       );
     }
-    if (i == 4) {
-      return FloatingActionButton.extended(
-        onPressed: _nuevaInversion,
-        icon: const Icon(Icons.add),
-        label: const Text('Inversión'),
-      );
-    }
+    // La pestaña «Inversiones» es legado de solo lectura: sin alta.
     return null;
   }
 
@@ -1489,55 +1484,71 @@ class _FondoInversionScreenState extends State<FondoInversionScreen>
   }
 
   // ==========================================================================
-  // INVERSIONES
+  // INVERSIONES (legado de solo lectura)
   // ==========================================================================
+  //
+  // `fdi_dat_inversion` es la entidad antigua del carril B y quedó congelada:
+  // aquí solo se consulta (listado y detalle). El alta, el cambio de estado y
+  // la resolución de revisión se retiraron de la UI porque el dinero del fondo
+  // se compromete desde Compras (reserva y pago) y los aportes de inversores
+  // desde el detalle de cada compra. La tabla y sus RPC siguen existiendo.
 
   Widget _tabInversiones() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text(
-              'Solo en revisión',
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary,
-              ),
+    // Todo el tab es un sliver para que el aviso viaje con el scroll y no
+    // empuje la lista fuera de pantalla en ventanas bajas.
+    return CustomScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          sliver: SliverToBoxAdapter(
+            child: avisoCompras(
+              'Inversiones es el módulo antiguo: queda como legado de solo lectura. '
+              'El dinero del fondo se compromete ahora desde Compras (reserva y '
+              'pago) y los aportes de inversores desde el detalle de cada compra.',
+              icono: Icons.lock_outline,
             ),
-            subtitle: const Text(
-              'Oculta las inversiones al día.',
-              style: TextStyle(color: AppColors.textSecondary),
-            ),
-            value: _soloRevision,
-            onChanged: (v) async {
-              setState(() => _soloRevision = v);
-              _load();
-            },
           ),
         ),
-        Expanded(
-          child: _inversiones.isEmpty
-              ? ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: _padTab,
-                  children: [
-                    _fdiVacio(
-                      _soloRevision
-                          ? 'Ninguna inversión en revisión.'
-                          : 'Sin inversiones. Usa el botón Inversión para registrar una.',
-                    ),
-                  ],
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text(
+                'Solo en revisión',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              subtitle: const Text(
+                'Oculta las inversiones al día.',
+                style: TextStyle(color: AppColors.textSecondary),
+              ),
+              value: _soloRevision,
+              onChanged: (v) async {
+                setState(() => _soloRevision = v);
+                _load();
+              },
+            ),
+          ),
+        ),
+        SliverPadding(
+          padding: _padTab,
+          sliver: _inversiones.isEmpty
+              ? SliverToBoxAdapter(
+                  child: _fdiVacio(
+                    _soloRevision
+                        ? 'Ninguna inversión en revisión.'
+                        : 'Sin inversiones registradas.',
+                  ),
                 )
-              : ListView.separated(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: _padTab,
+              : SliverList.separated(
                   itemCount: _inversiones.length,
+                  itemBuilder: (_, i) => _filaInversion(_inversiones[i]),
                   separatorBuilder: (_, __) =>
                       const Divider(height: 1, color: AppColors.border),
-                  itemBuilder: (_, i) => _filaInversion(_inversiones[i]),
                 ),
         ),
       ],
@@ -1661,395 +1672,73 @@ class _FondoInversionScreenState extends State<FondoInversionScreen>
     final fuentes = (det?['fuentes'] as List?) ?? [];
     final recepciones = (det?['recepciones'] as List?) ?? [];
     final historial = (det?['historial'] as List?) ?? [];
-    final notaCtrl = TextEditingController();
+    // Diálogo de solo lectura: el legado no se edita, no se retira y no cambia
+    // de estado desde la app.
     await showDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setD) => AlertDialog(
-          title: Text('Inversión ${inv.identificador}'),
-          content: SizedBox(
-            width: 560,
-            child: ListView(
-              shrinkWrap: true,
-              children: [
+      builder: (ctx) => AlertDialog(
+        title: Text('Inversión ${inv.identificador}'),
+        content: SizedBox(
+          width: 560,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              Text(
+                'Estado: ${inv.estado} · Total ${_fmt.format(inv.montoTotalRef)} '
+                '· Recibido ${_fmt.format(inv.montoRecibidoRef)} ${inv.monedaReferencia}',
+              ),
+              if (inv.enRevision)
+                const Text(
+                  'En revisión: la revisión se resuelve por consulta manual, '
+                  'no desde la app.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    height: 1.35,
+                    color: AppColors.warning,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              const Divider(),
+              const Text(
+                'Fuentes',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              for (final f in fuentes)
                 Text(
-                  'Estado: ${inv.estado} · Total ${_fmt.format(inv.montoTotalRef)} '
-                  '· Recibido ${_fmt.format(inv.montoRecibidoRef)} ${inv.monedaReferencia}',
+                  '- ${f['concepto']} · ${f['cuenta']} · ${f['medio_pago']} · '
+                  '${_fmt.format((f['monto'] as num?)?.toDouble() ?? 0)} ${f['moneda']}'
+                  ' (ref ${_fmt.format((f['monto_ref'] as num?)?.toDouble() ?? 0)})',
                 ),
-                const Divider(),
-                const Text(
-                  'Fuentes',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+              const Divider(),
+              const Text(
+                'Recepciones',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              for (final r in recepciones)
+                Text(
+                  '- Op #${r['id_operacion']} · '
+                  '${_fmt.format((r['monto_recepcion'] as num?)?.toDouble() ?? 0)} ${r['moneda_recepcion']}'
+                  ' (ref ${_fmt.format((r['monto_ref'] as num?)?.toDouble() ?? 0)})',
                 ),
-                for (final f in fuentes)
-                  Text(
-                    '- ${f['concepto']} · ${f['cuenta']} · ${f['medio_pago']} · '
-                    '${_fmt.format((f['monto'] as num?)?.toDouble() ?? 0)} ${f['moneda']}'
-                    ' (ref ${_fmt.format((f['monto_ref'] as num?)?.toDouble() ?? 0)})',
-                  ),
-                const Divider(),
-                const Text(
-                  'Recepciones',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                for (final r in recepciones)
-                  Text(
-                    '- Op #${r['id_operacion']} · '
-                    '${_fmt.format((r['monto_recepcion'] as num?)?.toDouble() ?? 0)} ${r['moneda_recepcion']}'
-                    ' (ref ${_fmt.format((r['monto_ref'] as num?)?.toDouble() ?? 0)})',
-                  ),
-                const Divider(),
-                const Text(
-                  'Historial',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                for (final h in historial)
-                  Text(
-                    '- ${h['estado_anterior'] ?? '—'} → ${h['estado_nuevo']} '
-                    '(${h['origen']}) ${h['motivo'] ?? ''}',
-                  ),
-                if (inv.enRevision) ...[
-                  const Divider(),
-                  TextField(
-                    controller: notaCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Nota de resolución de revisión',
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          actions: [
-            if (inv.enRevision)
-              TextButton(
-                onPressed: () async {
-                  try {
-                    await _service.resolverRevision(
-                      idInversion: inv.id,
-                      nota: notaCtrl.text,
-                    );
-                    if (ctx.mounted) Navigator.pop(ctx);
-                    _load();
-                  } catch (e) {
-                    if (ctx.mounted) {
-                      ScaffoldMessenger.of(
-                        ctx,
-                      ).showSnackBar(SnackBar(content: Text('Error: $e')));
-                    }
-                  }
-                },
-                child: const Text('Resolver revisión'),
+              const Divider(),
+              const Text(
+                'Historial',
+                style: TextStyle(fontWeight: FontWeight.bold),
               ),
-            TextButton(
-              onPressed: () => _cambiarEstado(inv, ctx),
-              child: const Text('Cambiar estado'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cerrar'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _cambiarEstado(FdiInversion inv, BuildContext parentCtx) async {
-    String estado = inv.estado;
-    final motivoCtrl = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: parentCtx,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setD) => AlertDialog(
-          title: const Text('Cambiar estado'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DropdownButtonFormField<String>(
-                initialValue: estado,
-                items: const [
-                  DropdownMenuItem(
-                    value: 'pendiente',
-                    child: Text('Pendiente'),
-                  ),
-                  DropdownMenuItem(value: 'parcial', child: Text('Parcial')),
-                  DropdownMenuItem(
-                    value: 'completado',
-                    child: Text('Completado'),
-                  ),
-                ],
-                onChanged: (v) => setD(() => estado = v ?? estado),
-              ),
-              TextField(
-                controller: motivoCtrl,
-                decoration: const InputDecoration(labelText: 'Motivo'),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Aplicar'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (ok == true) {
-      try {
-        await _service.cambiarEstadoInversion(
-          idInversion: inv.id,
-          estado: estado,
-          motivo: motivoCtrl.text,
-        );
-        _load();
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('Error: $e')));
-        }
-      }
-    }
-  }
-
-  Future<void> _nuevaInversion() async {
-    final idCtrl = TextEditingController();
-    final detCtrl = TextEditingController();
-    String monedaRef = _monedas.isNotEmpty ? _monedas.first : 'CUP';
-    final fuentes = <Map<String, dynamic>>[];
-    final idem = _service.newIdempotencyKey();
-
-    final ok = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setD) {
-          final totalRef = fuentes.fold<double>(
-            0,
-            (s, f) => s + (f['monto'] * f['tasa_a_ref']),
-          );
-          return AlertDialog(
-            title: const Text('Nueva inversión'),
-            content: SizedBox(
-              width: 560,
-              child: ListView(
-                shrinkWrap: true,
-                children: [
-                  TextField(
-                    controller: idCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Identificador *',
-                    ),
-                  ),
-                  TextField(
-                    controller: detCtrl,
-                    decoration: const InputDecoration(labelText: 'Detalles'),
-                  ),
-                  DropdownButtonFormField<String>(
-                    initialValue: monedaRef,
-                    decoration: const InputDecoration(
-                      labelText: 'Moneda de referencia',
-                    ),
-                    items: [
-                      for (final m in _monedas)
-                        DropdownMenuItem(value: m, child: Text(m)),
-                    ],
-                    onChanged: (v) => setD(() => monedaRef = v ?? monedaRef),
-                  ),
-                  const Divider(),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'Fuentes',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      TextButton.icon(
-                        onPressed: () async {
-                          final f = await _dialogoFuente(monedaRef);
-                          if (f != null) setD(() => fuentes.add(f));
-                        },
-                        icon: const Icon(Icons.add),
-                        label: const Text('Agregar'),
-                      ),
-                    ],
-                  ),
-                  for (var i = 0; i < fuentes.length; i++)
-                    ListTile(
-                      dense: true,
-                      title: Text(
-                        '${_cuentaNombre(fuentes[i]['id_cuenta'])} · '
-                        '${_medioNombre(fuentes[i]['id_medio_pago'])}',
-                      ),
-                      subtitle: Text(
-                        '${_fmt.format(fuentes[i]['monto'])} ${fuentes[i]['moneda']} → ref '
-                        '${_fmt.format(fuentes[i]['monto'] * fuentes[i]['tasa_a_ref'])}',
-                      ),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.delete_outline),
-                        onPressed: () => setD(() => fuentes.removeAt(i)),
-                      ),
-                    ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Total ref: ${_fmt.format(totalRef)} $monedaRef',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Cancelar'),
-              ),
-              FilledButton(
-                onPressed: () async {
-                  if (idCtrl.text.trim().isEmpty || fuentes.isEmpty) return;
-                  try {
-                    await _service.crearInversion(
-                      idTienda: _idTienda!,
-                      identificador: idCtrl.text.trim(),
-                      detalles: detCtrl.text,
-                      monedaReferencia: monedaRef,
-                      fuentes: fuentes,
-                      idempotencyKey: idem,
-                    );
-                    if (ctx.mounted) Navigator.pop(ctx, true);
-                  } catch (e) {
-                    if (ctx.mounted) {
-                      ScaffoldMessenger.of(
-                        ctx,
-                      ).showSnackBar(SnackBar(content: Text('Error: $e')));
-                    }
-                  }
-                },
-                child: const Text('Crear'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-    if (ok == true) _load();
-  }
-
-  Future<Map<String, dynamic>?> _dialogoFuente(String monedaRef) async {
-    FdiCuenta? cuenta;
-    int? medio;
-    String moneda = monedaRef;
-    final montoCtrl = TextEditingController();
-    final tasaCtrl = TextEditingController(text: '1');
-    return showDialog<Map<String, dynamic>>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setD) => AlertDialog(
-          title: const Text('Fuente'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DropdownButtonFormField<FdiCuenta>(
-                initialValue: cuenta,
-                isExpanded: true,
-                decoration: const InputDecoration(labelText: 'Cuenta'),
-                items: [
-                  for (final c in _cuentas.where((c) => c.activo))
-                    DropdownMenuItem(
-                      value: c,
-                      child: Text(
-                        '${_conceptoDe(c.id)} · ${c.nombre}',
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                ],
-                onChanged: (v) => setD(() => cuenta = v),
-              ),
-              Row(
-                children: [
-                  Expanded(
-                    child: DropdownButtonFormField<int>(
-                      initialValue: medio,
-                      isExpanded: true,
-                      decoration: const InputDecoration(labelText: 'Medio'),
-                      items: [
-                        for (final m in _medios)
-                          DropdownMenuItem(
-                            value: (m['id'] as num).toInt(),
-                            child: Text(m['denominacion']?.toString() ?? ''),
-                          ),
-                      ],
-                      onChanged: (v) => setD(() => medio = v),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: DropdownButtonFormField<String>(
-                      initialValue: moneda,
-                      decoration: const InputDecoration(labelText: 'Moneda'),
-                      items: [
-                        for (final mo in _monedas)
-                          DropdownMenuItem(value: mo, child: Text(mo)),
-                      ],
-                      onChanged: (v) => setD(() => moneda = v ?? moneda),
-                    ),
-                  ),
-                ],
-              ),
-              TextField(
-                controller: montoCtrl,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                decoration: const InputDecoration(labelText: 'Monto'),
-              ),
-              if (moneda != monedaRef)
-                TextField(
-                  controller: tasaCtrl,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: const InputDecoration(
-                    labelText: 'Tasa a moneda ref',
-                  ),
+              for (final h in historial)
+                Text(
+                  '- ${h['estado_anterior'] ?? '—'} → ${h['estado_nuevo']} '
+                  '(${h['origen']}) ${h['motivo'] ?? ''}',
                 ),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final monto = double.tryParse(
-                  montoCtrl.text.replaceAll(',', '.'),
-                );
-                final tasa =
-                    double.tryParse(tasaCtrl.text.replaceAll(',', '.')) ?? 1;
-                if (cuenta == null ||
-                    medio == null ||
-                    monto == null ||
-                    monto <= 0) {
-                  return;
-                }
-                Navigator.pop(ctx, {
-                  'id_cuenta': cuenta!.id,
-                  'id_medio_pago': medio!,
-                  'moneda': moneda,
-                  'monto': monto,
-                  'tasa_a_ref': moneda == monedaRef ? 1.0 : tasa,
-                });
-              },
-              child: const Text('Agregar'),
-            ),
-          ],
         ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cerrar'),
+          ),
+        ],
       ),
     );
   }

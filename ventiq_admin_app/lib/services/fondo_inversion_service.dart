@@ -24,6 +24,21 @@ class FondoInversionService {
     return '${h(8)}-${h(4)}-4${h(3)}-${(8 + r.nextInt(4)).toRadixString(16)}${h(3)}-${h(12)}';
   }
 
+  /// Adapta lo que captura la UI (monto en moneda destino + T(destino→origen))
+  /// al contrato de `fn_fdi_transferir_v2`, que exige `monto_origen` y
+  /// T(origen→destino).
+  ///
+  /// Pura y estática a propósito: es la aritmética que decide cuánto sale del
+  /// fondo, así que se prueba sin red ni Supabase.
+  static ({double montoOrigen, double tasaOrigenADestino}) adaptarTransferenciaV2({
+    required double montoDestino,
+    required double tasa,
+  }) {
+    final t = (!tasa.isFinite || tasa <= 0) ? 1.0 : tasa;
+    final monto = double.parse((montoDestino * t).toStringAsFixed(2));
+    return (montoOrigen: monto, tasaOrigenADestino: 1 / t);
+  }
+
   Map<String, dynamic> _asMap(dynamic resp) =>
       resp is Map ? Map<String, dynamic>.from(resp) : <String, dynamic>{};
 
@@ -385,8 +400,18 @@ class FondoInversionService {
     String? observacion,
     String? idempotencyKey,
   }) async {
+    // v2 exige el par explícito T(origen→destino) = unidades de destino por 1
+    // unidad de origen. La UI sigue hablando en monto destino y tasa
+    // T(destino→origen); el adaptador hace la conversión y es una función pura
+    // con su propio test.
+    // Ventaja sobre la v1: la v2 valida la tasa contra la última transferencia
+    // del mismo par (±20 %) y guarda la inversa desnormalizada.
+    final adaptada = adaptarTransferenciaV2(
+      montoDestino: montoDestino,
+      tasa: tasa,
+    );
     final resp = await _supabase.rpc(
-      'fn_fdi_transferir',
+      'fn_fdi_transferir_v2',
       params: {
         'p_id_tienda': idTienda,
         'p_id_cuenta_origen': idCuentaOrigen,
@@ -395,8 +420,8 @@ class FondoInversionService {
         'p_id_cuenta_destino': idCuentaDestino,
         'p_id_medio_pago_destino': idMedioPagoDestino,
         'p_moneda_destino': monedaDestino,
-        'p_monto_destino': montoDestino,
-        'p_tasa': tasa,
+        'p_monto_origen': adaptada.montoOrigen,
+        'p_tasa_origen_a_destino': adaptada.tasaOrigenADestino,
         'p_porcentaje_costo': porcentajeCosto,
         'p_id_transferencia_corregida': idTransferenciaCorregida,
         'p_observacion': observacion,
@@ -501,61 +526,24 @@ class FondoInversionService {
   }
 
   // ==========================================================================
-  // Inversiones
+  // Inversiones — LEGADO DE SOLO LECTURA
   // ==========================================================================
+  //
+  // `fdi_dat_inversion` quedó congelada como legado del carril B: el módulo de
+  // compras no la usa. Desde aquí solo se consulta.
+  //
+  // Los métodos de escritura del legado (`crearInversion`,
+  // `cambiarEstadoInversion`, `resolverRevision`) se retiraron a propósito en
+  // la fase 8, junto con el alta en la UI: el dinero del fondo se compromete
+  // ahora desde Compras (reserva y pago) y los aportes de inversores desde el
+  // detalle de cada compra. Sin métodos aquí no hay forma de reintroducir una
+  // escritura por accidente. La tabla y sus RPC
+  // (`fn_fdi_crear_inversion`, `fn_fdi_cambiar_estado_inversion`,
+  // `fn_fdi_inversion_anular`, `fn_fdi_recalcular_inversion`) siguen existiendo
+  // porque otra app o una consulta manual pueden necesitarlas; la app no las
+  // llama.
 
-  /// [fuentes]: [{id_cuenta, id_medio_pago, moneda, monto, tasa_a_ref}]
-  Future<Map<String, dynamic>> crearInversion({
-    required int idTienda,
-    required String identificador,
-    String? detalles,
-    String? descripcion,
-    required String monedaReferencia,
-    required List<Map<String, dynamic>> fuentes,
-    String? idempotencyKey,
-  }) async {
-    final resp = await _supabase.rpc(
-      'fn_fdi_crear_inversion',
-      params: {
-        'p_id_tienda': idTienda,
-        'p_identificador': identificador,
-        'p_detalles': detalles,
-        'p_descripcion': descripcion,
-        'p_moneda_referencia': monedaReferencia,
-        'p_fuentes': fuentes,
-        'p_idempotency_key': idempotencyKey,
-      },
-    );
-    return _asMap(resp);
-  }
-
-  Future<Map<String, dynamic>> cambiarEstadoInversion({
-    required int idInversion,
-    required String estado,
-    String? motivo,
-  }) async {
-    final resp = await _supabase.rpc(
-      'fn_fdi_cambiar_estado_inversion',
-      params: {
-        'p_id_inversion': idInversion,
-        'p_estado': estado,
-        'p_motivo': motivo,
-      },
-    );
-    return _asMap(resp);
-  }
-
-  Future<Map<String, dynamic>> resolverRevision({
-    required int idInversion,
-    required String nota,
-  }) async {
-    final resp = await _supabase.rpc(
-      'fn_fdi_resolver_revision',
-      params: {'p_id_inversion': idInversion, 'p_nota': nota},
-    );
-    return _asMap(resp);
-  }
-
+  /// Listado de inversiones del legado (solo lectura).
   Future<List<FdiInversion>> listInversiones(
     int idTienda, {
     String? estado,
@@ -574,6 +562,8 @@ class FondoInversionService {
         .toList();
   }
 
+  /// Detalle del legado (fuentes, recepciones vinculadas e historial de
+  /// estados). Solo lectura: el diálogo de la app lo muestra y nada más.
   Future<Map<String, dynamic>> detalleInversion(int idInversion) async {
     final resp = await _supabase.rpc(
       'fn_fdi_detalle_inversion',
@@ -586,6 +576,11 @@ class FondoInversionService {
   /// Devuelve status `requires_confirmation`/`exceso_recepcion` si supera el
   /// total esperado — reintentar con [confirmarExceso] = true tras confirmar
   /// en UI.
+  ///
+  /// Se conserva aunque el alta del legado esté retirada: lo usa la recepción
+  /// financiada con el fondo (`inventory_reception_screen.dart`), que vincula
+  /// la operación a una inversión ya existente. No se ofrece desde la pestaña
+  /// «Inversiones».
   Future<Map<String, dynamic>> vincularRecepcion({
     required int idOperacion,
     required int idInversion,

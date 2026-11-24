@@ -731,6 +731,27 @@ class PermissionsService {
     // Cuentas por Cobrar (solo gerente/supervisor)
     '/cuentas-por-cobrar': [UserRole.gerente, UserRole.supervisor],
     '/fondo-inversion': [UserRole.dueno, UserRole.gerente],
+    '/compras': [UserRole.dueno, UserRole.gerente],
+    // Fase 9 de Compras: el almacenero entra al panel de pendientes y a la
+    // vista de facturas porque es quien recibe la mercancía, pero **sin
+    // importes** (ver `canViewImportesCompras`). Dueño y gerente ven todo y
+    // exportan.
+    '/compras/pendientes': [
+      UserRole.dueno,
+      UserRole.gerente,
+      UserRole.almacenero,
+    ],
+    '/compras/pendientes/detalle': [
+      UserRole.dueno,
+      UserRole.gerente,
+      UserRole.almacenero,
+    ],
+    '/compras/facturas': [
+      UserRole.dueno,
+      UserRole.gerente,
+      UserRole.almacenero,
+    ],
+    '/reportes': [UserRole.dueno, UserRole.gerente],
 
     // Dispositivos
     '/wifi-printers': [UserRole.gerente, UserRole.auditor],
@@ -915,6 +936,39 @@ class PermissionsService {
         : await getUserRole();
     return role == UserRole.dueno;
   }
+
+  // =====================================================
+  // IMPORTES DE COMPRAS (fase 9: pendientes y facturas)
+  // =====================================================
+
+  /// Roles que ven importes, costos y pueden exportar en Compras →
+  /// Pendientes/Facturas.
+  ///
+  /// El almacenero entra a esas pantallas para saber **qué falta por recibir**,
+  /// pero no ve dinero: las columnas de importe desaparecen y los bloques de
+  /// monto se sustituyen por conteos.
+  static const List<UserRole> rolesConImportesCompras = [
+    UserRole.dueno,
+    UserRole.gerente,
+  ];
+
+  /// Deriva «puede ver importes» del rol de la tienda seleccionada.
+  ///
+  /// No es un toggle libre: la regla sale de [rolesConImportesCompras] y las
+  /// pantallas reciben el booleano ya resuelto (o lo piden aquí si se abren
+  /// por ruta).
+  Future<bool> canViewImportesCompras() async {
+    final currentStoreId = await _userPrefs.getIdTienda();
+    final role = currentStoreId != null
+        ? await getUserRoleForStore(currentStoreId)
+        : await getUserRole();
+    return puedeVerImportesPara(role);
+  }
+
+  /// La regla de «sin importes», aislada del I/O para poder probarla con
+  /// cualquier rol sin sesión.
+  static bool puedeVerImportesPara(UserRole rol) =>
+      rolesConImportesCompras.contains(rol);
 
   /// Puede asignar o quitar el rol Dueño.
   Future<bool> canAssignDueno() async {
