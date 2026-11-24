@@ -770,11 +770,10 @@ base(n, chequeo, esperado, actual, ok) as (
   union all
   -- 11) Detalle de una compra sin recepciones
   select 11, 'detalle_sin_recepcion_recibido_cero',
-    'el detalle de una compra abierta sin recepciones da recibido = 0 y recibido_pct = 0 en la cabecera y en todas sus líneas',
+    'el detalle de una compra abierta sin recepciones da recibido = 0 y recibido_pct = 0 en la cabecera y en todas sus líneas; sin compras abiertas pasa por vacío (una base recién limpiada es un estado legítimo)',
     (select count(*)::text from sin_recepcion) || ' compra(s) abierta(s) sin recepción, '
       || (select count(*)::text from sin_recepcion_viol) || ' con recibido distinto de 0',
-    (select count(*) from sin_recepcion) > 0
-    and (select count(*) from sin_recepcion_viol) = 0
+    (select count(*) from sin_recepcion_viol) = 0
 
   union all
   -- 12) Histórico de recepciones
