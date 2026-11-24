@@ -7,8 +7,10 @@ import '../../services/compra_service.dart';
 import '../../services/financial_service.dart';
 import '../../widgets/admin_drawer.dart';
 import '../../widgets/compra_aportes_panel.dart';
+import 'compra_ayuda.dart';
 import 'compra_form_screen.dart';
 import 'compra_liquidacion_screen.dart';
+import 'compra_tutorial.dart';
 import 'compras_widgets.dart';
 
 /// Detalle de una compra (`fn_fdi_compra_detalle`).
@@ -33,10 +35,28 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
   /// opcional: si falla, el detalle se muestra igual sin el panel.
   Map<String, dynamic>? _costoResumen;
 
+  // Claves de los paneles que resalta el tutorial.
+  final _claveCabecera = GlobalKey();
+  final _claveCifras = GlobalKey();
+  final _claveLineasDetalle = GlobalKey();
+  final _claveAjustesDetalle = GlobalKey();
+  final _claveTasa = GlobalKey();
+  final _claveBotonTutorialDetalle = GlobalKey();
+
+  AvisoTutorial? _avisoTutorial;
+  bool _avisoTutorialAbierto = false;
+  bool _avisoTutorialMostrado = false;
+
   @override
   void initState() {
     super.initState();
     _cargar();
+  }
+
+  @override
+  void dispose() {
+    _cerrarAvisoTutorial();
+    super.dispose();
   }
 
   Future<void> _cargar() async {
@@ -59,6 +79,7 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
         _costoResumen = costoResumen;
         _cargando = false;
       });
+      _avisarUnaVez();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -291,6 +312,111 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
   }
 
   // ==========================================================================
+  // Tutorial guiado
+  // ==========================================================================
+
+  /// Recorrido del detalle: qué significa cada bloque y en qué orden se lee.
+  List<PasoTutorialCompra> _pasosTutorial() {
+    return [
+      PasoTutorialCompra(
+        clave: _claveCabecera,
+        titulo: 'La compra y su estado',
+        icono: Icons.receipt_long_outlined,
+        texto:
+            'Arriba está el documento: número, proveedor, factura y estado. El '
+            'estado avanza solo al reservar, pagar y recepcionar. Mientras diga '
+            '«Creada» todavía puedes editarla.',
+      ),
+      PasoTutorialCompra(
+        clave: _claveCifras,
+        titulo: 'Las cuatro cifras',
+        icono: Icons.summarize_outlined,
+        texto:
+            'Mercancía es lo que cuestan los productos. Ajustes es lo que costó '
+            'traerlos. Financiado es lo que puso el fondo. Aterrizado es el '
+            'costo real de la mercancía, con todo dentro. Nunca se suman entre '
+            'ellas.',
+      ),
+      PasoTutorialCompra(
+        clave: _claveTasa,
+        titulo: 'La tasa de la factura',
+        icono: Icons.currency_exchange,
+        texto:
+            'Cuántas unidades de la moneda de la factura equivalen a 1 USD. Se '
+            'guarda con la compra y no se recalcula: es la foto del día en que '
+            'registraste la factura. Con ella se compara después lo que de '
+            'verdad costó pagar.',
+      ),
+      PasoTutorialCompra(
+        clave: _claveLineasDetalle,
+        titulo: 'Líneas y pendientes',
+        icono: Icons.list_alt,
+        texto:
+            'Cada producto con lo pedido, lo recibido y lo que falta. El '
+            'pendiente es lo que aún no ha llegado; se calcula en el servidor y '
+            'manda sobre la recepción.',
+      ),
+      PasoTutorialCompra(
+        clave: _claveAjustesDetalle,
+        titulo: 'Ajustes del costo',
+        icono: Icons.tune,
+        texto:
+            'Flete, aduana, seguro, importadora. Cada uno con cómo se calcula, '
+            'cómo se reparte y quién lo paga. Si alguno llegó después del pago, '
+            'aquí aparece «Por financiar» hasta que se cubra.',
+      ),
+    ];
+  }
+
+  void _abrirTutorial() {
+    _cerrarAvisoTutorial();
+    if (!mounted) return;
+    mostrarTutorialCompra(context, pasos: _pasosTutorial());
+  }
+
+  void _mostrarAvisoTutorial() {
+    if (_avisoTutorialAbierto) return;
+    _avisoTutorialMostrado = true;
+    final aviso = insertarAvisoTutorial(
+      context,
+      ancla: _claveBotonTutorialDetalle,
+      alAceptar: () async => _abrirTutorial(),
+      alCerrar: _alCerrarAvisoPorUsuario,
+    );
+    if (aviso == null) return;
+    _avisoTutorial = aviso;
+    setState(() => _avisoTutorialAbierto = true);
+  }
+
+  /// La burbuja ya se retiró sola: aquí solo se sincroniza el estado.
+  void _alCerrarAvisoPorUsuario() {
+    _avisoTutorial = null;
+    if (!mounted || !_avisoTutorialAbierto) return;
+    setState(() => _avisoTutorialAbierto = false);
+  }
+
+  /// Retirada programática; idempotente vía `AvisoTutorial.cerrar`.
+  void _cerrarAvisoTutorial() {
+    final aviso = _avisoTutorial;
+    _avisoTutorial = null;
+    if (aviso == null || aviso.cerrada) return;
+    aviso.cerrar();
+    if (mounted && _avisoTutorialAbierto) {
+      setState(() => _avisoTutorialAbierto = false);
+    }
+  }
+
+  /// Con el detalle ya cargado, se cuelga la burbuja una sola vez.
+  void _avisarUnaVez() {
+    if (_avisoTutorialMostrado) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _avisoTutorialMostrado) return;
+      if (_claveBotonTutorialDetalle.currentContext == null) return;
+      _mostrarAvisoTutorial();
+    });
+  }
+
+  // ==========================================================================
   // Build
   // ==========================================================================
 
@@ -312,6 +438,18 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
         backgroundColor: AppColors.primary,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          IconButton(
+            key: _claveBotonTutorialDetalle,
+            icon: const Icon(Icons.school_outlined),
+            tooltip: 'Tutorial de esta pantalla',
+            onPressed: () {
+              if (_avisoTutorialAbierto) {
+                _cerrarAvisoTutorial();
+              } else {
+                _mostrarAvisoTutorial();
+              }
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Actualizar',
@@ -441,59 +579,62 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
     final factura = (c.numeroFactura ?? '').trim();
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: panelCompras(
-        children: [
-          Wrap(
-            spacing: 10,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Text(
-                'Compra #${c.numeroCompra}',
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
+      child: KeyedSubtree(
+        key: _claveCabecera,
+        child: panelCompras(
+          children: [
+            Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(
+                  'Compra #${c.numeroCompra}',
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
-              ),
-              chipEstadoCompra(c.estado),
-              pastillaCompras(
-                'Liquidación: ${CompraModoLiquidacion.etiquetaDe(c.modoLiquidacion).toUpperCase()}',
-                icono: Icons.account_balance,
-                color: AppColors.primary,
-              ),
-              pastillaCompras(
-                'Pago: ${c.politicaPagoLegible}',
-                icono: Icons.schedule,
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 24,
-            runSpacing: 8,
-            children: [
-              _datoCabecera(
-                'Proveedor',
-                detalle.proveedorNombre.isEmpty
-                    ? '#${c.idProveedor}'
-                    : detalle.proveedorNombre,
-              ),
-              _datoCabecera(
-                'Factura',
-                factura.isEmpty ? 'Sin número' : factura,
-              ),
-              _datoCabecera('Fecha factura', formatearFecha(c.fechaFactura)),
-              _datoCabecera(
-                'Moneda',
-                c.monedaTotal.isEmpty ? '—' : c.monedaTotal,
-              ),
-              _datoCabecera('Creada', formatearFechaHora(c.createdAt)),
-            ],
-          ),
-          const SizedBox(height: 12),
-          _chipTasa(c),
-        ],
+                chipEstadoCompra(c.estado),
+                pastillaCompras(
+                  'Liquidación: ${CompraModoLiquidacion.etiquetaDe(c.modoLiquidacion).toUpperCase()}',
+                  icono: Icons.account_balance,
+                  color: AppColors.primary,
+                ),
+                pastillaCompras(
+                  'Pago: ${c.politicaPagoLegible}',
+                  icono: Icons.schedule,
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 24,
+              runSpacing: 8,
+              children: [
+                _datoCabecera(
+                  'Proveedor',
+                  detalle.proveedorNombre.isEmpty
+                      ? '#${c.idProveedor}'
+                      : detalle.proveedorNombre,
+                ),
+                _datoCabecera(
+                  'Factura',
+                  factura.isEmpty ? 'Sin número' : factura,
+                ),
+                _datoCabecera('Fecha factura', formatearFecha(c.fechaFactura)),
+                _datoCabecera(
+                  'Moneda',
+                  c.monedaTotal.isEmpty ? '—' : c.monedaTotal,
+                ),
+                _datoCabecera('Creada', formatearFechaHora(c.createdAt)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            KeyedSubtree(key: _claveTasa, child: _chipTasa(c)),
+          ],
+        ),
       ),
     );
   }
@@ -577,30 +718,42 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
   Widget _panelTotales(CompraDetalle detalle) {
     final c = detalle.compra;
     final totales = TotalesCompra.de(c);
-    return panelCompras(
-      children: [
-        tituloSeccionCompras(
-          'Cifras',
-          trailing: pastillaCompras(
-            c.monedaTotal.isEmpty ? '—' : c.monedaTotal,
-            denso: true,
-            icono: Icons.payments_outlined,
+    return KeyedSubtree(
+      key: _claveCifras,
+      child: panelCompras(
+        children: [
+          tituloSeccionCompras(
+            'Cifras',
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                pastillaCompras(
+                  c.monedaTotal.isEmpty ? '—' : c.monedaTotal,
+                  denso: true,
+                  icono: Icons.payments_outlined,
+                ),
+                botonAyuda(ayudaCifrasCompra, tamano: 16),
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: 6),
-        bloqueTotalesCompra(
-          totales: totales,
-          moneda: c.monedaTotal,
-          apilado: true,
-          helperAterrizado:
-              'Incluye lo pagado por la wallet de importadora y el resto de ajustes.',
-        ),
-        const SizedBox(height: 10),
-        Text(
-          'Los cuatro importes son cifras distintas: no se suman entre sí.',
-          style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
-        ),
-      ],
+          const SizedBox(height: 6),
+          bloqueTotalesCompra(
+            totales: totales,
+            moneda: c.monedaTotal,
+            apilado: true,
+            helperAterrizado:
+                'Incluye lo pagado por la wallet de importadora y el resto de ajustes.',
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Los cuatro importes son cifras distintas: no se suman entre sí.',
+            style: const TextStyle(
+              fontSize: 11,
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -637,8 +790,8 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
   /// ajustes globales aplicados y pendientes, y el costo aterrizado por línea.
   /// Es solo lectura: el módulo muestra el desvío, no lo corrige.
   /// Aterriza a mano el cargo de un vínculo que quedó sin costo (por ejemplo,
-/// porque la recepción se registró sin compra y se vinculó después). Es la
-/// misma RPC que usa la recepción; idempotente por vínculo.
+  /// porque la recepción se registró sin compra y se vinculó después). Es la
+  /// misma RPC que usa la recepción; idempotente por vínculo.
   Future<void> _aterrizarVinculo(int idCompraRecepcion) async {
     try {
       final r = await _service.repartirAterrizaje(idCompraRecepcion);
@@ -717,8 +870,10 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
     try {
       final todos = await _service.disponible(detalle.compra.idTienda);
       final fuentes = todos
-          .where((f) =>
-              f.moneda == moneda && f.disponible >= ajuste.montoCapitalizado)
+          .where(
+            (f) =>
+                f.moneda == moneda && f.disponible >= ajuste.montoCapitalizado,
+          )
           .toList();
       if (!mounted) return;
       if (fuentes.isEmpty) {
@@ -945,8 +1100,9 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
                       ),
                     if (_puedeAterrizar(v))
                       TextButton(
-                        onPressed: () =>
-                            _aterrizarVinculo((v['id_compra_recepcion'] as num).toInt()),
+                        onPressed: () => _aterrizarVinculo(
+                          (v['id_compra_recepcion'] as num).toInt(),
+                        ),
                         child: const Text('Aterrizar cargo'),
                       ),
                   ],
@@ -967,79 +1123,82 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
     final compacto = tamano == ComprasTamano.compacto;
     return Padding(
       padding: const EdgeInsets.only(top: 12),
-      child: panelCompras(
-        children: [
-          tituloSeccionCompras(
-            'Líneas',
-            trailing: pastillaCompras(
-              '${detalle.lineas.length} '
-              '${detalle.lineas.length == 1 ? 'línea' : 'líneas'}',
-              denso: true,
-            ),
-          ),
-          if (detalle.lineas.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: textoMetaCompras('La compra no tiene líneas.'),
-            )
-          else if (compacto)
-            for (final l in detalle.lineas) _lineaTarjeta(l, c.monedaTotal)
-          else ...[
-            const Padding(
-              padding: EdgeInsets.only(bottom: 6),
-              child: Row(
-                children: [
-                  Expanded(
-                    flex: 5,
-                    child: Text('Producto', style: _estiloCabeceraDetalle),
-                  ),
-                  SizedBox(
-                    width: 90,
-                    child: Text(
-                      'Cantidad',
-                      textAlign: TextAlign.right,
-                      style: _estiloCabeceraDetalle,
-                    ),
-                  ),
-                  SizedBox(
-                    width: 120,
-                    child: Text(
-                      'Costo unit.',
-                      textAlign: TextAlign.right,
-                      style: _estiloCabeceraDetalle,
-                    ),
-                  ),
-                  SizedBox(
-                    width: 130,
-                    child: Text(
-                      'Costo línea',
-                      textAlign: TextAlign.right,
-                      style: _estiloCabeceraDetalle,
-                    ),
-                  ),
-                ],
+      child: KeyedSubtree(
+        key: _claveLineasDetalle,
+        child: panelCompras(
+          children: [
+            tituloSeccionCompras(
+              'Líneas',
+              trailing: pastillaCompras(
+                '${detalle.lineas.length} '
+                '${detalle.lineas.length == 1 ? 'línea' : 'líneas'}',
+                denso: true,
               ),
             ),
-            for (final l in detalle.lineas) _lineaFila(l),
-          ],
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              const Icon(
-                Icons.lock_outline,
-                size: 12,
-                color: AppColors.textLight,
-              ),
-              const SizedBox(width: 4),
-              Expanded(
-                child: textoMetaCompras(
-                  'El costo de línea lo calcula la base de datos '
-                  '(cantidad × costo unitario): es de solo lectura.',
+            if (detalle.lineas.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: textoMetaCompras('La compra no tiene líneas.'),
+              )
+            else if (compacto)
+              for (final l in detalle.lineas) _lineaTarjeta(l, c.monedaTotal)
+            else ...[
+              const Padding(
+                padding: EdgeInsets.only(bottom: 6),
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: 5,
+                      child: Text('Producto', style: _estiloCabeceraDetalle),
+                    ),
+                    SizedBox(
+                      width: 90,
+                      child: Text(
+                        'Cantidad',
+                        textAlign: TextAlign.right,
+                        style: _estiloCabeceraDetalle,
+                      ),
+                    ),
+                    SizedBox(
+                      width: 120,
+                      child: Text(
+                        'Costo unit.',
+                        textAlign: TextAlign.right,
+                        style: _estiloCabeceraDetalle,
+                      ),
+                    ),
+                    SizedBox(
+                      width: 130,
+                      child: Text(
+                        'Costo línea',
+                        textAlign: TextAlign.right,
+                        style: _estiloCabeceraDetalle,
+                      ),
+                    ),
+                  ],
                 ),
               ),
+              for (final l in detalle.lineas) _lineaFila(l),
             ],
-          ),
-        ],
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                const Icon(
+                  Icons.lock_outline,
+                  size: 12,
+                  color: AppColors.textLight,
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: textoMetaCompras(
+                    'El costo de línea lo calcula la base de datos '
+                    '(cantidad × costo unitario): es de solo lectura.',
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1175,131 +1334,145 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
     final moneda = detalle.compra.monedaTotal;
     return Padding(
       padding: const EdgeInsets.only(top: 12),
-      child: panelCompras(
-        children: [
-          tituloSeccionCompras(
-            'Ajustes',
-            trailing: pastillaCompras(
-              '${detalle.ajustes.length}',
-              denso: true,
-              icono: Icons.tune,
-            ),
-          ),
-          if (detalle.ajustes.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: textoMetaCompras(
-                'Sin ajustes: el aterrizado es igual a la mercancía.',
-              ),
-            )
-          else
-            for (final a in detalle.ajustes)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: AppColors.border),
-                    borderRadius: BorderRadius.circular(8),
+      child: KeyedSubtree(
+        key: _claveAjustesDetalle,
+        child: panelCompras(
+          children: [
+            tituloSeccionCompras(
+              'Ajustes del costo',
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  pastillaCompras(
+                    '${detalle.ajustes.length}',
+                    denso: true,
+                    icono: Icons.tune,
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
-                          crossAxisAlignment: WrapCrossAlignment.center,
+                  botonAyuda(ayudaAjustes, tamano: 16),
+                ],
+              ),
+            ),
+            if (detalle.ajustes.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: textoMetaCompras(
+                  'Sin ajustes: el aterrizado es igual a la mercancía.',
+                ),
+              )
+            else
+              for (final a in detalle.ajustes)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: AppColors.border),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            pastillaCompras(
-                              a.baseLegible,
-                              denso: true,
-                              icono: Icons.percent,
-                            ),
-                            pastillaCompras(
-                              a.repartoLegible,
-                              denso: true,
-                              icono: Icons.call_split,
-                            ),
-                            pastillaCompras(
-                              a.origenPagoLegible,
-                              denso: true,
-                              icono: Icons.account_balance_wallet_outlined,
-                              color:
-                                  a.origenPago == OrigenPagoAjuste.fondo.codigo
-                                  ? AppColors.primary
-                                  : AppColors.secondary,
-                            ),
-                            if (!a.afectaInventario)
-                              pastillaCompras(
-                                'No capitaliza',
-                                denso: true,
-                                color: AppColors.warning,
-                                icono: Icons.info_outline,
+                            Expanded(
+                              child: Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  pastillaCompras(
+                                    a.baseLegible,
+                                    denso: true,
+                                    icono: Icons.percent,
+                                  ),
+                                  pastillaCompras(
+                                    a.repartoLegible,
+                                    denso: true,
+                                    icono: Icons.call_split,
+                                  ),
+                                  pastillaCompras(
+                                    a.origenPagoLegible,
+                                    denso: true,
+                                    icono:
+                                        Icons.account_balance_wallet_outlined,
+                                    color:
+                                        a.origenPago ==
+                                            OrigenPagoAjuste.fondo.codigo
+                                        ? AppColors.primary
+                                        : AppColors.secondary,
+                                  ),
+                                  if (!a.afectaInventario)
+                                    pastillaCompras(
+                                      'No capitaliza',
+                                      denso: true,
+                                      color: AppColors.warning,
+                                      icono: Icons.info_outline,
+                                    ),
+                                ],
                               ),
+                            ),
+                            const SizedBox(width: 8),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(
+                                  formatearImporteMoneda(
+                                    a.montoCapitalizado,
+                                    moneda,
+                                  ),
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                Text(
+                                  'valor ${formatearCantidad(a.valor)}',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ],
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text(
-                            formatearImporteMoneda(a.montoCapitalizado, moneda),
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          Text(
-                            'valor ${formatearCantidad(a.valor)}',
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                      if (a.estado == 'por_financiar')
-                        Padding(
-                          padding: const EdgeInsets.only(top: 6),
-                          child: Row(
-                            children: [
-                              pastillaCompras(
-                                'Por financiar',
-                                denso: true,
-                                color: AppColors.warning,
-                                icono: Icons.schedule,
-                              ),
-                              const Spacer(),
-                              if (detalle.compra.estado == 'completada')
-                                TextButton(
-                                  onPressed: () => _financiarAjuste(a),
-                                  child: const Text('Financiar ahora'),
+                        if (a.estado == 'por_financiar')
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Row(
+                              children: [
+                                pastillaCompras(
+                                  'Por financiar',
+                                  denso: true,
+                                  color: AppColors.warning,
+                                  icono: Icons.schedule,
                                 ),
-                            ],
+                                const Spacer(),
+                                if (detalle.compra.estado == 'completada')
+                                  TextButton(
+                                    onPressed: () => _financiarAjuste(a),
+                                    child: const Text('Financiar ahora'),
+                                  ),
+                              ],
+                            ),
+                          )
+                        else if (a.estado == 'financiado')
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: pastillaCompras(
+                              'Financiado',
+                              denso: true,
+                              color: AppColors.success,
+                              icono: Icons.check_circle_outline,
+                            ),
                           ),
-                        )
-                      else if (a.estado == 'financiado')
-                        Padding(
-                          padding: const EdgeInsets.only(top: 6),
-                          child: pastillaCompras(
-                            'Financiado',
-                            denso: true,
-                            color: AppColors.success,
-                            icono: Icons.check_circle_outline,
-                          ),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1566,7 +1739,9 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
           acciones[i],
         ],
         const SizedBox(height: 8),
-        textoMetaCompras(_notaAcciones(c.estado, modoLiquidacion: c.modoLiquidacion)),
+        textoMetaCompras(
+          _notaAcciones(c.estado, modoLiquidacion: c.modoLiquidacion),
+        ),
       ],
     );
   }
@@ -1870,9 +2045,7 @@ class _DialogoMotivoState extends State<_DialogoMotivo> {
           child: const Text('Volver'),
         ),
         FilledButton(
-          style: FilledButton.styleFrom(
-            backgroundColor: widget.colorConfirmar,
-          ),
+          style: FilledButton.styleFrom(backgroundColor: widget.colorConfirmar),
           onPressed: _enviando ? null : _confirmar,
           child: Text(_enviando ? 'Procesando…' : widget.etiquetaConfirmar),
         ),
