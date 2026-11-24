@@ -726,12 +726,20 @@ class _LoginScreenState extends State<LoginScreen> {
       List<Map<String, dynamic>> userStores = [];
       final supabase = Supabase.instance.client;
 
-      // Obtener información de todas las tiendas donde el usuario tiene acceso
+      // Obtener información de todas las tiendas donde el usuario tiene acceso.
+      // `estado_onboarding` viaja en el mapa porque es lo que decide si el
+      // usuario aterriza en el dashboard o en el checklist de activación: una
+      // tienda recién creada está en `borrador` y no debe ver un dashboard de
+      // ceros como si ya vendiera.
+      //
+      // Cuidado: la columna `estado` de `app_dat_tienda` NO es el estado de la
+      // tienda, guarda el código de provincia (`'16'`, `'04'`). El estado de
+      // onboarding es `estado_onboarding`.
       for (final storeId in adminRolesByStore.keys) {
         try {
           final tiendaData = await supabase
               .from('app_dat_tienda')
-              .select('id, denominacion')
+              .select('id, denominacion, estado_onboarding')
               .eq('id', storeId)
               .maybeSingle();
 
@@ -750,6 +758,28 @@ class _LoginScreenState extends State<LoginScreen> {
         await _authService.signOut();
         throw Exception('NO_STORE_ASSIGNED');
       }
+
+      // Estado de onboarding de la tienda por defecto. Si la tienda no está en
+      // el mapa (no se pudo leer su fila), se asume `activa`: es el
+      // comportamiento de antes de esta fase y no queremos encerrar en un
+      // checklist a quien sí puede vender por un fallo de lectura.
+      String? estadoOnboardingTiendaPorDefecto;
+      for (final store in userStores) {
+        if (store['id_tienda'] != defaultStoreId) continue;
+        final datosTienda = store['app_dat_tienda'];
+        if (datosTienda is Map) {
+          estadoOnboardingTiendaPorDefecto =
+              datosTienda['estado_onboarding']?.toString();
+        }
+        break;
+      }
+      estadoOnboardingTiendaPorDefecto ??= 'activa';
+      final tiendaEnBorrador =
+          estadoOnboardingTiendaPorDefecto == 'borrador';
+      print(
+        '🏪 Estado de onboarding de la tienda $defaultStoreId: '
+        '$estadoOnboardingTiendaPorDefecto',
+      );
 
       // Paso 5: Obtener suscripción activa de la tienda por defecto
       Subscription? activeSubscription;
@@ -874,6 +904,17 @@ class _LoginScreenState extends State<LoginScreen> {
           if (userRole == UserRole.recursosHumanos && mounted) {
             print('✅ Usuario Recursos Humanos - navegando a HR dashboard');
             Navigator.pushReplacementNamed(context, '/hr-dashboard');
+            return;
+          }
+
+          // Tienda en borrador: el checklist de activación, no el dashboard.
+          // Un dashboard con ceros le diría al Dueño que su tienda no vende,
+          // cuando lo que pasa es que todavía le faltan pasos. Va después del
+          // caso HR a propósito: un usuario de recursos humanos no es quien
+          // configura la tienda.
+          if (tiendaEnBorrador && mounted) {
+            print('🌱 Tienda en borrador - navegando al checklist de activación');
+            Navigator.pushReplacementNamed(context, '/activacion');
             return;
           }
 

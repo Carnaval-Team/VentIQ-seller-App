@@ -12,6 +12,7 @@ import 'screens/dashboard_web_screen.dart';
 import 'screens/login_screen.dart';
 import 'utils/platform_utils.dart';
 import 'screens/store_registration_screen.dart';
+import 'screens/activacion_tienda_screen.dart';
 import 'screens/products_screen.dart';
 import 'screens/products_dashboard_screen.dart';
 import 'screens/product_detail_screen.dart';
@@ -274,6 +275,17 @@ class MyApp extends StatelessWidget {
         '/loyalty': (context) => const LoyaltyScreen(),
         '/add-product': (context) => const AddProductScreen(),
         '/store-registration': (context) => const StoreRegistrationScreen(),
+        // Alta progresiva (fase 2 del plan alta-tienda-progresiva-go-live.md):
+        // una tienda en `borrador` aterriza aquí en vez de en el dashboard, que
+        // le mostraría ceros como si ya vendiera.
+        '/activacion': (context) => const ActivacionTiendaScreen(),
+        // El Go Live no es una ruta propia: se abre como diálogo desde el
+        // checklist (`mostrarGoLive` en `screens/go_live_sheet.dart`), porque
+        // necesita las tareas ya cargadas para explicar qué falta.
+        // `lib/screens/go_live_sheet.dart`. Se deja fuera a propósito: apuntar a
+        // un archivo que aún no existe rompe la compilación de toda la app y
+        // `test/app_compile_test.dart` importa este archivo.
+        // '/go-live': (context) => const GoLiveSheet(),
         '/sale-by-agreement':
             (context) => const InventoryExtractionBySaleScreen(),
         '/subscription-detail': (context) => const SubscriptionDetailScreen(),

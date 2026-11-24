@@ -21,6 +21,7 @@ import '../utils/subscription_protection_mixin.dart';
 import '../utils/navigation_guard.dart';
 import '../widgets/consignaciones_widget.dart';
 import '../widgets/alerta_pendientes_card.dart';
+import '../widgets/onboarding_dashboard_card.dart';
 import '../services/fondo_inversion_service.dart';
 
 
@@ -599,6 +600,13 @@ class _DashboardScreenState extends State<DashboardScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Fase 3 (alta progresiva): mientras la tienda esté en borrador, el
+          // acceso al checklist va arriba. La tarjeta se oculta sola si la
+          // tienda ya está activa o si la consulta falla: no se toca el resto
+          // del dashboard.
+          const OnboardingDashboardCard(),
+          const SizedBox(height: 24),
+
           // Fase 9 (Compras): recordatorio de compras sin recepción completa.
           // La ruta /compras/pendientes todavía no está registrada en
           // `main.dart`; cuando lo esté, pasar aquí

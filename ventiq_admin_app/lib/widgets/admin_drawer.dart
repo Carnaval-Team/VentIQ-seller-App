@@ -17,6 +17,7 @@ import '../services/update_service.dart';
 import '../services/carnaval_service.dart';
 import '../widgets/changelog_dialog.dart';
 import '../widgets/update_dialog.dart';
+import '../services/onboarding_service.dart';
 
 class AdminDrawer extends StatefulWidget {
   const AdminDrawer({Key? key}) : super(key: key);
@@ -146,6 +147,25 @@ class _AdminDrawerState extends State<AdminDrawer> {
     }
   }
 
+  /// Verificar si la tienda sigue en borrador (no ha hecho Go Live).
+  ///
+  /// Manda solo `estado_onboarding`, no `onboarding_descartado_en`: la entrada
+  /// del menú es **la vía de recuperación** del checklist, así que tiene que
+  /// seguir visible después de descartarlo. Ojo con el nombre de la columna:
+  /// `app_dat_tienda.estado` es el código de provincia geográfico y no tiene
+  /// nada que ver (desviación registrada en el plan).
+  ///
+  /// Ante error se oculta la entrada: en una tienda activa este acceso sobra, y
+  /// es preferible no mostrarlo a mandar al usuario a una pantalla que no aplica.
+  Future<bool> _tiendaEnBorrador() async {
+    try {
+      final estado = await OnboardingService().leerEstadoTienda();
+      return estado.estadoOnboarding == 'borrador';
+    } catch (e) {
+      return false;
+    }
+  }
+
   /// Verificar si el usuario puede acceder al módulo de Recursos Humanos
   Future<bool> _canAccessHR(BuildContext context) async {
     try {
@@ -252,6 +272,33 @@ class _AdminDrawerState extends State<AdminDrawer> {
                   },
                 ),
                 const Divider(height: 1),
+
+                // Poner en marcha la tienda: solo mientras el estado de
+                // onboarding sea `borrador`. Sigue visible aunque el checklist
+                // se haya descartado, porque es la vía para recuperarlo.
+                FutureBuilder<bool>(
+                  future: _tiendaEnBorrador(),
+                  builder: (context, borradorSnap) {
+                    if (borradorSnap.data != true) {
+                      return const SizedBox.shrink();
+                    }
+                    return Column(
+                      children: [
+                        _buildDrawerItem(
+                          context,
+                          icon: Icons.rocket_launch_outlined,
+                          title: 'Pon en marcha tu tienda',
+                          subtitle: 'Los pasos para abrir tu tienda',
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.pushNamed(context, '/activacion');
+                          },
+                        ),
+                        const Divider(height: 1),
+                      ],
+                    );
+                  },
+                ),
 
                 // Productos (solo Gerente y Supervisor)
                 FutureBuilder<bool>(

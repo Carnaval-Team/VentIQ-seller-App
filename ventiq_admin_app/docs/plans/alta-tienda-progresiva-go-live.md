@@ -24,15 +24,137 @@ de suscripciones ni gestión de mesas en el admin.
 
 | Phase | Status |
 |---|---|
-| 1. Esquema: estado de tienda, tipo de negocio y checklist | not started |
-| 2. Alta progressive: step 1 crea borrador y se puede reanudar | not started |
-| 3. Pantalla de activación (checklist por tipo de negocio) | not started |
-| 4. Go Live: preflight, resumen y activación | not started |
+| 1. Esquema: estado de tienda, tipo de negocio y checklist | done |
+| 2. Alta progressive: step 1 crea borrador y se puede reanudar | done |
+| 3. Pantalla de activación (checklist por tipo de negocio) | done |
+| 4. Go Live: preflight, resumen y activación | done |
 
-Current phase: 1 · Recommended next: 1
+Current phase: — · Recommended next: revisión y pase a main
 
 > Executing agent: update this table at the end of your run and note any
 > deviation from the plan in one line each, below this block.
+
+### Desviaciones registradas
+
+- **Fase 1: la columna se llama `estado_onboarding`, no `estado`.** El plan
+  asumía que `app_dat_tienda.estado` estaba libre; no lo está: guarda el código
+  de provincia geográfico (`'16'`, `'04'`, `'02'`) y lo escribe
+  `store_registration_service.dart:240`. Con el nombre del plan, el `ADD COLUMN
+  IF NOT EXISTS` no habría creado nada y el CHECK habría muerto al validar esas
+  filas. En Dart el getter debe llamarse `estadoOnboarding`.
+- **Fase 1: añadido trigger `trg_tarea_onboarding_touch`** sobre `updated_at`
+  (no estaba en el enunciado) para no depender de que cada cliente lo escriba.
+- **Fase 3: la tarea `cobro` mide `tieneVendedorAsignado`, no
+  `tieneMetodoPago`.** `app_nom_medio_pago` es un catálogo **global** de 4 filas
+  compartidas por todas las tiendas: como gate habría sido un pseudo-requisito
+  siempre verdadero. Lo que bloquea vender de verdad es que
+  `fn_abrir_turno_tpv` exige `p_id_vendedor` no nulo, es decir, un vendedor
+  asignado a la caja. La clave sigue siendo `cobro`.
+- **Hallazgo de seguridad preexistente (no se parchea aquí):** `public` tiene
+  `ALTER DEFAULT PRIVILEGES` que concede a `authenticated` el privilegio
+  `TRUNCATE` sobre toda tabla nueva, y `TRUNCATE` no pasa por RLS. Afecta a
+  `app_dat_tarea_onboarding` igual que a `app_dat_trabajadores` o
+  `app_dat_tienda`. Revocar solo en la tabla nueva daría falsa seguridad; el
+  arreglo es de proyecto (`REVOKE TRUNCATE` sobre `public`). Queda documentado
+  en `sql_updates/tienda_onboarding_verificar.sql`.
+- **Fase 3 (UI): la vista se separa de la pantalla para poder probarla sin
+  red.** `widgets/onboarding_checklist_vista.dart` es presentación pura (no
+  importa `onboarding_service`), y `screens/activacion_tienda_screen.dart` solo
+  aporta las consultas. Sin esa separación, el humo de UI tendría que
+  inicializar Supabase en el test.
+- **Fase 3 (UI): la entrada del menú sigue visible con el checklist
+  descartado.** `_tiendaEnBorrador()` del drawer mira solo
+  `estado_onboarding == 'borrador'`, nunca `onboarding_descartado_en`: la
+  entrada es la vía de recuperación exigida por NN/g y Shopify, así que
+  ocultarla al descartar la rompería.
+- **Fase 3 (UI): el selector de tipo de negocio se abre solo si el tipo es
+  nulo.** Con un tipo ya declarado se pinta como texto con «Cambiar», para no
+  ocupar media pantalla con 4 tarjetas en cada visita.
+- **Fase 4 (SQL): la RPC no deja activar una tienda `suspendida`.** El enunciado
+  solo pedía el `UPDATE`. Sin el guard, el Dueño de una tienda suspendida podía
+  levantar la suspensión llamando a la RPC: justo el privilegio que una
+  suspensión le quiere quitar. Devuelve `42501` y el estado no cambia.
+- **Fase 4 (SQL): bug propio encontrado al probar.** `v_faltan := v_faltan ||
+  'cobro'` con `text[]` hacía que Postgres resolviera `||` como `text[] ||
+  text[]` y fallara con `22P02 malformed array literal: "cobro"`, en vez del
+  `22023` con el motivo. Corregido con `array_append(..., ::text)`. Anotado como
+  **H14** en `tasks/hallazgos_pruebas_newa.md`. No existe en main: nace corregida.
+- **Fase 4 (SQL): un verificador daba falso verde.** El patrón
+  `~ E'SET\\s+estado\\s*='` dentro de un E-string dejaba `\s` en `s`, así que
+  buscaba `SETs+estados*=` y no podía casar nunca: la comprobación más importante
+  (que no se pise la provincia) pasaba por estar rota. Reescrito con
+  `[[:space:]]` y con autotest que falla si el patrón deja de morder.
+- **Fase 4 (UI): el Go Live es un diálogo, no una ruta.** `main.dart` registra
+  `/activacion` pero no `/go-live`: el preflight necesita las tareas ya cargadas
+  para explicar qué falta, así que se abre desde el checklist con
+  `mostrarGoLive()`. Una ruta suelta tendría que volver a consultarlas.
+- **Fase 4 (UI): la RPC devuelve el resumen ANIDADO en la raíz**
+  (`{success, resumen: {almacenes: 1, ...}}`), no bajo `data` ni plano. El primer
+  `go_live_sheet.dart` leía `resumenInicial['almacenes']` y habría dejado la
+  tabla entera en «Sin configurar» tras una activación correcta. Corregido y
+  cubierto por test.
+- **Fase 4 (UI): el resumen nunca inventa ceros.** Antes de que el servidor
+  responda, la tabla se deriva del estado de las tareas: «Configurado» o «Sin
+  configurar». Un `0` es una afirmación, y aquí no se ha contado nada.
+- **Fase 4 (SQL): `estado_onboarding='activa'` solo se escribe en
+  `estado_onboarding`, nunca en `estado`.** El verificador lo comprueba con un
+  regex **y** con un autotest del regex: un patrón con `\s` dentro de un
+  E-string se degrada a `s` y da un falso verde (no puede casar nunca). Sin el
+  autotest, la comprobación más importante del script no valdría nada.
+- **Fase 4 (SQL): `v_faltan := v_faltan || 'texto'` falla con `22P02`.** Con un
+  literal sin tipo a la derecha, Postgres resuelve `||` como
+  `text[] || text[]` e intenta parsear `'cobro'` como literal de array. Se
+  detectó al probar en newa y se corrigió con `array_append(...)`. No existe en
+  main: la función es nueva.
+- **Fase 2: el paso 1 crea el borrador con un nombre provisional.** El asistente
+  no pregunta el nombre de la tienda hasta el paso 2, y
+  `app_dat_tienda.denominacion` es `NOT NULL`: llamar a la RPC con cadena vacía
+  falla con `null value in column "denominacion"`. Se manda `Tienda de <Nombre
+  completo>` (o `Mi tienda`) y el paso 2 lo sobrescribe. El precargado ignora ese
+  prefijo para no pintarlo como si fuera el nombre real.
+- **Fase 2: el paso 1 usa `tipo_rol: 'dueno'`, no `gerente` + `supervisor`.**
+  `fn_insertar_trabajador_completo` acepta `dueno` y escribe `app_dat_dueno` **y**
+  `app_dat_gerente` en una sola llamada, así que el Dueño queda autorizado también
+  para las RPC históricas que miran `app_dat_gerente`. Con `gerente` no se
+  escribía `app_dat_dueno` y el login del paso 1 se quedaba sin tienda.
+- **Fase 2: en este camino un fallo del Dueño sí aborta.** En
+  `registerUserAndCreateStore` el alta sigue aunque el Dueño no se registre. Aquí
+  no: sin rol de admin en ninguna tienda, `login_screen.dart:712` lanza
+  `NO_ADMIN_PRIVILEGES` y el Dueño no puede ni entrar a completar su tienda. Se
+  devuelve error con el detalle y se avisa de que **no** vuelva a crear la tienda.
+- **Fase 2: los pasos 2-4 no usan una RPC monolítica nueva.**
+  `crear_estructura_tienda` siempre inserta una tienda nueva; llamarla otra vez
+  desde el paso 2 habría duplicado la tienda. `completarTiendaBorrador()` añade
+  los bloques con las RPC que ya usa el resto del admin
+  (`registrar_almacen_completo`, `fn_m01_crear_tpv`,
+  `fn_insertar_trabajador_completo`). Se descartó añadir `p_tipo_negocio` a
+  `fn_m01_crear_estructura_tienda` —lo que pedía el plan— porque exigía otro
+  script SQL y no hacía falta para que el flujo funcione; queda pendiente si se
+  quiere que el tipo viaje en el alta.
+- **Fase 2: `registrarUsuarioYCrearBorrador()` es un método nuevo del servicio de
+  registro, y `registerUserAndCreateStore()` sigue existiendo.** El plan daba a
+  entender que se reutilizaría el camino existente; se dejó el viejo intacto para
+  no romper a nadie y el nuevo hace solo lo que el paso 1 necesita.
+- **Fase 2: la tienda por defecto sin `estado_onboarding` legible cuenta como
+  `activa`.** Si la fila no se pudo leer (RLS, error puntual), el login no debe
+  encerrar a nadie en un checklist: se cae al comportamiento anterior a esta fase.
+  Lo contrario dejaría fuera a quien sí puede vender.
+- **Fase 2: el selector de múltiples tiendas no cambia de destino.** Solo se
+  propaga `estado_onboarding` en el mapa `userStores`; la decisión
+  borrador→`/activacion` se aplica únicamente a la tienda por defecto con una sola
+  tienda, que es lo que pedía el encargo. Si un usuario con varias tiendas elige
+  una en borrador, sigue entrando al dashboard.
+- **Fase 2: el asistente de IA también pasa por el borrador.**
+  `_openAiStoreAssistant` llamaba a `_createStore()`, que inserta una tienda
+  nueva; con el paso 1 creando ya el borrador, cada alta asistida habría dejado
+  dos tiendas. Ahora `_createStore()` crea el borrador si no existe y luego añade
+  la estructura con `completarTiendaBorrador()`.
+- **Fase 2: los TPV del personal se resuelven por posición, no por id.** En esta
+  ruta los TPV se acaban de crear y el cliente no tiene sus ids, así que
+  `p_tpv_id` va nulo y `fn_insertar_trabajador_completo` asigna el primero de la
+  tienda: en un alta nueva es exactamente la caja que corresponde.
+
+
 
 ## Decisions & context
 
@@ -129,7 +251,7 @@ en un script aplicado en newa y documentado para main.
 **Build:**
 
 - (nuevo) `sql_updates/tienda_onboarding.sql` — un solo script idempotente con:
-  - `ALTER TABLE public.app_dat_tienda ADD COLUMN IF NOT EXISTS estado text NOT NULL DEFAULT 'borrador'`
+  - `ALTER TABLE public.app_dat_tienda ADD COLUMN IF NOT EXISTS estado_onboarding text NOT NULL DEFAULT 'borrador'`
     con `CHECK (estado IN ('borrador','activa','suspendida'))`. **Alternativa
     descartada:** reutilizar `app_suscripciones.estado`; mide la suscripción, no
     si la tienda puede vender.
@@ -140,8 +262,8 @@ en un script aplicado en newa y documentado para main.
     booleano, para poder medir cuánto tarda una tienda en activarse.
   - `ADD COLUMN IF NOT EXISTS onboarding_descartado_en timestamptz`, nullable,
     para el «descartar y recuperar» del checklist.
-  - Backfill: `UPDATE app_dat_tienda SET estado='activa', activada_en=created_at
-    WHERE estado='borrador'` para las tiendas **ya operativas** (todas las
+  - Backfill: `UPDATE app_dat_tienda SET estado_onboarding='activa', activada_en=created_at
+    WHERE estado_onboarding='borrador'` para las tiendas **ya operativas** (todas las
     actuales salvo las que el usuario marque). Sin este backfill, todas las
     tiendas vivas aparecerían como borrador al desplegar. Va envuelto en un
     `DO $$` que solo ejecuta si la columna se acaba de crear.
@@ -169,7 +291,7 @@ en un script aplicado en newa y documentado para main.
 
 - `SELECT column_name FROM information_schema.columns WHERE table_name='app_dat_tienda'`
   incluye `estado`, `tipo_negocio`, `activada_en`, `onboarding_descartado_en`
-- `SELECT count(*) FROM app_dat_tienda WHERE estado='borrador'` devuelve 0
+- `SELECT count(*) FROM app_dat_tienda WHERE estado_onboarding='borrador'` devuelve 0
 - `SELECT relrowsecurity FROM pg_class WHERE oid='public.app_dat_tarea_onboarding'::regclass`
   devuelve `true`
 - El script queda documentado en `ventiq_admin_app/docs/registro_tienda_dueno_tutorial.md`
@@ -216,10 +338,10 @@ cualquier punto no pierde la cuenta.
 
 **Checklist:**
 
-- [ ] Terminar el step 1 crea la tienda con `estado='borrador'` y el Dueño
+- [ ] Terminar el step 1 crea la tienda con `estado_onboarding='borrador'` y el Dueño
 - [ ] Cerrar la app en el paso 2, volver a entrar con la contraseña, y aterrizar
       en el checklist
-- [ ] Una tienda existente (`estado='activa'`) sigue entrando al dashboard
+- [ ] Una tienda existente (`estado_onboarding='activa'`) sigue entrando al dashboard
 - [ ] `flutter analyze` limpio
 
 **Exit criteria:**
@@ -260,7 +382,7 @@ tono informativo y descartable.
 - (nuevo) `ventiq_admin_app/lib/widgets/onboarding_tarea_tile.dart` — la fila.
 - `admin_drawer.dart` — entrada «Pon en marcha tu tienda» visible mientras el
   estado sea `borrador`, **también cuando el checklist se ha descartado**.
-- `dashboard_screen.dart` — si `estado == 'borrador'`, una tarjeta compacta
+- `dashboard_screen.dart` — si `estadoOnboarding == 'borrador'`, una tarjeta compacta
   arriba con el contador y el acceso, no el dashboard con ceros (hoy
   `_loadMockData` muestra ceros sin avisar: `dashboard_screen.dart:221-294`).
 
@@ -322,7 +444,7 @@ entonces activa la tienda, con bloqueo exclusivamente por los cuatro esenciales.
     ≥1 almacén, ≥1 TPV, ≥1 producto, ≥1 método de pago configurado;
   - si falta algo, lanza con `ERRCODE='22023'` y devuelve el detalle en el
     mensaje, sin activar;
-  - si está todo, `UPDATE app_dat_tienda SET estado='activa', activada_en=now()`;
+  - si está todo, `UPDATE app_dat_tienda SET estado_onboarding='activa', activada_en=now()`;
   - devuelve un JSON con el resumen que enseñó el preflight, para que cliente y
     servidor no puedan discrepar.
 - (nuevo) `ventiq_admin_app/lib/screens/go_live_sheet.dart` — el preflight:
@@ -343,7 +465,7 @@ entonces activa la tienda, con bloqueo exclusivamente por los cuatro esenciales.
 
 - [ ] La RPC rechaza activar sin almacén, sin TPV, sin producto o sin cobro
 - [ ] El preflight y la RPC coinciden en el veredicto (misma lista de esenciales)
-- [ ] Activar deja `estado='activa'` y `activada_en` no nulo
+- [ ] Activar deja `estado_onboarding='activa'` y `activada_en` no nulo
 - [ ] Tras activar, el login lleva al dashboard normal
 
 **Exit criteria:**

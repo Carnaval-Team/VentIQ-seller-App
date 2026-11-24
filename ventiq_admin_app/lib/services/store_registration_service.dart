@@ -345,6 +345,154 @@ class StoreRegistrationService {
     }
   }
 
+  /// Crea la cuenta y la tienda **en borrador**, sin almacenes, cajas ni
+  /// personal. Es el paso 1 del alta progresiva.
+  ///
+  /// Diferencias con [registerUserAndCreateStore], que sigue existiendo:
+  ///
+  /// - Este camino es el que usa hoy el asistente. El otro se queda porque hay
+  ///   código que aún lo llama y porque borrarlo no entraba en esta fase.
+  /// - Aquí el Dueño debe quedar registrado **sí o sí**: el login exige rol de
+  ///   admin en alguna tienda, así que si el alta del Dueño falla y la tienda
+  ///   se crea igual, el usuario queda encerrado fuera de su propia tienda.
+  ///   Por eso, en este camino, un fallo del Dueño **sí** aborta y se informa.
+  /// - `denominacionTienda` vacío se sustituye por un nombre provisional: la
+  ///   columna es `NOT NULL` y el paso 1 todavía no pregunta el nombre. El
+  ///   paso 2 lo corrige. Sin este relleno, la RPC falla con `null value in
+  ///   column "denominacion"`.
+  ///
+  /// Devuelve `{success, tienda_id, user, message, user_already_existed}`.
+  Future<Map<String, dynamic>> registrarUsuarioYCrearBorrador({
+    required String email,
+    required String password,
+    required String fullName,
+  }) async {
+    try {
+      print('🌱 Creando usuario y tienda en borrador...');
+
+      final userResult = await registerUser(
+        email: email,
+        password: password,
+        fullName: fullName,
+      );
+
+      if (userResult['success'] != true) {
+        return userResult;
+      }
+
+      final user = userResult['user'] as User?;
+      if (user == null) {
+        return {
+          'success': false,
+          'message':
+              'No se pudo verificar la creación del usuario principal. '
+              'El proceso se detuvo.',
+        };
+      }
+
+      final userAlreadyExisted = userResult['user_already_existed'] == true;
+
+      // Nombre provisional: el paso 2 lo reemplaza. Se marca como pendiente en
+      // el texto para que nadie lo confunda con un nombre elegido.
+      final nombreProvisional = fullName.trim().isEmpty
+          ? 'Mi tienda'
+          : 'Tienda de ${fullName.trim()}';
+
+      final partes = fullName.trim().split(RegExp(r'\s+'));
+      final nombres = partes.isNotEmpty && partes.first.isNotEmpty
+          ? partes.first
+          : 'Usuario';
+      final apellidos = partes.length > 1
+          ? partes.sublist(1).join(' ')
+          : 'Principal';
+
+      // Se manda el creador como personal para que la RPC lo enlace y escriba
+      // su trabajador; el rol `dueno` deja la fila en `app_dat_dueno`.
+      final personal = [
+        {
+          'nombres': nombres,
+          'apellidos': apellidos,
+          'tipo_rol': 'dueno',
+          'uuid': user.id,
+          'is_main_user': true,
+        },
+      ];
+
+      final storeResult = await createStoreStructure(
+        usuarioCreador: user.id,
+        denominacionTienda: nombreProvisional,
+        direccionTienda: '',
+        ubicacionTienda: '',
+        personalData: personal,
+      );
+
+      if (storeResult['success'] != true) {
+        return {
+          'success': false,
+          'message':
+              'Se creó tu usuario, pero no la tienda: '
+              '${storeResult['error'] ?? storeResult['message']}',
+          'user_created': true,
+          'user_id': user.id,
+        };
+      }
+
+      final datos = storeResult['data'];
+      final duenoRegistrado = datos is Map
+          ? datos['dueno_registrado'] != false
+          : true;
+
+      if (!duenoRegistrado) {
+        // Aborta el alta con un mensaje accionable. La tienda ya existe en la
+        // base (la RPC no es transaccional con el wrapper), así que se dice
+        // explícitamente que no la vuelva a crear.
+        final detalle = datos is Map ? datos['dueno_error'] : null;
+        return {
+          'success': false,
+          'user_created': true,
+          'user_id': user.id,
+          'tienda_id': datos is Map ? datos['tienda_id'] : null,
+          'message':
+              'La tienda se creó, pero tu usuario no quedó como Dueño. '
+              'Entra con tu contraseña: un administrador puede asignarte el '
+              'rol desde Configuración → Personal. No vuelvas a crear la '
+              'tienda.${detalle == null ? '' : '\n\nDetalle: $detalle'}',
+        };
+      }
+
+      final tiendaId = datos is Map ? datos['tienda_id'] : null;
+
+      // Suscripción por defecto: mismo criterio que el alta completa. Un fallo
+      // aquí no tumba el alta; se avisa por consola igual que allí.
+      if (tiendaId != null) {
+        try {
+          await _subscriptionService.createDefaultSubscription(
+            tiendaId,
+            user.id,
+          );
+        } catch (e) {
+          print('⚠️ No se pudo crear la suscripción por defecto: $e');
+        }
+      }
+
+      print('✅ Tienda en borrador creada: $tiendaId');
+
+      return {
+        'success': true,
+        'tienda_id': tiendaId,
+        'user': user,
+        'message': 'Tu cuenta y tu tienda quedaron creadas.',
+        'user_already_existed': userAlreadyExisted,
+      };
+    } catch (e) {
+      print('❌ Error creando la tienda en borrador: $e');
+      return {
+        'success': false,
+        'message': 'No se pudo crear la tienda: $e',
+      };
+    }
+  }
+
   /// Proceso completo: registrar usuario y crear tienda
   Future<Map<String, dynamic>> registerUserAndCreateStore({
     required String email,
@@ -585,33 +733,231 @@ class StoreRegistrationService {
     }
   }
 
-  /// Obtiene los roles disponibles para asignar personal
-  Future<List<Map<String, dynamic>>> getRoles() async {
-    try {
-      final response = await _supabase
-          .from('app_nom_roll')
-          .select('id, denominacion, descripcion')
-          .order('denominacion');
+  // ══════════════════════════════════════════════════════════════════════
+  // Alta progresiva: la tienda ya existe y se va completando
+  // ══════════════════════════════════════════════════════════════════════
 
-      return List<Map<String, dynamic>>.from(response);
-    } catch (e) {
-      print('❌ Error obteniendo roles: $e');
-      return [];
+  /// Completa una tienda que ya se creó en borrador.
+  ///
+  /// El paso 1 del asistente crea el usuario y la tienda con
+  /// `registrarUsuarioYCrearBorrador()` y se va. Cuando el cliente decide
+  /// seguir configurando, los pasos 2-4 solo tienen que **añadir** almacenes,
+  /// zonas, cajas y personal a una tienda que ya existe: no hay que volver a
+  /// crear nada ni pasar otra vez por `signUp`.
+  ///
+  /// Antes esto era imposible: el único camino de alta era
+  /// `crear_estructura_tienda`, que siempre inserta una tienda nueva. Llamarlo
+  /// otra vez desde el paso 2 habría duplicado la tienda.
+  ///
+  /// Implementación elegida (la más simple que funciona): las RPC que ya
+  /// usa el resto del admin, una por bloque. Se descartó añadir parámetros a
+  /// `fn_m01_crear_estructura_tienda` porque exigiría otro script SQL y esta
+  /// fase no iba de eso.
+  ///
+  /// - Almacenes con sus zonas: `registrar_almacen_completo`, que crea el
+  ///   almacén y sus `layouts_data` en la misma llamada. El id devuelto se
+  ///   guarda para poder colgar después los TPV.
+  /// - TPVs: `fn_m01_crear_tpv` (SECURITY DEFINER, valida el permiso de
+  ///   escritura). El que el cliente use tiene que ser un id **real**, así que
+  ///   en esta ruta los TPV se emparejan por `id_almacen` y no por el nombre
+  ///   del almacén como hacía la RPC monolítica.
+  /// - Personal: `fn_insertar_trabajador_completo`, que crea el trabajador y su
+  ///   fila de rol (gerente, supervisor, almacenero, vendedor).
+  ///
+  /// Devuelve un mapa con lo creado y con los **errores parciales**: si una
+  /// zona falla, el resto del alta sigue y se informa, en vez de dejar al
+  /// usuario a medias sin saber qué pasó.
+  Future<Map<String, dynamic>> completarTiendaBorrador({
+    required int idTienda,
+    List<Map<String, dynamic>>? almacenesData,
+    List<Map<String, dynamic>>? layoutsData,
+    List<Map<String, dynamic>>? tpvData,
+    List<Map<String, dynamic>>? personalData,
+  }) async {
+    final almacenesCreados = <String, int>{};
+    final errores = <String>[];
+    var tpvCreados = 0;
+    var personalCreado = 0;
+
+    // ── Almacenes con sus zonas ──────────────────────────────────────────
+    // Se agrupan las zonas por almacén porque la RPC las recibe todas juntas.
+    for (final almacen in almacenesData ?? const <Map<String, dynamic>>[]) {
+      final denominacion = (almacen['denominacion'] ?? '').toString().trim();
+      if (denominacion.isEmpty) continue;
+
+      final layoutsDelAlmacen = (layoutsData ?? const <Map<String, dynamic>>[])
+          .where(
+            (l) =>
+                (l['almacen_asignado'] ?? '').toString().trim() == denominacion,
+          )
+          .map(
+            (l) => {
+              'id_tipo_layout': l['id_tipo_layout'] ?? 1,
+              'id_layout_padre': l['id_layout_padre'],
+              'denominacion': (l['denominacion'] ?? '').toString().trim(),
+              // La RPC lee `sku_codigo`, no `codigo`. Con la clave vieja el
+              // código de la zona se perdía en silencio.
+              'sku_codigo': (l['sku_codigo'] ?? '').toString().trim(),
+            },
+          )
+          .where((l) => (l['denominacion'] as String).isNotEmpty)
+          .toList();
+
+      try {
+        final respuesta = await _supabase.rpc(
+          'registrar_almacen_completo',
+          params: {
+            'id_tienda_param': idTienda,
+            'denominacion_almacen': denominacion,
+            'direccion_almacen': (almacen['direccion'] ?? '').toString().trim(),
+            'ubicacion_almacen': (almacen['ubicacion'] ?? '').toString().trim(),
+            'layouts_data': layoutsDelAlmacen.isEmpty
+                ? null
+                : layoutsDelAlmacen,
+          },
+        );
+
+        final mapa = respuesta is Map
+            ? Map<String, dynamic>.from(respuesta)
+            : <String, dynamic>{};
+
+        if (mapa['success'] != true) {
+          errores.add(
+            'Almacén "$denominacion": ${mapa['message'] ?? 'error desconocido'}',
+          );
+          continue;
+        }
+
+        final idNuevo = (mapa['data'] as Map?)?['almacen_id'];
+        final idNumerico = idNuevo is num
+            ? idNuevo.toInt()
+            : int.tryParse('$idNuevo');
+        if (idNumerico != null) {
+          almacenesCreados[denominacion] = idNumerico;
+        }
+      } catch (e) {
+        errores.add('Almacén "$denominacion": $e');
+      }
     }
-  }
 
-  /// Obtiene los tipos de layout disponibles
-  Future<List<Map<String, dynamic>>> getLayoutTypes() async {
-    try {
-      final response = await _supabase
-          .from('app_nom_tipo_layout')
-          .select('id, denominacion, descripcion')
-          .order('denominacion');
+    // ── TPVs ─────────────────────────────────────────────────────────────
+    for (final tpv in tpvData ?? const <Map<String, dynamic>>[]) {
+      final denominacion = (tpv['denominacion'] ?? '').toString().trim();
+      if (denominacion.isEmpty) continue;
 
-      return List<Map<String, dynamic>>.from(response);
-    } catch (e) {
-      print('❌ Error obteniendo tipos de layout: $e');
-      return [];
+      // Almacén del TPV: por nombre en los datos del cliente. Si no se puede
+      // resolver, se usa el primero que se haya creado; sin almacén no hay TPV
+      // válido, porque la RPC lo exige.
+      final nombreAlmacen = (tpv['almacen_asignado'] ?? '').toString().trim();
+      final idAlmacen = almacenesCreados[nombreAlmacen] ??
+          (almacenesCreados.isEmpty ? null : almacenesCreados.values.first);
+
+      if (idAlmacen == null) {
+        errores.add(
+          'TPV "$denominacion": no hay ningún almacén al que asignarlo.',
+        );
+        continue;
+      }
+
+      try {
+        final respuesta = await _supabase.rpc(
+          'fn_m01_crear_tpv',
+          params: {
+            'p_id_tienda': idTienda,
+            'p_id_almacen': idAlmacen,
+            'p_denominacion': denominacion,
+          },
+        );
+
+        final mapa = respuesta is Map
+            ? Map<String, dynamic>.from(respuesta)
+            : <String, dynamic>{};
+
+        if (mapa['success'] != true) {
+          errores.add(
+            'TPV "$denominacion": ${mapa['message'] ?? 'error desconocido'}',
+          );
+          continue;
+        }
+        tpvCreados++;
+      } catch (e) {
+        errores.add('TPV "$denominacion": $e');
+      }
     }
+
+    // ── Personal ─────────────────────────────────────────────────────────
+    // El Dueño ya quedó creado con la tienda en el paso 1: sus dos filas
+    // (`is_main_user`) se saltan para no duplicarlo. El resto se crea con la
+    // RPC normal, que también escribe su fila de rol.
+    for (final persona in personalData ?? const <Map<String, dynamic>>[]) {
+      if (persona['is_main_user'] == true) continue;
+
+      final nombres = (persona['nombres'] ?? '').toString().trim();
+      final apellidos = (persona['apellidos'] ?? '').toString().trim();
+      final tipoRol = (persona['tipo_rol'] ?? '').toString().trim();
+      final uuid = (persona['uuid'] ?? '').toString().trim();
+
+      if (nombres.isEmpty || tipoRol.isEmpty) continue;
+      if (uuid.isEmpty || uuid == 'PLACEHOLDER_USER_UUID') {
+        // Sin cuenta de acceso no se puede crear el trabajador en esta ruta:
+        // `registrarUsuarioYCrearBorrador` es quien resuelve los usuarios Auth.
+        errores.add(
+          'Personal "$nombres $apellidos": falta su usuario de acceso. '
+          'Añádelo desde Configuración → Personal.',
+        );
+        continue;
+      }
+
+      try {
+        final respuesta = await _supabase.rpc(
+          'fn_insertar_trabajador_completo',
+          params: {
+            'p_id_tienda': idTienda,
+            'p_nombres': nombres,
+            'p_apellidos': apellidos.isEmpty ? tipoRol : apellidos,
+            'p_tipo_rol': tipoRol,
+            'p_usuario_uuid': uuid,
+            // `null` a propósito: los TPV se acaban de crear en esta misma
+            // llamada y el cliente no tiene sus ids. `fn_insertar_trabajador_completo`
+            // resuelve el primero de la tienda cuando `p_tpv_id` es nulo, que
+            // en un alta nueva es exactamente la caja que corresponde.
+            'p_tpv_id': null,
+            'p_almacen_id':
+                almacenesCreados[(persona['almacen_asignado'] ?? '')
+                    .toString()
+                    .trim()],
+            'p_numero_confirmacion': persona['numero_confirmacion'],
+          },
+        );
+
+        final mapa = respuesta is Map
+            ? Map<String, dynamic>.from(respuesta)
+            : <String, dynamic>{};
+
+        if (mapa['success'] != true) {
+          errores.add(
+            'Personal "$nombres $apellidos": '
+            '${mapa['message'] ?? 'error desconocido'}',
+          );
+          continue;
+        }
+        personalCreado++;
+      } catch (e) {
+        errores.add('Personal "$nombres $apellidos": $e');
+      }
+    }
+
+    return {
+      'success': errores.isEmpty,
+      'almacenes_creados': almacenesCreados.length,
+      'tpvs_creados': tpvCreados,
+      'personal_creado': personalCreado,
+      'almacen_ids': almacenesCreados,
+      'errores': errores,
+      'message': errores.isEmpty
+          ? 'Tienda completada'
+          : 'Se guardó todo lo que se pudo. '
+                'Pendiente: ${errores.length} elemento(s).',
+    };
   }
 }

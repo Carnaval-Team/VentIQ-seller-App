@@ -4,10 +4,12 @@ import 'package:dropdown_search/dropdown_search.dart';
 import 'package:country_flags/country_flags.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../config/app_colors.dart';
 import '../models/store_ai_models.dart';
 import '../services/store_registration_service.dart';
+import '../services/user_preferences_service.dart';
 import '../services/warehouse_service.dart';
 import '../services/geonames_service.dart';
 import '../widgets/ai_store_generator_sheet.dart';
@@ -46,9 +48,19 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
   final StoreRegistrationService _registrationService =
       StoreRegistrationService();
   final WarehouseService _warehouseService = WarehouseService();
+  final UserPreferencesService _userPreferencesService =
+      UserPreferencesService();
 
   int _currentStep = 0;
   bool _isLoading = false;
+
+  /// Tienda creada en el paso 1.
+  ///
+  /// A partir de aquí el asistente **completa** esa tienda; no vuelve a crearla.
+  /// Se inicializa desde las preferencias por si el usuario entró desde el
+  /// checklist con la tienda ya creada (el asistente se abre de cero en ese
+  /// caso, pero el id sigue siendo el correcto).
+  int? _tiendaIdBorrador;
 
   // ---------------------------------------------------------------------------
   // Tutorial guiado
@@ -188,7 +200,10 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
           .map(
             (l) => {
               'denominacion': (l.name ?? '').trim(),
-              'codigo': (l.code ?? '').trim(),
+              // La RPC inserta `item_json->>'sku_codigo'`. Con la clave
+              // `codigo` el código de la zona se perdía en silencio (8 de 9
+              // layouts de newa lo tienen NULL).
+              'sku_codigo': (l.code ?? '').trim(),
               'almacen_asignado': (l.warehouseName ?? '').trim(),
               'id_tipo_layout': l.tipoLayoutId ?? 1,
               'id_layout_padre': null,
@@ -198,7 +213,7 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
           .where(
             (l) =>
                 (l['denominacion'] ?? '').toString().isNotEmpty &&
-                (l['codigo'] ?? '').toString().isNotEmpty,
+                (l['sku_codigo'] ?? '').toString().isNotEmpty,
           )
           .toList();
 
@@ -786,6 +801,7 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
   void initState() {
     super.initState();
     _loadCountries();
+    _cargarTiendaBorrador();
     // La burbuja «¿Tienes dudas?» aparece sola al entrar: es la única forma de
     // que un cliente nuevo descubra que hay un recorrido explicativo.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -795,6 +811,44 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
         if (mounted) _mostrarAvisoTutorial();
       });
     });
+  }
+
+  /// Recupera la tienda activa de las preferencias.
+  ///
+  /// El asistente se abre también desde el checklist de una tienda que ya
+  /// existe; en ese caso los pasos 2-4 tienen que completar **esa** tienda y no
+  /// una nueva. Se lee en segundo plano: sin id, el paso 1 simplemente creará
+  /// la tienda como siempre.
+  Future<void> _cargarTiendaBorrador() async {
+    try {
+      final id = await _userPreferencesService.getIdTienda();
+      if (!mounted || id == null) return;
+      setState(() => _tiendaIdBorrador = id);
+
+      // Precarga el nombre de la tienda para no enseñar campos vacíos si ya
+      // existe. Un fallo de lectura no rompe nada: se queda vacío.
+      final fila = await Supabase.instance.client
+          .from('app_dat_tienda')
+          .select('denominacion, direccion, ubicacion')
+          .eq('id', id)
+          .maybeSingle();
+      if (!mounted || fila == null) return;
+
+      final nombre = (fila['denominacion'] ?? '').toString();
+      // El nombre provisional del paso 1 no se pinta como si fuera real.
+      if (nombre.isNotEmpty && !nombre.startsWith('Tienda de ') &&
+          nombre != 'Mi tienda') {
+        _storeNameController.text = nombre;
+      }
+      _storeAddressController.text = (fila['direccion'] ?? '').toString();
+      final ubicacion = (fila['ubicacion'] ?? '').toString();
+      // Si la ubicación son coordenadas ya se pintan en el mapa.
+      if (ubicacion.isNotEmpty && !RegExp(r'^-?\d+\.\d+,-?\d+\.\d+$').hasMatch(ubicacion)) {
+        _storeLocationController.text = ubicacion;
+      }
+    } catch (e) {
+      print('⚠️ No se pudo precargar la tienda en borrador: $e');
+    }
   }
 
   @override
@@ -1003,8 +1057,8 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
         icono: Icons.warehouse_outlined,
         texto:
             'Un almacén es donde guardas la mercancía; las zonas, las '
-            'estanterías o áreas dentro de él. Necesitas al menos un almacén '
-            'con una zona: el sistema no deja crear la tienda sin eso.',
+            'estanterías o áreas dentro de él. Si no lo tienes claro ahora, '
+            'puedes continuar: el checklist de activación te lo recordará.',
         alEntrar: en(2),
       ),
       PasoGuiado(
@@ -1029,12 +1083,12 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
       ),
       PasoGuiado(
         clave: _claveResumen,
-        titulo: 'Resumen antes de crear',
+        titulo: 'Resumen antes de guardar',
         icono: Icons.fact_check_outlined,
         texto:
             'Todo lo que has puesto, junto. Si algo está mal, vuelve con '
-            '«Anterior»; cuando pulses «Crear tienda», se crea el usuario, la '
-            'tienda y sus almacenes de una vez.',
+            '«Anterior»; al pulsar «Guardar y continuar» se añaden los '
+            'almacenes y las cajas a la tienda que ya creaste en el paso 1.',
         alEntrar: en(3),
       ),
     ];
@@ -2370,6 +2424,43 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
               'Dónde guardas la mercancía, con qué cobras y quién trabaja '
               'contigo. Puedes ajustarlo después desde Configuración.',
         ),
+        const SizedBox(height: 16),
+        // Aviso explícito de que este paso ya no bloquea. Antes exigía TPV,
+        // almacén, zona y personal para dejar continuar; ese muro es justo el
+        // que hacía abandonar el alta. Ahora es opcional y lo que falte se
+        // resuelve desde el checklist de activación.
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFEFF4FF),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFDBEAFE)),
+          ),
+          child: const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.info_outline,
+                size: 16,
+                color: AppColors.primary,
+              ),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Todo esto es opcional. Si prefieres empezar con lo mínimo, '
+                  'puedes continuar sin rellenarlo: lo que falte aparecerá en '
+                  'tu checklist de activación.',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    height: 1.45,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
         const SizedBox(height: 24),
         // Almacenes con sus zonas anidándose en la misma tarjeta.
         KeyedSubtree(
@@ -2764,7 +2855,7 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                             ),
                           ),
                           Text(
-                            '${layout['tipo_nombre'] ?? 'Zona'} · Código: ${layout['codigo'] ?? '-'}',
+                            '${layout['tipo_nombre'] ?? 'Zona'} · Código: ${layout['sku_codigo'] ?? '-'}',
                             style: const TextStyle(
                               fontSize: 11,
                               color: Colors.grey,
@@ -3202,7 +3293,7 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                         Padding(
                           padding: const EdgeInsets.only(left: 12, top: 2),
                           child: Text(
-                            '↳ ${l['denominacion']} · ${l['codigo'] ?? '-'}',
+                            '↳ ${l['denominacion']} · ${l['sku_codigo'] ?? '-'}',
                             style: const TextStyle(
                               fontSize: 12,
                               color: AppColors.textSecondary,
@@ -3478,7 +3569,7 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                               _isLoading
                                   ? 'Procesando...'
                                   : esUltimo
-                                  ? 'Crear tienda'
+                                  ? 'Guardar y continuar'
                                   : 'Siguiente',
                             ),
                             style: FilledButton.styleFrom(
@@ -3518,79 +3609,431 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
     }
   }
 
-  void _nextStep() {
+  /// Avanza de paso.
+  ///
+  /// Desde la fase 2 del plan `alta-tienda-progresiva-go-live.md` el paso 1
+  /// **crea la tienda en borrador** en vez de solo validar: a partir de ahí el
+  /// Dueño existe y puede entrar cuando quiera, aunque abandone el asistente.
+  Future<void> _nextStep() async {
+    if (_currentStep == 0) {
+      await _crearBorradorYDecidir();
+      return;
+    }
+
     if (_currentStep < 3) {
-      if (_validateCurrentStep()) {
-        setState(() {
-          _currentStep++;
-        });
+      if (!_validateCurrentStep()) return;
 
-        // Si navegamos al paso 3 (configuración), agregar automáticamente al usuario principal
-        if (_currentStep == 2) {
-          _addMainUserToPersonal();
-        }
-
-        _pageController.nextPage(
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-        );
+      // El paso 2 persiste lo que haya antes de pasar al 3: el nombre, la
+      // dirección y la ubicación se pierden si el cliente cierra la app y la
+      // tienda ya existe en la base.
+      if (_currentStep == 1) {
+        await _guardarAvanceParcial();
+        if (!mounted) return;
       }
+
+      setState(() {
+        _currentStep++;
+      });
+
+      // Si navegamos al paso 3 (configuración), agregar automáticamente al usuario principal
+      if (_currentStep == 2) {
+        _addMainUserToPersonal();
+      }
+
+      _pageController.nextPage(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
     } else {
-      _createStore();
+      _crearEstructuraRestante();
     }
   }
 
+  /// Paso 1 → crea usuario + tienda en borrador y ofrece las dos salidas.
+  ///
+  /// Es el punto crítico del alta progresiva: se pide lo mínimo (la cuenta) y
+  /// se le devuelve al cliente la decisión de seguir o irse. Las dos opciones
+  /// son honestas porque la tienda ya existe: no se pierde nada si elige
+  /// «Entrar a la app».
+  Future<void> _crearBorradorYDecidir() async {
+    if (!(_userFormKey.currentState?.validate() ?? false)) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      final resultado = await _registrationService
+          .registrarUsuarioYCrearBorrador(
+            email: _emailController.text.trim(),
+            password: _passwordController.text,
+            fullName: _fullNameController.text.trim(),
+          );
+
+      if (!mounted) return;
+
+      if (resultado['success'] != true) {
+        _showErrorDialog(resultado['message'] ?? 'No se pudo crear la tienda.');
+        return;
+      }
+
+      // El usuario recién creado queda autenticado; se refleja en preferencias
+      // para que el resto de la app (y el arranque en frío) sepa en qué tienda
+      // está. Sin esto, «Entrar a la app» aterrizaría sin tienda activa.
+      final tiendaId = resultado['tienda_id'];
+      final userId = (resultado['user'] as User?)?.id;
+      if (tiendaId is int) {
+        // Los pasos 2-4 completan **esta** tienda; sin el id en memoria,
+        // `_guardarAvanceParcial` no tendría dónde escribir.
+        _tiendaIdBorrador = tiendaId;
+      }
+      if (tiendaId is int && userId != null) {
+        try {
+          await _userPreferencesService.saveUserData(
+            userId: userId,
+            email: _emailController.text.trim(),
+            accessToken:
+                Supabase.instance.client.auth.currentSession?.accessToken ?? '',
+            adminName: _fullNameController.text.trim(),
+            adminRole: 'Dueño',
+            idTienda: tiendaId,
+            userStores: [
+              {
+                'id_tienda': tiendaId,
+                'id': tiendaId,
+                'denominacion':
+                    (resultado['denominacion'] ?? 'Mi tienda').toString(),
+              },
+            ],
+          );
+          await _userPreferencesService.saveUserRolesByStore({
+            tiendaId: 'Dueño',
+          });
+        } catch (e) {
+          // No es fatal: el login reconstruye las preferencias.
+          print('⚠️ No se pudieron guardar las preferencias del alta: $e');
+        }
+      }
+
+      if (!mounted) return;
+      await _mostrarDialogoPrimerPaso();
+    } catch (e) {
+      if (mounted) {
+        _showErrorDialog('No se pudo crear tu cuenta: $e');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  /// Diálogo con las dos salidas del paso 1.
+  Future<void> _mostrarDialogoPrimerPaso() async {
+    final seguirConfigurando = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+        contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+        title: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: AppColors.success.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.check_rounded,
+                color: AppColors.success,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Tu cuenta está lista',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: const SingleChildScrollView(
+          child: Text(
+            'Ya tienes tu usuario y tu tienda. Todavía no puede vender: le '
+            'faltan la caja, el catálogo y el equipo.\n\n'
+            'Puedes configurarla ahora, paso a paso, o entrar a la app y '
+            'dejarlo para después. Tu avance se guarda igual.',
+            style: TextStyle(
+              fontSize: 13.5,
+              height: 1.5,
+              color: AppColors.textPrimary,
+            ),
+          ),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
+        actions: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                height: 46,
+                child: FilledButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  child: const Text('Configurar mi tienda ahora'),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 46,
+                child: OutlinedButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.textPrimary,
+                    side: const BorderSide(color: AppColors.border),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  child: const Text('Entrar a la app'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted) return;
+
+    if (seguirConfigurando == true) {
+      setState(() => _currentStep = 1);
+      _pageController.nextPage(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+      return;
+    }
+
+    // «Entrar a la app»: al checklist, que es donde se ve lo que falta.
+    Navigator.pushReplacementNamed(context, '/activacion');
+  }
+
+  /// Guarda lo que haya del paso 2 sin bloquear por campos vacíos.
+  ///
+  /// La tienda ya existe desde el paso 1, así que aquí no se crea nada: se
+  /// escribe encima lo que el usuario haya rellenado. Se hace con un `update`
+  /// directo a `app_dat_tienda` en vez de añadir otro método al servicio de
+  /// registro porque es una sola fila y tres columnas; el servicio de registro
+  /// se reserva para lo que crea estructura (RPC).
+  ///
+  /// **Nunca toca `estado`**: esa columna guarda el código de provincia
+  /// geográfico, no el estado de la tienda.
+  Future<void> _guardarAvanceParcial() async {
+    final tiendaId = _tiendaIdBorrador;
+    if (tiendaId == null) {
+      // Sin id (alta antigua o preferencias limpias) no hay dónde escribir.
+      return;
+    }
+
+    final nombre = _storeNameController.text.trim();
+    final direccion = _storeAddressController.text.trim();
+    final ubicacion = _ubicacionTexto();
+
+    // Solo las columnas que de verdad se tocaron: escribir nulos encima de lo
+    // que ya hay borraría datos buenos por no haber pasado por el campo.
+    final cambios = <String, dynamic>{};
+    if (nombre.isNotEmpty) cambios['denominacion'] = nombre;
+    if (direccion.isNotEmpty) cambios['direccion'] = direccion;
+    if (ubicacion != null && ubicacion.isNotEmpty) {
+      cambios['ubicacion'] = ubicacion;
+    }
+    if (_selectedCountry != null) {
+      cambios['pais'] = _selectedCountry!['countryCode'];
+      cambios['nombre_pais'] = _selectedCountry!['countryName'];
+    }
+    if (_selectedState != null) {
+      cambios['estado'] = _selectedState!['adminCode1'];
+      cambios['nombre_estado'] = _selectedState!['name'];
+    }
+    if (_storeLatitude != null) cambios['latitude'] = _storeLatitude;
+    if (_storeLogitude != null) cambios['longitude'] = _storeLogitude;
+
+    if (cambios.isEmpty) return;
+
+    try {
+      await Supabase.instance.client
+          .from('app_dat_tienda')
+          .update(cambios)
+          .eq('id', tiendaId);
+      print('💾 Avance parcial guardado en la tienda $tiendaId: $cambios');
+    } catch (e) {
+      // Guardar a medias no debe impedir seguir: el usuario está en el
+      // asistente y lo que ha escrito sigue en pantalla.
+      print('⚠️ No se pudo guardar el avance parcial: $e');
+    }
+  }
+
+  /// Texto de ubicación: coordenadas si hay mapa, si no lo que se escribió.
+  String? _ubicacionTexto() {
+    if (_storeLatitude != null && _storeLogitude != null) {
+      return '${_storeLatitude!.toStringAsFixed(6)},'
+          '${_storeLogitude!.toStringAsFixed(6)}';
+    }
+    final texto = _storeLocationController.text.trim();
+    return texto.isEmpty ? null : texto;
+  }
+
+  /// Paso 3 → crea lo que falte (almacenes, zonas, TPVs, personal) sobre la
+  /// tienda que ya existe.
+  ///
+  /// Ya no se llama a `registerUserAndCreateStore`: eso insertaría una segunda
+  /// tienda, porque la del paso 1 ya está creada.
+  Future<void> _crearEstructuraRestante() async {
+    final tiendaId = _tiendaIdBorrador;
+    if (tiendaId == null) {
+      _showErrorDialog(
+        'No se encontró la tienda que se creó al principio. '
+        'Vuelve a iniciar sesión y continúa desde el checklist.',
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      final resultado = await _registrationService.completarTiendaBorrador(
+        idTienda: tiendaId,
+        almacenesData: _almacenesData.isEmpty ? null : _almacenesData,
+        layoutsData: _layoutsData.isEmpty ? null : _layoutsData,
+        tpvData: _tpvData.isEmpty ? null : _tpvData,
+        personalData: _personalData.isEmpty ? null : _personalData,
+      );
+
+      if (!mounted) return;
+
+      final errores = (resultado['errores'] as List?) ?? const [];
+      if (errores.isEmpty) {
+        _showSuccessDialog(userAlreadyExisted: false);
+        return;
+      }
+
+      // Éxito parcial: se celebra lo guardado y se listan los fallos. Perder
+      // un TPV no debe ocultar que el almacén sí se creó.
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          title: const Text('Guardado con pendientes'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Almacenes: ${resultado['almacenes_creados']} · '
+                  'Cajas: ${resultado['tpvs_creados']} · '
+                  'Personal: ${resultado['personal_creado']}',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                for (final error in errores)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text(
+                      '• $error',
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        height: 1.4,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Puedes arreglarlo desde la app, en Configuración.',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Entendido'),
+            ),
+          ],
+        ),
+      );
+
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, '/activacion');
+      }
+    } catch (e) {
+      if (mounted) {
+        _showErrorDialog('No se pudo completar la tienda: $e');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  /// `_validateCurrentStep` del asistente progresivo.
+  ///
+  /// El único paso obligatorio es el 1. A partir de ahí:
+  ///
+  /// - Paso 2 (datos de tienda): **no bloquea**. Si hay algo escrito se valida
+  ///   el formato de los campos rellenados; vacío se permite pasar, porque la
+  ///   tienda ya existe y el nombre/dirección se pueden completar después.
+  /// - Paso 3 (operación): **no bloquea**. TPV, almacén, zona y personal pasan
+  ///   de requisitos a avisos: son justo los pasos que hacían abandonar el alta
+  ///   y ahora viven en el checklist de activación.
   bool _validateCurrentStep() {
     switch (_currentStep) {
       case 0:
         return _userFormKey.currentState?.validate() ?? false;
       case 1:
-        return _storeFormKey.currentState?.validate() ?? false;
+        // Validar solo si el usuario escribió algo: un formulario vacío no
+        // tiene errores que mostrar y bloquearlo sería volver al alta de antes.
+        final hayDatos = _storeNameController.text.trim().isNotEmpty ||
+            _storeAddressController.text.trim().isNotEmpty ||
+            _storeLocationController.text.trim().isNotEmpty;
+        if (!hayDatos) return true;
+        return _storeFormKey.currentState?.validate() ?? true;
       case 2:
-        // Validar que hay al menos uno de cada
-        if (_tpvData.isEmpty) {
-          _showErrorDialog('Debes configurar al menos un TPV (Punto de Venta)');
-          return false;
-        }
-        if (_almacenesData.isEmpty) {
-          _showErrorDialog('Debes configurar al menos un almacén');
-          return false;
-        }
-        if (_layoutsData.isEmpty) {
-          _showErrorDialog('Debes configurar al menos un layout/zona');
-          return false;
-        }
-        // Validar que cada almacén tenga al menos una zona asociada
-        final almacenesSinZonas = <String>[];
-        for (final almacen in _almacenesData) {
-          final nombreAlmacen = (almacen['denominacion'] ?? '').toString();
-          if (nombreAlmacen.isEmpty) {
-            continue;
-          }
-
-          final tieneZonas = _layoutsData.any(
-            (layout) =>
-                (layout['almacen_asignado'] ?? '').toString() == nombreAlmacen,
-          );
-
-          if (!tieneZonas) {
-            almacenesSinZonas.add(nombreAlmacen);
-          }
-        }
-
-        if (almacenesSinZonas.isNotEmpty) {
-          final detalle = almacenesSinZonas.join(', ');
-          _showErrorDialog(
-            'Cada almacén debe tener al menos una zona configurada.\n\n'
-            'Faltan zonas en los siguientes almacenes:\n$detalle',
-          );
-          return false;
-        }
-
-        if (_personalData.isEmpty) {
-          _showErrorDialog('Debes configurar al menos un miembro del personal');
-          return false;
-        }
+        // Los avisos siguen en la UI (cada sección tiene su `required: true`
+        // y las tarjetas dicen qué falta), pero ya no impiden avanzar.
         return true;
       case 3:
         return true; // Confirmación
@@ -3599,71 +4042,88 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
     }
   }
 
+  /// Alta completa desde el asistente de IA.
+  ///
+  /// El plan de IA rellena todos los pasos de golpe, así que no tiene sentido
+  /// obligar a pasar por el diálogo del paso 1. Pero **sí** hay que pasar por
+  /// las dos mismas fases que el flujo manual: primero la tienda en borrador,
+  /// después su estructura. Antes este método llamaba a
+  /// `registerUserAndCreateStore`, que inserta una tienda nueva: con el paso 1
+  /// creando ya el borrador, habría dejado dos tiendas por alta.
   Future<void> _createStore() async {
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() => _isLoading = true);
 
     try {
-      print('🚀 Iniciando creación de tienda...');
+      print('🚀 Alta desde el asistente de IA...');
 
-      // Formatear coordenadas como "latitud,longitud"
-      String? coordinatesString;
-      if (_storeLatitude != null && _storeLogitude != null) {
-        coordinatesString =
-            '${_storeLatitude!.toStringAsFixed(6)},${_storeLogitude!.toStringAsFixed(6)}';
-      }
+      final tiendaId = _tiendaIdBorrador;
+      if (tiendaId == null) {
+        // Sin borrador previo (el usuario no pasó por el paso 1) se crea ahora.
+        final borrador = await _registrationService
+            .registrarUsuarioYCrearBorrador(
+              email: _emailController.text.trim(),
+              password: _passwordController.text,
+              fullName: _fullNameController.text.trim(),
+            );
 
-      final result = await _registrationService.registerUserAndCreateStore(
-        email: _emailController.text.trim(),
-        password: _passwordController.text,
-        fullName: _fullNameController.text.trim(),
-        denominacionTienda: _storeNameController.text.trim(),
-        direccionTienda: _storeAddressController.text.trim(),
-        ubicacionTienda:
-            coordinatesString ?? _storeLocationController.text.trim(),
-        pais: _selectedCountry?['countryCode'],
-        estado: _selectedState?['adminCode1'],
-        nombrePais: _selectedCountry?['countryName'],
-        nombreEstado: _selectedState?['name'],
-        latitude: _storeLatitude,
-        longitude: _storeLogitude,
-        tpvData: _tpvData.isEmpty ? null : _tpvData,
-        almacenesData: _almacenesData.isEmpty ? null : _almacenesData,
-        layoutsData: _layoutsData.isEmpty ? null : _layoutsData,
-        personalData: _personalData.isEmpty ? null : _personalData,
-      );
+        if (!mounted) return;
 
-      if (result['success'] == true) {
-        final userAlreadyExisted = result['user_already_existed'] == true;
-        // La RPC nueva devuelve si el Dueño quedó registrado. Si no, la tienda
-        // existe pero el usuario no verá ganancias: hay que decirlo, no
-        // celebrar un éxito a medias.
-        final datos = result['store_data'];
-        final duenoRegistrado = datos is Map
-            ? datos['dueno_registrado'] != false
-            : true;
-        if (!duenoRegistrado) {
-          final detalle = datos is Map ? datos['dueno_error'] : null;
+        if (borrador['success'] != true) {
           _showErrorDialog(
-            'La tienda se creó, pero tu usuario no quedó registrado como '
-            'Dueño.\n\n'
-            'Entra a la app igual: un administrador puede asignarte el rol '
-            'desde Configuración → Personal. No vuelvas a crear la tienda.'
-            '${detalle == null ? '' : '\n\nDetalle: $detalle'}',
+            borrador['message'] ?? 'No se pudo crear la tienda.',
           );
           return;
         }
-        _showSuccessDialog(userAlreadyExisted: userAlreadyExisted);
-      } else {
-        _showErrorDialog(result['message'] ?? 'Error desconocido');
+
+        final creado = borrador['tienda_id'];
+        if (creado is! int) {
+          _showErrorDialog(
+            'La tienda se creó pero no se recibió su identificador. '
+            'Entra a la app: aparecerá en tu checklist de activación.',
+          );
+          return;
+        }
+        _tiendaIdBorrador = creado;
       }
+
+      final idTienda = _tiendaIdBorrador;
+      if (idTienda == null) {
+        _showErrorDialog('No se pudo determinar la tienda recién creada.');
+        return;
+      }
+
+      // El nombre y la ubicación que propuso la IA se guardan antes de añadir
+      // la estructura: el borrador nació con un nombre provisional.
+      await _guardarAvanceParcial();
+      if (!mounted) return;
+
+      final resultado = await _registrationService.completarTiendaBorrador(
+        idTienda: idTienda,
+        almacenesData: _almacenesData.isEmpty ? null : _almacenesData,
+        layoutsData: _layoutsData.isEmpty ? null : _layoutsData,
+        tpvData: _tpvData.isEmpty ? null : _tpvData,
+        personalData: _personalData.isEmpty ? null : _personalData,
+      );
+
+      if (!mounted) return;
+
+      final errores = (resultado['errores'] as List?) ?? const [];
+      if (errores.isEmpty) {
+        _showSuccessDialog();
+        return;
+      }
+
+      _showErrorDialog(
+        'Se guardó casi todo, pero quedó pendiente:\n\n'
+        '${errores.map((e) => '• $e').join('\n')}\n\n'
+        'Puedes completarlo desde Configuración.',
+      );
     } catch (e) {
-      _showErrorDialog('Error: $e');
+      if (mounted) _showErrorDialog('Error: $e');
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -3710,10 +4170,10 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
             children: [
               Text(
                 userAlreadyExisted
-                    ? 'Creamos la tienda con sus almacenes y cajas. Tu usuario '
-                          'ya existía: lo vinculamos como Dueño de esta tienda.'
-                    : 'Creamos tu usuario, la tienda, sus almacenes y sus cajas. '
-                          'Ya puedes entrar a la app.',
+                    ? 'Guardamos la configuración de tu tienda. Tu usuario ya '
+                          'existía: lo vinculamos como Dueño de esta tienda.'
+                    : 'Guardamos la configuración de tu tienda. Todavía puedes '
+                          'ajustar lo que falte desde la app.',
                 style: const TextStyle(
                   fontSize: 13.5,
                   height: 1.5,
@@ -3779,7 +4239,10 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
             child: FilledButton(
               onPressed: () {
                 Navigator.of(context).pop(); // Cerrar diálogo
-                Navigator.of(context).pop(); // Volver al login
+                // El usuario ya está autenticado y su tienda existe: mandarlo
+                // al login le obligaría a escribir la contraseña otra vez sin
+                // motivo. Al checklist, que es donde se ve lo que falta.
+                Navigator.pushReplacementNamed(context, '/activacion');
               },
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.primary,
@@ -3792,7 +4255,7 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              child: const Text('Ir a iniciar sesión'),
+              child: const Text('Ir a poner en marcha mi tienda'),
             ),
           ),
         ],
@@ -4885,7 +5348,9 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                     setState(() {
                       _layoutsData.add({
                         'denominacion': nameController.text.trim(),
-                        'codigo': codeController.text.trim(),
+                        // `sku_codigo` y no `codigo`: es la clave que lee
+                        // `item_json->>'sku_codigo'` en la RPC.
+                        'sku_codigo': codeController.text.trim(),
                         'almacen_asignado': selectedAlmacen,
                         'id_tipo_layout': selectedTipoLayout,
                         'id_layout_padre': null,
@@ -4910,7 +5375,7 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
   void _showEditLayoutDialog(int index) {
     final layout = _layoutsData[index];
     final nameController = TextEditingController(text: layout['denominacion']);
-    final codeController = TextEditingController(text: layout['codigo']);
+    final codeController = TextEditingController(text: layout['sku_codigo']);
     String? selectedAlmacen = layout['almacen_asignado'];
 
     showDialog(
@@ -4965,7 +5430,8 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                   setState(() {
                     _layoutsData[index]['denominacion'] = nameController.text
                         .trim();
-                    _layoutsData[index]['codigo'] = codeController.text.trim();
+                    _layoutsData[index]['sku_codigo'] = codeController.text
+                        .trim();
                     _layoutsData[index]['almacen_asignado'] = selectedAlmacen;
                     // Mantener los campos necesarios si no existen
                     _layoutsData[index]['id_tipo_layout'] ??= 1;
