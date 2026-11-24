@@ -25,6 +25,7 @@ antes o en paralelo y que sigue mandando donde no lo contradiga el plan.
 | Archivo | Para qué sirve |
 |---|---|
 | [`PLAN.md`](PLAN.md) | **La verdad operativa**: fases, checklist, criterios de salida, E2E por fase, decisiones cerradas (PD1-PD8), bitácora de desviaciones y riesgos. |
+| [`PASE-MAIN.md`](PASE-MAIN.md) | **Orden de aplicación en producción** (main): estado de partida, los 16 pasos con su verificación, lo que no se puede saltar y cómo revertir. |
 | [`00-auditoria-programador.md`](00-auditoria-programador.md) | Auditoría técnica inicial: qué había, qué estaba roto, qué se podía reutilizar. |
 | [`01-analisis-funcional.md`](01-analisis-funcional.md) | Qué necesita el negocio: compra, recepción, consumo, aportes, devoluciones. |
 | [`02-contabilidad.md`](02-contabilidad.md) | **Contabilidad del dinero**: grano del saldo, partida doble, conciliación R1-R7 (§6.3), riesgos X1-Xn. Es la referencia cuando hay duda de si un número está bien. |
