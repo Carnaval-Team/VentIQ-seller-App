@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'rpc_m01_mock_helper.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -25,6 +26,8 @@ void main() {
       publishableKey: 'test-key',
       authOptions: const FlutterAuthClientOptions(autoRefreshToken: false),
       httpClient: MockClient((request) async {
+        final m01 = m01NoDesplegada(request);
+        if (m01 != null) return m01;
         requests.add(request);
         enVuelo++;
         if (enVuelo > maxEnVuelo) maxEnVuelo = enVuelo;
@@ -302,6 +305,37 @@ void main() {
       expect(gate, isNonNegative);
       expect(cola.indexOf('_syncOrderStatusChanges()'), lessThan(gate));
       expect(gate, lessThan(cierre));
+    });
+
+    test('ventas y egresos suben antes del cierre de la cola', () {
+      final pipelineStart = servicio.indexOf('const pipelineOrder = [');
+      final pipelineEnd = servicio.indexOf('];', pipelineStart);
+      expect(pipelineStart, isNonNegative);
+      final pipeline = servicio.substring(pipelineStart, pipelineEnd);
+      expect(
+        pipeline.indexOf('SyncModule.uploadSales'),
+        allOf(
+          isNonNegative,
+          lessThan(pipeline.indexOf('SyncModule.uploadEgresos')),
+        ),
+      );
+      expect(
+        pipeline.indexOf('SyncModule.uploadEgresos'),
+        lessThan(pipeline.indexOf('SyncModule.uploadTurno')),
+      );
+
+      final subir = cuerpo('Future<Map<String, dynamic>> _subirTodoSinLock(');
+      expect(
+        subir.indexOf('_syncOfflineSales()'),
+        allOf(
+          isNonNegative,
+          lessThan(subir.indexOf('_syncOfflineEgresos()')),
+        ),
+      );
+      expect(
+        subir.indexOf('_syncOfflineEgresos()'),
+        lessThan(subir.indexOf('_syncOfflineTurnoQueue()')),
+      );
     });
 
     test('un estado desconocido nunca cuenta como turno cerrado', () {

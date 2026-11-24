@@ -33,35 +33,60 @@ class ProductRecipeCacheService {
     }
 
     try {
-      final response = await _supabase
-          .from('app_dat_producto_ingredientes')
-          .select('''
-            id_producto_elaborado,
-            id_ingrediente,
-            cantidad_necesaria,
-            unidad_medida,
-            app_dat_producto!app_dat_producto_ingredientes_ingrediente_fkey(
-              id,
-              denominacion,
-              sku
-            )
-          ''')
-          .inFilter('id_producto_elaborado', ids);
-
+      // Incluye elaborados anidados: si un ingrediente es elaborado, también
+      // bajamos su receta (mismo criterio que fn_obtener_ingredientes_recursivos).
+      final pending = ids.toSet();
       final grouped = <int, List<Map<String, dynamic>>>{};
-      for (final item in response) {
-        final elaboradoId = (item['id_producto_elaborado'] as num?)?.toInt();
-        if (elaboradoId == null) continue;
-        final producto =
-            item['app_dat_producto'] as Map<String, dynamic>? ?? {};
-        grouped.putIfAbsent(elaboradoId, () => []).add({
-          'nombre_ingrediente':
-              producto['denominacion'] ?? 'Ingrediente desconocido',
-          'cantidad_necesaria': item['cantidad_necesaria'] ?? 0,
-          'unidad_medida': item['unidad_medida'] ?? 'unid',
-          'sku': producto['sku'],
-          'id_ingrediente': item['id_ingrediente'],
-        });
+      final fetched = <int>{};
+
+      while (pending.isNotEmpty) {
+        final batch = pending.toList();
+        pending.clear();
+        final response = await _supabase
+            .from('app_dat_producto_ingredientes')
+            .select('''
+              id_producto_elaborado,
+              id_ingrediente,
+              cantidad_necesaria,
+              unidad_medida,
+              app_dat_producto!app_dat_producto_ingredientes_ingrediente_fkey(
+                id,
+                denominacion,
+                sku,
+                es_elaborado
+              )
+            ''')
+            .inFilter('id_producto_elaborado', batch);
+
+        for (final id in batch) {
+          fetched.add(id);
+          grouped.putIfAbsent(id, () => []);
+        }
+
+        for (final item in response) {
+          final elaboradoId = (item['id_producto_elaborado'] as num?)?.toInt();
+          if (elaboradoId == null) continue;
+          final producto =
+              item['app_dat_producto'] as Map<String, dynamic>? ?? {};
+          final idIng = (item['id_ingrediente'] as num?)?.toInt();
+          final esElab = producto['es_elaborado'] == true;
+          grouped.putIfAbsent(elaboradoId, () => []).add({
+            'nombre_ingrediente':
+                producto['denominacion'] ?? 'Ingrediente desconocido',
+            'cantidad_necesaria': item['cantidad_necesaria'] ?? 0,
+            'unidad_medida': item['unidad_medida'] ?? 'unid',
+            'sku': producto['sku'],
+            'id_ingrediente': idIng,
+            'producto_id': idIng,
+            'es_elaborado': esElab,
+          });
+          if (esElab &&
+              idIng != null &&
+              !fetched.contains(idIng) &&
+              !pending.contains(idIng)) {
+            pending.add(idIng);
+          }
+        }
       }
 
       final Map<int, List<Map<String, dynamic>>> toSave;
@@ -81,7 +106,7 @@ class ProductRecipeCacheService {
       await _prefs.saveProductIngredientRecipes(toSave);
       print(
         '✅ Recetas sincronizadas: ${grouped.length} elaborados '
-        '(${ids.length} ids consultados, replaceAll=$replaceAll)',
+        '(${ids.length} ids raíz, anidados incluidos, replaceAll=$replaceAll)',
       );
       return grouped;
     } catch (e) {

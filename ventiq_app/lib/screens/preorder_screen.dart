@@ -77,11 +77,13 @@ class _PreorderScreenState extends State<PreorderScreen> {
   Future<List<Map<String, dynamic>>> _ingredientesCached(
     int idProducto, {
     int? idAlmacen,
+    bool exigirAlmacen = false,
   }) => _ingredientesCache.putIfAbsent(
-    '$idProducto|${idAlmacen ?? ''}',
+    '$idProducto|${idAlmacen ?? ''}|$exigirAlmacen',
     () => _productDetailService.getProductIngredients(
       idProducto,
       idAlmacen: idAlmacen,
+      exigirAlmacen: exigirAlmacen,
     ),
   );
 
@@ -1683,183 +1685,102 @@ class _PreorderScreenState extends State<PreorderScreen> {
         final isElaboradoOrServicio =
             item.producto.esElaborado || item.producto.esServicio;
 
-        if (item.producto.esServicio) {
-          final almacen = await _userPreferencesService.getIdAlmacen();
-          final ingredientes = await _productDetailService.getProductIngredients(
-            item.producto.id,
-            idAlmacen: almacen,
-            exigirAlmacen: true,
+        // Elaborados y servicios: misma puerta. La receta se expande
+        // (elaborado→elaborado y servicio→elaborado) dentro de
+        // getProductIngredients; sin receta o anidado faltante se bloquea.
+        if (isElaboradoOrServicio) {
+          print(
+            '🍽️ Verificando BOM de ${item.nombre} '
+            '(elaborado=${item.producto.esElaborado}, '
+            'servicio=${item.producto.esServicio}, offline=$isOfflineMode)',
           );
-          for (final ing in ingredientes) {
-            final id = (ing['producto_id'] as num?)?.toInt();
-            final necesaria = (ing['cantidad_necesaria'] as num?)?.toDouble();
-            if (id == null || necesaria == null || necesaria <= 0) {
-              throw StateError('Receta del servicio incompleta');
-            }
-            final pedida = necesaria * item.cantidad +
-                (reservadoIngredientesServicio[id] ?? 0);
-            reservadoIngredientesServicio[id] = pedida;
-            final disponible = (ing['cantidad_disponible'] as num?)?.toDouble() ?? 0;
-            if (disponible < pedida) {
+
+          final soloServicio =
+              item.producto.esServicio && !item.producto.esElaborado;
+          final int? idAlmacenVenta;
+          if (isOfflineMode || soloServicio) {
+            idAlmacenVenta = await _userPreferencesService.getIdAlmacen();
+          } else {
+            idAlmacenVenta = await _almacenVentaCached(item.producto.id);
+          }
+
+          // Offline y servicios exigen almacén del TPV (AGENTS.md).
+          final exigirAlmacen = isOfflineMode || soloServicio;
+          if (exigirAlmacen && idAlmacenVenta == null) {
+            problems.add({
+              'nombre': item.nombre,
+              'cantidad_pedida': item.cantidad,
+              'stock_disponible': 0.0,
+              'diferencia': item.cantidad,
+              'ubicacion': item.ubicacionAlmacen,
+              'presentacion':
+                  ' (no se pudo resolver el almacén del TPV para la receta)',
+            });
+            continue;
+          }
+
+          final ingredientes = await _ingredientesCached(
+            item.producto.id,
+            idAlmacen: idAlmacenVenta,
+            exigirAlmacen: exigirAlmacen,
+          );
+
+          if (ingredientes.isEmpty) {
+            // Servicio sin BOM: nada que descontar. Elaborado sin hojas: bloquear.
+            if (item.producto.esElaborado) {
               problems.add({
-                'nombre': '${item.nombre} → ${ing['producto_nombre']}',
+                'nombre': item.nombre,
+                'cantidad_pedida': item.cantidad,
+                'stock_disponible': 0.0,
+                'diferencia': item.cantidad,
+                'ubicacion': item.ubicacionAlmacen,
+                'presentacion':
+                    ' (sin receta sincronizada; no se puede vender)',
+              });
+            } else {
+              print(
+                'ℹ️ Servicio ${item.nombre} sin ingredientes; se omite BOM',
+              );
+            }
+            continue;
+          }
+
+          for (final ingrediente in ingredientes) {
+            final idIngrediente = (ingrediente['producto_id'] as num?)?.toInt();
+            final necesaria =
+                (ingrediente['cantidad_necesaria'] as num?)?.toDouble();
+            if (idIngrediente == null || necesaria == null || necesaria <= 0) {
+              throw StateError('Receta incompleta para ${item.nombre}');
+            }
+            final pedida =
+                necesaria * item.cantidad +
+                (reservadoIngredientesServicio[idIngrediente] ?? 0);
+            reservadoIngredientesServicio[idIngrediente] = pedida;
+            final disponible =
+                (ingrediente['cantidad_disponible'] as num?)?.toDouble() ?? 0.0;
+            if (disponible < pedida) {
+              final unidadIngrediente = _unidadDeIngrediente(ingrediente);
+              final nombreIng =
+                  ingrediente['producto_nombre'] as String? ??
+                  'Ingrediente desconocido';
+              problems.add({
+                'nombre': '${item.nombre} → $nombreIng',
                 'cantidad_pedida': pedida,
                 'stock_disponible': disponible,
                 'diferencia': pedida - disponible,
                 'ubicacion': item.ubicacionAlmacen,
-                'id_almacen': almacen,
-                'alcance_stock': ing['alcance_stock'],
-                'presentacion': ' (ingrediente del servicio)',
+                'unidad': unidadIngrediente,
+                'id_almacen': ingrediente['id_almacen'] ?? idAlmacenVenta,
+                'alcance_stock': ingrediente['alcance_stock'],
+                'presentacion':
+                    ' (ingrediente${isOfflineMode ? ' • cache offline' : ''}'
+                    '${unidadIngrediente.isEmpty ? '' : ' • $unidadIngrediente'})',
               });
             }
           }
           continue;
-        }
-
-        if (isElaboradoOrServicio) {
-          print(
-            '🍽️ Verificando ingredientes para producto elaborado/servicio: ${item.nombre} (offline=$isOfflineMode)',
-          );
-
-          if (isOfflineMode) {
-            // OFFLINE: buscar receta del elaborado en cache
-            final offlineData = await _userPreferencesService.getOfflineData();
-            final productsData =
-                offlineData?['products'] as Map<String, dynamic>?;
-            List<dynamic>? ingredientesCache;
-
-            if (productsData != null) {
-              outer:
-              for (final categoryProducts in productsData.values) {
-                for (final prodDataRaw in List<dynamic>.from(
-                  categoryProducts as List,
-                )) {
-                  final prodData = Map<String, dynamic>.from(
-                    prodDataRaw as Map,
-                  );
-                  if ((prodData['id'] as int?) != item.producto.id) continue;
-                  final detalles =
-                      prodData['detalles_completos'] as Map<String, dynamic>?;
-                  ingredientesCache =
-                      detalles?['ingredientes'] as List<dynamic>?;
-                  break outer;
-                }
-              }
-            }
-
-            if (ingredientesCache == null || ingredientesCache.isEmpty) {
-              print(
-                '⚠️ Elaborado/servicio ${item.nombre} sin receta en cache offline, se permite continuar',
-              );
-              continue;
-            }
-
-            for (final ingRaw in ingredientesCache) {
-              final ing = Map<String, dynamic>.from(ingRaw as Map);
-              final idIngrediente = ing['producto_id'] as int?;
-              if (idIngrediente == null) continue;
-
-              final cantidadNecesaria =
-                  ((ing['cantidad_necesaria'] as num?)?.toDouble() ?? 0.0) *
-                  item.cantidad;
-              final nombreIngrediente =
-                  ing['producto_nombre'] as String? ??
-                  'Ingrediente desconocido';
-
-              final stockIngrediente = await _getStockFromCache(
-                idProducto: idIngrediente,
-              );
-              final cantidadDisponible = stockIngrediente ?? 0.0;
-
-              if (cantidadDisponible < cantidadNecesaria) {
-                final unidadIngrediente = _unidadDeIngrediente(ing);
-                problems.add({
-                  'nombre': '${item.nombre} → $nombreIngrediente',
-                  'cantidad_pedida': cantidadNecesaria,
-                  'stock_disponible': cantidadDisponible,
-                  'diferencia': cantidadNecesaria - cantidadDisponible,
-                  'ubicacion': item.ubicacionAlmacen,
-                  'unidad': unidadIngrediente,
-                  // Fuera de línea no hay almacén de venta resoluble: el dato
-                  // viene del cache y se etiqueta como tal (task-12).
-                  'alcance_stock': ProductDetailService.alcanceCacheOffline,
-                  'presentacion':
-                      ' (ingrediente • cache offline${unidadIngrediente.isEmpty ? '' : ' • $unidadIngrediente'})',
-                });
-              }
-            }
-          } else {
-            // ONLINE: verificar stock de cada ingrediente en Supabase
-            //
-            // task-12 (FASE 7 P1): el servidor valida con UN almacén, resuelto
-            // por `fn_resolver_origen_venta(elaborado, tpv)` — el mismo origen
-            // que usa la venta (order_service manda solo `p_id_tpv` y el
-            // servidor resuelve la ruta, barra o cocina). Se mide con el mismo
-            // almacén para no sobreestimar y provocar un bloqueo confuso del
-            // servidor. Si no se resuelve con certeza, `idAlmacen` va null, se
-            // mide con todos los almacenes y cada ingrediente queda etiquetado
-            // como tal (`alcance_stock`).
-            // Un servicio puro no tiene receta que medir (`fn_resolver_origen_venta`
-            // devolvería `descontar: nada`): no se resuelve la ruta y se ahorra
-            // una RPC por item.
-            final idAlmacenVenta =
-                (item.producto.esServicio && !item.producto.esElaborado)
-                    ? null
-                    : await _almacenVentaCached(item.producto.id);
-            final ingredientes = await _ingredientesCached(
-              item.producto.id,
-              idAlmacen: idAlmacenVenta,
-            );
-
-            if (ingredientes.isEmpty) {
-              print(
-                '⚠️ Producto elaborado/servicio ${item.nombre} sin ingredientes definidos, se permite continuar',
-              );
-              continue;
-            }
-
-            for (final ingrediente in ingredientes) {
-              final idIngrediente = ingrediente['producto_id'] as int?;
-              final cantidadNecesaria =
-                  ((ingrediente['cantidad_necesaria'] as num?)?.toDouble() ??
-                      0.0) *
-                  item.cantidad;
-              // FASE 7 P0/P1: `cantidad_disponible` ya es el EQUIVALENTE BASE
-              // (Σ cantidad_final × factor_rel de las presentaciones vigentes
-              // del alcance medido), calculado por `getProductIngredients`; por
-              // eso se compara directamente contra `cantidad_necesaria`, que la
-              // receta trae en unidades base. Antes esto comparaba una sola fila
-              // del ledger (p. ej. 2000 Unidad) contra 6000 base y bloqueaba la
-              // venta. Ver docs/PLAN_CONSUMO_INGREDIENTES_ELABORADOS_PRESENTACIONES.md §0.
-              final cantidadDisponible =
-                  (ingrediente['cantidad_disponible'] as num?)?.toDouble() ??
-                  0.0;
-              final nombreIngrediente =
-                  ingrediente['producto_nombre'] as String? ??
-                  'Ingrediente desconocido';
-              final unidadIngrediente = _unidadDeIngrediente(ingrediente);
-
-              if (idIngrediente == null) continue;
-
-              if (cantidadDisponible < cantidadNecesaria) {
-                problems.add({
-                  'nombre': '${item.nombre} → $nombreIngrediente',
-                  'cantidad_pedida': cantidadNecesaria,
-                  'stock_disponible': cantidadDisponible,
-                  'diferencia': cantidadNecesaria - cantidadDisponible,
-                  'ubicacion': item.ubicacionAlmacen,
-                  'unidad': unidadIngrediente,
-                  // task-12: con qué alcance se midió (almacén del TPV,
-                  // todos los almacenes o desconocido). La UI lo etiqueta.
-                  'id_almacen': ingrediente['id_almacen'],
-                  'alcance_stock': ingrediente['alcance_stock'],
-                  'presentacion':
-                      ' (ingrediente${unidadIngrediente.isEmpty ? '' : ' • $unidadIngrediente'})',
-                });
-              }
-            }
-          }
         } else {
+
           // Para productos normales: verificar directamente en inventario
           final idProducto = item.producto.id;
           final idUbicacion = item.inventoryData?['id_ubicacion'] as int?;
@@ -2049,14 +1970,15 @@ class _PreorderScreenState extends State<PreorderScreen> {
         }
       } catch (e) {
         print('⚠️ Error verificando stock para ${item.nombre}: $e');
-        if (item.producto.esServicio) {
+        if (item.producto.esServicio || item.producto.esElaborado) {
           problems.add({
             'nombre': item.nombre,
             'cantidad_pedida': item.cantidad,
             'stock_disponible': 0.0,
             'diferencia': item.cantidad,
             'ubicacion': item.ubicacionAlmacen,
-            'presentacion': ' (no se pudo verificar ingredientes en el almacén: $e)',
+            'presentacion':
+                ' (no se pudo verificar ingredientes en el almacén: $e)',
           });
         }
         if (_isNetworkError(e)) {

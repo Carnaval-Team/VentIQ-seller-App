@@ -4,6 +4,7 @@ import '../models/comanda.dart';
 import '../models/tanda.dart';
 import '../utils/uuid_generator.dart';
 import 'cocina_offline_queue.dart';
+import 'rpc_m01.dart';
 
 /// Servicio del KDS (Kitchen Display System).
 ///
@@ -112,7 +113,7 @@ class ComandaService {
             : UuidGenerator.v4();
     dynamic response;
     try {
-      response = await _supabase.rpc(
+      response = await RpcM01.call(
         'fn_cambiar_estado_comanda_item_offline',
         params: {
           'p_client_uuid': uuid,

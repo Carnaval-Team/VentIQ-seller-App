@@ -149,16 +149,17 @@ class SettingsIntegrationService {
     );
   }
 
-  /// Manejar cambio manual del modo offline desde SettingsScreen
-  Future<void> handleOfflineModeChanged(bool enabled) async {
+  /// Manejar cambio manual del modo offline desde SettingsScreen.
+  /// Al desactivar, puede devolver un error (p. ej. sin JWT tras login offline).
+  Future<String?> handleOfflineModeChanged(bool enabled) async {
     print('🔧 Manejando cambio manual de modo offline: $enabled');
 
     try {
       if (enabled) {
         await _smartOfflineManager.onOfflineModeManuallyEnabled();
-      } else {
-        await _smartOfflineManager.onOfflineModeManuallyDisabled();
+        return null;
       }
+      return await _smartOfflineManager.onOfflineModeManuallyDisabled();
       // El listener de SmartOfflineManager reenvía el evento al eventStream
       // de integración (offlineModeManuallyEnabled/Disabled).
     } catch (e) {

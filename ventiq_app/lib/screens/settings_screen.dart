@@ -937,10 +937,27 @@ class _SettingsScreenState extends State<SettingsScreen>
       // _activateOfflineMode) para que el ícono de conexión y demás
       // widgets que dependen de su eventStream no queden desactualizados
       // mostrando "Offline" tras desactivarlo manualmente desde Ajustes.
+      // Tras login offline no hay JWT: onOfflineModeManuallyDisabled
+      // reautentica o revierte a offline.
+      final String? onlineErr;
       if (_isSmartServicesInitialized) {
-        await _integrationService.handleOfflineModeChanged(false);
+        onlineErr = await _integrationService.handleOfflineModeChanged(false);
       } else {
-        await SmartOfflineManager().onOfflineModeManuallyDisabled();
+        onlineErr =
+            await SmartOfflineManager().onOfflineModeManuallyDisabled();
+      }
+      if (onlineErr != null) {
+        if (mounted) {
+          setState(() => _isOfflineModeEnabled = true);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(onlineErr),
+              backgroundColor: VentiqHomeTheme.warning,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
+        return false;
       }
 
       if (mounted) {
@@ -1469,7 +1486,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                 _buildSettingsTile(
                   icon: Icons.sync_outlined,
                   title: 'Sincronización Manual',
-                  subtitle: 'Sincronizar datos offline pendientes',
+                  subtitle:
+                      'Subir pendientes y bajar catálogo, monedas y configuración',
                   onTap: () => _showSyncDialog(),
                 ),
                 _buildDivider(),
@@ -1477,17 +1495,12 @@ class _SettingsScreenState extends State<SettingsScreen>
                   icon: Icons.checklist_outlined,
                   title: 'Sincronizar por módulos',
                   subtitle: 'Elegir qué subir y qué bajar',
-                  onTap: () => SelectiveSyncDialog.show(context),
+                  onTap: () async {
+                    await SelectiveSyncDialog.show(context);
+                    if (mounted) unawaited(_refreshDataSection());
+                  },
                 ),
                 _buildDivider(),
-                if (_isSmartServicesInitialized)
-                  _buildSettingsTile(
-                    icon: Icons.sync_alt,
-                    title: 'Forzar Sincronización',
-                    subtitle: 'Sincronizar datos inmediatamente',
-                    onTap: () => _forceSyncNow(blockWhenRunning: false),
-                  ),
-                if (_isSmartServicesInitialized) _buildDivider(),
                 _buildSettingsTile(
                   icon: Icons.storage_outlined,
                   title: 'Almacenamiento',
@@ -2979,7 +2992,9 @@ class _SettingsScreenState extends State<SettingsScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Se encontraron los siguientes datos offline pendientes:',
+                  'Se encontraron los siguientes datos offline pendientes. '
+                  'Después de subirlos se actualizará también el catálogo, '
+                  'monedas, tasas y configuración de la tienda.',
                   style: TextStyle(fontWeight: FontWeight.w500),
                 ),
                 const SizedBox(height: 12),
@@ -3560,26 +3575,12 @@ class _SettingsScreenState extends State<SettingsScreen>
         ),
       );
 
-      const requiredOfflineModules = {
-        SyncModule.license,
-        SyncModule.storeConfig,
-        SyncModule.credentials,
-        SyncModule.paymentMethods,
-        SyncModule.promotions,
-        SyncModule.categories,
-        SyncModule.products,
-        SyncModule.layouts,
-        SyncModule.turno,
-        SyncModule.egresos,
-        SyncModule.orders,
-        SyncModule.shiftWorkers,
-        // SyncModule.defaultCashFund es opcional: se descarga si existe, pero
-        // no bloquea la activación offline si la tienda aún no lo configura.
-      };
+      // Manual = pipeline completo (uploads + downloads del catálogo).
+      // Activar offline = solo los obligatorios (sin defaultCashFund).
       final result = await AutoSyncService().syncModules(
         offlineReadinessOnly
-            ? requiredOfflineModules
-            : SyncModule.values.toSet(),
+            ? SyncModuleCatalog.offlineReadinessRequired
+            : SyncModuleCatalog.all,
         resumeFromCheckpoint: !offlineReadinessOnly,
         suspenderModoOffline: true,
       );

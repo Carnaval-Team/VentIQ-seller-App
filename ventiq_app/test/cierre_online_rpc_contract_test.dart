@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'rpc_m01_mock_helper.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -23,6 +24,8 @@ void main() {
       publishableKey: 'test-key',
       authOptions: const FlutterAuthClientOptions(autoRefreshToken: false),
       httpClient: MockClient((request) async {
+        final m01 = m01NoDesplegada(request);
+        if (m01 != null) return m01;
         requests.add(request);
         final path = request.url.path;
         if (!path.contains('/rpc/')) {

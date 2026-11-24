@@ -1,3 +1,12 @@
+-- ============================================================================
+-- S01 completo: helpers + ENABLE RLS + REVOKE en app_dat_configuracion_tienda
+-- + guarda en sync_bundle / licencia / consolidación.
+-- ============================================================================
+-- ⚠ MAIN FASE 1: no aplicar este archivo entero (regla de oro: la tabla está
+-- sin RLS en main hoy). Usar `sql_updates/fn_config_tienda_helpers_aditivos.sql`
+-- para los helpers. RLS/REVOKE/guardas → Fase 3 o pase con OK explícito.
+-- ============================================================================
+
 BEGIN;
 
 SET LOCAL lock_timeout = '5s';
@@ -128,6 +137,15 @@ AS $function$
                JOIN public.app_dat_cocina c ON c.id = j.id_cocina
                WHERE c.id_tienda = p_id_tienda AND j.uuid = auth.uid()
                  AND c.deleted_at IS NULL
+           )
+           -- G2 (2026-11-23): RH y trabajador vinculado a la tienda.
+           OR EXISTS (
+               SELECT 1 FROM public.app_dat_recursos_humanos rh
+               WHERE rh.id_tienda = p_id_tienda AND rh.uuid = auth.uid()
+           )
+           OR EXISTS (
+               SELECT 1 FROM public.app_dat_trabajadores tr
+               WHERE tr.id_tienda = p_id_tienda AND tr.uuid = auth.uid()
            )
        );
 $function$;

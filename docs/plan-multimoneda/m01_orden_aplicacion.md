@@ -6,8 +6,10 @@ Cada script exige en su preflight `SET app.m01_<corte>_approved = 'yes'` (o la G
 
 > **Promoción a main:** antes de aplicar nada en main, leer
 > `desincronizacion_newa_main.md`. Main tiene producción que newa no tiene (WhatsApp,
-> referidos, versiones de app, precios Carnaval, fix de egresos por turno). Además, los
-> preflight de estos scripts validan md5 de newa: hay que regenerarlos para main.
+> referidos, versiones de app, precios Carnaval, fix de egresos por turno).
+> Baselines `md5` de (14)/(17)/(56) regenerados contra main el 2026-11-23:
+> (14)/(17) exigen el `md5(prosrc)` vivo en main; (56) exige los cuerpos que dejan
+> (14)/(17) (orden 14→17→56).
 
 ## Prerequisito
 
@@ -179,8 +181,9 @@ con el teléfono en una zona horaria distinta de Cuba.
    en una zona horaria distinta de Cuba.
 4. Main: hasta que M01 llegue, se aplica el hotfix S1–S6 del diagnóstico (mismos nombres
    `fn_turno_alinear_fecha_apertura` / `fn_alinear_apertura_turno_offline`, cuerpos sin
-   huella M01). Al promover M01 a main, (14), (17) y (56) necesitan baselines md5 de
-   main: los actuales son de newa y el hotfix cambia los cuerpos.
+   huella M01). Baselines md5 de (14)/(17)/(56) ya regenerados contra main (2026-11-23).
+   Tras (14)+(17) en main, aplicar (56); después `fix_apertura_turno_offline_id_turno.sql`
+   (H1; newa ya lo tiene encima de R33).
 
 ## Pendientes fuera de este paquete
 - Los scripts 14, 15 y 16 cubren la venta, el cobro y el cambio de estado offline, todavía sin aplicar. El 14 también revoca `fn_registrar_venta_offline_v2`. El vendedor ya no registra la venta offline ni el cambio de estado en cola con las funciones sin clave: ajustes delega en el sync y la cola usa `fn_registrar_cambio_estado_offline`. La apertura y el cierre de ajustes ya no llaman `fn_cerrar_turno_tpv` ni `registrar_apertura_turno`: los sube `uploadTurno`. Si `fn_cerrar_turno_offline` existe y rechaza, el sync no cierra sin clave. El cambio de estado online sale por `fn_registrar_cambio_estado_offline` y solo usa `fn_registrar_cambio_estado_operacion` si esa RPC no existe. La apertura online sale por `fn_apertura_turno_offline_monedas`. Si el cierre dice que cerró y la fila sigue abierta, el sync no la cierra con `UPDATE`. `fn_admin_caja_*` sigue con su cuerpo actual. Sus INSERT nombran columnas y toleran las columnas nuevas en NULL. El script 17 reemplaza los cuerpos con clave de turno, egreso y comanda. El cierre online ya llama `fn_cerrar_turno_offline_monedas` antes que `fn_cerrar_turno_tpv`. El KDS ya llama `fn_cambiar_estado_comanda_item_offline` antes que la función sin clave. El script 17 endurece apertura, cierre, egreso, pedido y estado de plato, guarda el mapa de monedas en la huella y hace que el pedido con clave delegue en v2. No está aplicado. El pedido online sigue en `fn_pedir_item_cuenta_v2` y, si esa función no existe, no llama la anterior. El ticket completo del KDS marca cada plato con `fn_cambiar_estado_comanda_item_offline` y, sin platos, no llama `fn_cambiar_estado_comanda`. El cierre offline envía `fecha_cierre` en la RPC con clave. Admin Lite no se continúa. El script 20 recibe una orden anterior al turno, anota los trabajadores y registra el cambio de precio. Si esa RPC no existe, el TPV conserva la escritura de hoy. Un 42501 no la abre. El script 21 escribe la configuración de tienda que el TPV cambia hoy a mano. Solo quien puede escribir la tienda. La cola de trabajadores y la campana usan las funciones del script 20. El 22 cierra las columnas de confianza de `app_dat_tienda`. El 23 quita la foto, limpia el SMS y reactivar o borra la notificación propia. El 24 desvincula el login sin borrar la cuenta ni los roles. El usuario corrió `m01_r0i_rol_harness.sql` en newa el 2026-11-14 y no saltó error. Termina en ROLLBACK. El 14 de noviembre de 2026 las huellas MD5 de las nueve funciones que los scripts 14 a 17 reemplazan coincidían con newa, y `fn_desvincular_usuario_trabajador` seguía ausente. Esa lectura no ejecuta los cuerpos.

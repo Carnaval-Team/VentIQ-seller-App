@@ -7,6 +7,7 @@ import '../models/expense.dart';
 import '../utils/price_utils.dart';
 import '../utils/uuid_generator.dart';
 import 'currency_service.dart';
+import 'rpc_m01.dart';
 import 'payment_method_service.dart';
 
 /// Tipo de fallo al ejecutar una operación de turno.
@@ -768,7 +769,7 @@ class TurnoService {
 
       dynamic response;
       try {
-        response = await _supabase.rpc(
+        response = await RpcM01.call(
           'fn_cerrar_turno_offline_monedas',
           params: {
             'p_client_uuid': clientUuidCierre,
@@ -901,17 +902,29 @@ class TurnoService {
     }
   }
 
+  /// Id de turno usable para listar/cachear egresos: abierto, o el último
+  /// cerrado/sincronizado en display (tras subir la cola el turno ya no está
+  /// abierto y sin este fallback la UI se queda vacía).
+  static int? resolveTurnoIdForEgresos(Map<String, dynamic>? turno) {
+    if (turno == null) return null;
+    final raw = turno['id'] ?? turno['server_id_turno'] ?? turno['id_turno'];
+    if (raw is int) return raw;
+    if (raw is num) return raw.toInt();
+    return int.tryParse(raw?.toString() ?? '');
+  }
+
   static Future<List<Expense>> getEgresosForCurrentShift() async {
     try {
-      // Get current open shift
-      final turnoAbierto = await getTurnoAbierto();
+      // Tras cerrar/sincronizar no hay turno abierto, pero la UI de egresos /
+      // venta total sigue mostrando el turno recién cerrado.
+      final turno = await getTurnoForDisplay();
+      final idTurno = resolveTurnoIdForEgresos(turno);
 
-      if (turnoAbierto == null) {
-        print('⚠️ No open shift found for expenses');
+      if (idTurno == null) {
+        print('⚠️ No shift found for expenses');
         return [];
       }
 
-      final idTurno = turnoAbierto['id'] as int;
       return await getEgresosPorTurno(idTurno);
     } catch (e) {
       print('❌ Error getting expenses for current shift: $e');
@@ -1037,7 +1050,7 @@ class TurnoService {
 
       dynamic response;
       try {
-        response = await _supabase.rpc(
+        response = await RpcM01.call(
           'fn_apertura_turno_offline_monedas',
           params: {'p_client_uuid': clave, ...paramsMonedas},
         );

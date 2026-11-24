@@ -7810,7 +7810,10 @@ class _SalesScreenState extends State<SalesScreen>
                       : '—',
                   AppColors.textSecondary,
                 ),
-                if (variasMonedas && vendor.egresosPorMoneda.isNotEmpty)
+                // Los egresos van siempre por divisa nativa. Antes, con una sola
+                // moneda de venta (p. ej. solo USD) se pintaba `totalEgresos`
+                // que solo guarda CUP → un egreso de 20 USD salía como $0.00.
+                if (vendor.egresosPorMoneda.isNotEmpty)
                   for (final e in vendor.egresosPorMoneda.entries)
                     _buildVendorDetailRow(
                       'Total egresos (${e.key})',
@@ -7819,9 +7822,7 @@ class _SalesScreenState extends State<SalesScreen>
                     )
                 else
                   _buildVendorDetailRow(
-                    variasMonedas
-                        ? 'Total egresos ($_monedaBase)'
-                        : 'Total Egresos',
+                    'Total Egresos',
                     '\$${vendor.totalEgresos.toStringAsFixed(2)}',
                     AppColors.error,
                   ),
@@ -7942,11 +7943,14 @@ class _SalesScreenState extends State<SalesScreen>
 
   /// Efectivo y transferencia de la tarjeta.
   ///
-  /// Con una sola divisa se conservan las dos cifras de siempre (el efectivo
-  /// ya neto de egresos). Con varias, cada divisa va en su fila: el total
-  /// nativo cruzado no es el consolidado de la tabla.
+  /// Si hay `desglose_monedas` o egresos por divisa, cada moneda va en su fila
+  /// (también cuando solo hubo USD): así un egreso USD se resta del efectivo
+  /// USD y no del total CUP vacío. Sin desglose se conservan las dos cifras
+  /// escalares de siempre.
   List<Widget> _filasMedioTurno(SalesVendorReport vendor, bool variasMonedas) {
-    if (!variasMonedas) {
+    final usarDesglose =
+        vendor.desgloseMonedas.isNotEmpty || vendor.egresosPorMoneda.isNotEmpty;
+    if (!usarDesglose) {
       return [
         _buildVendorDetailRow(
           'Efectivo en Caja',
@@ -7968,22 +7972,27 @@ class _SalesScreenState extends State<SalesScreen>
       egresosPorMoneda: vendor.egresosPorMoneda,
     );
     final digitales = digitalCobradoPorDivisa(vendor.desgloseMonedas);
+    // Una sola divisa: etiquetas cortas como antes, con el código al monto.
+    final etiquetaEfectivo =
+        variasMonedas ? (String m) => 'Efectivo en caja ($m)' : (_) => 'Efectivo en Caja';
+    final etiquetaDigital =
+        variasMonedas ? (String m) => 'Transferencia ($m)' : (_) => 'Transferencia';
     return [
       for (final linea in efectivos)
         _buildVendorDetailRow(
-          'Efectivo en caja (${linea.moneda})',
+          etiquetaEfectivo(linea.moneda),
           _formatMontoNativo(linea.importe, linea.moneda),
           AppColors.success,
         ),
       if (efectivos.isEmpty)
         _buildVendorDetailRow(
-          'Efectivo en caja',
+          'Efectivo en Caja',
           _formatMontoNativo(-vendor.totalEgresos, _monedaBase),
           AppColors.success,
         ),
       for (final linea in digitales)
         _buildVendorDetailRow(
-          'Transferencia (${linea.moneda})',
+          etiquetaDigital(linea.moneda),
           _formatMontoNativo(linea.importe, linea.moneda),
           AppColors.info,
         ),

@@ -483,23 +483,9 @@ class _ConnectionStatusWidgetState extends State<ConnectionStatusWidget> {
         );
       }
 
-      const requiredOfflineModules = {
-        SyncModule.license,
-        SyncModule.storeConfig,
-        SyncModule.credentials,
-        SyncModule.paymentMethods,
-        SyncModule.promotions,
-        SyncModule.categories,
-        SyncModule.products,
-        SyncModule.layouts,
-        SyncModule.turno,
-        SyncModule.egresos,
-        SyncModule.orders,
-        SyncModule.shiftWorkers,
-      };
-
+      // Mismos módulos canónicos que Ajustes → sync para offline readiness.
       final result = await AutoSyncService().syncModules(
-        requiredOfflineModules,
+        SyncModuleCatalog.offlineReadinessRequired,
         resumeFromCheckpoint: false,
         suspenderModoOffline: true,
       );

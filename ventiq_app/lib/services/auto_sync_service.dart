@@ -30,6 +30,8 @@ import '../money/fondo_caja_moneda.dart';
 import '../money/politica_moneda_store.dart';
 import '../money/venta_v1_envio.dart';
 import 'venta_v1_cliente.dart';
+import 'rpc_m01.dart';
+import '../models/expense.dart';
 
 /// Servicio para sincronización automática periódica de datos
 /// Se ejecuta cuando el modo offline NO está activado para mantener datos actualizados
@@ -248,7 +250,7 @@ class AutoSyncService {
 
     _lastReconnectSyncAt = now;
     print('📶 Sync ligera por reconexión (pendientes + turno)...');
-    await _pasadaDeFondo(_modulesForReconnectPass(), motivo: 'reconexión');
+    await _pasadaDeFondo(await _modulesForReconnectPass(), motivo: 'reconexión');
   }
 
   /// Ejecutar una sincronización inmediata sin iniciar el timer periódico
@@ -302,7 +304,7 @@ class AutoSyncService {
   /// Realizar una sincronización completa (delega en [syncModules]).
   Future<void> _performSync() async {
     print('🔄 Iniciando sincronización automática #${_syncCount + 1}...');
-    await _pasadaDeFondo(_modulesForAutoSyncPass(), motivo: 'automática');
+    await _pasadaDeFondo(await _modulesForAutoSyncPass(), motivo: 'automática');
   }
 
   /// Descargas que reemplazan estado local (turno, egresos, órdenes, personal
@@ -316,10 +318,12 @@ class AutoSyncService {
   };
 
   /// Módulos de subida, en el orden del pipeline.
+  /// Ventas y egresos antes del turno: el cierre de la cola no debe irse al
+  /// servidor sin la info del turno ya registrada.
   static const Set<SyncModule> modulosSubida = {
-    SyncModule.uploadTurno,
     SyncModule.uploadSales,
     SyncModule.uploadEgresos,
+    SyncModule.uploadTurno,
     SyncModule.uploadShiftWorkers,
     SyncModule.uploadAdminOps,
   };
@@ -408,12 +412,24 @@ class AutoSyncService {
     return contarPendientesSubida();
   }
 
+  /// Tras logout online (`prefs.clear`) el catálogo offline queda vacío. El
+  /// contador [_syncCount] vive en el singleton y puede seguir > 0, así que
+  /// las frecuencias %3/%5 saltaban categorías/productos hasta varios minutos.
+  Future<bool> _offlineCatalogoVacio() async {
+    final data = await _userPreferencesService.getOfflineData();
+    final cats = data?['categories'];
+    final products = data?['products'];
+    final sinCategorias = cats is! List || cats.isEmpty;
+    final sinProductos = products is! Map || products.isEmpty;
+    return sinCategorias || sinProductos;
+  }
+
   /// Módulos de la pasada automática (respeta frecuencias periódicas).
-  Set<SyncModule> _modulesForAutoSyncPass() {
+  Future<Set<SyncModule>> _modulesForAutoSyncPass() async {
     final modules = <SyncModule>{
-      SyncModule.uploadTurno,
       SyncModule.uploadSales,
       SyncModule.uploadEgresos,
+      SyncModule.uploadTurno,
       SyncModule.uploadShiftWorkers,
       SyncModule.uploadAdminOps,
       SyncModule.license,
@@ -425,12 +441,24 @@ class AutoSyncService {
       SyncModule.egresos,
     };
 
-    if (_syncCount == 0 || _syncCount % 3 == 0) {
+    final catalogoVacio = await _offlineCatalogoVacio();
+    if (catalogoVacio) {
+      // Primera pasada post-login / wipe: no esperar al ciclo %3/%5.
+      _syncCount = 0;
       modules.add(SyncModule.categories);
-    }
-    if (_syncCount == 0 || _syncCount % 5 == 0) {
       modules.add(SyncModule.products);
       modules.add(SyncModule.layouts);
+      print(
+        '📦 Cache offline sin catálogo → forzando categorías/productos/layouts',
+      );
+    } else {
+      if (_syncCount == 0 || _syncCount % 3 == 0) {
+        modules.add(SyncModule.categories);
+      }
+      if (_syncCount == 0 || _syncCount % 5 == 0) {
+        modules.add(SyncModule.products);
+        modules.add(SyncModule.layouts);
+      }
     }
     if (_syncCount % 2 == 0) {
       modules.add(SyncModule.orders);
@@ -440,11 +468,11 @@ class AutoSyncService {
   }
 
   /// Pasada al recuperar conexión: prioriza subir pendientes y refrescar turno.
-  Set<SyncModule> _modulesForReconnectPass() {
-    return {
-      SyncModule.uploadTurno,
+  Future<Set<SyncModule>> _modulesForReconnectPass() async {
+    final modules = <SyncModule>{
       SyncModule.uploadSales,
       SyncModule.uploadEgresos,
+      SyncModule.uploadTurno,
       SyncModule.uploadShiftWorkers,
       SyncModule.uploadAdminOps,
       SyncModule.license,
@@ -457,6 +485,12 @@ class AutoSyncService {
       // Necesario para egresos offline con "Contabilizar en Fondo de Caja".
       SyncModule.defaultCashFund,
     };
+    if (await _offlineCatalogoVacio()) {
+      modules.add(SyncModule.categories);
+      modules.add(SyncModule.products);
+      modules.add(SyncModule.layouts);
+    }
+    return modules;
   }
 
   /// Sincronizar credenciales del usuario
@@ -1039,7 +1073,7 @@ class AutoSyncService {
     );
     if (fecha == null) return;
     try {
-      final resp = await Supabase.instance.client.rpc(
+      final resp = await RpcM01.call(
         'fn_alinear_apertura_turno_offline',
         params: {'p_id_turno': serverId, 'p_fecha_apertura': fecha},
       );
@@ -1359,7 +1393,7 @@ class AutoSyncService {
         UuidGenerator.v4();
 
     try {
-      final resp = await Supabase.instance.client.rpc(
+      final resp = await RpcM01.call(
         efectivoFinalUsd == null
             ? 'fn_cerrar_turno_offline'
             : 'fn_cerrar_turno_offline_usd',
@@ -2046,10 +2080,9 @@ class AutoSyncService {
     required Map<String, dynamic> respaldoParams,
   }) async {
     try {
-      return await Supabase.instance.client.rpc(
-        monedasRpc,
-        params: monedasParams,
-      );
+      // `<monedasRpc>_m01` primero, luego el nombre antiguo; solo si ambos
+      // faltan se cae al respaldo escalar.
+      return await RpcM01.call(monedasRpc, params: monedasParams);
     } catch (e) {
       if (!_isRpcUnavailable(e, functionName: monedasRpc)) rethrow;
       print(
@@ -2856,7 +2889,8 @@ class AutoSyncService {
     return true;
   }
 
-  /// Replay ordenado: por cada turno pending → apertura → ventas → egresos → cierre.
+  /// Replay ordenado por turno pending: apertura → ventas → egresos →
+  /// cambios de estado → cierre (solo si ya no quedan pendientes del turno).
   Future<Map<String, dynamic>> _syncOfflineTurnoQueue() {
     final running = _turnoQueueInFlight;
     if (running != null) {
@@ -3208,55 +3242,119 @@ class AutoSyncService {
 
   /// Sincronizar egresos del turno actual (download). Conserva en cache los
   /// egresos offline aún pendientes para que no desaparezcan de la UI.
+  ///
+  /// Usa el turno en display (abierto o recién cerrado/sincronizado). Si no
+  /// hay id de turno, **no** borra el cache: tras subir la cola el turno ya
+  /// no está abierto y un clear aquí hacía desaparecer el egreso recién
+  /// subido de la lista.
   Future<void> _syncEgresos() async {
     try {
-      final egresos = await TurnoService.getEgresosEnriquecidos();
+      final turno = await TurnoService.getTurnoForDisplay();
+      final idTurno = TurnoService.resolveTurnoIdForEgresos(turno);
       final pending = await _userPreferencesService.getEgresosOffline();
       final pendingRows =
           _userPreferencesService.egresosOfflineAsCacheRows(pending);
 
-      if (egresos.isNotEmpty) {
-        final egresosData =
-            egresos
-                .map(
-                  (egreso) => {
-                    'id_egreso': egreso.idEgreso,
-                    'monto_entrega': egreso.montoEntrega,
-                    // La divisa viaja con el importe porque `monto_entrega` es
-                    // su importe NATIVO: sin ella, al bajar los egresos una
-                    // fila de 20 USD se cachearía como 20 CUP y la UI la
-                    // mostraría y sumaría contra la moneda base.
-                    'moneda': egreso.moneda,
-                    'motivo_entrega': egreso.motivoEntrega,
-                    'nombre_autoriza': egreso.nombreAutoriza,
-                    'nombre_recibe': egreso.nombreRecibe,
-                    'es_digital': egreso.esDigital,
-                    'fecha_entrega': egreso.fechaEntrega.toIso8601String(),
-                    'id_medio_pago': egreso.idMedioPago,
-                    'turno_estado': egreso.turnoEstado,
-                    'medio_pago': egreso.medioPago,
-                  },
-                )
-                .toList();
-        await _userPreferencesService.saveEgresosCache([
-          ...egresosData,
-          ...pendingRows,
-        ]);
-        print(
-          '  📊 ${egresos.length} egresos servidor + '
-          '${pendingRows.length} offline pendientes en cache',
-        );
-      } else if (pendingRows.isNotEmpty) {
-        await _userPreferencesService.saveEgresosCache(pendingRows);
-        print(
-          '  📊 Solo ${pendingRows.length} egresos offline pendientes en cache',
-        );
-      } else {
-        await _userPreferencesService.clearEgresosCache();
-        print('  📊 No hay egresos para sincronizar');
+      if (idTurno == null) {
+        if (pendingRows.isNotEmpty) {
+          await _userPreferencesService.saveEgresosCache(pendingRows);
+          print(
+            '  📊 Sin turno para bajar egresos; '
+            '${pendingRows.length} offline pendientes en cache',
+          );
+        } else {
+          print(
+            '  📊 Sin turno para bajar egresos; se conserva cache existente',
+          );
+        }
+        return;
       }
+
+      final egresos = await TurnoService.getEgresosEnriquecidos();
+      await _persistEgresosCache(egresos, pendingRows);
     } catch (e) {
       print('  ❌ Error en sincronización automática de egresos: $e');
+    }
+  }
+
+  /// Reescribe el cache de egresos con filas del servidor + pendientes offline.
+  Future<void> _persistEgresosCache(
+    List<Expense> egresos,
+    List<Map<String, dynamic>> pendingRows,
+  ) async {
+    if (egresos.isNotEmpty) {
+      final egresosData =
+          egresos
+              .map(
+                (egreso) => {
+                  'id_egreso': egreso.idEgreso,
+                  'monto_entrega': egreso.montoEntrega,
+                  // La divisa viaja con el importe porque `monto_entrega` es
+                  // su importe NATIVO: sin ella, al bajar los egresos una
+                  // fila de 20 USD se cachearía como 20 CUP y la UI la
+                  // mostraría y sumaría contra la moneda base.
+                  'moneda': egreso.moneda,
+                  'motivo_entrega': egreso.motivoEntrega,
+                  'nombre_autoriza': egreso.nombreAutoriza,
+                  'nombre_recibe': egreso.nombreRecibe,
+                  'es_digital': egreso.esDigital,
+                  'fecha_entrega': egreso.fechaEntrega.toIso8601String(),
+                  'id_medio_pago': egreso.idMedioPago,
+                  'turno_estado': egreso.turnoEstado,
+                  'medio_pago': egreso.medioPago,
+                },
+              )
+              .toList();
+      await _userPreferencesService.saveEgresosCache([
+        ...egresosData,
+        ...pendingRows,
+      ]);
+      print(
+        '  📊 ${egresos.length} egresos servidor + '
+        '${pendingRows.length} offline pendientes en cache',
+      );
+    } else if (pendingRows.isNotEmpty) {
+      await _userPreferencesService.saveEgresosCache(pendingRows);
+      print(
+        '  📊 Solo ${pendingRows.length} egresos offline pendientes en cache',
+      );
+    } else {
+      await _userPreferencesService.clearEgresosCache();
+      print('  📊 No hay egresos para sincronizar');
+    }
+  }
+
+  /// Tras subir egresos offline, rellena el cache con la copia del servidor
+  /// del turno (las filas locales con `offline_id` ya se quitaron).
+  Future<void> _refreshEgresosCacheForTurno(int idTurno) async {
+    try {
+      final egresos = await TurnoService.getEgresosPorTurno(idTurno);
+      final paymentMethods =
+          await PaymentMethodService.getActivePaymentMethods();
+      final paymentMethodMap = <int, String>{};
+      final paymentMethodDigitalMap = <int, bool>{};
+      for (final method in paymentMethods) {
+        paymentMethodMap[method.id] = method.denominacion;
+        paymentMethodDigitalMap[method.id] = method.esDigital;
+      }
+      final enriched =
+          egresos.map((expense) {
+            if (expense.idMedioPago != null &&
+                paymentMethodMap.containsKey(expense.idMedioPago)) {
+              return expense.copyWith(
+                medioPago: paymentMethodMap[expense.idMedioPago!],
+                esDigital:
+                    paymentMethodDigitalMap[expense.idMedioPago!] ?? false,
+              );
+            }
+            return expense;
+          }).toList();
+      final pending = await _userPreferencesService.getEgresosOffline();
+      final pendingRows =
+          _userPreferencesService.egresosOfflineAsCacheRows(pending);
+      await _persistEgresosCache(enriched, pendingRows);
+    } catch (e) {
+      print('  ⚠️ No se pudo refrescar cache de egresos del turno $idTurno: $e');
     }
   }
 
@@ -3459,6 +3557,28 @@ class AutoSyncService {
 
     if (syncedOfflineIds.isNotEmpty) {
       await _userPreferencesService.removeEgresosOfflineByIds(syncedOfflineIds);
+      // Las filas con offline_id salieron del cache de UI; reponer con la
+      // copia del servidor para que el egreso no desaparezca tras la subida.
+      int? refreshId = serverIdTurno;
+      if (refreshId == null) {
+        for (final e in filtered) {
+          final offlineId = e['offline_id']?.toString();
+          if (offlineId == null || !syncedOfflineIds.contains(offlineId)) {
+            continue;
+          }
+          final raw = e['id_turno'] ?? e['server_id_turno'];
+          refreshId =
+              raw is int
+                  ? raw
+                  : (raw is num
+                      ? raw.toInt()
+                      : int.tryParse(raw?.toString() ?? ''));
+          if (refreshId != null) break;
+        }
+      }
+      if (refreshId != null) {
+        await _refreshEgresosCacheForTurno(refreshId);
+      }
     }
 
     return syncedCount;
@@ -3480,7 +3600,8 @@ class AutoSyncService {
   ) async {
     const fn = 'fn_registrar_egreso_offline_v2';
     try {
-      return await Supabase.instance.client.rpc(
+      // `fn_registrar_egreso_offline_v2_m01` primero; luego el nombre antiguo.
+      return await RpcM01.call(
         fn,
         params: {...params, 'p_moneda': moneda},
       );
@@ -3491,10 +3612,7 @@ class AutoSyncService {
         'Fallback a fn_registrar_egreso_offline '
         '(el egreso queda en la divisa por defecto de la base).',
       );
-      return Supabase.instance.client.rpc(
-        'fn_registrar_egreso_offline',
-        params: params,
-      );
+      return RpcM01.call('fn_registrar_egreso_offline', params: params);
     }
   }
 
@@ -4558,7 +4676,7 @@ class AutoSyncService {
         // sobrecarga offline que todavía lleva client_uuid. No se llama
         // fn_registrar_venta: no tiene clave de idempotencia.
         try {
-          response = await Supabase.instance.client.rpc(
+          response = await RpcM01.call(
             'fn_registrar_venta_offline_v4',
             params: ventaParams,
           );
@@ -4841,7 +4959,7 @@ class AutoSyncService {
     await _persistPendingOrderSyncKeys(orderData);
 
     try {
-      await Supabase.instance.client.rpc(
+      await RpcM01.call(
         'fn_registrar_cambio_estado_offline',
         params: {
           'p_client_uuid': estadoUuid,
@@ -4974,7 +5092,7 @@ class AutoSyncService {
         '    ⚠️ fn_registrar_pago_venta_v2 no disponible ($e). Intentando offline.',
       );
       try {
-        final resp = await Supabase.instance.client.rpc(
+        final resp = await RpcM01.call(
           'fn_registrar_pago_venta_offline',
           params: {
             'p_client_uuid': pagoUuid,
@@ -5079,16 +5197,17 @@ class AutoSyncService {
     );
   }
 
-  /// Subida completa en el único orden válido: la cola de turnos (por turno:
-  /// apertura → ventas → egresos → cambios de estado → cierre) y después lo
-  /// que no pertenece a un turno pendiente de la cola.
+  /// Subida completa: primero ventas/egresos/estados (turnos ya abiertos en
+  /// servidor y sueltos), después la cola (apertura → ventas → egresos →
+  /// cierre). Así el cierre no se envía sin la info del turno ya registrada
+  /// cuando el turno ya tenía `server_id`.
   Future<Map<String, dynamic>> _subirTodoSinLock({
     bool incluirRelacionados = true,
   }) async {
-    final queue = await _syncOfflineTurnoQueue();
     final ventasSueltas = await _syncOfflineSales();
     final egresosSueltos = await _syncOfflineEgresos();
     final cambiosEstado = await _syncOrderStatusChanges();
+    final queue = await _syncOfflineTurnoQueue();
     final related = <String, dynamic>{};
 
     if (incluirRelacionados) {
@@ -5193,7 +5312,8 @@ class AutoSyncService {
             ok = (queue['closed_remaining'] as int? ?? 0) == 0;
           }
 
-          final detail = ok ? null : _describirTurnoSinSubir(queue, localId);
+          final detail =
+              ok ? null : await _describirTurnoSinSubir(queue, localId);
           print(
             '[TURNO_SYNC] ◀◀◀ syncOfflineTurnoAfterLocalCierre END '
             'ok=$ok detail=$detail',
@@ -5214,20 +5334,56 @@ class AutoSyncService {
     );
   }
 
-  String? _problemaDeCola(Map<String, dynamic> queue) {
+  Future<String?> _problemaDeCola(Map<String, dynamic> queue) async {
     final failed = queue['failed_cierres'];
     final hayFallo =
         (failed is List && failed.isNotEmpty) ||
         queue['apertura_fallida'] != null;
-    return hayFallo ? _describirTurnoSinSubir(queue, null) : null;
+    return hayFallo ? await _describirTurnoSinSubir(queue, null) : null;
   }
 
-  String _describirTurnoSinSubir(
+  /// Errores guardados en órdenes aún no subidas (p. ej. DNS, RPC, tasa).
+  Future<List<String>> _erroresVentasPendientes({
+    Map<String, dynamic>? turno,
+  }) async {
+    final orders = await _userPreferencesService.getPendingOrders();
+    final errs = <String>[];
+    for (final o in orders) {
+      if (o['synced'] == true) continue;
+      if (turno != null && !_orderBelongsToTurno(o, turno)) continue;
+      final err = o['last_sync_error']?.toString().trim();
+      if (err == null || err.isEmpty) continue;
+      final id = o['id']?.toString() ?? '?';
+      errs.add('Orden $id: ${_acortarErrorSync(err)}');
+    }
+    return errs;
+  }
+
+  String _acortarErrorSync(String err) {
+    if (_looksLikeConnectionError(err)) {
+      return 'sin red/DNS hacia el servidor (reintenta con conexión estable)';
+    }
+    return err.length > 180 ? '${err.substring(0, 180)}…' : err;
+  }
+
+  String _resumirErroresVenta(List<String> errs, {int max = 2}) {
+    if (errs.isEmpty) return '';
+    final shown = errs.take(max).join(' | ');
+    final extra = errs.length > max ? ' (+${errs.length - max} más)' : '';
+    return '$shown$extra';
+  }
+
+  Future<String> _describirTurnoSinSubir(
     Map<String, dynamic> queue,
     String? localId,
-  ) {
+  ) async {
     final bloqueados = queue['cierres_bloqueados'];
     if (bloqueados is List && bloqueados.isNotEmpty) {
+      final detalle = _resumirErroresVenta(await _erroresVentasPendientes());
+      if (detalle.isNotEmpty) {
+        return 'Hay ventas o egresos del turno sin subir; el cierre se '
+            'enviará cuando suban. $detalle';
+      }
       return 'Hay ventas o egresos del turno sin subir al servidor; el cierre '
           'se enviará cuando suban. Revisa las órdenes con error.';
     }
@@ -5443,10 +5599,12 @@ class AutoSyncService {
       );
 
       // Orden fijo del pipeline (solo cuentan los seleccionados en [effective]).
+      // Ventas/egresos antes de la cola de turno: el cierre no debe adelantarse
+      // a la info del turno cuando éste ya tiene server_id.
       const pipelineOrder = [
-        SyncModule.uploadTurno,
         SyncModule.uploadSales,
         SyncModule.uploadEgresos,
+        SyncModule.uploadTurno,
         SyncModule.uploadShiftWorkers,
         SyncModule.uploadAdminOps,
         SyncModule.license,
@@ -5616,38 +5774,40 @@ class AutoSyncService {
       }
 
       // --- Upload primero (para no perder ventas locales) ---
-      // Replay ordenado: apertura → ventas → egresos → cierre por cada turno.
-      // Cada módulo de subida corre primero la cola (no-op si ya corrió en
-      // esta pasada) y después barre lo suelto, que nunca incluye ventas ni
-      // egresos de turnos cuya apertura aún no llegó al servidor.
-      var queueAlreadyRan = false;
-      Future<void> asegurarCola() async {
-        if (queueAlreadyRan) return;
-        final result = await _syncOfflineTurnoQueue();
-        queueAlreadyRan = true;
-        if ((result['turnos'] as int? ?? 0) > 0) {
-          syncedData['offline_turnos'] = result;
-        }
-        final problema = _problemaDeCola(result);
-        if (problema != null) throw Exception(problema);
-      }
-
-      await run(SyncModule.uploadTurno, 'Turnos offline (cola)', asegurarCola);
-
+      // 1) Ventas y egresos de turnos ya abiertos en servidor (y sueltos).
+      // 2) Cola de turnos: apertura → ventas → egresos → cierre.
+      // Así el cierre no se adelanta a la info del turno. Lo que aún no tiene
+      // apertura en servidor lo sube la cola (nunca se cierra sin ellos).
       await run(SyncModule.uploadSales, 'Ventas offline (subir)', () async {
-        await asegurarCola();
         final n = await _syncOfflineSales();
         if (n > 0) syncedData['offline_sales'] = n;
         final statusN = await _syncOrderStatusChanges();
         if (statusN > 0) {
           syncedData['order_status_changes'] = statusN;
         }
+        // Si quedaron ventas con error, el módulo no puede figurar como OK:
+        // el diálogo debe mostrar la causa (red/DNS, RPC, tasa, etc.).
+        final errs = await _erroresVentasPendientes();
+        if (errs.isNotEmpty) {
+          throw Exception(
+            'Quedan ${errs.length} venta(s) sin subir: '
+            '${_resumirErroresVenta(errs, max: 3)}',
+          );
+        }
       });
 
       await run(SyncModule.uploadEgresos, 'Egresos offline (subir)', () async {
-        await asegurarCola();
         final n = await _syncOfflineEgresos();
         if (n > 0) syncedData['offline_egresos'] = n;
+      });
+
+      await run(SyncModule.uploadTurno, 'Turnos offline (cola)', () async {
+        final result = await _syncOfflineTurnoQueue();
+        if ((result['turnos'] as int? ?? 0) > 0) {
+          syncedData['offline_turnos'] = result;
+        }
+        final problema = await _problemaDeCola(result);
+        if (problema != null) throw Exception(problema);
       });
 
       await run(
@@ -5964,7 +6124,8 @@ class AutoSyncService {
         s.contains('failed host lookup') ||
         s.contains('clientexception') ||
         s.contains('connection closed') ||
-        s.contains('software caused connection abort');
+        s.contains('software caused connection abort') ||
+        s.contains('sin red/dns');
   }
 }
 
@@ -6047,6 +6208,56 @@ enum SyncModule {
   uploadTurno,
   uploadShiftWorkers,
   uploadAdminOps,
+}
+
+/// Listas canónicas para UI y sync manual: no inventar subconjuntos a medias.
+///
+/// `storeConfig` incluye monedas/tasas/política de moneda y satélites
+/// (p. ej. combustibles servicentro). No hay módulos aparte para eso.
+abstract final class SyncModuleCatalog {
+  static const List<SyncModule> uploads = [
+    SyncModule.uploadSales,
+    SyncModule.uploadEgresos,
+    SyncModule.uploadTurno,
+    SyncModule.uploadShiftWorkers,
+    SyncModule.uploadAdminOps,
+  ];
+
+  static const List<SyncModule> downloads = [
+    SyncModule.license,
+    SyncModule.storeConfig,
+    SyncModule.credentials,
+    SyncModule.paymentMethods,
+    SyncModule.promotions,
+    SyncModule.categories,
+    SyncModule.products,
+    SyncModule.layouts,
+    SyncModule.turno,
+    SyncModule.egresos,
+    SyncModule.orders,
+    SyncModule.shiftWorkers,
+    SyncModule.defaultCashFund,
+  ];
+
+  /// Todo el pipeline (subida + bajada). Equivale a [SyncModule.values].
+  static Set<SyncModule> get all => {...uploads, ...downloads};
+
+  /// Obligatorios para vender offline. `defaultCashFund` es opcional (la
+  /// tienda puede no tenerlo) y no bloquea la activación del modo offline.
+  static const Set<SyncModule> offlineReadinessRequired = {
+    SyncModule.license,
+    SyncModule.storeConfig,
+    SyncModule.credentials,
+    SyncModule.paymentMethods,
+    SyncModule.promotions,
+    SyncModule.categories,
+    SyncModule.products,
+    SyncModule.layouts,
+    SyncModule.turno,
+    SyncModule.egresos,
+    SyncModule.orders,
+    SyncModule.shiftWorkers,
+  };
 }
 
 extension SyncModuleX on SyncModule {

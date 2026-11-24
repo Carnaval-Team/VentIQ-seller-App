@@ -1,3 +1,13 @@
+-- ============================================================================
+-- C17b: sobrecarga de 11 parámetros (añade p_repartir_igual).
+-- ============================================================================
+-- Fase 1: convive con la firma de 10 de main.
+-- En la de 11, NINGÚN parámetro tras el 6º lleva DEFAULT: Postgres exige que
+-- tras un DEFAULT todos los siguientes también lo tengan, y si el 11º tuviera
+-- DEFAULT false, PostgREST podría ambigüar con la de 10 (plan §6).
+-- El Admin nuevo siempre envía los 11 (incl. nulls). El viejo envía 10 → firma vieja.
+-- NO ejecutar fondo_inversion_schema.sql (hace DROP de la firma de 10).
+-- ============================================================================
 CREATE OR REPLACE FUNCTION public.fn_fdi_crear_liquidacion(
     p_id_tienda            bigint,
     p_desde                date,
@@ -5,11 +15,11 @@ CREATE OR REPLACE FUNCTION public.fn_fdi_crear_liquidacion(
     p_modo                 text,
     p_id_cuenta_destino    bigint,
     p_detalle              jsonb,
-    p_tasa_validacion      numeric DEFAULT NULL,
-    p_confirmar_diferencia boolean DEFAULT false,
-    p_observacion          text   DEFAULT NULL,
-    p_idempotency_key      uuid   DEFAULT NULL,
-    p_repartir_igual       boolean DEFAULT false
+    p_tasa_validacion      numeric,
+    p_confirmar_diferencia boolean,
+    p_observacion          text,
+    p_idempotency_key      uuid,
+    p_repartir_igual       boolean
 ) RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER

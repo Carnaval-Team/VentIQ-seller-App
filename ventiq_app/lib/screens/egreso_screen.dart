@@ -7,6 +7,7 @@ import '../services/payment_method_service.dart';
 import '../services/server_time_service.dart';
 import '../services/connectivity_service.dart';
 import '../services/caja_disponible_service.dart';
+import '../services/rpc_m01.dart';
 import '../money/caja_disponible.dart';
 import '../money/fondo_caja_moneda.dart';
 import '../models/payment_method.dart';
@@ -1153,14 +1154,14 @@ class _EgresoScreenState extends State<EgresoScreen> {
     };
     dynamic response;
     try {
-      response = await Supabase.instance.client.rpc(
+      response = await RpcM01.call(
         'fn_registrar_egreso_offline_v2',
         params: {...params, 'p_moneda': _selectedDivisa},
       );
     } catch (e) {
       if (!_egresoRpcAusente(e, 'fn_registrar_egreso_offline_v2')) rethrow;
       try {
-        response = await Supabase.instance.client.rpc(
+        response = await RpcM01.call(
           'fn_registrar_egreso_offline',
           params: params,
         );

@@ -5,8 +5,10 @@ import '../models/product.dart';
 // FASE 7 P0: cascada de presentaciones local (replica `fn_presentaciones_producto`)
 // para resolver el equivalente base de cada ingrediente. Ver
 // `getProductIngredients` y `docs/PLAN_CONSUMO_INGREDIENTES_ELABORADOS_PRESENTACIONES.md`.
+import '../utils/elaborado_recipe_expand.dart';
 import '../utils/presentacion_cadena_local.dart';
 import '../utils/ttl_cache.dart';
+import 'product_recipe_cache_service.dart';
 import 'user_preferences_service.dart';
 
 class ProductDetailService {
@@ -892,35 +894,260 @@ class ProductDetailService {
     if (exigirAlmacen && idAlmacen == null) {
       throw StateError('No se pudo resolver el almacén del vendedor');
     }
-    // Offline-aware: sin este guard la descomposición de elaborados
-    // (_decomposeElaboratedProducts en preorder) llamaba a Supabase aun con el
-    // modo offline activo, fallaba por DNS y el elaborado se trataba como
-    // simple. La receta vive en `detalles_completos['ingredientes']`.
+
+    // Offline: misma regla que online — expandir elaborados anidados y
+    // exigir receta completa. Sin receta / sin anidados sincronizados → bloqueo
+    // (AGENTS.md). El stock se mide contra el cache local etiquetado.
     if (await _userPrefs.shouldUseLocalData()) {
-      if (exigirAlmacen) {
-        final entrada = await _detalleCompletoOffline(productId);
-        if (entrada == null || entrada.detalle['ingredientes'] is! List) {
-          throw StateError('No hay receta sincronizada para verificar el servicio');
-        }
-        final ingredientes = await _ingredientesDesdeCacheOffline(productId);
-        if (ingredientes.any((ing) => ing['id_almacen'] != idAlmacen ||
-            ing['alcance_stock'] != alcanceAlmacenTpv)) {
-          throw StateError('Sin stock de ingredientes verificado para este almacén');
-        }
-        return ingredientes;
-      }
-      return _ingredientesDesdeCacheOffline(productId);
+      return _getProductIngredientsOfflineExpanded(
+        productId,
+        idAlmacen: idAlmacen,
+        exigirAlmacen: exigirAlmacen,
+      );
     }
 
     try {
       debugPrint(
-        '🍽️ Obteniendo ingredientes para producto elaborado: $productId',
+        '🍽️ Obteniendo ingredientes (expandido) para producto: $productId',
       );
+
+      final index = await _cargarRecetasOnlineParaExpandir(productId);
+      // Raíz sin filas = servicio/elaborado sin BOM. El caller decide si
+      // bloquear (elaborado) u omitir (servicio puro). No es lo mismo que
+      // un anidado faltante.
+      final raiz = index.recetas[productId];
+      if (raiz == null || raiz.isEmpty) {
+        debugPrint(
+          '⚠️ No se encontraron ingredientes para el producto $productId',
+        );
+        return [];
+      }
+      final expand = expandirReceta(
+        idProducto: productId,
+        cantidad: 1,
+        recetas: index.recetas,
+        idsElaborados: index.elaborados,
+      );
+      if (expand.incompleto) {
+        if (exigirAlmacen) {
+          throw StateError(expand.motivo ?? 'Receta incompleta');
+        }
+        debugPrint('⚠️ Receta incompleta de $productId: ${expand.motivo}');
+        return [];
+      }
+      if (expand.hojas.isEmpty) {
+        debugPrint('⚠️ Sin hojas de receta para el producto $productId');
+        return [];
+      }
+
+      final idsIngredientes =
+          expand.hojas.map((h) => h.idIngrediente).toList(growable: false);
+      final cadenas = await _cadenasDePresentaciones(idsIngredientes);
+      final ingredients = <Map<String, dynamic>>[];
+
+      for (final hoja in expand.hojas) {
+        final idIngrediente = hoja.idIngrediente;
+        double? cantidadDisponible;
+        double? cantidadFisica;
+        var desglose = const <Map<String, dynamic>>[];
+        var unidadDePresentacion = '';
+        var disponibleResuelto = false;
+        var alcanceStock = ProductDetailService.alcanceDesconocido;
+        int? almacenMedido;
+        final meta = index.metaHojas[idIngrediente];
+        final nombre =
+            hoja.nombre ?? meta?['denominacion'] ?? 'Ingrediente desconocido';
+
+        final cadena = cadenas[idIngrediente] ?? const <PresentacionLocal>[];
+        unidadDePresentacion =
+            PresentacionCadenaLocal.base(cadena)?.nombre ?? '';
+
+        if (cadena.isNotEmpty) {
+          final resuelto = await _disponibleBaseIngrediente(
+            idIngrediente,
+            cadena,
+            idAlmacen,
+          );
+          if (resuelto != null) {
+            disponibleResuelto = true;
+            cantidadDisponible = resuelto.totalBase;
+            cantidadFisica = resuelto.totalFisica;
+            desglose = resuelto.desglose;
+            almacenMedido = idAlmacen;
+            alcanceStock =
+                idAlmacen == null
+                    ? ProductDetailService.alcanceTodosLosAlmacenes
+                    : ProductDetailService.alcanceAlmacenTpv;
+          }
+        }
+
+        if (!disponibleResuelto && exigirAlmacen) {
+          throw StateError(
+            'No se pudo verificar el ingrediente $nombre en el almacén $idAlmacen',
+          );
+        }
+        if (!disponibleResuelto) {
+          try {
+            final inventoryResponse = await _supabase
+                .from('app_dat_inventario_productos')
+                .select('cantidad_final')
+                .eq('id_producto', idIngrediente)
+                .order('created_at', ascending: false)
+                .limit(1);
+            if (inventoryResponse.isNotEmpty) {
+              cantidadDisponible =
+                  (inventoryResponse.first['cantidad_final'] as num?)
+                      ?.toDouble();
+            }
+          } catch (e) {
+            debugPrint(
+              '⚠️ Error inventario fallback ingrediente $idIngrediente: $e',
+            );
+          }
+        }
+
+        final unidadReceta = (hoja.unidad ?? '').trim();
+        final unidadMostrada =
+            unidadReceta.isNotEmpty ? unidadReceta : unidadDePresentacion;
+
+        ingredients.add({
+          'producto_id': idIngrediente,
+          'producto_nombre': nombre,
+          'cantidad_necesaria': hoja.cantidad,
+          'unidad_medida': unidadMostrada,
+          'sku': meta?['sku'] ?? '',
+          'imagen': meta?['imagen'],
+          'cantidad_disponible': cantidadDisponible,
+          'cantidad_disponible_fisica': cantidadFisica,
+          'presentacion_base': unidadDePresentacion,
+          'desglose_presentaciones': desglose,
+          'id_almacen': almacenMedido,
+          'alcance_stock': alcanceStock,
+          'nivel_recursion': hoja.nivel,
+        });
+      }
+
+      debugPrint(
+        '✅ Receta expandida de $productId: ${ingredients.length} hoja(s)',
+      );
+      return ingredients;
+    } catch (e) {
+      debugPrint('❌ Error obteniendo ingredientes del producto $productId: $e');
+      if (exigirAlmacen) rethrow;
+      return [];
+    }
+  }
+
+  /// Offline: expande BOM (elaborado→elaborado y servicio→elaborado) y mide
+  /// stock contra el cache. Sin receta o anidado faltante → error si
+  /// [exigirAlmacen], lista vacía si no.
+  Future<List<Map<String, dynamic>>> _getProductIngredientsOfflineExpanded(
+    int productId, {
+    int? idAlmacen,
+    required bool exigirAlmacen,
+  }) async {
+    final index = await _cargarRecetasOfflineParaExpandir(productId);
+    final raiz = index.recetas[productId];
+    if (raiz == null || raiz.isEmpty) {
+      if (exigirAlmacen) {
+        throw StateError(
+          'No hay receta sincronizada para verificar el producto $productId',
+        );
+      }
+      return const [];
+    }
+    final expand = expandirReceta(
+      idProducto: productId,
+      cantidad: 1,
+      recetas: index.recetas,
+      idsElaborados: index.elaborados,
+    );
+    if (expand.incompleto) {
+      if (exigirAlmacen) {
+        throw StateError(expand.motivo ?? 'Receta incompleta offline');
+      }
+      return const [];
+    }
+    if (expand.hojas.isEmpty) {
+      if (exigirAlmacen) {
+        throw StateError(
+          'No hay receta sincronizada para verificar el producto $productId',
+        );
+      }
+      return const [];
+    }
+
+    final out = <Map<String, dynamic>>[];
+    for (final hoja in expand.hojas) {
+      final stock = await _stockIngredienteOffline(hoja.idIngrediente);
+      out.add({
+        'producto_id': hoja.idIngrediente,
+        'producto_nombre':
+            hoja.nombre ??
+            index.metaHojas[hoja.idIngrediente]?['denominacion'] ??
+            'Ingrediente desconocido',
+        'cantidad_necesaria': hoja.cantidad,
+        'unidad_medida': hoja.unidad ?? '',
+        'sku': index.metaHojas[hoja.idIngrediente]?['sku'] ?? '',
+        'cantidad_disponible': stock ?? 0.0,
+        'presentacion_base': hoja.unidad ?? '',
+        'desglose_presentaciones': const <Map<String, dynamic>>[],
+        'id_almacen': idAlmacen,
+        'alcance_stock': ProductDetailService.alcanceCacheOffline,
+        'nivel_recursion': hoja.nivel,
+      });
+    }
+    return out;
+  }
+
+  Future<double?> _stockIngredienteOffline(int idProducto) async {
+    final entrada = await _detalleCompletoOffline(idProducto);
+    if (entrada != null) {
+      final inv = entrada.detalle['inventario'];
+      if (inv is List && inv.isNotEmpty) {
+        var sum = 0.0;
+        for (final raw in inv) {
+          if (raw is! Map) continue;
+          sum += (raw['cantidad_disponible'] as num?)?.toDouble() ?? 0.0;
+        }
+        return sum;
+      }
+      if (entrada.fallbackStock != null) return entrada.fallbackStock;
+    }
+    // Fallback: cantidad del listado en catálogo offline.
+    final offline = await _userPrefs.getOfflineData();
+    final products = offline?['products'];
+    if (products is! Map) return null;
+    for (final categoryProducts in products.values) {
+      if (categoryProducts is! List) continue;
+      for (final prod in categoryProducts) {
+        if (prod is! Map) continue;
+        final id = (prod['id'] as num?)?.toInt();
+        if (id != idProducto) continue;
+        return (prod['cantidad'] as num?)?.toDouble();
+      }
+    }
+    return null;
+  }
+
+  Future<({
+    Map<int, List<Map<String, dynamic>>> recetas,
+    Set<int> elaborados,
+    Map<int, Map<String, dynamic>> metaHojas,
+  })> _cargarRecetasOnlineParaExpandir(int rootId) async {
+    final recetas = <int, List<Map<String, dynamic>>>{};
+    final elaborados = <int>{};
+    final metaHojas = <int, Map<String, dynamic>>{};
+    final pendientes = <int>{rootId};
+
+    while (pendientes.isNotEmpty) {
+      final id = pendientes.first;
+      pendientes.remove(id);
+      if (recetas.containsKey(id)) continue;
 
       final response = await _supabase
           .from('app_dat_producto_ingredientes')
           .select('''
-            id,
             cantidad_necesaria,
             unidad_medida,
             id_ingrediente,
@@ -928,148 +1155,139 @@ class ProductDetailService {
               id,
               denominacion,
               sku,
-              imagen
+              imagen,
+              es_elaborado,
+              es_servicio
             )
           ''')
-          .eq('id_producto_elaborado', productId);
+          .eq('id_producto_elaborado', id);
 
-      if (response.isEmpty) {
-        debugPrint(
-          '⚠️ No se encontraron ingredientes para el producto $productId',
-        );
-        return [];
-      }
-
-      // Ids de ingredientes (sin duplicados): una sola consulta de cadenas.
-      final idsIngredientes = <int>[];
-      for (final item in response) {
-        final id = (item['id_ingrediente'] as num?)?.toInt();
-        if (id != null && !idsIngredientes.contains(id)) {
-          idsIngredientes.add(id);
-        }
-      }
-
-      // Cadena de presentaciones de TODOS los ingredientes: de ahí sale
-      // `factor_rel` (el equivalente base) y el nombre de la presentación base.
-      final cadenas = await _cadenasDePresentaciones(idsIngredientes);
-
-      final List<Map<String, dynamic>> ingredients = [];
-
+      final filas = <Map<String, dynamic>>[];
       for (final item in response) {
         final producto =
             item['app_dat_producto'] as Map<String, dynamic>? ?? {};
-        final idIngrediente = (item['id_ingrediente'] as num?)?.toInt();
-
-        double? cantidadDisponible; // equivalente base
-        double? cantidadFisica;
-        var desglose = const <Map<String, dynamic>>[];
-        var unidadDePresentacion = '';
-        var disponibleResuelto = false;
-        // Se etiqueta el alcance real de la medición (task-12): almacén del TPV,
-        // todos los almacenes o desconocido (fallback).
-        var alcanceStock = ProductDetailService.alcanceDesconocido;
-        int? almacenMedido;
-
-        if (idIngrediente != null) {
-          final cadena = cadenas[idIngrediente] ?? const <PresentacionLocal>[];
-          unidadDePresentacion =
-              PresentacionCadenaLocal.base(cadena)?.nombre ?? '';
-
-          if (cadena.isNotEmpty) {
-            final resuelto = await _disponibleBaseIngrediente(
-              idIngrediente,
-              cadena,
-              idAlmacen,
-            );
-            if (resuelto != null) {
-              disponibleResuelto = true;
-              cantidadDisponible = resuelto.totalBase;
-              cantidadFisica = resuelto.totalFisica;
-              desglose = resuelto.desglose;
-              almacenMedido = idAlmacen;
-              alcanceStock =
-                  idAlmacen == null
-                      ? ProductDetailService.alcanceTodosLosAlmacenes
-                      : ProductDetailService.alcanceAlmacenTpv;
-              debugPrint(
-                '📊 Ingrediente ${producto['denominacion']}: '
-                'base=$cantidadDisponible (física=$cantidadFisica, '
-                'almacén=${idAlmacen ?? 'todos'})',
-              );
-            }
-          }
-
-          if (!disponibleResuelto && exigirAlmacen) {
-            throw StateError('No se pudo verificar el ingrediente ${producto['denominacion']} en el almacén $idAlmacen');
-          }
-          if (!disponibleResuelto) {
-            // FALLBACK: comportamiento anterior (una sola fila, la más
-            // reciente). Se conserva para no empeorar si el ingrediente no
-            // tiene cadena o si la RPC no está disponible en el proyecto.
-            try {
-              final inventoryResponse = await _supabase
-                  .from('app_dat_inventario_productos')
-                  .select('cantidad_final')
-                  .eq('id_producto', idIngrediente)
-                  .order('created_at', ascending: false)
-                  .limit(1);
-
-              if (inventoryResponse.isNotEmpty) {
-                cantidadDisponible =
-                    (inventoryResponse.first['cantidad_final'] as num?)
-                        ?.toDouble();
-                debugPrint(
-                  '📊 Ingrediente ${producto['denominacion']} (fallback, fila '
-                  'única): cantidad disponible = $cantidadDisponible',
-                );
-              }
-            } catch (e) {
-              debugPrint(
-                '⚠️ Error obteniendo inventario (fallback) para ingrediente '
-                '$idIngrediente: $e',
-              );
-            }
-          }
+        final idIng = (item['id_ingrediente'] as num?)?.toInt();
+        if (idIng == null) continue;
+        final esElab = producto['es_elaborado'] == true;
+        if (esElab) {
+          elaborados.add(idIng);
+          if (!recetas.containsKey(idIng)) pendientes.add(idIng);
+        } else {
+          metaHojas[idIng] = {
+            'denominacion': producto['denominacion'],
+            'sku': producto['sku'],
+            'imagen': producto['imagen'],
+          };
         }
-
-        // La unidad que ve el vendedor: la de la receta si existe; si no (caso
-        // real, receta con `unidad_medida = null`), la presentación base.
-        final unidadReceta = (item['unidad_medida'] as String?)?.trim() ?? '';
-        final unidadMostrada =
-            unidadReceta.isNotEmpty ? unidadReceta : unidadDePresentacion;
-
-        ingredients.add({
-          'producto_id': producto['id'],
-          'producto_nombre':
-              producto['denominacion'] ?? 'Ingrediente desconocido',
+        filas.add({
+          'producto_id': idIng,
+          'id_ingrediente': idIng,
           'cantidad_necesaria': item['cantidad_necesaria'] ?? 0,
-          'unidad_medida': unidadMostrada,
-          'sku': producto['sku'] ?? '',
-          'imagen': producto['imagen'],
-          // EQUIVALENTE BASE (Σ cantidad_final × factor_rel). Es lo que debe
-          // compararse contra `cantidad_necesaria`, que viene en base.
-          'cantidad_disponible': cantidadDisponible,
-          // Σ cantidad_final sin factor, solo informativo para la UI.
-          'cantidad_disponible_fisica': cantidadFisica,
-          'presentacion_base': unidadDePresentacion,
-          'desglose_presentaciones': desglose,
-          // Alcance real de la medición (task-12). `id_almacen` null con
-          // `alcanceTodosLosAlmacenes` = no se pudo resolver el almacén del TPV.
-          'id_almacen': almacenMedido,
-          'alcance_stock': alcanceStock,
+          'unidad_medida': item['unidad_medida'],
+          'producto_nombre': producto['denominacion'],
+          'es_elaborado': esElab,
         });
       }
-
-      debugPrint(
-        '✅ Encontrados ${ingredients.length} ingredientes con inventario',
-      );
-
-      return ingredients;
-    } catch (e) {
-      debugPrint('❌ Error obteniendo ingredientes del producto $productId: $e');
-      if (exigirAlmacen) rethrow;
-      return [];
+      recetas[id] = filas;
     }
+
+    return (recetas: recetas, elaborados: elaborados, metaHojas: metaHojas);
+  }
+
+  Future<({
+    Map<int, List<Map<String, dynamic>>> recetas,
+    Set<int> elaborados,
+    Map<int, Map<String, dynamic>> metaHojas,
+  })> _cargarRecetasOfflineParaExpandir(int rootId) async {
+    final recetas = <int, List<Map<String, dynamic>>>{};
+    final elaborados = <int>{};
+    final metaHojas = <int, Map<String, dynamic>>{};
+
+    final offline = await _userPrefs.getOfflineData();
+    final products = offline?['products'];
+    final catalogFlags = <int, bool>{}; // id → es_elaborado
+    final catalogRecipes = <int, List<Map<String, dynamic>>>{};
+
+    if (products is Map) {
+      for (final categoryProducts in products.values) {
+        if (categoryProducts is! List) continue;
+        for (final prod in categoryProducts) {
+          if (prod is! Map) continue;
+          final id = (prod['id'] as num?)?.toInt();
+          if (id == null) continue;
+          final esElab = prod['es_elaborado'] == true;
+          catalogFlags[id] = esElab;
+          if (esElab) elaborados.add(id);
+          final detalle = prod['detalles_completos'];
+          if (detalle is Map && detalle['ingredientes'] is List) {
+            final filas = <Map<String, dynamic>>[];
+            for (final raw in detalle['ingredientes'] as List) {
+              if (raw is! Map) continue;
+              final ing = Map<String, dynamic>.from(raw);
+              final idIng =
+                  (ing['producto_id'] as num?)?.toInt() ??
+                  (ing['id_ingrediente'] as num?)?.toInt();
+              if (idIng == null) continue;
+              filas.add({
+                'producto_id': idIng,
+                'id_ingrediente': idIng,
+                'cantidad_necesaria': ing['cantidad_necesaria'] ?? 0,
+                'unidad_medida':
+                    ing['unidad_medida'] ?? ing['presentacion_base'],
+                'producto_nombre':
+                    ing['producto_nombre'] ?? ing['nombre_ingrediente'],
+              });
+              metaHojas[idIng] = {
+                'denominacion':
+                    ing['producto_nombre'] ?? ing['nombre_ingrediente'],
+                'sku': ing['sku'],
+              };
+            }
+            if (filas.isNotEmpty) catalogRecipes[id] = filas;
+          }
+        }
+      }
+    }
+
+    final cachedRecipes = await ProductRecipeCacheService().loadRecipes({
+      rootId,
+      ...elaborados,
+    });
+    for (final e in cachedRecipes.entries) {
+      catalogRecipes.putIfAbsent(e.key, () => e.value);
+      elaborados.add(e.key);
+    }
+
+    // BFS: asegurar recetas de elaborados anidados referenciados.
+    final pendientes = <int>{rootId};
+    final vistos = <int>{};
+    while (pendientes.isNotEmpty) {
+      final id = pendientes.first;
+      pendientes.remove(id);
+      if (!vistos.add(id)) continue;
+      final filas = catalogRecipes[id];
+      if (filas == null) continue;
+      recetas[id] = filas;
+      for (final fila in filas) {
+        final idIng =
+            (fila['producto_id'] as num?)?.toInt() ??
+            (fila['id_ingrediente'] as num?)?.toInt();
+        if (idIng == null) continue;
+        final esElab =
+            catalogFlags[idIng] == true || elaborados.contains(idIng);
+        if (esElab) {
+          elaborados.add(idIng);
+          if (!vistos.contains(idIng)) pendientes.add(idIng);
+        }
+      }
+    }
+
+    // Si el raíz solo está en recipe cache:
+    if (!recetas.containsKey(rootId) && catalogRecipes.containsKey(rootId)) {
+      recetas[rootId] = catalogRecipes[rootId]!;
+    }
+
+    return (recetas: recetas, elaborados: elaborados, metaHojas: metaHojas);
   }
 
   /// Cadena de presentaciones de cada ingrediente, en UNA sola consulta.

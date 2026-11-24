@@ -1702,52 +1702,54 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 if (_monedaPorProducto) ...[
                   _selectorMoneda(),
+                  const SizedBox(height: 10),
+                ],
+                if (_isCurrentPresentationFractional(selectedVariant)) ...[
+                  _buildFractionStepSelector(),
                   const SizedBox(height: 8),
                 ],
                 Row(
-              children: [
-                // Stepper siempre visible: con la variante auto-seleccionada se
-                // ajusta la cantidad sin tener que buscar el control en el
-                // cuerpo del detalle (§8 del plan).
-                _buildStepperBarra(),
-                const SizedBox(width: 8),
-                // Total de productos seleccionados
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'TOTAL: ${PriceUtils.formatQuantity(_getTotalEquivalentUnits())} unidad${_getTotalEquivalentUnits() == 1 ? '' : 'es'}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: VentiqHomeTheme.textSecondary,
-                        ),
+                  children: [
+                    _buildStepperBarra(),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'TOTAL: ${PriceUtils.formatQuantity(_getTotalEquivalentUnits())} unidad${_getTotalEquivalentUnits() == 1 ? '' : 'es'}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: VentiqHomeTheme.textSecondary,
+                            ),
+                          ),
+                          Text(
+                            _etiquetaPrecio(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.end,
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: widget.categoryColor,
+                            ),
+                          ),
+                        ],
                       ),
-                      Text(
-                        _etiquetaPrecio(),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: widget.categoryColor,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 12),
-                // Botón de agregar
+                const SizedBox(height: 10),
                 SizedBox(
-                  width: 110,
-                  height: 50,
+                  height: 48,
                   child: ElevatedButton(
                     onPressed:
                         _getTotalEquivalentUnits() > 0 ? _addToCart : null,
@@ -1767,8 +1769,6 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                       ),
                     ),
                   ),
-                ),
-              ],
                 ),
               ],
             ),
@@ -2117,18 +2117,43 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     return selectedQuantity;
   }
 
+  /// Paso del stepper de la barra: 1, o el incremento fraccionable elegido.
+  double _pasoCantidadBarra(ProductVariant? variant) {
+    return _isCurrentPresentationFractional(variant) ? _fractionStep : 1.0;
+  }
+
+  bool _puedeSubirCantidadBarra() {
+    if (currentProduct.esElaborado || currentProduct.esServicio) return true;
+    final ProductVariant? variant = selectedVariant;
+    final double step = _pasoCantidadBarra(variant);
+    if (variant != null) {
+      final double actual = variantQuantities[variant] ?? 0;
+      return actual + step <= maxQuantityForVariant(variant);
+    }
+    return selectedQuantity + step <= maxQuantityForProduct;
+  }
+
   /// Sube/baja la cantidad desde la barra inferior fija.
   ///
   /// En variantes permite llegar a 0 (la línea desaparece del cuerpo); en un
-  /// producto sin variantes se queda en mínimo 1.
-  void _cambiarCantidadBarra(double delta) {
+  /// producto sin variantes se queda en mínimo 1. El tope de stock es el mismo
+  /// que tenía el selector del cuerpo.
+  void _cambiarCantidadBarra(double direccion) {
+    final ProductVariant? variant = selectedVariant;
+    final double step = _pasoCantidadBarra(variant);
+    final double delta = direccion < 0 ? -step : step;
+    if (delta > 0 && !_puedeSubirCantidadBarra()) return;
     setState(() {
-      if (selectedVariant != null) {
-        final double actual = variantQuantities[selectedVariant!] ?? 0;
-        variantQuantities[selectedVariant!] = (actual + delta).clamp(
-          0.0,
-          double.infinity,
-        );
+      if (variant != null) {
+        final double actual = variantQuantities[variant] ?? 0;
+        final double siguiente = (actual + delta).clamp(0.0, double.infinity);
+        variantQuantities[variant] = siguiente;
+        if (delta > 0) {
+          _avisarDesarmePendiente(
+            siguiente,
+            (variant.inventoryMetadata?['id_presentacion'] as num?)?.toInt(),
+          );
+        }
       } else {
         selectedQuantity = (selectedQuantity + delta).clamp(
           1.0,
@@ -2136,6 +2161,15 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
         );
       }
     });
+  }
+
+  void _editarCantidadBarra() {
+    final ProductVariant? variant = selectedVariant;
+    final String nombre =
+        variant == null
+            ? currentProduct.denominacion
+            : '${currentProduct.denominacion} - ${variant.nombre}';
+    _showQuantityDialog(nombre, _cantidadEnBarra(), variant);
   }
 
   Widget _buildStepperBarra() {
@@ -2152,26 +2186,39 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
         children: <Widget>[
           IconButton(
             tooltip: 'Quitar uno',
-            onPressed: cantidad > 0 ? () => _cambiarCantidadBarra(-1) : null,
+            onPressed:
+                (selectedVariant != null ? cantidad > 0 : cantidad > 1)
+                    ? () => _cambiarCantidadBarra(-1)
+                    : null,
             icon: const Icon(Icons.remove, size: 18),
             constraints: const BoxConstraints.tightFor(width: 44, height: 44),
             padding: EdgeInsets.zero,
           ),
-          SizedBox(
-            width: 24,
-            child: Text(
-              PriceUtils.formatQuantity(cantidad),
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
-                color: VentiqHomeTheme.textPrimary,
+          Tooltip(
+            message: 'Escribir cantidad',
+            child: InkWell(
+              onTap: _editarCantidadBarra,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 36),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: Text(
+                    PriceUtils.formatQuantity(cantidad),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: VentiqHomeTheme.textPrimary,
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
           IconButton(
             tooltip: 'Añadir uno',
-            onPressed: () => _cambiarCantidadBarra(1),
+            onPressed:
+                _puedeSubirCantidadBarra() ? () => _cambiarCantidadBarra(1) : null,
             icon: const Icon(Icons.add, size: 18),
             constraints: const BoxConstraints.tightFor(width: 44, height: 44),
             padding: EdgeInsets.zero,
@@ -2391,10 +2438,13 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
       child: GestureDetector(
         onTap: () {
           setState(() {
-            if (currentQuantity == 0) {
-              variantQuantities[variant] = 1.0;
-            } else {
+            if (selectedVariant == variant && currentQuantity > 0) {
               variantQuantities[variant] = 0.0;
+            } else {
+              selectedVariant = variant;
+              if (currentQuantity == 0) {
+                variantQuantities[variant] = 1.0;
+              }
             }
           });
         },
@@ -2698,182 +2748,6 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
               ],
             ),
           ],
-          const SizedBox(height: 12),
-          // Sin combobox de presentación: en productos con variantes el
-          // nombre de la tarjeta ya incluye la presentación y el selector
-          // quedaba bloqueado (información duplicada de solo lectura).
-          if (_isCurrentPresentationFractional(variant)) ...[
-            const SizedBox(height: 8),
-            _buildFractionStepSelector(),
-          ],
-          const SizedBox(height: 8),
-          // Fila inferior: Controles de cantidad
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Cantidad:',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: VentiqHomeTheme.textPrimary,
-                ),
-              ),
-              // Controles de cantidad mejorados
-              Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: VentiqHomeTheme.border, width: 1),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    InkWell(
-                      onTap: () {
-                        final step =
-                            _isCurrentPresentationFractional(variant)
-                                ? _fractionStep
-                                : 1.0;
-                        setState(() {
-                          if (currentProduct.variantes.isEmpty) {
-                            if (selectedQuantity > 0)
-                              selectedQuantity = (selectedQuantity - step)
-                                  .clamp(0.0, double.infinity);
-                          } else {
-                            // Buscar la variante correspondiente POR IDENTIDAD
-                            // (entry.key), no por nombre.contains(...). Un
-                            // nombre es prefijo del otro ("Variante 1" contiene
-                            // a "1") y el string matching agarrava la equivocada.
-                            if (variant != null &&
-                                variantQuantities[variant]! > 0) {
-                              variantQuantities[variant] =
-                                  (variantQuantities[variant]! - step).clamp(
-                                    0.0,
-                                    double.infinity,
-                                  );
-                            }
-                          }
-                        });
-                      },
-                      borderRadius: const BorderRadius.only(
-                        topLeft: Radius.circular(7),
-                        bottomLeft: Radius.circular(7),
-                      ),
-                      child: Container(
-                        width: 36,
-                        height: 36,
-                        decoration: BoxDecoration(
-                          color:
-                              quantity > 0
-                                  ? widget.categoryColor.withOpacity(0.1)
-                                  : Colors.grey[50],
-                          borderRadius: const BorderRadius.only(
-                            topLeft: Radius.circular(7),
-                            bottomLeft: Radius.circular(7),
-                          ),
-                        ),
-                        child: Icon(
-                          Icons.remove,
-                          size: 18,
-                          color:
-                              quantity > 0
-                                  ? widget.categoryColor
-                                  : Colors.grey[400],
-                        ),
-                      ),
-                    ),
-                    InkWell(
-                      onTap:
-                          () => _showQuantityDialog(
-                            name,
-                            quantity.toDouble(),
-                            variant,
-                          ),
-                      child: Container(
-                        width: 50,
-                        height: 36,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[50],
-                          border: Border.symmetric(
-                            vertical: BorderSide(
-                              color: VentiqHomeTheme.border,
-                              width: 1,
-                            ),
-                          ),
-                        ),
-                        child: Center(
-                          child: Text(
-                            PriceUtils.formatQuantity(quantity.toDouble()),
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: VentiqHomeTheme.textPrimary,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    InkWell(
-                      onTap: () {
-                        final step =
-                            _isCurrentPresentationFractional(variant)
-                                ? _fractionStep
-                                : 1.0;
-                        setState(() {
-                          if (currentProduct.variantes.isEmpty) {
-                            // Si es elaborado o servicio, no limitar cantidad; si no, usar límite de stock
-                            if (currentProduct.esElaborado ||
-                                currentProduct.esServicio ||
-                                selectedQuantity + step <=
-                                    maxQuantityForProduct)
-                              selectedQuantity += step;
-                          } else {
-                            // Ver la nota arriba del `-`: busqueda POR
-                            // IDENTIDAD, no por nombre.contains.
-                            if (variant != null) {
-                              if (currentProduct.esElaborado ||
-                                  currentProduct.esServicio ||
-                                  variantQuantities[variant]! + step <=
-                                      maxQuantityForVariant(variant)) {
-                                variantQuantities[variant] =
-                                    variantQuantities[variant]! + step;
-                                _avisarDesarmePendiente(
-                                  variantQuantities[variant]!,
-                                  (variant.inventoryMetadata?['id_presentacion']
-                                          as num?)
-                                      ?.toInt(),
-                                );
-                              }
-                            }
-                          }
-                        });
-                      },
-                      borderRadius: const BorderRadius.only(
-                        topRight: Radius.circular(7),
-                        bottomRight: Radius.circular(7),
-                      ),
-                      child: Container(
-                        width: 36,
-                        height: 36,
-                        decoration: BoxDecoration(
-                          color: widget.categoryColor.withOpacity(0.1),
-                          borderRadius: const BorderRadius.only(
-                            topRight: Radius.circular(7),
-                            bottomRight: Radius.circular(7),
-                          ),
-                        ),
-                        child: Icon(
-                          Icons.add,
-                          size: 18,
-                          color: widget.categoryColor,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
         ],
       ),
     );

@@ -5,20 +5,26 @@
 - Estado: contrato de venta, plan técnico y desglose MC aprobados; MC-001–MC-004 completados y REP aprobada. MC-005 cerrada el 2026-11-14 por orden del usuario. En newa el usuario aplicó los scripts 1–24. El harness de rol pasó en una sesión: vendedor de otra tienda, escalación y replay secuencial, con ROLLBACK. No se probó la carrera de dos sesiones ni el anónimo; newa no tiene superadmin inactivo. Los cortes R0h de Admin Lite quedan fuera. MC-006 a MC-011 quedaron aplicadas en newa. MC-012 a MC-015 y MC-018 a MC-021 están en el cliente. Los scripts 32 a 38 quedaron aplicados en newa. MC-029 a MC-033 leen la política sin encenderla: el flag sigue apagado y una caché incompleta bloquea la orden nueva. MC-034 a MC-038 están en el cliente: el cobro nuevo agrupa netos ya fijados, el envío guarda la clave y no cae al registro anterior, y el script 39 quedó aplicado en newa: la guarda existe, solo actúa al insertar y el flag sigue apagado. MC-039 a MC-046 quedaron en el cliente y el usuario aplicó los scripts 40 a 44 en newa. La lectura de catálogo devuelve las funciones, el RLS de las tablas nuevas y el flag apagado. el usuario aplicó los scripts 45 y 46: anon ya no ejecuta esas funciones y la comanda queda solo en cocina al pedido. MC-049 a MC-051 quedaron en la decisión local y en la lectura de newa: el flag sigue apagado, no hay venta v1 aceptada, no hay autorización para encender una tienda y no hay ticket físico. MC-016 de Admin Lite queda fuera. MC-017 y main siguen cerrados. El script 47 está para pegar y no está aplicado: no enciende ninguna tienda. El detalle del vendedor elige CUP o USD cuando la tienda lo tiene activo y rechaza la moneda sin precio configurado. S01 de configuración ya estaba aplicado.
 - Apps implicadas en el alcance inmediato: `ventiq_app`, configuración de tienda en `ventiq_admin_app` y persistencia/RPC en Supabase.
 
-## Estado al 2026-11-21 — pendientes en newa (antes de main)
+## Estado al 2026-11-23 — pendientes en newa (antes de main)
 
-Concentración actual: **terminar y smokear newa**; el pase a main espera.
+Concentración actual: **smokear en dispositivo lo que queda**; el pase a main espera.
 
 | Tema | Estado |
 |---|---|
-| C17 Tiempo real / Proveedores por moneda | SQL + cliente en newa. Smoke dispositivo pendiente |
-| C17 Liquidación FDI (destinos, sin tasa) | SQL + diálogo en newa. Smoke dispositivo pendiente |
+| C17 Tiempo real / Proveedores por moneda | SQL + cliente en newa (RPC viva). Smoke dispositivo pendiente |
+| C17 Liquidación FDI (destinos, sin tasa) | SQL + diálogo en newa. **Smoke aplazado 2026-11-23**: reglas de negocio FDI aún no decididas (no bloquea el resto del checklist) |
 | C17 Sesión admin | Cliente en newa. Smoke: crear trabajador sin logout |
-| Hallazgos C1–C16, H7–H8 | Código/SQL mayormente listo; **checklist de smoke** en hallazgos. C1 PDF + H1 datos + smoke impresora C1/C1b/C3 OK (2026-11-21) |
-| Decisión egreso en RPC (C14) | Abierta: ¿saldo por moneda solo cliente o también en RPC? |
-| Monedas extra en apertura (nota H5) | Abierta: catálogo newa solo CUP+USD |
-| Promoción a main / M01 | **No autorizada aún.** Ver `plan_promocion_main.md` y checklist de hallazgos |
-| Preflight md5 scripts 14/17/56 | Sigue pendiente antes del pase (punto 2 abajo) |
+| C16 / readiness / sync Ajustes | Código OK 2026-11-23 (constancia offline, AppBar readiness+sync, `SyncModuleCatalog`). Smoke logout/cola/cambio tienda pendiente |
+| Hallazgos C1–C15, H1–H3 | Smoke dispositivo mayormente OK; H7/H8 aún smoke |
+| Decisión egreso en RPC (C14) | **Cerrado 2026-11-23:** newa REPLACE `_v2`; main Fase 1 solo `_v2_m01` (regla de oro); Fase 3 nombre antiguo |
+| Monedas extra en apertura (nota H5) | **Decidido 2026-11-23:** solo CUP+USD por ahora; 3+ monedas / fallback fuera del pase |
+| Promoción a main / M01 | **No autorizada aún.** Scripts `_m01` + clientes listos; falta espejo G1 con fixtures, decisión G2, snapshot G4 y OK del dueño |
+| Preflight md5 scripts 14/17/56 | **Hecho 2026-11-23** |
+| Scripts `_m01` | **Hecho 2026-11-23:** `sql_updates/promocion_m01/` 01–06; **aplicados aditivos en newa** (14 funciones); clientes `RpcM01` |
+| G1 / G2 / G4 | G2 + espejo + G1 (doc) + **H9** en newa. Runbook: `docs/plan-multimoneda/runbook_pase_newa_main.md`. G4 snapshot el día del pase |
+| Promoción a main / M01 | **No autorizada aún.** Prep Fase 0 lista salvo G4 + OK dueño |
+| H1 datos main | **Medido 2026-11-23:** 0 huérfanos |
+| Verificación local 2026-11-23 | TPV: sync/offline/órdenes/readiness/catálogo OK. Admin: contrato SQL + C17 + turnos/entregas + compile OK. newa: H1 sin huérfanos; RPC C9/C11–C13/C17/C6 + C14 egreso-saldo presentes |
 
 R03/R04 C17: ver ampliación más abajo en el documento (script aplicado en newa).
 
@@ -62,7 +68,7 @@ La causa de fondo es la pertenencia de una venta a un turno: main usa el rango d
 ### Antes de llevar M01 a main
 
 1. ~~Correr `fix_listar_ordenes_tipo_pago.sql` en newa.~~ Hecho (comprobado el 20/11).
-2. Regenerar los baselines `md5` de los preflight de los scripts 14, 17 y 56: los actuales son de newa y el hotfix de main cambia esos cuerpos.
+2. ~~Regenerar los baselines `md5` de los preflight de los scripts 14, 17 y 56~~ (hecho 2026-11-23: (14) venta `1833dad1…`; (17) ya tenía hashes de main; (56) sigue exigiendo post-(14)/(17)).
 3. ~~Traer a newa las 12 funciones de main que faltan~~ (hecho el 20/11, `newa_traer_12_funciones_main.sql`) y aplicar en main, en este orden: contabilización, `fn_reporte_ventas_por_turno`, `fn_registrar_cambio_estado_operacion_mejorado` (probar primero con una recepción completada y sin uso), firma de 11 parámetros de `fn_fdi_crear_liquidacion` y después M01.
 4. No copiar al revés lo que solo main tiene: WhatsApp, referidos, versiones de app, precios Carnaval, `egresos_por_turno`, el trigger de `maria` y los crons de main.
 5. Verificar en main online, offline con caché fresca y offline con caché vacía antes de dar la feature por lista, como exige la regla de sincronización del repo.

@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/pedido_resultado.dart';
 import '../utils/uuid_generator.dart';
+import 'rpc_m01.dart';
 
 /// Cola PERSISTENTE de operaciones de cocina hechas sin red.
 ///
@@ -206,10 +207,10 @@ class CocinaOfflineQueue {
         if (rpc == null) continue;
 
         try {
-          final res = await _supabase.rpc(
-            rpc,
-            params: Map<String, dynamic>.from(params),
-          );
+          final rpcParams = Map<String, dynamic>.from(params);
+          final res = rpc == 'fn_cambiar_estado_comanda_item_offline'
+              ? await RpcM01.call(rpc, params: rpcParams)
+              : await _supabase.rpc(rpc, params: rpcParams);
 
           final mapa = res is Map
               ? Map<String, dynamic>.from(res)

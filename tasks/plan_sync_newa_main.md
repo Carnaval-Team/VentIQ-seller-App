@@ -117,7 +117,7 @@ Actualizado el 2026-11-19: 922 en main y 1005 en newa en `public` (887 y 970 sin
 
 - [ ] Un inventario de firmas del TPV devuelve el mismo `md5(prosrc)` en main y en newa
 - [ ] En main: contabilización con una sola firma por función (con `p_id_tienda DEFAULT NULL`) y sin EXECUTE para `anon`; `fn_fdi_crear_liquidacion` solo con la firma de 11 parámetros; `trg_bloquear_operaciones_maria` intacto; `fn_desvincular_usuario_trabajador` sustituida por la de M01 al promover M01
-- [ ] Baselines `md5` de los preflight M01 14, 17 y 56 regenerados contra main antes de aplicarlos allí
+- [x] Baselines `md5` de los preflight M01 14, 17 y 56 regenerados contra main (2026-11-23)
 
 ## Risks
 
