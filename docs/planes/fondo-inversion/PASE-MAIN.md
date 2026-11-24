@@ -29,6 +29,7 @@ El detalle largo está en `tasks/plan_promocion_main.md`.
 |---|---|---|---|
 | 0 | `sql_updates/costos_adicionales_producto.sql` | **Prerrequisito.** `app_dat_producto_costo`, auditoría de costo por línea, `costo_real` deja de ser `GENERATED` (pasa a columna normal + trigger) y `fn_actualizar_precio_promedio_recepcion_v2` aprende a leer la tabla de costos | `verify/00_prerrequisito_costos.sql` |
 | 1 | `01_motor_dinero.sql` | Escala 2 del libro, restricciones de tienda y conciliación R1 | `verify/01_motor_dinero.sql` |
+| 1b | `sql_updates/fix_fdi_conciliacion_r1.sql` | **Solo si te saltaste el 1** (o lo aplicaste tarde): instala únicamente `fn_fdi_conciliacion`. **No reejecutes `01` entero después de la fase 4**: devolvería `_fdi_aplicar_movimiento`, `fn_fdi_vincular_recepcion` y `fn_fdi_repartir_ganancia` a cuerpos viejos | `select public.fn_fdi_conciliacion(<tienda>);` |
 | 2 | `02a_idempotencia.sql` | Claves de idempotencia en las operaciones de dinero | — |
 | 3 | `02b_transferir_v2.sql` | `fn_fdi_transferir_v2` (par de tasa explícito) | — |
 | 4 | `03a_compra_esquema.sql` | Tablas de compra, líneas, ajustes, historial | `verify/03_compra.sql` |
@@ -75,6 +76,12 @@ Y comprobar a mano:
 - `select * from cron.job where jobname = 'fdi-conciliacion-diaria';` → una fila, `0 3 * * *`.
 
 ## Si algo falla
+
+**«08: falta fn_fdi_conciliacion(bigint)»** — te saltaste el paso 1 (o lo aplicaste tarde). **No
+reejecutes `01_motor_dinero.sql` entero**: reescribe `_fdi_aplicar_movimiento`,
+`fn_fdi_vincular_recepcion` y `fn_fdi_repartir_ganancia` con los cuerpos de la fase 1, que son **más
+viejos** que los de las fases 4/5/06b ya aplicadas, y rompería pagos, recepciones y aportes. Aplica
+`sql_updates/fix_fdi_conciliacion_r1.sql` (instala solo R1, que es autónoma) y repite `08`.
 
 **«06c: no se pudo parchear _v2 … anclas encontradas: 0»** — falta el paso 0. El `_v2` de main es
 anterior a la tabla de costos (calcula el promedio con `cant_base`, no lee
