@@ -8,7 +8,6 @@ import '../services/currency_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/permissions_service.dart';
 import '../widgets/admin_ai_assistant_sheet.dart';
-import '../widgets/alerta_pendientes_card.dart';
 import '../widgets/onboarding_burbuja.dart';
 
 class DashboardWebScreen extends StatefulWidget {
@@ -480,12 +479,7 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Fase 9 (Compras): recordatorio de compras sin recepción completa.
-          // La ruta /compras/pendientes todavía no está registrada en
-          // `main.dart`; cuando lo esté, pasar aquí
-          // `rutaPendientes: '/compras/pendientes'` para habilitar el botón.
-          const AlertaPendientesCard(rutaPendientes: '/compras/pendientes'),
-          const SizedBox(height: 24),
+          // AlertaPendientesCard (compras) oculto a propósito en el dashboard.
           _buildTimeFilterSection(),
           const SizedBox(height: 24),
           _buildWebKPISection(),

@@ -29,10 +29,10 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_proc
         WHERE oid = to_regprocedure('public.fn_registrar_venta_offline_v4(uuid,bigint,uuid,jsonb,text,text,text,smallint,bigint,timestamptz,jsonb)')
-          AND md5(prosrc) = 'a92ee3ea41abebb360e54f7b8f34ba29'
+          AND md5(prosrc) = '1833dad11bafe28cddd6a67184385ced'
           AND prosecdef AND proowner = 'postgres'::regrole
     ) THEN
-        RAISE EXCEPTION 'fn_registrar_venta_offline_v4 difiere del baseline newa; revisar sin reemplazar avances';
+        RAISE EXCEPTION 'fn_registrar_venta_offline_v4 difiere del baseline main; revisar sin reemplazar avances';
     END IF;
     IF to_regprocedure('public.fn_registrar_venta_v3(bigint,uuid,jsonb,text,text,text,smallint,bigint)') IS NULL
        OR to_regprocedure('public.fn_registrar_pago_venta_v2(bigint,jsonb)') IS NULL

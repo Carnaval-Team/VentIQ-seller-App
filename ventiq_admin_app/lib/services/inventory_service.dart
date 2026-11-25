@@ -18,6 +18,7 @@ import 'margin_service.dart';
 import 'currency_service.dart';
 import 'store_config_service.dart';
 import 'costos_adicionales_service.dart';
+import 'rpc_m01.dart';
 
 class InventoryService {
   static final InventoryService _instance = InventoryService._internal();
@@ -4268,7 +4269,7 @@ class InventoryService {
       //   · v3: pondera cantidades crudas y escribe en cada presentación
       //     recibida — es justo el comportamiento que el `20` corrigió.
       // Cambiar a la v3 reintroduce los costos inconsistentes por presentación.
-      final response = await _supabase.rpc(
+      final response = await RpcM01.call(
         'fn_actualizar_precio_promedio_recepcion_v2',
         params: {'p_id_operacion': idOperacion, 'p_productos': productosJson},
       );

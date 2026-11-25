@@ -50,7 +50,13 @@ class ReauthenticationService {
           'automatic_reauth_last_attempt:${Supabase.instance.client.rest.url}:${email.trim().toLowerCase()}';
       final now = ServerTimeService().now().millisecondsSinceEpoch;
       final lastAttempt = prefs.getInt(key);
-      if (lastAttempt != null &&
+      // Sin sesión Supabase (p. ej. login offline → volver online) no se
+      // aplaza: el throttle dejaría al TPV en modo online sin JWT y todas
+      // las RPC fallarían por permisos.
+      final hasSession =
+          Supabase.instance.client.auth.currentSession != null;
+      if (hasSession &&
+          lastAttempt != null &&
           now - lastAttempt < _reauthenticationInterval.inMilliseconds) {
         print(
           'Reautenticación automática aplazada: intervalo de 2 horas activo',

@@ -11,12 +11,14 @@
 -- clientes viejos). La v2:
 --   1. exige que la moneda del egreso sea la de la cuenta de Fondo de Caja
 --      (no convierte: el egreso cuenta tal cual en el fondo);
---   2. registra el egreso con fn_registrar_egreso_offline_v2 (con su moneda);
+--   2. registra el egreso con fn_registrar_egreso_offline_v2_m01 (con su
+--      moneda y C14 EGRESO_SIN_SALDO). No llama al nombre antiguo: en Fase 1
+--      el _v2 publicado no recibe el rechazo nuevo (regla de oro).
 --   3. recarga el fondo igual que la original (idempotente por id_egreso_origen).
 --
--- Requiere: fn_registrar_egreso_offline_v2, dep_dat_banco, dep_nom_moneda,
--- dep_dat_saldo, dep_dat_recarga_saldo, dep_hist_saldo.
--- No valida el saldo del cajón: eso lo hace el TPV antes de enviar.
+-- Requiere: promocion_m01/04_egreso_m01.sql ya aplicado,
+-- dep_dat_banco, dep_nom_moneda, dep_dat_saldo, dep_dat_recarga_saldo,
+-- dep_hist_saldo. Esta v2 no revalida el saldo del cajón.
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION public.fn_registrar_egreso_fondo_caja_v2(
@@ -74,7 +76,7 @@ BEGIN
         hashtextextended(p_idtienda::TEXT || ':' || v_id_banco::TEXT, 0)
     );
 
-    v_result := public.fn_registrar_egreso_offline_v2(
+    v_result := public.fn_registrar_egreso_offline_v2_m01(
         p_client_uuid := p_client_uuid,
         p_id_turno := p_id_turno,
         p_monto_entrega := p_monto_entrega,

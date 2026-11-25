@@ -86,7 +86,7 @@ void main() {
       contains("current_setting('app.m01_r0i_venta_approved', true)"),
     );
     expect(venta, contains('md5(prosrc)'));
-    expect(venta, contains('a92ee3ea41abebb360e54f7b8f34ba29'));
+    expect(venta, contains('1833dad11bafe28cddd6a67184385ced'));
     expect(venta, contains("attname = 'm01_solicitud'"));
     expect(venta, contains("atttypid = 'jsonb'::regtype"));
     expect(venta, contains("attname = 'm01_id_tienda'"));

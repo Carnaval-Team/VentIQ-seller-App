@@ -45,14 +45,16 @@ BEGIN
        OR has_schema_privilege('authenticated', 'public', 'CREATE') THEN
         RAISE EXCEPTION 'public permite CREATE a roles no confiables';
     END IF;
-    -- Cuerpos vivos en newa el 2026-11-18 (scripts 14 y 17 aplicados).
+    -- Cuerpos que dejan los scripts 14 y 17 al aplicarlos sobre el baseline
+    -- main (md5 del CREATE de esos borradores; verificados 2026-11-23).
+    -- Orden en main: 14 → 17 → 56. No aplicar 56 sobre el cuerpo pre-M01.
     IF NOT EXISTS (
         SELECT 1 FROM pg_proc
         WHERE oid = to_regprocedure('public.fn_apertura_turno_offline(uuid,numeric,bigint,bigint,uuid,boolean,jsonb,text,timestamptz)')
           AND md5(prosrc) = '5cd6609728edb2e6527f9462fa606f4e'
           AND prosecdef AND proowner = 'postgres'::regrole
     ) THEN
-        RAISE EXCEPTION 'fn_apertura_turno_offline difiere del cuerpo del script 17 en newa';
+        RAISE EXCEPTION 'fn_apertura_turno_offline difiere del cuerpo del script 17 (post-baseline main)';
     END IF;
     IF NOT EXISTS (
         SELECT 1 FROM pg_proc
@@ -60,7 +62,7 @@ BEGIN
           AND md5(prosrc) = '2e210273ee61a636320a6a1953fde2cb'
           AND prosecdef AND proowner = 'postgres'::regrole
     ) THEN
-        RAISE EXCEPTION 'fn_cerrar_turno_offline difiere del cuerpo del script 17 en newa';
+        RAISE EXCEPTION 'fn_cerrar_turno_offline difiere del cuerpo del script 17 (post-baseline main)';
     END IF;
     IF NOT EXISTS (
         SELECT 1 FROM pg_proc
@@ -68,7 +70,7 @@ BEGIN
           AND md5(prosrc) = 'c67288f94f66356018b68b3da4dbf600'
           AND prosecdef AND proowner = 'postgres'::regrole
     ) THEN
-        RAISE EXCEPTION 'fn_registrar_venta_offline_v4 difiere del cuerpo del script 14 en newa';
+        RAISE EXCEPTION 'fn_registrar_venta_offline_v4 difiere del cuerpo del script 14 (post-baseline main)';
     END IF;
     IF to_regprocedure('public.fn_turno_alinear_fecha_apertura(bigint,timestamptz)') IS NOT NULL
        OR to_regprocedure('public.fn_alinear_apertura_turno_offline(bigint,timestamptz)') IS NOT NULL THEN

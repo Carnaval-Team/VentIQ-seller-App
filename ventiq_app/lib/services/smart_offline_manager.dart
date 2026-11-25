@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../money/offline_readiness.dart';
 import 'connectivity_service.dart';
 import 'auto_sync_service.dart';
 import 'user_preferences_service.dart';
@@ -512,10 +513,11 @@ class SmartOfflineManager {
   /// Retorna `null` si OK, o un mensaje de error para mostrar al usuario.
   Future<String?> enableOfflineModeFromUi() async {
     try {
-      final hasData = await _userPreferencesService.hasOfflineData();
-      if (!hasData) {
-        return 'No hay datos offline disponibles. Sincroniza primero '
-            'estando en línea.';
+      final readiness = await OfflineReadiness.inspeccionar(
+        _userPreferencesService,
+      );
+      if (!readiness.listo) {
+        return readiness.mensaje;
       }
 
       await _autoSyncService.stopAutoSync();
@@ -574,7 +576,8 @@ class SmartOfflineManager {
       _wasOfflineModeManuallyEnabled = false;
       _connectionRestoredDialogPending = false;
 
-      await onOfflineModeManuallyDisabled();
+      final onlineErr = await onOfflineModeManuallyDisabled();
+      if (onlineErr != null) return onlineErr;
       return null;
     } catch (e) {
       return 'No se pudo activar el modo en línea: $e';
@@ -880,14 +883,42 @@ class SmartOfflineManager {
     );
   }
 
-  /// Manejar desactivación manual del modo offline
-  Future<void> onOfflineModeManuallyDisabled() async {
+  /// Manejar desactivación manual del modo offline.
+  ///
+  /// Tras un login offline no hay JWT de Supabase (`accessToken` =
+  /// `offline_mode`). Hay que reautenticar **antes** de sync/RPC; si no,
+  /// el TPV queda «online» localmente y el servidor responde sin permisos.
+  ///
+  /// Retorna mensaje de error o `null` si OK.
+  Future<String?> onOfflineModeManuallyDisabled() async {
     print('👤 Modo offline desactivado manualmente por el usuario');
 
     _wasOfflineModeManuallyEnabled = false;
 
-    // Si hay conexión, sync ligera + timer (no catálogo completo de golpe).
     if (_connectivityService.isConnected) {
+      try {
+        await SessionRefreshService().ensureFreshSession();
+      } catch (e) {
+        print('⚠️ Refresh al volver online falló: $e');
+      }
+
+      final authOk = await _reauthService.ensureAuthenticated();
+      if (!authOk) {
+        print('❌ Sin sesión Supabase tras volver online — revirtiendo');
+        await _userPreferencesService.setOfflineMode(true);
+        _wasOfflineModeManuallyEnabled = true;
+        _eventController.add(
+          SmartOfflineEvent(
+            type: SmartOfflineEventType.reauthenticationFailed,
+            timestamp: DateTime.now(),
+            message:
+                'No se pudo restaurar la sesión al volver online',
+          ),
+        );
+        return 'No se pudo restaurar la sesión con el servidor. '
+            'Sigue en offline o cierra sesión e inicia online con tu contraseña.';
+      }
+
       print('📶 Hay conexión — sync ligera tras desactivar modo offline');
       await _triggerReconnectSync(
         reason: 'modo offline desactivado manualmente',
@@ -903,6 +934,7 @@ class SmartOfflineManager {
         message: 'Modo offline desactivado manualmente por el usuario',
       ),
     );
+    return null;
   }
 
   /// Obtener estado actual del manager

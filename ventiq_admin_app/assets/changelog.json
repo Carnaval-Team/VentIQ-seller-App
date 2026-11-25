@@ -1,9 +1,68 @@
 {
-  "current_version": "2.9.7",
-  "build": 296,
+  "current_version": "2.9.9",
+  "build": 298,
 
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "2.9.9",
+      "date": "2026-11-25",
+      "title": "Precios de venta en exportaciones y totales con datos disponibles",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Exportación de inventario con precio de venta para el gerente",
+          "description": "En Inventario → Stock → Exportar inventario, el gerente puede incluir los precios de venta en USD y CUP tanto en PDF como en Excel, sin consultar ni mostrar costos o ganancias. El dueño conserva la opción completa de precios, costos y ganancias."
+        },
+        {
+          "type": "fix",
+          "title": "Totales de tiempo real aunque haya datos incompletos",
+          "description": "Los totales de costo y ganancia suman los valores disponibles de cada columna, sin anular el total cuando a un producto le falta información. Los importes se mantienen separados por moneda y el ajuste también se aplica a los totales de la exportación PDF y Excel del reporte."
+        }
+      ]
+    },
+    {
+      "version": "2.9.8",
+      "date": "2026-11-24",
+      "title": "Turnos y reportes por moneda, egresos offline y sesión más estable",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Egresos del turno visibles aunque se suban después del cierre",
+          "description": "En Monitoreo → TPVs, los egresos hechos offline ya no se pierden si se sincronizan después de la hora de cierre del dispositivo. Se ligan al turno por id, no por una ventana de fecha."
+        },
+        {
+          "type": "improvement",
+          "title": "Egresos y efectivo por moneda en la tarjeta del turno",
+          "description": "El total de egresos y el efectivo en caja se muestran por divisa (CUP, USD, …). Un egreso en USD ya no se resta solo del CUP ni queda oculto cuando el turno cobró en una sola moneda de venta."
+        },
+        {
+          "type": "feature",
+          "title": "Tiempo real y reportes con ganancia por moneda",
+          "description": "Ventas y utilidad se desglosan por moneda nativa. En CUP se descuenta el costo USD convertido con la tasa del día; en USD, el costo en esa moneda. Deja de consolidarlo todo como si fuera solo CUP."
+        },
+        {
+          "type": "improvement",
+          "title": "Turnos de caja: solo ventas completadas y monedas sin mezclar",
+          "description": "Las tarjetas, el resumen, el libro de caja, la conciliación y el acta usan importes nativos por moneda y no suman operaciones canceladas ni mezclan CUP con USD en un solo escalar."
+        },
+        {
+          "type": "improvement",
+          "title": "Sincronización lista para el TPV nuevo (RpcM01)",
+          "description": "El Admin llama primero a las funciones _m01 del servidor (con caída a la versión anterior si aún no existen), alineado con el TPV 2.9.1 y el pase de multimoneda."
+        },
+        {
+          "type": "fix",
+          "title": "Sesión de administrador más estable",
+          "description": "Menos cierres de sesión inesperados al refrescar el token, al crear o vincular trabajadores y al usar pantallas que antes forzaban un refresh agresivo."
+        },
+        {
+          "type": "improvement",
+          "title": "Incluye todo lo de la 2.9.7",
+          "description": "Esta versión incorpora las correcciones menores de la 2.9.7."
+        }
+      ]
+    },
     {
       "version": "2.9.7",
       "date": "2026-11-17",

@@ -7,6 +7,7 @@ import '../services/order_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/turno_service.dart';
 import '../services/currency_service.dart';
+import '../money/offline_readiness.dart';
 import '../utils/price_utils.dart';
 import '../services/settings_integration_service.dart';
 import '../services/auto_sync_service.dart';
@@ -789,6 +790,17 @@ class _SettingsScreenState extends State<SettingsScreen>
         return;
       }
 
+      final readiness = await OfflineReadiness.inspeccionar(
+        _userPreferencesService,
+      );
+      if (!readiness.listo) {
+        if (mounted) {
+          setState(() => _isOfflineModeEnabled = false);
+          await _showOfflineReadinessDialog(readiness);
+        }
+        return;
+      }
+
       await _userPreferencesService.setOfflineMode(true);
 
       // Notificar siempre al SmartOfflineManager (no solo cuando los
@@ -925,10 +937,27 @@ class _SettingsScreenState extends State<SettingsScreen>
       // _activateOfflineMode) para que el ícono de conexión y demás
       // widgets que dependen de su eventStream no queden desactualizados
       // mostrando "Offline" tras desactivarlo manualmente desde Ajustes.
+      // Tras login offline no hay JWT: onOfflineModeManuallyDisabled
+      // reautentica o revierte a offline.
+      final String? onlineErr;
       if (_isSmartServicesInitialized) {
-        await _integrationService.handleOfflineModeChanged(false);
+        onlineErr = await _integrationService.handleOfflineModeChanged(false);
       } else {
-        await SmartOfflineManager().onOfflineModeManuallyDisabled();
+        onlineErr =
+            await SmartOfflineManager().onOfflineModeManuallyDisabled();
+      }
+      if (onlineErr != null) {
+        if (mounted) {
+          setState(() => _isOfflineModeEnabled = true);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(onlineErr),
+              backgroundColor: VentiqHomeTheme.warning,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
+        return false;
       }
 
       if (mounted) {
@@ -1457,7 +1486,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                 _buildSettingsTile(
                   icon: Icons.sync_outlined,
                   title: 'Sincronización Manual',
-                  subtitle: 'Sincronizar datos offline pendientes',
+                  subtitle:
+                      'Subir pendientes y bajar catálogo, monedas y configuración',
                   onTap: () => _showSyncDialog(),
                 ),
                 _buildDivider(),
@@ -1465,17 +1495,12 @@ class _SettingsScreenState extends State<SettingsScreen>
                   icon: Icons.checklist_outlined,
                   title: 'Sincronizar por módulos',
                   subtitle: 'Elegir qué subir y qué bajar',
-                  onTap: () => SelectiveSyncDialog.show(context),
+                  onTap: () async {
+                    await SelectiveSyncDialog.show(context);
+                    if (mounted) unawaited(_refreshDataSection());
+                  },
                 ),
                 _buildDivider(),
-                if (_isSmartServicesInitialized)
-                  _buildSettingsTile(
-                    icon: Icons.sync_alt,
-                    title: 'Forzar Sincronización',
-                    subtitle: 'Sincronizar datos inmediatamente',
-                    onTap: () => _forceSyncNow(blockWhenRunning: false),
-                  ),
-                if (_isSmartServicesInitialized) _buildDivider(),
                 _buildSettingsTile(
                   icon: Icons.storage_outlined,
                   title: 'Almacenamiento',
@@ -2967,7 +2992,9 @@ class _SettingsScreenState extends State<SettingsScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Se encontraron los siguientes datos offline pendientes:',
+                  'Se encontraron los siguientes datos offline pendientes. '
+                  'Después de subirlos se actualizará también el catálogo, '
+                  'monedas, tasas y configuración de la tienda.',
                   style: TextStyle(fontWeight: FontWeight.w500),
                 ),
                 const SizedBox(height: 12),
@@ -3320,7 +3347,11 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 
   /// Mostrar detalles del estado de sincronización inteligente
-  void _showSmartSyncDetails(SettingsIntegrationStatus status) {
+  Future<void> _showSmartSyncDetails(SettingsIntegrationStatus status) async {
+    final readiness = await OfflineReadiness.inspeccionar(
+      _userPreferencesService,
+    );
+    if (!mounted) return;
     showDialog(
       context: context,
       builder:
@@ -3334,100 +3365,117 @@ class _SettingsScreenState extends State<SettingsScreen>
             ),
             content: SizedBox(
               width: double.maxFinite,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildDetailRow(
-                    'Servicios Inicializados',
-                    status.isInitialized ? 'Sí' : 'No',
-                  ),
-                  _buildDetailRow(
-                    'Conexión',
-                    status.smartOfflineStatus.isConnected
-                        ? 'Conectado'
-                        : 'Desconectado',
-                  ),
-                  _buildDetailRow(
-                    'Modo Offline',
-                    status.isOfflineModeEnabled ? 'Activado' : 'Desactivado',
-                  ),
-                  _buildDetailRow(
-                    'Sincronización Auto',
-                    status.smartOfflineStatus.isAutoSyncRunning
-                        ? 'Ejecutándose'
-                        : 'Detenida',
-                  ),
-
-                  if (status.smartOfflineStatus.syncStats['lastSyncTime'] !=
-                      null) ...[
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Última Sincronización:',
-                      style: TextStyle(fontWeight: FontWeight.w500),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildDetailRow(
+                      'Servicios Inicializados',
+                      status.isInitialized ? 'Sí' : 'No',
                     ),
-                    Text(
-                      _formatDateTime(
-                        DateTime.parse(
-                          status.smartOfflineStatus.syncStats['lastSyncTime'],
+                    _buildDetailRow(
+                      'Conexión',
+                      status.smartOfflineStatus.isConnected
+                          ? 'Conectado'
+                          : 'Desconectado',
+                    ),
+                    _buildDetailRow(
+                      'Modo Offline',
+                      status.isOfflineModeEnabled ? 'Activado' : 'Desactivado',
+                    ),
+                    _buildDetailRow(
+                      'Sincronización Auto',
+                      status.smartOfflineStatus.isAutoSyncRunning
+                          ? 'Ejecutándose'
+                          : 'Detenida',
+                    ),
+                    _buildDetailRow(
+                      'Listo para offline',
+                      readiness.listo ? 'Sí' : 'No',
+                    ),
+                    if (!readiness.listo) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        readiness.faltantes.map((f) => '• $f').join('\n'),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: VentiqHomeTheme.warning,
                         ),
                       ),
-                      style: const TextStyle(
-                        color: VentiqHomeTheme.textSecondary,
+                    ],
+                    if (status.smartOfflineStatus.syncStats['lastSyncTime'] !=
+                        null) ...[
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Última Sincronización:',
+                        style: TextStyle(fontWeight: FontWeight.w500),
+                      ),
+                      Text(
+                        _formatDateTime(
+                          DateTime.parse(
+                            status
+                                .smartOfflineStatus.syncStats['lastSyncTime'],
+                          ),
+                        ),
+                        style: const TextStyle(
+                          color: VentiqHomeTheme.textSecondary,
+                        ),
+                      ),
+                    ],
+                    if (status.smartOfflineStatus.lastAutoActivation !=
+                        null) ...[
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Última Activación Automática:',
+                        style: TextStyle(fontWeight: FontWeight.w500),
+                      ),
+                      Text(
+                        _formatDateTime(
+                          status.smartOfflineStatus.lastAutoActivation!,
+                        ),
+                        style: const TextStyle(
+                          color: VentiqHomeTheme.textSecondary,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color:
+                            VentiqHomeTheme.primary.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: VentiqHomeTheme.primary
+                              .withValues(alpha: 0.18),
+                        ),
+                      ),
+                      child: const Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'ℹ️ Información:',
+                            style: TextStyle(fontWeight: FontWeight.w500),
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            '• La sincronización automática se ejecuta cada minuto cuando el modo offline está desactivado',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          Text(
+                            '• El modo offline se activa automáticamente si se pierde la conexión',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          Text(
+                            '• Los datos se mantienen sincronizados para uso offline',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        ],
                       ),
                     ),
                   ],
-
-                  if (status.smartOfflineStatus.lastAutoActivation != null) ...[
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Última Activación Automática:',
-                      style: TextStyle(fontWeight: FontWeight.w500),
-                    ),
-                    Text(
-                      _formatDateTime(
-                        status.smartOfflineStatus.lastAutoActivation!,
-                      ),
-                      style: const TextStyle(
-                        color: VentiqHomeTheme.textSecondary,
-                      ),
-                    ),
-                  ],
-
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: VentiqHomeTheme.primary.withValues(alpha: 0.05),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: VentiqHomeTheme.primary.withValues(alpha: 0.18),
-                      ),
-                    ),
-                    child: const Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'ℹ️ Información:',
-                          style: TextStyle(fontWeight: FontWeight.w500),
-                        ),
-                        SizedBox(height: 4),
-                        Text(
-                          '• La sincronización automática se ejecuta cada minuto cuando el modo offline está desactivado',
-                          style: TextStyle(fontSize: 12),
-                        ),
-                        Text(
-                          '• El modo offline se activa automáticamente si se pierde la conexión',
-                          style: TextStyle(fontSize: 12),
-                        ),
-                        Text(
-                          '• Los datos se mantienen sincronizados para uso offline',
-                          style: TextStyle(fontSize: 12),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
             actions: [
@@ -3527,26 +3575,12 @@ class _SettingsScreenState extends State<SettingsScreen>
         ),
       );
 
-      const requiredOfflineModules = {
-        SyncModule.license,
-        SyncModule.storeConfig,
-        SyncModule.credentials,
-        SyncModule.paymentMethods,
-        SyncModule.promotions,
-        SyncModule.categories,
-        SyncModule.products,
-        SyncModule.layouts,
-        SyncModule.turno,
-        SyncModule.egresos,
-        SyncModule.orders,
-        SyncModule.shiftWorkers,
-        // SyncModule.defaultCashFund es opcional: se descarga si existe, pero
-        // no bloquea la activación offline si la tienda aún no lo configura.
-      };
+      // Manual = pipeline completo (uploads + downloads del catálogo).
+      // Activar offline = solo los obligatorios (sin defaultCashFund).
       final result = await AutoSyncService().syncModules(
         offlineReadinessOnly
-            ? requiredOfflineModules
-            : SyncModule.values.toSet(),
+            ? SyncModuleCatalog.offlineReadinessRequired
+            : SyncModuleCatalog.all,
         resumeFromCheckpoint: !offlineReadinessOnly,
         suspenderModoOffline: true,
       );
@@ -3574,11 +3608,19 @@ class _SettingsScreenState extends State<SettingsScreen>
   Future<void> _showSyncResultFeedback(SyncResult result) async {
     if (!mounted) return;
 
+    final readiness = await OfflineReadiness.inspeccionar(
+      _userPreferencesService,
+    );
+    if (!mounted) return;
+
     Color bg;
     String title;
-    if (result.success) {
+    if (result.success && readiness.listo) {
       bg = VentiqHomeTheme.success;
       title = '✅ Sincronización completada';
+    } else if (result.success && !readiness.listo) {
+      bg = VentiqHomeTheme.warning;
+      title = '⚠️ Sync OK, pero falta cache offline';
     } else if (result.hasProgress) {
       bg = VentiqHomeTheme.warning;
       title =
@@ -3597,6 +3639,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         '$title · OK $okCount'
         '${errCount > 0 ? ' · Errores $errCount' : ''}'
         '${skipCount > 0 ? ' · Pendientes $skipCount' : ''}'
+        '${!readiness.listo ? ' · Faltan ${readiness.faltantes.length}' : ''}'
         ' (${result.duration.inSeconds}s)';
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -3613,13 +3656,38 @@ class _SettingsScreenState extends State<SettingsScreen>
       ),
     );
 
-    // Si hubo interrupción o errores, abrir detalle automáticamente.
+    // Errores de módulo: abrir detalle. Cache incompleto con sync OK se
+    // detalla al tocar «Detalle» o al intentar activar offline.
     if (!result.success) {
       await _showSyncResultDialog(result);
     }
   }
 
+  Future<void> _showOfflineReadinessDialog(OfflineReadiness readiness) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Falta para trabajar offline'),
+            content: SingleChildScrollView(
+              child: Text(readiness.mensaje),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Entendido'),
+              ),
+            ],
+          ),
+    );
+  }
+
   Future<void> _showSyncResultDialog(SyncResult result) async {
+    if (!mounted) return;
+    final readiness = await OfflineReadiness.inspeccionar(
+      _userPreferencesService,
+    );
     if (!mounted) return;
     await showDialog<void>(
       context: context,
@@ -3689,10 +3757,24 @@ class _SettingsScreenState extends State<SettingsScreen>
                       result.skippedItems.map((e) => '• $e').join('\n'),
                       style: TextStyle(color: VentiqHomeTheme.warning),
                     ),
+                    const SizedBox(height: 12),
+                  ],
+                  if (!readiness.listo) ...[
+                    const Text(
+                      'Cache offline incompleto',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      readiness.faltantes.map((e) => '• $e').join('\n'),
+                      style: TextStyle(color: VentiqHomeTheme.warning),
+                    ),
+                    const SizedBox(height: 12),
                   ],
                   if (result.syncedItems.isEmpty &&
                       result.errors.isEmpty &&
-                      result.skippedItems.isEmpty)
+                      result.skippedItems.isEmpty &&
+                      readiness.listo)
                     const Text('No hubo cambios en esta pasada.'),
                 ],
               ),

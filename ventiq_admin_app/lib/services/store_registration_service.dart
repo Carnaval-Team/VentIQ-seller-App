@@ -1,6 +1,5 @@
-import 'dart:convert';
-
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'auth_service.dart';
 import 'subscription_service.dart';
 
 class StoreRegistrationService {
@@ -110,97 +109,34 @@ class StoreRegistrationService {
     required String nombres,
     required String apellidos,
   }) async {
-    final adminSession = _supabase.auth.currentSession;
-    final adminUserId = adminSession?.user.id;
-    final adminSessionJson =
-        adminSession == null ? null : jsonEncode(adminSession.toJson());
-
-    String? userUuid;
-    var alreadyExisted = false;
-
+    print('🔐 Resolviendo usuario de acceso para $email ...');
     try {
-      print('🔐 Resolviendo usuario de acceso para $email ...');
-
-      try {
-        final authResponse = await _supabase.auth.signUp(
-          email: email,
-          password: password,
-          data: {
-            'nombres': nombres,
-            'apellidos': apellidos,
-            'full_name': '$nombres $apellidos',
-          },
-          emailRedirectTo: null,
-        );
-
-        final user = authResponse.user;
-        if (user == null) {
-          throw Exception('Error al registrar usuario en Supabase Auth');
-        }
-
-        if (user.identities != null && user.identities!.isEmpty) {
-          throw StateError('user_already_exists');
-        }
-
-        userUuid = user.id;
-        print('✅ Usuario registrado con UUID: $userUuid');
-      } catch (signUpError) {
-        final msg = signUpError.toString();
-        final yaExiste =
-            msg.contains('user_already_exists') ||
-            msg.contains('User already registered');
-
-        if (!yaExiste) rethrow;
-
-        print(
-          '⚠️ Usuario ya existe, verificando credenciales para vincular...',
-        );
-
-        try {
-          final loginResponse = await _supabase.auth.signInWithPassword(
-            email: email,
-            password: password,
-          );
-
-          if (loginResponse.user == null) {
-            throw Exception(
-              'No se pudo obtener el UUID del usuario existente',
-            );
-          }
-
-          userUuid = loginResponse.user!.id;
-          alreadyExisted = true;
-          print('✅ Usuario existente verificado con UUID: $userUuid');
-        } catch (loginError) {
-          print('❌ Error al autenticar usuario existente: $loginError');
-          throw Exception(
-            'El email $email ya está registrado pero las credenciales no coinciden. '
-            'Verifica la contraseña del trabajador.',
-          );
-        }
-      }
-    } finally {
-      if (adminSessionJson != null && adminUserId != null) {
-        try {
-          final currentUserId = _supabase.auth.currentSession?.user.id;
-          if (currentUserId != adminUserId) {
-            await _supabase.auth.recoverSession(adminSessionJson);
-            print('🔄 Sesión del usuario creador restaurada');
-          }
-        } catch (e) {
-          print('⚠️ No se pudo restaurar la sesión del usuario creador: $e');
-        }
-      }
-    }
-
-    final resolvedUuid = userUuid ?? '';
-    if (resolvedUuid.isEmpty) {
-      throw Exception(
-        'No se pudo crear ni verificar el usuario de acceso para $email',
+      final result = await AuthService.createOrLinkAuthUser(
+        email: email,
+        password: password,
+        data: {
+          'nombres': nombres,
+          'apellidos': apellidos,
+          'full_name': '$nombres $apellidos',
+        },
       );
+      print(
+        result.alreadyExisted
+            ? '✅ Usuario existente verificado con UUID: ${result.uuid}'
+            : '✅ Usuario registrado con UUID: ${result.uuid}',
+      );
+      return result;
+    } catch (e) {
+      final msg = e.toString();
+      if (msg.contains('credenciales no coinciden') ||
+          msg.contains('User already registered')) {
+        throw Exception(
+          'El email $email ya está registrado pero las credenciales no coinciden. '
+          'Verifica la contraseña del trabajador.',
+        );
+      }
+      rethrow;
     }
-
-    return (uuid: resolvedUuid, alreadyExisted: alreadyExisted);
   }
 
   /// Crea la estructura completa de la tienda usando la función RPC

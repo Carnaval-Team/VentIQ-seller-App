@@ -48,6 +48,8 @@ class UserPreferencesService {
     String? adminRole,
     int? idTienda,
     List<Map<String, dynamic>>? userStores,
+    /// Epoch seconds from `Session.expiresAt`. Prefer this over the 24h fallback.
+    int? tokenExpiresAt,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_userIdKey, userId);
@@ -68,10 +70,14 @@ class UserPreferencesService {
       await prefs.setString(_userStoresKey, jsonEncode(userStores));
     }
 
-    // Set token expiry (24 hours from now)
-    final expiryTime =
-        DateTime.now().add(Duration(hours: 24)).millisecondsSinceEpoch;
-    await prefs.setInt(_tokenExpiryKey, expiryTime);
+    await prefs.setInt(
+      _tokenExpiryKey,
+      tokenExpiresAt != null
+          ? tokenExpiresAt * 1000
+          : DateTime.now()
+              .add(const Duration(hours: 24))
+              .millisecondsSinceEpoch,
+    );
   }
 
   // Obtener ID del usuario
@@ -90,6 +96,23 @@ class UserPreferencesService {
   Future<String?> getAccessToken() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_accessTokenKey);
+  }
+
+  /// Actualiza el access token y su caducidad tras un refresh/login de Supabase.
+  ///
+  /// [expiresAt] es epoch en **segundos** (como `Session.expiresAt`). Si es
+  /// null se usa un margen de 24h solo como respaldo de preferencias; la
+  /// fuente de verdad de la sesión sigue siendo Supabase.
+  Future<void> updateAccessToken(String accessToken, {int? expiresAt}) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_accessTokenKey, accessToken);
+    await prefs.setInt(
+      _tokenExpiryKey,
+      expiresAt != null
+          ? expiresAt * 1000
+          : DateTime.now().add(const Duration(hours: 24)).millisecondsSinceEpoch,
+    );
+    await prefs.setBool(_isLoggedInKey, true);
   }
 
   // Obtener nombre del admin
@@ -273,7 +296,7 @@ class UserPreferencesService {
     return prefs.getBool(_rememberMeKey) ?? false;
   }
 
-  // Token validation
+  // Token validation (solo preferencias locales; preferir AuthService.ensureValidSession)
   Future<bool> isTokenValid() async {
     final prefs = await SharedPreferences.getInstance();
     final expiryTime = prefs.getInt(_tokenExpiryKey);
@@ -283,6 +306,8 @@ class UserPreferencesService {
     return now < expiryTime;
   }
 
+  /// Comprueba flags locales. No sustituye a [AuthService.ensureValidSession],
+  /// que consulta la sesión real de Supabase (y la refresca si hace falta).
   Future<bool> hasValidSession() async {
     final isLoggedIn = await this.isLoggedIn();
     final hasValidToken = await isTokenValid();

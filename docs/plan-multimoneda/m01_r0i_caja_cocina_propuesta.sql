@@ -36,7 +36,7 @@ BEGIN
           AND md5(prosrc) = '8c7ddcbfb2dccd447754b2722d5d33af'
           AND prosecdef AND proowner = 'postgres'::regrole
     ) THEN
-        RAISE EXCEPTION 'fn_apertura_turno_offline difiere del baseline newa';
+        RAISE EXCEPTION 'fn_apertura_turno_offline difiere del baseline main';
     END IF;
     IF NOT EXISTS (
         SELECT 1 FROM pg_proc
@@ -44,7 +44,7 @@ BEGIN
           AND md5(prosrc) = '5ba47aac84e2f8fcac8bffdf67199558'
           AND prosecdef AND proowner = 'postgres'::regrole
     ) THEN
-        RAISE EXCEPTION 'fn_cerrar_turno_offline difiere del baseline newa';
+        RAISE EXCEPTION 'fn_cerrar_turno_offline difiere del baseline main';
     END IF;
     IF NOT EXISTS (
         SELECT 1 FROM pg_proc
@@ -52,7 +52,7 @@ BEGIN
           AND md5(prosrc) = '548113889a72572ca1c3c851f21cf174'
           AND prosecdef AND proowner = 'postgres'::regrole
     ) THEN
-        RAISE EXCEPTION 'fn_registrar_egreso_offline difiere del baseline newa';
+        RAISE EXCEPTION 'fn_registrar_egreso_offline difiere del baseline main';
     END IF;
     IF NOT EXISTS (
         SELECT 1 FROM pg_proc
@@ -60,7 +60,7 @@ BEGIN
           AND md5(prosrc) = '637e84dfae7d78c14e8cb02357be5104'
           AND prosecdef AND proowner = 'postgres'::regrole
     ) THEN
-        RAISE EXCEPTION 'fn_pedir_item_cuenta_offline difiere del baseline newa';
+        RAISE EXCEPTION 'fn_pedir_item_cuenta_offline difiere del baseline main';
     END IF;
     IF NOT EXISTS (
         SELECT 1 FROM pg_proc
@@ -68,7 +68,7 @@ BEGIN
           AND md5(prosrc) = 'ffbb357d8b223c2589fc37d441723b78'
           AND prosecdef AND proowner = 'postgres'::regrole
     ) THEN
-        RAISE EXCEPTION 'fn_cambiar_estado_comanda_item_offline difiere del baseline newa';
+        RAISE EXCEPTION 'fn_cambiar_estado_comanda_item_offline difiere del baseline main';
     END IF;
     IF to_regprocedure('public.fn_pedir_item_cuenta_v2(bigint,bigint,numeric,numeric,bigint,bigint,bigint,bigint,numeric,bigint,jsonb,jsonb,text,character varying,character varying,uuid,boolean)') IS NULL
        OR to_regprocedure('public.fn_config_tienda_puede_escribir(bigint)') IS NULL

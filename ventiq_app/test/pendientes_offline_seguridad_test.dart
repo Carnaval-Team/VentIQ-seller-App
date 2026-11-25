@@ -33,6 +33,20 @@ void main() {
       expect(await prefs.isLoggedIn(), isFalse);
     });
 
+    test('clearUserData no borra la configuración de la tienda', () async {
+      SharedPreferences.setMockInitialValues({
+        'user_id': 'u1',
+        'is_logged_in': true,
+        'store_config': '{"tickets_a_imprimir":["cliente"]}',
+        'politica_moneda_v1': '{"flag":true}',
+      });
+      final prefs = UserPreferencesService();
+      await prefs.clearUserData();
+      final sp = await SharedPreferences.getInstance();
+      expect(sp.getString('store_config'), isNotNull);
+      expect(sp.getString('politica_moneda_v1'), isNotNull);
+      expect(await prefs.isLoggedIn(), isFalse);
+    });
   });
 
   group('cambio de tienda', () {
@@ -158,6 +172,16 @@ void main() {
         lessThan(drawer.indexOf('AuthService().signOut()', llamada)),
       );
       expect(drawer, contains('final borroTodo ='));
+    });
+
+    test('el logout offline no llama clearUserData (conserva store_config)', () {
+      expect(drawer, contains('Offline: nunca clearUserData'));
+      expect(drawer, contains('clearSessionKeepingStoreOffline()'));
+      // La rama online/errores de login pueden usar clearUserData; el flujo
+      // offline del drawer no debe borrarlo tras el comentario de guarda.
+      final guarda = drawer.indexOf('Offline: nunca clearUserData');
+      expect(guarda, isNonNegative);
+      expect(drawer.substring(guarda), isNot(contains('clearUserData()')));
     });
   });
 }

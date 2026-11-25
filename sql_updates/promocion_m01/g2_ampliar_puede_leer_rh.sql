@@ -1,0 +1,4 @@
+-- G2 ampliado: el script canónico es
+--   sql_updates/fn_config_tienda_puede_leer_g2.sql
+-- (RH + trabajador). Este nombre se conserva por referencias del plan;
+-- aplicar siempre el canónico.

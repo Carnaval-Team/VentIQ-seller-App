@@ -34,27 +34,8 @@ class _SelectiveSyncDialogState extends State<SelectiveSyncDialog> {
   SyncResult? _result;
   StreamSubscription<AutoSyncEvent>? _sub;
 
-  static const _uploadModules = [
-    SyncModule.uploadSales,
-    SyncModule.uploadEgresos,
-    SyncModule.uploadTurno,
-    SyncModule.uploadShiftWorkers,
-    SyncModule.uploadAdminOps,
-  ];
-
-  static const _downloadModules = [
-    SyncModule.license,
-    SyncModule.storeConfig,
-    SyncModule.credentials,
-    SyncModule.paymentMethods,
-    SyncModule.promotions,
-    SyncModule.categories,
-    SyncModule.products,
-    SyncModule.layouts,
-    SyncModule.turno,
-    SyncModule.egresos,
-    SyncModule.orders,
-  ];
+  static const _uploadModules = SyncModuleCatalog.uploads;
+  static const _downloadModules = SyncModuleCatalog.downloads;
 
   @override
   void initState() {
@@ -99,7 +80,13 @@ class _SelectiveSyncDialogState extends State<SelectiveSyncDialog> {
       _result = null;
     });
 
-    final result = await _autoSync.syncModules(_selected);
+    // Misma suspensión de modo offline que la sync manual: sin ella las
+    // subidas consultan el flag y se saltan con offline activo.
+    final result = await _autoSync.syncModules(
+      _selected,
+      resumeFromCheckpoint: true,
+      suspenderModoOffline: true,
+    );
 
     if (!mounted) return;
     setState(() {

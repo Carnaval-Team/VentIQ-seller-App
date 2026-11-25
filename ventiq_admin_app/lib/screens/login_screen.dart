@@ -47,8 +47,8 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _checkAutoLogin() async {
-    // Check if user has a valid session and auto-login
-    final hasValidSession = await _userPreferencesService.hasValidSession();
+    // Sesión Supabase usable (no el token_expiry artificial de preferencias).
+    final hasValidSession = await AuthService.ensureValidSession();
     if (hasValidSession && mounted) {
       print('✅ Valid session found, auto-logging in...');
       // Agregar pequeño delay para asegurar que la UI se renderice primero
@@ -861,6 +861,7 @@ class _LoginScreenState extends State<LoginScreen> {
         adminRole: roleName,
         idTienda: defaultStoreId,
         userStores: storesForPreferences,
+        tokenExpiresAt: session.expiresAt,
       );
 
       // Paso 7b: Guardar roles por tienda

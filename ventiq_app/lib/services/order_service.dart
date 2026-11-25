@@ -1,3 +1,4 @@
+import '../money/offline_readiness.dart';
 import '../money/politica_moneda.dart';
 import '../money/politica_moneda_store.dart';
 import '../money/product_currency_order.dart';
@@ -20,6 +21,7 @@ import 'store_config_service.dart';
 import 'auto_sync_service.dart';
 import 'turno_service.dart'; // Import TurnoService
 import 'connectivity_service.dart';
+import 'rpc_m01.dart';
 
 class OrderService extends ChangeNotifier {
   static final OrderService _instance = OrderService._internal();
@@ -194,8 +196,11 @@ class OrderService extends ChangeNotifier {
   }) async {
     final politica = await PoliticaMonedaStore.leer();
     if (politica.bloqueaOrdenNueva) {
+      final readiness = await OfflineReadiness.inspeccionar();
       throw PoliticaMonedaException(
-        'La politica de moneda esta incompleta. No se creo una orden legacy.',
+        readiness.listo
+            ? 'La política de moneda está incompleta. No se creó la orden.'
+            : readiness.mensaje,
       );
     }
     if (politica.modoActivo && seleccion == null) {
@@ -1488,7 +1493,7 @@ class OrderService extends ChangeNotifier {
       };
       dynamic response;
       try {
-        response = await Supabase.instance.client.rpc(
+        response = await RpcM01.call(
           'fn_registrar_cambio_estado_offline',
           params: {'p_client_uuid': estadoUuid, ...paramsEstado},
         );
@@ -2388,7 +2393,7 @@ class OrderService extends ChangeNotifier {
       print('==========================================');
 
       // Llamar a listar_ordenes
-      final response = await Supabase.instance.client.rpc(
+      final response = await RpcM01.call(
         'fn_listar_ordenes',
         params: rpcParams,
       );
@@ -2549,7 +2554,7 @@ class OrderService extends ChangeNotifier {
           final fechaDesdeParam =
               fechaApertura != null ? _toDateParam(fechaApertura) : null;
 
-          final response = await Supabase.instance.client.rpc(
+          final response = await RpcM01.call(
             'fn_listar_ordenes',
             params: {
               'con_inventario_param': true,

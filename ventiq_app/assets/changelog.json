@@ -1,8 +1,55 @@
 ﻿{
-  "current_version": "2.9.0",
-  "build": 853,
+  "current_version": "2.9.1",
+  "build": 854,
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "2.9.1",
+      "date": "2026-11-24",
+      "title": "Sync offline fiable: egresos, cierre por moneda y elaborados",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "La cola sube egresos antes de cerrar el turno",
+          "description": "Al sincronizar un turno offline, ventas y egresos se envían antes del cierre. Así el egreso queda en el servidor ligado al turno y no se pierde detrás de un cierre ya enviado."
+        },
+        {
+          "type": "fix",
+          "title": "Los egresos del turno siguen visibles tras sincronizar",
+          "description": "Después de cerrar y subir la cola, la caja y el resumen siguen mostrando los egresos del turno (por moneda). Ya no se borran de la vista local al completar el sync."
+        },
+        {
+          "type": "improvement",
+          "title": "Cierre y resumen por moneda nativa",
+          "description": "Ventas, egresos, fondo y diferencias se muestran por divisa (CUP, USD, …) sin mezclar importes ni porcentajes consolidados engañosos. El contador de billetes valida cada moneda por separado."
+        },
+        {
+          "type": "fix",
+          "title": "Elaborados y servicios offline con su receta",
+          "description": "La venta offline de elaborados/servicios vuelve a resolver ingredientes y consumo de almacén con la BOM en caché, sin bloquearse como si la receta estuviera vacía."
+        },
+        {
+          "type": "improvement",
+          "title": "Cobro multimoneda sin recalcular precios al redistribuir",
+          "description": "Puedes repartir el pago en varias líneas y monedas de forma independiente a los medios de cada producto. El desglose editado es el que viaja online y offline."
+        },
+        {
+          "type": "improvement",
+          "title": "Sincronización con funciones _m01 del servidor",
+          "description": "Apertura, cierre, venta, pago y egreso offline llaman primero a las RPC _m01 (con caída a la función anterior si el servidor aún no las tiene), preparadas para moneda por producto."
+        },
+        {
+          "type": "fix",
+          "title": "Sesión más resistente ante errores de refresh",
+          "description": "Un 429 u otro fallo al renovar el token ya no se trata como un cierre de sesión explícito del usuario."
+        },
+        {
+          "type": "improvement",
+          "title": "Incluye todo lo de la 2.9.0",
+          "description": "Esta versión incorpora el Home nuevo, catálogo offline, Mis ventas y el resto de novedades de la 2.9.0."
+        }
+      ]
+    },
     {
       "version": "2.9.0",
       "date": "2026-11-03",

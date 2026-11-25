@@ -27,6 +27,7 @@ import '../services/currency_service.dart';
 import '../services/moneda_venta_service.dart';
 import '../utils/platform_utils.dart';
 import '../utils/pdf_download.dart';
+import '../utils/receipt_options.dart';
 import '../utils/connection_error_handler.dart';
 import '../utils/navigation_helper.dart';
 import '../widgets/bottom_navigation.dart';
@@ -172,7 +173,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
         _loadDiscountPermission(),
         _loadPrintPendingPermission(),
         _loadSellerModificationsPermission(),
-        _loadRememberPrinterPermission(),
         _loadSolicitarImagenOperacion(),
       ]);
       if (widget.autoOpenOrderId != null) {
@@ -298,25 +298,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
       }
     } catch (e) {
       print('❌ Error cargando permiso de modificación de órdenes: $e');
-    }
-  }
-
-  Future<void> _loadRememberPrinterPermission() async {
-    try {
-      final storeId = await _userPreferencesService.getIdTienda();
-      if (storeId == null) {
-        print(
-          '⚠️ No se pudo obtener id_tienda para guardar impresora por defecto',
-        );
-        return;
-      }
-      final allow = await StoreConfigService.getGuardarImpresoraPorDefecto(
-        storeId,
-      );
-      _printerManager.setAllowRememberPrinter(allow);
-      print('🖨️ guardar_impresora_por_defecto: $allow');
-    } catch (e) {
-      print('❌ Error al cargar guardar_impresora_por_defecto: $e');
     }
   }
 
@@ -5896,7 +5877,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
               ),
               pw.SizedBox(height: 16),
               pw.Text(
-                'Gracias por su compra.',
+                '${ReceiptOptions(order, restaurantMode: StoreConfigService.modoRestauranteSync).thanksMessage}.',
                 style: const pw.TextStyle(
                   fontSize: 11,
                   color: PdfColors.grey700,

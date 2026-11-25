@@ -196,6 +196,8 @@ BEGIN
 END;
 $function$;
 
+-- H9 (2026-11-23): IF anidados por TG_TABLE_NAME — plpgsql no corta AND
+-- antes de resolver NEW.version_monetaria en app_dat_pago_venta.
 CREATE FUNCTION public.fn_m01_venta_v1_pago_directo()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -205,19 +207,21 @@ BEGIN
     IF pg_catalog.current_setting('app.m01_venta_v1_interna', true) = 'yes' THEN
         RETURN NEW;
     END IF;
-    IF TG_TABLE_NAME = 'app_dat_pago_venta' AND EXISTS (
-        SELECT 1 FROM public.app_dat_operacion_venta v
-        WHERE v.id_operacion = NEW.id_operacion_venta
-          AND v.version_monetaria = 'producto-v1'
-    ) THEN
-        RAISE EXCEPTION 'El cobro producto-v1 no se escribe directo'
-            USING ERRCODE = '42501';
-    END IF;
-    IF TG_TABLE_NAME = 'app_dat_operacion_venta'
-       AND NEW.version_monetaria = 'producto-v1'
-       AND OLD.es_pagada IS DISTINCT FROM NEW.es_pagada THEN
-        RAISE EXCEPTION 'El estado de cobro producto-v1 no se escribe directo'
-            USING ERRCODE = '42501';
+    IF TG_TABLE_NAME = 'app_dat_pago_venta' THEN
+        IF EXISTS (
+            SELECT 1 FROM public.app_dat_operacion_venta v
+            WHERE v.id_operacion = NEW.id_operacion_venta
+              AND v.version_monetaria = 'producto-v1'
+        ) THEN
+            RAISE EXCEPTION 'El cobro producto-v1 no se escribe directo'
+                USING ERRCODE = '42501';
+        END IF;
+    ELSIF TG_TABLE_NAME = 'app_dat_operacion_venta' THEN
+        IF NEW.version_monetaria = 'producto-v1'
+           AND OLD.es_pagada IS DISTINCT FROM NEW.es_pagada THEN
+            RAISE EXCEPTION 'El estado de cobro producto-v1 no se escribe directo'
+                USING ERRCODE = '42501';
+        END IF;
     END IF;
     RETURN NEW;
 END;

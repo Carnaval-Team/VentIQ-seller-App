@@ -1,12 +1,15 @@
 -- ============================================================================
--- Costos adicionales por producto
+-- Costos adicionales por producto (archivo completo — newa / no Fase 1 main)
 --
 -- 1. app_dat_producto_costo — conceptos asociados al producto (USD / u. base)
 -- 2. app_dat_recepcion_producto_costo — auditoría por línea de recepción
 -- 3. costo_real deja de ser GENERATED → columna normal + trigger de fórmula
 -- 4. fn_actualizar_precio_promedio_recepcion_v2 acepta costos[] opcionales
 --
--- Despliegue: Newa → validar → Main
+-- ⚠ MAIN FASE 1: usar solo `costos_adicionales_producto_tablas_fase1.sql`
+--   (§§1–2). Este archivo completo hace DROP EXPRESSION / trigger sobre
+--   `app_dat_recepcion_productos` y REPLACE del `_v2` publicado → viola la
+--   regla de oro. El cálculo nuevo va en `*_v2_m01` (promocion_m01/06).
 -- ============================================================================
 
 BEGIN;

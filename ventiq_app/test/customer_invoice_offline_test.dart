@@ -148,4 +148,16 @@ void main() {
       2,
     );
   });
+
+  test('PDF y WiFi usan ReceiptOptions.thanksMessage (sin Vuelva Pronto)', () {
+    final pdf = File('lib/screens/orders_screen.dart').readAsStringSync();
+    final wifi = File('lib/services/wifi_printer_service.dart').readAsStringSync();
+    final pdfFooter = pdf.substring(
+      pdf.indexOf('static pw.Document _buildInvoicePdf('),
+    );
+    expect(pdfFooter, contains('ReceiptOptions('));
+    expect(pdfFooter, contains('thanksMessage'));
+    expect(wifi, contains('receiptOptions.thanksMessage'));
+    expect(wifi, isNot(contains("'Vuelva Pronto'")));
+  });
 }

@@ -88,4 +88,18 @@ void main() {
       2,
     );
   });
+
+  test(
+    'el TPV no ata «guardar impresora» a guardar_impresora_por_defecto',
+    () {
+      final manager =
+          File('lib/services/printer_manager.dart').readAsStringSync();
+      final orders = File('lib/screens/orders_screen.dart').readAsStringSync();
+      expect(manager, isNot(contains('_allowRememberPrinter')));
+      expect(manager, isNot(contains('setAllowRememberPrinter')));
+      expect(manager, contains('_showRememberPrinterDialog'));
+      expect(orders, isNot(contains('getGuardarImpresoraPorDefecto')));
+      expect(orders, isNot(contains('_loadRememberPrinterPermission')));
+    },
+  );
 }

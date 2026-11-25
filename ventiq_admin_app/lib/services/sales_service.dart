@@ -57,6 +57,296 @@ class VendorOrder {
   }
 }
 
+/// Una fila del reporte `fn_reporte_ventas_producto_por_moneda`:
+/// producto × moneda de venta, con utilidad en nativo (sin mezclar divisas).
+class ProductSalesReportPorMoneda {
+  final int idTienda;
+  final int idProducto;
+  final String nombreProducto;
+  final int idProveedor;
+  final String nombreProveedor;
+  final String moneda;
+  final double precioVentaNativo;
+  final double precioCostoUsd;
+  final double precioCostoNativo;
+  final double? tasaPromedio;
+  final double totalVendido;
+  final double equivUnidadesBase;
+  final String cantidadFormateada;
+  final double ingresosNativos;
+  final double? costoNativo;
+  final double? gananciaNativa;
+  final double? gananciaUnitaria;
+  final bool utilidadDisponible;
+  final bool esElaborado;
+  final bool esServicio;
+
+  /// True cuando la fila viene del fallback CUP (RPC por moneda ausente).
+  final bool desdeFallbackCup;
+
+  /// True cuando los importes usan precios de lista actuales (análisis).
+  final bool usaPreciosActuales;
+
+  const ProductSalesReportPorMoneda({
+    required this.idTienda,
+    required this.idProducto,
+    required this.nombreProducto,
+    this.idProveedor = 0,
+    this.nombreProveedor = 'Sin Proveedor',
+    required this.moneda,
+    required this.precioVentaNativo,
+    required this.precioCostoUsd,
+    required this.precioCostoNativo,
+    this.tasaPromedio,
+    required this.totalVendido,
+    required this.equivUnidadesBase,
+    this.cantidadFormateada = '',
+    required this.ingresosNativos,
+    this.costoNativo,
+    this.gananciaNativa,
+    this.gananciaUnitaria,
+    required this.utilidadDisponible,
+    this.esElaborado = false,
+    this.esServicio = false,
+    this.desdeFallbackCup = false,
+    this.usaPreciosActuales = false,
+  });
+
+  factory ProductSalesReportPorMoneda.fromJson(
+    Map<String, dynamic> json, {
+    bool usaPreciosActuales = false,
+    bool desdeFallbackCup = false,
+  }) {
+    final totalVendido = (json['total_vendido'] as num?)?.toDouble() ?? 0.0;
+    final utilidad =
+        json['utilidad_disponible'] == true ||
+        json['utilidad_disponible'] == 1;
+    return ProductSalesReportPorMoneda(
+      idTienda: (json['id_tienda'] as num?)?.toInt() ?? 0,
+      idProducto: (json['id_producto'] as num?)?.toInt() ?? 0,
+      nombreProducto: json['nombre_producto']?.toString() ?? '',
+      idProveedor: (json['id_proveedor'] as num?)?.toInt() ?? 0,
+      nombreProveedor: json['nombre_proveedor']?.toString() ?? 'Sin Proveedor',
+      moneda: (json['moneda']?.toString() ?? 'CUP').toUpperCase(),
+      precioVentaNativo:
+          (json['precio_venta_nativo'] as num?)?.toDouble() ?? 0.0,
+      precioCostoUsd: (json['precio_costo_usd'] as num?)?.toDouble() ?? 0.0,
+      precioCostoNativo:
+          (json['precio_costo_nativo'] as num?)?.toDouble() ?? 0.0,
+      tasaPromedio: (json['tasa_promedio'] as num?)?.toDouble(),
+      totalVendido: totalVendido,
+      equivUnidadesBase:
+          (json['equiv_unidades_base'] as num?)?.toDouble() ?? totalVendido,
+      cantidadFormateada: json['cantidad_formateada']?.toString() ?? '',
+      ingresosNativos: (json['ingresos_nativos'] as num?)?.toDouble() ?? 0.0,
+      costoNativo: (json['costo_nativo'] as num?)?.toDouble(),
+      gananciaNativa: (json['ganancia_nativa'] as num?)?.toDouble(),
+      gananciaUnitaria: (json['ganancia_unitaria'] as num?)?.toDouble(),
+      utilidadDisponible: utilidad,
+      esElaborado: json['es_elaborado'] == true,
+      esServicio: json['es_servicio'] == true,
+      desdeFallbackCup: desdeFallbackCup,
+      usaPreciosActuales: usaPreciosActuales,
+    );
+  }
+
+  /// Adapta una fila CUP consolidada del reporte legacy.
+  factory ProductSalesReportPorMoneda.fromCupReport(
+    ProductSalesReport report,
+  ) {
+    final sinTasa = report.precioCosto > 0 && report.valorUsd <= 0;
+    final disponible = !sinTasa;
+    return ProductSalesReportPorMoneda(
+      idTienda: report.idTienda,
+      idProducto: report.idProducto,
+      nombreProducto: report.nombreProducto,
+      idProveedor: report.idProveedor,
+      nombreProveedor: report.nombreProveedor,
+      moneda: 'CUP',
+      precioVentaNativo: report.precioVentaCup,
+      precioCostoUsd: report.precioCosto,
+      precioCostoNativo: report.precioCostoCup,
+      tasaPromedio: report.valorUsd > 0 ? report.valorUsd : null,
+      totalVendido: report.totalVendido,
+      equivUnidadesBase: report.equivUnidadesBase,
+      cantidadFormateada: report.cantidadFormateada,
+      ingresosNativos: report.ingresosReportados,
+      costoNativo: disponible ? report.costoReportado : null,
+      gananciaNativa: disponible ? report.gananciaReportada : null,
+      gananciaUnitaria: disponible ? report.gananciaUnitaria : null,
+      utilidadDisponible: disponible,
+      esElaborado: report.esElaborado,
+      esServicio: report.esServicio,
+      desdeFallbackCup: true,
+      usaPreciosActuales: report.usaPreciosActuales,
+    );
+  }
+
+  /// Vista CUP legacy para consumidores que aún no leen por moneda
+  /// (proveedores, analista). Solo tiene sentido con `moneda == 'CUP'`.
+  ProductSalesReport toCupReport() {
+    return ProductSalesReport(
+      idTienda: idTienda,
+      idProducto: idProducto,
+      nombreProducto: nombreProducto,
+      idProveedor: idProveedor,
+      nombreProveedor: nombreProveedor,
+      precioVentaCup: moneda == 'CUP' ? precioVentaNativo : 0,
+      precioCosto: precioCostoUsd,
+      valorUsd: tasaPromedio ?? 0,
+      precioCostoCup: moneda == 'CUP' ? precioCostoNativo : 0,
+      totalVendido: totalVendido,
+      ingresosTotales: moneda == 'CUP' ? ingresosNativos : 0,
+      costoTotalVendido: moneda == 'CUP' ? (costoNativo ?? 0) : 0,
+      gananciaUnitaria: moneda == 'CUP' ? (gananciaUnitaria ?? 0) : 0,
+      gananciaTotal: moneda == 'CUP' ? (gananciaNativa ?? 0) : 0,
+      esElaborado: esElaborado,
+      esServicio: esServicio,
+      equivUnidadesBase: equivUnidadesBase,
+      cantidadFormateada: cantidadFormateada,
+      usaPreciosActuales: usaPreciosActuales,
+    );
+  }
+}
+
+/// Totales de un período agrupados por moneda (nunca se suman entre sí).
+class TotalesPorMonedaProducto {
+  final String moneda;
+  final double ingresos;
+  final double? costo;
+  final double? ganancia;
+  final double cantidadBase;
+  final bool utilidadCompleta;
+
+  const TotalesPorMonedaProducto({
+    required this.moneda,
+    required this.ingresos,
+    this.costo,
+    this.ganancia,
+    required this.cantidadBase,
+    required this.utilidadCompleta,
+  });
+}
+
+/// Agrega filas producto×moneda sin mezclar divisas.
+List<TotalesPorMonedaProducto> agregarTotalesPorMoneda(
+  Iterable<ProductSalesReportPorMoneda> filas,
+) {
+  final map = <String, _AcumMoneda>{};
+  for (final f in filas) {
+    final a = map.putIfAbsent(f.moneda, _AcumMoneda.new);
+    a.ingresos += f.ingresosNativos;
+    a.cantidad += f.equivUnidadesBase;
+    if (f.costoNativo != null) {
+      a.costo = (a.costo ?? 0) + f.costoNativo!;
+    }
+    if (f.gananciaNativa != null) {
+      a.ganancia = (a.ganancia ?? 0) + f.gananciaNativa!;
+    }
+    if (!f.utilidadDisponible || f.costoNativo == null || f.gananciaNativa == null) {
+      a.utilidadCompleta = false;
+    }
+  }
+  final orden = ['CUP', 'USD'];
+  final keys = [
+    ...orden.where(map.containsKey),
+    ...map.keys.where((k) => !orden.contains(k)).toList()..sort(),
+  ];
+  return [
+    for (final m in keys)
+      TotalesPorMonedaProducto(
+        moneda: m,
+        ingresos: map[m]!.ingresos,
+        costo: map[m]!.costo,
+        ganancia: map[m]!.ganancia,
+        cantidadBase: map[m]!.cantidad,
+        utilidadCompleta: map[m]!.utilidadCompleta,
+      ),
+  ];
+}
+
+class _AcumMoneda {
+  double ingresos = 0;
+  double? costo;
+  double? ganancia;
+  double cantidad = 0;
+  bool utilidadCompleta = true;
+}
+
+/// Agrega filas producto×moneda a proveedor×moneda sin mezclar divisas.
+List<SupplierSalesReport> agregarProveedoresPorMoneda(
+  Iterable<ProductSalesReportPorMoneda> filas,
+) {
+  final map = <String, _AcumProveedorMoneda>{};
+  for (final f in filas) {
+    final key = '${f.idProveedor}|${f.moneda}';
+    final a = map.putIfAbsent(
+      key,
+      () => _AcumProveedorMoneda(
+        idProveedor: f.idProveedor,
+        nombreProveedor: f.nombreProveedor,
+        moneda: f.moneda,
+      ),
+    );
+    a.ingresos += f.ingresosNativos;
+    a.cantidad += f.equivUnidadesBase;
+    if (f.utilidadDisponible &&
+        f.costoNativo != null &&
+        f.gananciaNativa != null) {
+      a.costo = (a.costo ?? 0) + f.costoNativo!;
+      a.ganancia = (a.ganancia ?? 0) + f.gananciaNativa!;
+    } else {
+      a.utilidadCompleta = false;
+    }
+  }
+
+  final reports = map.values.map((a) {
+    final costo = a.utilidadCompleta ? (a.costo ?? 0.0) : 0.0;
+    final ganancia = a.utilidadCompleta ? (a.ganancia ?? 0.0) : 0.0;
+    final margen =
+        a.utilidadCompleta && a.ingresos > 0
+            ? (ganancia / a.ingresos) * 100
+            : 0.0;
+    return SupplierSalesReport(
+      idProveedor: a.idProveedor,
+      nombreProveedor: a.nombreProveedor,
+      moneda: a.moneda,
+      totalVentas: a.ingresos,
+      totalCosto: costo,
+      totalGanancia: ganancia,
+      cantidadProductos: a.cantidad,
+      margenPorcentaje: margen,
+      utilidadDisponible: a.utilidadCompleta,
+    );
+  }).toList();
+
+  reports.sort((a, b) {
+    final byName = a.nombreProveedor.toLowerCase().compareTo(
+      b.nombreProveedor.toLowerCase(),
+    );
+    if (byName != 0) return byName;
+    return a.moneda.compareTo(b.moneda);
+  });
+  return reports;
+}
+
+class _AcumProveedorMoneda {
+  final int idProveedor;
+  final String nombreProveedor;
+  final String moneda;
+  double ingresos = 0;
+  double? costo;
+  double? ganancia;
+  double cantidad = 0;
+  bool utilidadCompleta = true;
+
+  _AcumProveedorMoneda({
+    required this.idProveedor,
+    required this.nombreProveedor,
+    required this.moneda,
+  });
+}
+
 class ProductSalesReport {
   final int idTienda;
   final int idProducto;
@@ -267,31 +557,41 @@ class ProductAnalysis {
 class SupplierSalesReport {
   final int idProveedor;
   final String nombreProveedor;
+  /// Moneda de venta de esta fila (CUP / USD). No se mezcla con otras.
+  final String moneda;
   final double totalVentas;
   final double totalCosto;
   final double totalGanancia;
   final double cantidadProductos;
   final double margenPorcentaje;
+  final bool utilidadDisponible;
 
   SupplierSalesReport({
     required this.idProveedor,
     required this.nombreProveedor,
+    this.moneda = 'CUP',
     required this.totalVentas,
     required this.totalCosto,
     required this.totalGanancia,
     required this.cantidadProductos,
     required this.margenPorcentaje,
+    this.utilidadDisponible = true,
   });
 
   factory SupplierSalesReport.fromJson(Map<String, dynamic> json) {
     return SupplierSalesReport(
       idProveedor: json['id_proveedor'] ?? 0,
       nombreProveedor: json['nombre_proveedor'] ?? 'Sin Proveedor',
+      moneda: (json['moneda']?.toString() ?? 'CUP').toUpperCase(),
       totalVentas: (json['total_ventas'] ?? 0).toDouble(),
       totalCosto: (json['total_costo'] ?? 0).toDouble(),
       totalGanancia: (json['total_ganancia'] ?? 0).toDouble(),
       cantidadProductos: (json['cantidad_productos'] ?? 0).toDouble(),
       margenPorcentaje: (json['margen_porcentaje'] ?? 0).toDouble(),
+      utilidadDisponible:
+          json['utilidad_disponible'] == null ||
+          json['utilidad_disponible'] == true ||
+          json['utilidad_disponible'] == 1,
     );
   }
 }
@@ -575,6 +875,88 @@ class SalesService {
       // Los errores se propagan: un fallo de red o de permisos no puede
       // convertirse en «0 productos vendidos» sin que el consumidor lo sepa.
       rethrow;
+    }
+  }
+
+  /// Reporte de ventas por producto × moneda de venta.
+  ///
+  /// Prefiere `fn_reporte_ventas_producto_por_moneda`. Si la función no existe
+  /// en el backend, cae al reporte CUP consolidado y marca
+  /// [ProductSalesReportPorMoneda.desdeFallbackCup] — no inventa un desglose
+  /// USD. Con `useCurrentPrices` también usa el fallback CUP: la RPC por
+  /// moneda es utilidad histórica realizada, no proyección de catálogo.
+  static Future<List<ProductSalesReportPorMoneda>>
+  getProductSalesReportPorMoneda({
+    DateTime? fechaDesde,
+    DateTime? fechaHasta,
+    String filtroFecha = 'creacion',
+    bool useCurrentPrices = false,
+    int? storeId,
+    int? idAlmacen,
+  }) async {
+    if (useCurrentPrices) {
+      final cup = await getProductSalesReport(
+        fechaDesde: fechaDesde,
+        fechaHasta: fechaHasta,
+        filtroFecha: filtroFecha,
+        useCurrentPrices: true,
+        storeId: storeId,
+      );
+      return cup.map(ProductSalesReportPorMoneda.fromCupReport).toList();
+    }
+
+    final userPrefs = UserPreferencesService();
+    final idTienda = storeId ?? await userPrefs.getIdTienda();
+    if (idTienda == null) return [];
+
+    final String? desde = fechaDesde?.toIso8601String().split('T')[0];
+    final String? hasta = fechaHasta?.toIso8601String().split('T')[0];
+    final bool porTurnos = filtroFecha == 'turnos_abiertos';
+    final filtro = (!porTurnos && filtroFecha == 'completado')
+        ? 'completado'
+        : 'creacion';
+
+    final params = <String, dynamic>{
+      'p_id_tienda': idTienda,
+      'p_filtro_fecha': filtro,
+      if (desde != null) 'p_fecha_desde': desde,
+      if (hasta != null) 'p_fecha_hasta': hasta,
+      if (idAlmacen != null) 'p_id_almacen': idAlmacen,
+    };
+
+    try {
+      final response = await _supabase.rpc(
+        'fn_reporte_ventas_producto_por_moneda',
+        params: params,
+      );
+      if (response == null) return [];
+      if (response is! List) {
+        throw const ReporteContratoException(
+          'fn_reporte_ventas_producto_por_moneda',
+          'la RPC no devolvió una lista de filas',
+        );
+      }
+      return [
+        for (final item in response)
+          if (item is Map)
+            ProductSalesReportPorMoneda.fromJson(
+              Map<String, dynamic>.from(item),
+            ),
+      ];
+    } catch (e) {
+      if (!_esFuncionInexistente(e)) rethrow;
+      print(
+        '⚠️ [getProductSalesReportPorMoneda] RPC no disponible ($e). '
+        'Fallback al reporte CUP consolidado.',
+      );
+      final cup = await getProductSalesReport(
+        fechaDesde: fechaDesde,
+        fechaHasta: fechaHasta,
+        filtroFecha: filtroFecha,
+        useCurrentPrices: false,
+        storeId: storeId,
+      );
+      return cup.map(ProductSalesReportPorMoneda.fromCupReport).toList();
     }
   }
 

@@ -3283,7 +3283,9 @@ class InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         : _isChildPending(esp['estado_recepcion'], esp['estado_recepcion_id']);
     if (!pending) return false;
 
-    if (_userRole == UserRole.gerente || _userRole == UserRole.supervisor) {
+    if (_userRole == UserRole.dueno ||
+        _userRole == UserRole.gerente ||
+        _userRole == UserRole.supervisor) {
       return true;
     }
 

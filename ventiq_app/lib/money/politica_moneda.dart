@@ -41,7 +41,8 @@ class PoliticaMonedaEstado {
     if (revision['id_tienda'] != tienda || constancia['id_tienda'] != tienda) {
       return incompleta;
     }
-    if (usuario == null || constancia['uuid_sujeto'] != usuario) {
+    final sujeto = constancia['uuid_sujeto']?.toString();
+    if (usuario == null || sujeto == null || sujeto != usuario) {
       return incompleta;
     }
     if (constancia['id_revision'] != revision['id']) return incompleta;

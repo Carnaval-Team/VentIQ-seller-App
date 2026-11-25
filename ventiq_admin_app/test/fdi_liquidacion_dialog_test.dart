@@ -7,6 +7,7 @@ import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:ventiq_admin_app/models/fondo_inversion.dart';
+import 'package:ventiq_admin_app/services/sales_service.dart';
 import 'package:ventiq_admin_app/widgets/fdi_liquidacion_dialog.dart';
 
 void main() {
@@ -14,7 +15,6 @@ void main() {
   var fallo = false;
   var ordenes = 2;
   var cuentas = true;
-  var usd = false;
   Map<String, dynamic>? enviado;
 
   setUpAll(() async {
@@ -48,14 +48,6 @@ void main() {
                 'monto_vendido': 200,
                 'monto_vendido_cup': 200,
               },
-              if (usd)
-                {
-                  'id_medio_pago': 4,
-                  'medio_pago': 'Transferencia',
-                  'moneda': 'USD',
-                  'monto_vendido': 2,
-                  'monto_vendido_cup': 200,
-                },
             ],
           };
         } else if (path.endsWith('fdi_dat_concepto')) {
@@ -106,11 +98,13 @@ void main() {
     fallo = false;
     ordenes = 2;
     cuentas = true;
-    usd = false;
     enviado = null;
   });
 
-  Future<void> abrir(WidgetTester tester) async {
+  Future<void> abrir(
+    WidgetTester tester, {
+    List<TotalesPorMonedaProducto> totales = const [],
+  }) async {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -121,6 +115,7 @@ void main() {
                 builder: (_) => FdiLiquidacionDialog(
                   desde: DateTime(2026, 11, 1),
                   hasta: DateTime(2026, 11, 7),
+                  totalesPorMoneda: totales,
                 ),
               ),
               child: const Text('Abrir'),
@@ -142,19 +137,60 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('jerarquiza el resumen y conserva el envío del reparto entero', (
+  const totalesCup = [
+    TotalesPorMonedaProducto(
+      moneda: 'CUP',
+      ingresos: 200,
+      costo: 100,
+      ganancia: 100,
+      cantidadBase: 2,
+      utilidadCompleta: true,
+    ),
+  ];
+
+  testWidgets('montos en columna y secciones de destino por moneda', (
     tester,
   ) async {
-    await abrir(tester);
-    expect(find.text('Ganancia del período'), findsOneWidget);
-    expect(find.text('100.00 CUP'), findsOneWidget);
-    expect(find.text('Venta'), findsNothing);
-    await tester.tap(find.text('Resumen de ventas'));
-    await tester.pumpAndSettle();
-    expect(find.text('Venta'), findsOneWidget);
-    expect(find.text('Costo'), findsOneWidget);
-    await tester.tap(find.text('Resumen de ventas'));
-    await tester.pumpAndSettle();
+    await abrir(
+      tester,
+      totales: const [
+        TotalesPorMonedaProducto(
+          moneda: 'CUP',
+          ingresos: 1500,
+          costo: 900,
+          ganancia: 600,
+          cantidadBase: 10,
+          utilidadCompleta: true,
+        ),
+        TotalesPorMonedaProducto(
+          moneda: 'USD',
+          ingresos: 25,
+          costo: 11,
+          ganancia: 14,
+          cantidadBase: 10,
+          utilidadCompleta: true,
+        ),
+      ],
+    );
+    expect(find.text('Venta'), findsWidgets);
+    expect(find.text('Inversión'), findsWidgets);
+    expect(find.text('Ganancia'), findsWidgets);
+    expect(find.text('1,500.00 CUP'), findsOneWidget);
+    expect(find.text('25.00 USD'), findsOneWidget);
+    expect(find.text('Destino de la inversión'), findsWidgets);
+    expect(find.text('Destino de la ganancia'), findsWidgets);
+    expect(find.text('A cuenta del fondo'), findsWidgets);
+    expect(find.text('A liquidación directa'), findsWidgets);
+    expect(find.text('A liquidación'), findsWidgets);
+    expect(find.text('A fondo de inversión'), findsWidgets);
+    expect(find.text('A fondo de caja'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('envía monto_inversion y ganancia con default a liquidación', (
+    tester,
+  ) async {
+    await abrir(tester, totales: totalesCup);
     await desplazar(tester, find.byType(DropdownButtonFormField<FdiCuenta>));
     await tester.tap(find.byType(DropdownButton<FdiCuenta>));
     await tester.pumpAndSettle();
@@ -163,41 +199,70 @@ void main() {
     await desplazar(tester, find.text('Repartir a partes iguales'));
     await tester.tap(find.text('Repartir a partes iguales'));
     await tester.pumpAndSettle();
-    await desplazar(tester, find.text('Para inversores'));
-    expect(find.text('33 CUP'), findsNWidgets(3));
-    expect(find.text('99 CUP'), findsOneWidget);
-    expect(find.text('101.00 CUP'), findsOneWidget);
     await tester.tap(find.widgetWithText(FilledButton, 'Confirmar'));
     await tester.pumpAndSettle();
     expect(enviado?['p_repartir_igual'], true);
-    expect(enviado?['p_id_cuenta_destino'], 1);
-    expect(enviado?['p_detalle'], [
-      {'id_medio_pago': 1, 'moneda': 'CUP', 'monto_ganancia_retirada': 100.0},
-    ]);
+    expect(enviado?['p_tasa_validacion'], isNull);
+    expect(find.text('Tasa a CUP'), findsNothing);
+    final detalle = enviado?['p_detalle'] as List?;
+    expect(detalle, isNotNull);
+    expect(detalle!.single['moneda'], 'CUP');
+    expect(detalle.single['monto_ganancia_retirada'], 100.0);
+    expect(detalle.single['monto_inversion'], 100.0);
     expect(find.text('Crear liquidación'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('se adapta a móvil y mantiene visible la tasa necesaria', (
+  testWidgets('reparto mixto de inversión valida la suma', (tester) async {
+    await abrir(tester, totales: totalesCup);
+    // Primer TextFormField = inversión → cuenta del fondo.
+    final fields = find.byType(TextFormField);
+    expect(fields, findsWidgets);
+    await tester.enterText(fields.at(0), '40');
+    await tester.pumpAndSettle();
+    expect(find.textContaining('debe ser'), findsNothing);
+
+    await desplazar(tester, find.byType(DropdownButtonFormField<FdiCuenta>));
+    await tester.tap(find.byType(DropdownButton<FdiCuenta>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Fondo · Principal').last);
+    await tester.pumpAndSettle();
+    await desplazar(tester, find.text('Repartir a partes iguales'));
+    await tester.tap(find.text('Repartir a partes iguales'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Confirmar'));
+    await tester.pumpAndSettle();
+    final detalle = enviado?['p_detalle'] as List?;
+    expect(detalle, isNotNull);
+    expect(detalle!.single['monto_inversion'], 40.0);
+    expect(detalle.single['monto_ganancia_retirada'], 100.0);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('ganancia a fondo de inversión se deposita en la cuenta', (
     tester,
   ) async {
-    usd = true;
-    tester.view.physicalSize = const Size(320, 740);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    await abrir(tester);
-    await desplazar(tester, find.text('Transferencia · USD'));
-    await tester.tap(find.text('Transferencia · USD'));
+    await abrir(tester, totales: totalesCup);
+    final fields = find.byType(TextFormField);
+    // Campos: inv cuenta, inv liquidación, gan liquidación, gan fondo.
+    await tester.enterText(fields.at(2), '30'); // ganancia a liquidación
     await tester.pumpAndSettle();
-    await desplazar(tester, find.byType(TextFormField));
-    await tester.enterText(find.byType(TextFormField), '100');
+    // CompletarPar deja 70 en fondo de inversión → depósito = 100 inv + 70 gan.
+
+    await desplazar(tester, find.byType(DropdownButtonFormField<FdiCuenta>));
+    await tester.tap(find.byType(DropdownButton<FdiCuenta>));
     await tester.pumpAndSettle();
-    expect(find.text('Tasa a CUP'), findsOneWidget);
-    await desplazar(tester, find.text('Validación del importe'));
-    await tester.tap(find.text('Validación del importe'));
+    await tester.tap(find.text('Fondo · Principal').last);
     await tester.pumpAndSettle();
-    expect(find.text('Equivalente seleccionado'), findsOneWidget);
+    await desplazar(tester, find.text('Repartir a partes iguales'));
+    await tester.tap(find.text('Repartir a partes iguales'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Confirmar'));
+    await tester.pumpAndSettle();
+    final detalle = enviado?['p_detalle'] as List?;
+    expect(detalle, isNotNull);
+    expect(detalle!.single['monto_ganancia_retirada'], 30.0);
+    expect(detalle.single['monto_inversion'], 170.0);
     expect(tester.takeException(), isNull);
   });
 
@@ -236,7 +301,6 @@ void main() {
       find.text('No hay ventas pendientes de liquidar en este período.'),
       findsOneWidget,
     );
-    expect(find.byType(DropdownButtonFormField<FdiCuenta>), findsNothing);
     expect(
       tester
           .widget<FilledButton>(find.widgetWithText(FilledButton, 'Confirmar'))

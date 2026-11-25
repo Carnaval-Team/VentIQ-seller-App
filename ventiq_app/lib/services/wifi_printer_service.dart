@@ -1010,10 +1010,8 @@ class WiFiPrinterService {
     // Centrado + texto + LF, sin ESC $ (posición absoluta). Ese comando
     // hereda el área estrecha de `row()` y parte "Gracias por su compra".
     bytes += const <int>[0x1B, 0x61, 0x01];
-    final thanksMessage = receiptOptions.isRestaurant
-        ? receiptOptions.thanksMessage
-        : 'Vuelva Pronto';
-    bytes += <int>[...thanksMessage.codeUnits, 0x0A];
+    // Misma fórmula que Bluetooth y la factura PDF (ReceiptOptions.thanksMessage).
+    bytes += <int>[...receiptOptions.thanksMessage.codeUnits, 0x0A];
     bytes += <int>[...'Con la tecnologia de'.codeUnits, 0x0A];
     bytes += <int>[...'Inventtia S.R.L.'.codeUnits, 0x0A];
 

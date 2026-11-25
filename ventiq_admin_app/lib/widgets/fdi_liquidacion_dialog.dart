@@ -1,22 +1,28 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import '../models/fondo_inversion.dart';
 import '../services/fondo_inversion_service.dart';
+import '../services/sales_service.dart';
 import '../services/user_preferences_service.dart';
 
 /// Diálogo "Crear liquidación" del Fondo de Inversión.
 ///
-/// Muestra las ventas elegibles del periodo por medio de pago + moneda,
-/// permite retirar ganancia por línea, valida la ganancia contra el reporte
-/// con una tasa y confirma la creación (idempotente por clave).
+/// Por moneda: venta / inversión / ganancia en columna.
+/// Destinos:
+/// - Inversión → cuenta del fondo (depósito) o liquidación directa.
+/// - Ganancia → liquidación (inversores) o fondo de inversión (depósito).
 class FdiLiquidacionDialog extends StatefulWidget {
   final DateTime desde;
   final DateTime hasta;
+  final List<TotalesPorMonedaProducto> totalesPorMoneda;
+
   const FdiLiquidacionDialog({
     super.key,
     required this.desde,
     required this.hasta,
+    this.totalesPorMoneda = const [],
   });
 
   @override
@@ -39,43 +45,13 @@ class _FdiLiquidacionDialogState extends State<FdiLiquidacionDialog> {
   FdiCuenta? _cuentaDestino;
   List<Map<String, dynamic>> _inversores = [];
   final _seleccion = FdiSeleccionGanancia();
-  Set<FdiVentaMedioMoneda> get _origenes => _seleccion.origenes;
 
-  bool get _requiereTasa => _origenes.any((m) => m.moneda != 'CUP');
-
-  void _seleccionarOrigen(FdiVentaMedioMoneda medio, bool selected) {
-    setState(() {
-      _seleccion.seleccionar(
-        medio,
-        selected,
-        pendienteCup: (_ventas?.gananciaCup ?? 0) - _retiradaEquivalenteCup,
-        tasaCup: double.tryParse(_tasaCtrl.text.replaceAll(',', '.')),
-      );
-      _reasignarGanancias();
-    });
-  }
-
-  /// Reparte la ganancia completa entre los orígenes seleccionados,
-  /// en el orden en que fueron marcados. No se introduce manualmente.
-  void _reasignarGanancias() {
-    final tasa = double.tryParse(_tasaCtrl.text.replaceAll(',', '.'));
-    var pendienteCup = _ventas?.gananciaCup ?? 0;
-    for (final m in _origenes) {
-      final t = m.moneda == 'CUP' ? 1.0 : tasa;
-      if (t == null || !t.isFinite || t <= 0) {
-        m.montoGananciaRetirada = 0;
-        continue;
-      }
-      m.montoGananciaRetirada = double.parse(
-        (pendienteCup.clamp(0.0, double.infinity) / t)
-            .clamp(0.0, m.montoVendido)
-            .toStringAsFixed(2),
-      );
-      pendienteCup -= m.montoGananciaRetirada * t;
-    }
-  }
+  /// Reparto editable por moneda.
+  final Map<String, _RepartoMoneda> _repartos = {};
 
   bool _repartirIgual = false;
+  late final String _idemKey;
+  static const _modo = 'creacion';
 
   bool get _participacionValida =>
       _inversores.isNotEmpty &&
@@ -87,9 +63,34 @@ class _FdiLiquidacionDialogState extends State<FdiLiquidacionDialog> {
                       100)
                   .abs() <
               0.00001);
-  final _tasaCtrl = TextEditingController();
-  late final String _idemKey;
-  static const _modo = 'creacion';
+
+  bool get _repartosValidos =>
+      _totalesUi.every((t) => _repartos[t.moneda]?.esValido ?? false);
+
+  List<FdiTotalMoneda> get _totalesUi {
+    if (widget.totalesPorMoneda.isNotEmpty) {
+      return [
+        for (final t in widget.totalesPorMoneda)
+          FdiTotalMoneda(
+            moneda: t.moneda,
+            venta: t.ingresos,
+            inversion: t.utilidadCompleta ? (t.costo ?? 0) : 0,
+            ganancia: t.utilidadCompleta ? (t.ganancia ?? 0) : 0,
+            utilidadCompleta: t.utilidadCompleta,
+          ),
+      ];
+    }
+    final v = _ventas;
+    if (v == null) return const [];
+    return [
+      FdiTotalMoneda(
+        moneda: 'CUP',
+        venta: v.ventaTotalCup,
+        inversion: v.costoTotalCup,
+        ganancia: v.gananciaCup,
+      ),
+    ];
+  }
 
   @override
   void initState() {
@@ -100,8 +101,92 @@ class _FdiLiquidacionDialogState extends State<FdiLiquidacionDialog> {
 
   @override
   void dispose() {
-    _tasaCtrl.dispose();
+    for (final r in _repartos.values) {
+      r.dispose();
+    }
     super.dispose();
+  }
+
+  void _inicializarRepartos() {
+    for (final t in _totalesUi) {
+      final existente = _repartos[t.moneda];
+      if (existente != null) {
+        existente.actualizarTotales(
+          inversion: t.utilidadCompleta ? t.inversion : 0,
+          ganancia: t.utilidadCompleta ? t.ganancia : 0,
+        );
+        continue;
+      }
+      // Default: todo a liquidación (comportamiento previo).
+      _repartos[t.moneda] = _RepartoMoneda(
+        moneda: t.moneda,
+        inversionTotal: t.utilidadCompleta ? t.inversion : 0,
+        gananciaTotal: t.utilidadCompleta ? t.ganancia : 0,
+      );
+    }
+  }
+
+  /// Reparte un total entre medios de la misma moneda según vendido.
+  List<double> _repartirEntreMedios(
+    double monto,
+    List<FdiVentaMedioMoneda> medios,
+  ) {
+    if (medios.isEmpty) return const [];
+    final vendido = medios.fold<double>(0, (s, m) => s + m.montoVendido);
+    if (monto <= 0 || vendido <= 0) {
+      return List<double>.filled(medios.length, 0);
+    }
+    final out = <double>[];
+    var restante = monto;
+    for (var i = 0; i < medios.length; i++) {
+      if (i == medios.length - 1) {
+        out.add(
+          double.parse(
+            restante.clamp(0.0, medios[i].montoVendido).toStringAsFixed(2),
+          ),
+        );
+      } else {
+        final parte = double.parse(
+          (monto * (medios[i].montoVendido / vendido))
+              .clamp(0.0, medios[i].montoVendido)
+              .toStringAsFixed(2),
+        );
+        out.add(parte);
+        restante = double.parse((restante - parte).toStringAsFixed(2));
+      }
+    }
+    return out;
+  }
+
+  void _aplicarRepartosAMedios() {
+    final ventas = _ventas;
+    if (ventas == null) return;
+    _seleccion.origenes
+      ..clear()
+      ..addAll(ventas.medios);
+
+    final porMoneda = <String, List<FdiVentaMedioMoneda>>{};
+    for (final m in ventas.medios) {
+      porMoneda.putIfAbsent(m.moneda, () => []).add(m);
+      m.montoGananciaRetirada = 0;
+      m.montoInversionDepositar = 0;
+    }
+
+    for (final entry in porMoneda.entries) {
+      final moneda = entry.key;
+      final medios = entry.value;
+      final r = _repartos[moneda];
+      if (r == null || !r.esValido) continue;
+
+      // Ganancia a liquidación → reparto inversores.
+      // Depósito FDI = inversión a cuenta + ganancia a fondo de inversión.
+      final ganancias = _repartirEntreMedios(r.gananciaALiquidacion, medios);
+      final depositos = _repartirEntreMedios(r.montoADepositar, medios);
+      for (var i = 0; i < medios.length; i++) {
+        medios[i].montoGananciaRetirada = ganancias[i];
+        medios[i].montoInversionDepositar = depositos[i];
+      }
+    }
   }
 
   Future<void> _load() async {
@@ -121,10 +206,6 @@ class _FdiLiquidacionDialogState extends State<FdiLiquidacionDialog> {
       ]);
       if (!mounted) return;
       final ventas = results[0] as FdiVentasPeriodo;
-      // Default: una única combinación CUP recibe la ganancia del reporte;
-      // con varios medios o monedas, el dueño selecciona los orígenes.
-      // Lo no seleccionado va íntegramente al fondo.
-      _seleccion.inicializar(ventas);
       setState(() {
         _idTienda = idTienda;
         _ventas = ventas;
@@ -133,6 +214,8 @@ class _FdiLiquidacionDialogState extends State<FdiLiquidacionDialog> {
         _inversores = (results[3] as List<Map<String, dynamic>>)
             .where((i) => i['activo'] == true)
             .toList();
+        _inicializarRepartos();
+        _aplicarRepartosAMedios();
         _loading = false;
       });
     } catch (e) {
@@ -144,7 +227,6 @@ class _FdiLiquidacionDialogState extends State<FdiLiquidacionDialog> {
     }
   }
 
-  /// Recarga solo las ventas del periodo al reintentar una liquidación.
   Future<void> _reloadVentas() async {
     try {
       final ventas = await _service.ventasPorMedioMoneda(
@@ -154,9 +236,10 @@ class _FdiLiquidacionDialogState extends State<FdiLiquidacionDialog> {
         modo: _modo,
       );
       if (!mounted) return;
-      _seleccion.inicializar(ventas);
       setState(() {
         _ventas = ventas;
+        _inicializarRepartos();
+        _aplicarRepartosAMedios();
         _loading = false;
       });
     } catch (e) {
@@ -169,10 +252,8 @@ class _FdiLiquidacionDialogState extends State<FdiLiquidacionDialog> {
   }
 
   double _montoInversor(FdiVentaMedioMoneda medio, int index) {
-    if (!_participacionValida) return 0;
+    if (!_participacionValida || medio.montoGananciaRetirada <= 0) return 0;
     if (_repartirIgual) {
-      // Partes iguales truncadas a enteros (como el trigger); la
-      // diferencia con el 100% queda en el fondo.
       return repartirGanancia(
         medio.montoGananciaRetirada,
         _inversores.map((i) => (i['porcentaje'] as num).toDouble()).toList(),
@@ -185,60 +266,47 @@ class _FdiLiquidacionDialogState extends State<FdiLiquidacionDialog> {
     )[index];
   }
 
-  double get _retiradaEquivalenteCup {
-    final ventas = _ventas;
-    if (ventas == null) return 0;
-    final tasa = double.tryParse(_tasaCtrl.text.replaceAll(',', '.')) ?? 0;
-    var total = 0.0;
-    for (final m in _origenes) {
-      total += m.moneda == 'CUP'
-          ? m.montoGananciaRetirada
-          : m.montoGananciaRetirada * (tasa > 0 ? tasa : 0);
-    }
-    return total;
-  }
-
-  double get _diferencia =>
-      _retiradaEquivalenteCup - (_ventas?.gananciaCup ?? 0);
-
   Future<void> _confirmar() async {
     final ventas = _ventas;
     final idTienda = _idTienda;
-    final cuenta = _cuentaDestino;
     if (ventas == null ||
         idTienda == null ||
-        cuenta == null ||
         _confirming ||
         _loading ||
         !_participacionValida) {
       return;
     }
-
-    if (_formKey.currentState?.validate() != true) return;
-    if (ventas.gananciaCup > 0 &&
-        !_origenes.any((m) => m.montoGananciaRetirada > 0)) {
+    if (!_repartosValidos) {
       setState(
         () => _error =
-            'Selecciona un origen para repartir la ganancia. Si usa otra moneda, indica la tasa a CUP.',
+            'En cada moneda, los destinos de la inversión (cuenta / liquidación) '
+            'y de la ganancia (liquidación / fondo) deben sumar el total.',
       );
       return;
     }
+    if (_cuentaDestino == null) {
+      setState(
+        () => _error =
+            'Elige la cuenta del fondo de inversión (registro de la liquidación).',
+      );
+      return;
+    }
+    if (_formKey.currentState?.validate() != true) return;
 
-    final detalle = _seleccion.detalle;
+    _aplicarRepartosAMedios();
+    final detalle = _seleccion.detalleDe(ventas.medios);
+    final cuentaId = _cuentaDestino!.id;
 
     setState(() => _confirming = true);
     try {
-      final tasa = _requiereTasa
-          ? double.tryParse(_tasaCtrl.text.replaceAll(',', '.'))
-          : null;
+      // Montos en moneda nativa: sin tasa de conversión a CUP.
       var resp = await _service.crearLiquidacion(
         idTienda: idTienda,
         desde: widget.desde,
         hasta: widget.hasta,
         modo: _modo,
-        idCuentaDestino: cuenta.id,
+        idCuentaDestino: cuentaId,
         detalle: detalle,
-        tasaValidacion: tasa,
         idempotencyKey: _idemKey,
         repartirIgual: _repartirIgual,
       );
@@ -255,9 +323,8 @@ class _FdiLiquidacionDialogState extends State<FdiLiquidacionDialog> {
           desde: widget.desde,
           hasta: widget.hasta,
           modo: _modo,
-          idCuentaDestino: cuenta.id,
+          idCuentaDestino: cuentaId,
           detalle: detalle,
-          tasaValidacion: tasa,
           confirmarDiferencia: true,
           idempotencyKey: _idemKey,
           repartirIgual: _repartirIgual,
@@ -291,9 +358,9 @@ class _FdiLiquidacionDialogState extends State<FdiLiquidacionDialog> {
       builder: (ctx) => AlertDialog(
         title: const Text('Diferencia de ganancia'),
         content: Text(
-          'La ganancia retirada equivalente (\$${_fmt.format(e)}) no coincide '
-          'con la ganancia del reporte (\$${_fmt.format(g)}).\n\n'
-          'Diferencia: \$${_fmt.format(d)}. ¿Continuar de todas formas?',
+          'La ganancia retirada equivalente (${_fmt.format(e)} CUP) no coincide '
+          'con la ganancia del reporte (${_fmt.format(g)} CUP).\n\n'
+          'Diferencia: ${_fmt.format(d)} CUP. ¿Continuar de todas formas?',
         ),
         actions: [
           TextButton(
@@ -358,6 +425,7 @@ class _FdiLiquidacionDialogState extends State<FdiLiquidacionDialog> {
               _confirming ||
                   _loading ||
                   !_participacionValida ||
+                  !_repartosValidos ||
                   _ventas == null ||
                   _ventas!.ordenesElegibles == 0 ||
                   _cuentaDestino == null
@@ -401,125 +469,252 @@ class _FdiLiquidacionDialogState extends State<FdiLiquidacionDialog> {
         ),
       );
 
-  Map<String, double> _porMoneda(double Function(FdiVentaMedioMoneda) monto) {
-    final totales = <String, double>{};
-    for (final medio in _ventas!.medios) {
-      totales.update(
-        medio.moneda,
-        (v) => v + monto(medio),
-        ifAbsent: () => monto(medio),
-      );
-    }
-    return totales;
+  Widget _lineaMonto({
+    required String label,
+    required double? value,
+    required String moneda,
+    required bool disponible,
+  }) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
+        children: [
+          SizedBox(
+            width: 96,
+            child: Text(
+              label,
+              style: theme.textTheme.titleSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              disponible ? '${_fmt.format(value ?? 0)} $moneda' : '—',
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w700,
+                fontSize: 20,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
-  double _asignado(FdiVentaMedioMoneda medio) => List.generate(
-    _inversores.length,
-    (i) => _montoInversor(medio, i),
-  ).fold<double>(0, (a, b) => a + b);
-
-  Widget _destino() => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      _titulo('1. Cuenta destino'),
-      if (_cuentas.isEmpty)
-        const Text(
-          'Crea una cuenta activa en Fondo de Inversión → Config para continuar.',
-        )
-      else
-        DropdownButtonFormField<FdiCuenta>(
-          initialValue: _cuentaDestino,
-          isExpanded: true,
-          decoration: const InputDecoration(
-            labelText: 'Cuenta del fondo',
-            border: OutlineInputBorder(),
-          ),
-          items: [
-            for (final c in _cuentas)
-              DropdownMenuItem(
-                value: c,
-                child: Text(
-                  '${_conceptos.where((co) => co.id == c.idConcepto).firstOrNull?.denominacion ?? ''} · ${c.nombre}',
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-          ],
-          onChanged: _confirming
-              ? null
-              : (c) => setState(() => _cuentaDestino = c),
-        ),
-    ],
-  );
-
-  Widget _origenGanancia() => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      _titulo('2. Origen de la ganancia'),
-      const Text(
-        'Selecciona de dónde sale el reparto. Lo no seleccionado queda en el fondo.',
-      ),
-      const SizedBox(height: 8),
-      for (final m in _ventas!.medios)
-        CheckboxListTile(
-          contentPadding: EdgeInsets.zero,
-          controlAffinity: ListTileControlAffinity.leading,
-          title: Text('${m.medioPago} · ${m.moneda}'),
-          subtitle: Text(
-            'Disponible: ${_fmt.format(m.montoVendido)} ${m.moneda}',
-          ),
-          value: _origenes.contains(m),
-          onChanged: _confirming
-              ? null
-              : (selected) => _seleccionarOrigen(m, selected == true),
-        ),
-      if (_requiereTasa) ...[
-        const SizedBox(height: 12),
-        TextFormField(
-          controller: _tasaCtrl,
-          validator: (s) {
-            final tasa = double.tryParse((s ?? '').replaceAll(',', '.'));
-            return tasa == null || !tasa.isFinite || tasa <= 0
-                ? 'Indica una tasa positiva'
-                : null;
-          },
-          enabled: !_confirming,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(
-            labelText: 'Tasa a CUP',
-            helperText: 'Solo para comparar con la ganancia del reporte.',
-            helperMaxLines: 2,
-            border: OutlineInputBorder(),
-          ),
-          onChanged: (_) => setState(_reasignarGanancias),
-        ),
+  Widget _campoReparto({
+    required String label,
+    required TextEditingController controller,
+    required String moneda,
+    required VoidCallback onEdited,
+  }) {
+    return TextFormField(
+      controller: controller,
+      enabled: !_confirming,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: [
+        FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
       ],
-      if (_origenes.any((m) => m.montoGananciaRetirada > 0))
-        ExpansionTile(
-          tilePadding: EdgeInsets.zero,
-          title: const Text('Validación del importe'),
-          subtitle: _diferencia.abs() > 0.01
-              ? const Text('Hay una diferencia con el reporte')
-              : null,
-          children: [
-            _importe(
-              'Equivalente seleccionado',
-              '${_fmt.format(_retiradaEquivalenteCup)} CUP',
-            ),
-            _importe(
-              'Diferencia con el reporte',
-              '${_fmt.format(_diferencia)} CUP',
-            ),
-          ],
-        ),
-    ],
-  );
+      decoration: InputDecoration(
+        labelText: label,
+        suffixText: moneda,
+        border: const OutlineInputBorder(),
+        isDense: true,
+      ),
+      onChanged: (_) {
+        onEdited();
+        setState(() {
+          _aplicarRepartosAMedios();
+          _error = null;
+        });
+      },
+      validator: (_) => null,
+    );
+  }
 
-  Widget _reparto() {
+  Widget _seccionReparto({
+    required String titulo,
+    required String labelA,
+    required String labelB,
+    required double total,
+    required String moneda,
+    required TextEditingController ctrlA,
+    required TextEditingController ctrlB,
+    required void Function({required bool desdeA}) onEdit,
+    required bool valido,
+  }) {
     final theme = Theme.of(context);
+    final suma =
+        (_RepartoMoneda.parse(ctrlA.text) ?? 0) +
+        (_RepartoMoneda.parse(ctrlB.text) ?? 0);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _titulo('3. Reparto entre inversores'),
+        Text(titulo, style: theme.textTheme.titleSmall),
+        const SizedBox(height: 4),
+        Text(
+          'Total: ${_fmt.format(total)} $moneda',
+          style: theme.textTheme.bodySmall,
+        ),
+        const SizedBox(height: 8),
+        _campoReparto(
+          label: labelA,
+          controller: ctrlA,
+          moneda: moneda,
+          onEdited: () => onEdit(desdeA: true),
+        ),
+        const SizedBox(height: 8),
+        _campoReparto(
+          label: labelB,
+          controller: ctrlB,
+          moneda: moneda,
+          onEdited: () => onEdit(desdeA: false),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          valido
+              ? 'Suma: ${_fmt.format(suma)} $moneda ✓'
+              : 'Suma: ${_fmt.format(suma)} $moneda — debe ser ${_fmt.format(total)}',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: valido ? theme.colorScheme.primary : theme.colorScheme.error,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _bloqueMoneda(FdiTotalMoneda t) {
+    final theme = Theme.of(context);
+    final r = _repartos[t.moneda];
+    if (r == null) return const SizedBox.shrink();
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              t.moneda,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _lineaMonto(
+              label: 'Venta',
+              value: t.venta,
+              moneda: t.moneda,
+              disponible: true,
+            ),
+            _lineaMonto(
+              label: 'Inversión',
+              value: t.inversion,
+              moneda: t.moneda,
+              disponible: t.utilidadCompleta,
+            ),
+            _lineaMonto(
+              label: 'Ganancia',
+              value: t.ganancia,
+              moneda: t.moneda,
+              disponible: t.utilidadCompleta,
+            ),
+            const Divider(height: 28),
+            _seccionReparto(
+              titulo: 'Destino de la inversión',
+              labelA: 'A cuenta del fondo',
+              labelB: 'A liquidación directa',
+              total: r.inversionTotal,
+              moneda: t.moneda,
+              ctrlA: r.inversionCuentaCtrl,
+              ctrlB: r.inversionLiquidacionCtrl,
+              onEdit: ({required bool desdeA}) =>
+                  r.completarPar(inversion: true, desdeA: desdeA),
+              valido: r.inversionValida,
+            ),
+            const SizedBox(height: 20),
+            _seccionReparto(
+              titulo: 'Destino de la ganancia',
+              labelA: 'A liquidación',
+              labelB: 'A fondo de inversión',
+              total: r.gananciaTotal,
+              moneda: t.moneda,
+              ctrlA: r.gananciaLiquidacionCtrl,
+              ctrlB: r.gananciaFondoCtrl,
+              onEdit: ({required bool desdeA}) =>
+                  r.completarPar(inversion: false, desdeA: desdeA),
+              valido: r.gananciaValida,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _destinoCuenta() {
+    final hayDeposito = _repartos.values.any((r) => r.montoADepositar > 0);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _titulo('Cuenta del fondo de inversión'),
+        if (!hayDeposito)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              'Sin montos a cuenta/fondo: no se depositará saldo '
+              '(la cuenta solo registra la liquidación).',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+        if (_cuentas.isEmpty)
+          const Text(
+            'Crea una cuenta activa en Fondo de Inversión → Config para continuar.',
+          )
+        else
+          DropdownButtonFormField<FdiCuenta>(
+            initialValue: _cuentaDestino,
+            isExpanded: true,
+            decoration: const InputDecoration(
+              labelText: 'Cuenta destino',
+              border: OutlineInputBorder(),
+            ),
+            items: [
+              for (final c in _cuentas)
+                DropdownMenuItem(
+                  value: c,
+                  child: Text(
+                    '${_conceptos.where((co) => co.id == c.idConcepto).firstOrNull?.denominacion ?? ''} · ${c.nombre}',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+            ],
+            onChanged: _confirming
+                ? null
+                : (c) => setState(() => _cuentaDestino = c),
+          ),
+      ],
+    );
+  }
+
+  Widget _repartoInversores() {
+    final theme = Theme.of(context);
+    final hayGananciaLiquidacion =
+        (_ventas?.medios ?? const []).any((m) => m.montoGananciaRetirada > 0);
+    if (!hayGananciaLiquidacion) {
+      return Text(
+        'No hay ganancia a liquidación: no se reparte a inversores.',
+        style: theme.textTheme.bodyMedium,
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _titulo('Reparto entre inversores'),
         CheckboxListTile(
           contentPadding: EdgeInsets.zero,
           controlAffinity: ListTileControlAffinity.leading,
@@ -548,47 +743,27 @@ class _FdiLiquidacionDialogState extends State<FdiLiquidacionDialog> {
                   ? '${_inversores[i]['nombre']}'
                   : '${_inversores[i]['nombre']} · ${_inversores[i]['porcentaje']}%',
               _porMoneda((m) => _montoInversor(m, i)).entries
+                  .where((e) => e.value > 0)
                   .map(
                     (e) => '${NumberFormat('#,##0').format(e.value)} ${e.key}',
                   )
                   .join('\n'),
             ),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (final e in _porMoneda(_asignado).entries)
-                  _importe(
-                    'Para inversores',
-                    '${NumberFormat('#,##0').format(e.value)} ${e.key}',
-                    destacado: true,
-                  ),
-                const Divider(height: 16),
-                for (final e in _porMoneda(
-                  (m) => m.montoVendido - _asignado(m),
-                ).entries)
-                  _importe(
-                    'Al fondo',
-                    '${_fmt.format(e.value)} ${e.key}',
-                    destacado: true,
-                  ),
-              ],
-            ),
-          ),
         ],
-        const SizedBox(height: 12),
-        Text(
-          'Importes enteros, pendientes de pago. Todo sobrante queda en el fondo.',
-          style: theme.textTheme.bodySmall,
-        ),
       ],
     );
+  }
+
+  Map<String, double> _porMoneda(double Function(FdiVentaMedioMoneda) monto) {
+    final totales = <String, double>{};
+    for (final medio in _ventas!.medios) {
+      totales.update(
+        medio.moneda,
+        (v) => v + monto(medio),
+        ifAbsent: () => monto(medio),
+      );
+    }
+    return totales;
   }
 
   Widget _buildContent(String periodo) {
@@ -602,58 +777,25 @@ class _FdiLiquidacionDialogState extends State<FdiLiquidacionDialog> {
           Text(periodo, style: theme.textTheme.titleSmall),
           const SizedBox(height: 4),
           Text(
-            '${v.ordenesElegibles} órdenes por liquidar',
+            '${v.ordenesElegibles} órdenes por liquidar'
+            '${v.ordenesExcluidas > 0 ? ' · ${v.ordenesExcluidas} ya liquidadas excluidas' : ''}',
             style: theme.textTheme.bodySmall,
           ),
           const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.primaryContainer,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Ganancia del período',
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    color: theme.colorScheme.onPrimaryContainer,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${_fmt.format(v.gananciaCup)} CUP',
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: theme.colorScheme.onPrimaryContainer,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          ExpansionTile(
-            tilePadding: EdgeInsets.zero,
-            title: const Text('Resumen de ventas'),
-            children: [
-              _importe('Venta', '${_fmt.format(v.ventaTotalCup)} CUP'),
-              _importe('Costo', '${_fmt.format(v.costoTotalCup)} CUP'),
-              if (v.ordenesExcluidas > 0)
-                Text(
-                  '${v.ordenesExcluidas} órdenes ya liquidadas excluidas.',
-                  style: theme.textTheme.bodySmall,
-                ),
-            ],
+          for (final t in _totalesUi) _bloqueMoneda(t),
+          Text(
+            'Inversión: cuenta del fondo o liquidación directa. '
+            'Ganancia: liquidación a inversores o fondo de inversión. '
+            'En cada moneda, ambos importes deben sumar el total.',
+            style: theme.textTheme.bodySmall,
           ),
           const SizedBox(height: 24),
           if (v.ordenesElegibles == 0)
             const Text('No hay ventas pendientes de liquidar en este período.')
           else ...[
-            _destino(),
+            _destinoCuenta(),
             const Divider(height: 40),
-            _origenGanancia(),
-            const Divider(height: 40),
-            _reparto(),
+            _repartoInversores(),
           ],
           if (_error != null) ...[
             const SizedBox(height: 16),
@@ -674,5 +816,118 @@ class _FdiLiquidacionDialogState extends State<FdiLiquidacionDialog> {
         ],
       ),
     );
+  }
+}
+
+/// Reparto editable por moneda.
+///
+/// Inversión: cuenta del fondo (depósito) + liquidación directa.
+/// Ganancia: liquidación (inversores) + fondo de inversión (depósito).
+class _RepartoMoneda {
+  final String moneda;
+  double inversionTotal;
+  double gananciaTotal;
+
+  final inversionCuentaCtrl = TextEditingController();
+  final inversionLiquidacionCtrl = TextEditingController();
+  final gananciaLiquidacionCtrl = TextEditingController();
+  final gananciaFondoCtrl = TextEditingController();
+
+  _RepartoMoneda({
+    required this.moneda,
+    required this.inversionTotal,
+    required this.gananciaTotal,
+  }) {
+    _setDefaults();
+  }
+
+  void _setDefaults() {
+    // Default: inversión a cuenta; ganancia a liquidación.
+    inversionCuentaCtrl.text = _fmt(inversionTotal);
+    inversionLiquidacionCtrl.text = _fmt(0);
+    gananciaLiquidacionCtrl.text = _fmt(gananciaTotal);
+    gananciaFondoCtrl.text = _fmt(0);
+  }
+
+  void actualizarTotales({
+    required double inversion,
+    required double ganancia,
+  }) {
+    inversionTotal = inversion;
+    gananciaTotal = ganancia;
+    if (_enDefault) {
+      _setDefaults();
+    }
+  }
+
+  bool get _enDefault {
+    final invC = parse(inversionCuentaCtrl.text) ?? -1;
+    final invL = parse(inversionLiquidacionCtrl.text) ?? -1;
+    final ganL = parse(gananciaLiquidacionCtrl.text) ?? -1;
+    final ganF = parse(gananciaFondoCtrl.text) ?? -1;
+    return invL == 0 && ganF == 0 && invC >= 0 && ganL >= 0;
+  }
+
+  static String _fmt(double v) => v.toStringAsFixed(2);
+
+  static double? parse(String raw) {
+    final t = raw.trim().replaceAll(',', '.');
+    if (t.isEmpty) return null;
+    return double.tryParse(t);
+  }
+
+  /// Al editar un destino, completa el otro para que sumen el total.
+  void completarPar({
+    required bool inversion,
+    required bool desdeA,
+  }) {
+    final total = inversion ? inversionTotal : gananciaTotal;
+    final aCtrl = inversion
+        ? (desdeA ? inversionCuentaCtrl : inversionLiquidacionCtrl)
+        : (desdeA ? gananciaLiquidacionCtrl : gananciaFondoCtrl);
+    final bCtrl = inversion
+        ? (desdeA ? inversionLiquidacionCtrl : inversionCuentaCtrl)
+        : (desdeA ? gananciaFondoCtrl : gananciaLiquidacionCtrl);
+    final a = parse(aCtrl.text);
+    if (a == null || a < 0) return;
+    final b = double.parse((total - a).clamp(0.0, total).toStringAsFixed(2));
+    bCtrl.text = _fmt(b);
+  }
+
+  double get inversionACuenta => parse(inversionCuentaCtrl.text) ?? 0;
+  double get inversionALiquidacion => parse(inversionLiquidacionCtrl.text) ?? 0;
+  double get gananciaALiquidacion => parse(gananciaLiquidacionCtrl.text) ?? 0;
+  double get gananciaAFondo => parse(gananciaFondoCtrl.text) ?? 0;
+
+  /// Lo que se deposita en la cuenta FDI seleccionada.
+  double get montoADepositar =>
+      double.parse((inversionACuenta + gananciaAFondo).toStringAsFixed(2));
+
+  bool _parValido(double total, TextEditingController a, TextEditingController b) {
+    final va = parse(a.text);
+    final vb = parse(b.text);
+    if (va == null || vb == null || va < 0 || vb < 0) return false;
+    return (va + vb - total).abs() < 0.015;
+  }
+
+  bool get inversionValida => _parValido(
+    inversionTotal,
+    inversionCuentaCtrl,
+    inversionLiquidacionCtrl,
+  );
+
+  bool get gananciaValida => _parValido(
+    gananciaTotal,
+    gananciaLiquidacionCtrl,
+    gananciaFondoCtrl,
+  );
+
+  bool get esValido => inversionValida && gananciaValida;
+
+  void dispose() {
+    inversionCuentaCtrl.dispose();
+    inversionLiquidacionCtrl.dispose();
+    gananciaLiquidacionCtrl.dispose();
+    gananciaFondoCtrl.dispose();
   }
 }

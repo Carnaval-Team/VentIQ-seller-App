@@ -76,26 +76,36 @@ Además hay que localizar a los **llamadores internos** de cada función renombr
 ### Fase 0 — Preparación (sin tocar main)
 1. ~~Corregir `tipo_paago` en newa (`sql_updates/fix_listar_ordenes_tipo_pago.sql`).~~ Hecho (comprobado el 20/11).
 2. ~~Llevar a newa las 12 funciones donde main es más nueva (lista C del comparativo)~~ (hecho el 20/11, `sql_updates/newa_traer_12_funciones_main.sql`, mismo hash que main) y decidir los criterios de las 8 manuales (hecho: turno, mejorado, FDI; pendiente: `fn_dashboard_carnaval_proveedor`, stock detalle/saldos).
-3. Generar los scripts de promoción con los **nombres nuevos** y probarlos en newa con la regla «newa = main después de la expansión»: en newa, los nombres antiguos de las 14 recuperan el cuerpo de main y los `_m01` llevan el cuerpo nuevo. Así newa ejercita exactamente el estado en que quedará main.
-4. Cambiar el cliente (TPV y Admin) para llamar `_m01` primero y caer a la antigua solo si la función no existe (convención de `SPEC-ventiq-app.md`). Un error distinto no se disfraza de «ausente».
-5. Regenerar los baselines `md5` de los preflight 14, 17 y 56 contra main.
+3. ~~Scripts `_m01` + espejo newa + G1~~ — ver `docs/plan-multimoneda/runbook_pase_newa_main.md` y `g1_resultado_2026-11-23.md`. H9 aplicado en newa.
+4. ~~Cambiar el cliente (TPV y Admin) para llamar `_m01` primero~~ — hecho 2026-11-23 (`RpcM01` en TPV y Admin; caída solo si la función no existe).
+5. ~~Regenerar los baselines `md5` de los preflight 14, 17 y 56 contra main.~~ Hecho 2026-11-23.
 
 ### Puertas obligatorias antes de aplicar nada
 - **G1 — Arnés de compatibilidad.** Para cada función, repetir las cargas que envía el **cliente publicado** (revisar la etiqueta de la última versión en tienda) contra el cuerpo nuevo y contra el viejo, dentro de una transacción que termina en `ROLLBACK`. Criterio: misma respuesta, mismo efecto en filas, o diferencia justificada por escrito. Siempre se ejecuta en newa con el estado espejo de main; en main solo lectura hasta que se apruebe.
 - **G2 — Cobertura de la guarda de lectura.** Consulta en main de todos los usuarios con acceso a alguna tienda que **no** cumplirían `fn_config_tienda_puede_leer` (incluye recursos humanos y solo-trabajador). Resultado vacío o aceptado por escrito.
+  - **Decidido y aplicado 2026-11-23:** ampliar `puede_leer` con **RH y trabajador** de la tienda. Script `sql_updates/fn_config_tienda_puede_leer_g2.sql` aplicado en **newa**; S01 (`configuracion_tienda_rls_propuesta.sql`) ya lleva el mismo cuerpo para el pase. Simulación en main con la nueva regla: **0 pares fuera**. Puerta G2 cerrada para licencia / consolidación / `sync_bundle` (mismo nombre tras S01+G2).
 - **G3 — Inventario de dependencias.** Llamadores internos de cada función renombrada, triggers y vistas que las usan.
-- **G4 — Respaldo y reversa** (sección 7).
+  - **Main 2026-11-23 (solo lectura):** sin triggers/vistas que las invoquen. Llamadores en `pg_proc`:
+    - `fn_apertura_turno_offline` ← `_usd`, `_monedas` (y `_monedas` → `_usd`)
+    - `fn_cerrar_turno_offline` ← `_usd`, `_monedas` (y `_monedas` → `_usd`)
+    - `fn_registrar_egreso_offline` ← `fn_registrar_egreso_offline_v2`, `fn_registrar_egreso_fondo_caja`
+    - El resto de las 14 (comanda/estado/pago/venta_v4/listar_ordenes/precio_promedio) **sin** llamador interno en main.
+  - **Newa extra / pase:** `fn_registrar_egreso_fondo_caja_v2` → `fn_registrar_egreso_offline_v2_m01` (repo 2026-11-23); `fn_actualizar_precio_promedio_recepcion_v2` ← FDI (en main Fase 1 el cálculo nuevo es `*_v2_m01`, no REPLACE del antiguo).
+  - Al crear `_m01`, las cadenas `_monedas`/`_usd`/fondo/`_v2` deben apuntar a `_m01` internas, no a las antiguas.
+- **G4 — Respaldo y reversa** (sección 7). Checklist operativo: `sql_updates/promocion_m01/g4_respaldo_y_reversa.md`. **Pendiente en el día del pase:** snapshot de main + volcado md5 real.
 
 ### Fase 1 — Expansión en main (solo aditiva, aplicar en horario de poca carga)
-Solo crea o agrega. No altera, revoca ni borra nada existente.
-1. Columnas e índices nuevos (`permitir_moneda_por_producto` apagado, `repartir_igual`, etc.), tablas nuevas con RLS y políticas en el mismo script.
-2. Funciones nuevas: las 90 que solo están en newa y las 14 `_m01`.
-3. Los 7 cuerpos con el mismo nombre (tras G1/G2) y los scripts ya verificados: `add_ticket_caja_a_tickets_a_imprimir.sql` (solo datos: añade `caja` a `tickets_a_imprimir` de las tiendas con `cliente`; **debe ir antes de publicar el TPV** que respeta esa lista, ver C2 en `tasks/hallazgos_pruebas_newa.md`), `fix_reporte_ventas_por_turno_sin_cierre.sql`, `fix_esperado_turno_por_moneda_ventas_offline.sql` (el esperado por moneda del cierre ignora las ventas sincronizadas después del cierre del dispositivo; main tiene el mismo defecto, ver C9), `fix_reportes_turno_ventas_offline.sql` (después del anterior; helper `fn_operacion_en_turno` y reportes de turno por rango de id, ver C12; aborta si el cuerpo de main no coincide con el de newa), `reportes_turno_completadas_y_por_moneda.sql` (después de `fix_reportes_turno_ventas_offline.sql`: solo operaciones completadas y `fn_turnos_por_moneda` que consume el admin, ver C13), `fix_listar_entregas_por_turno_sin_ventana_fecha.sql` (el admin no ve los egresos de un turno offline por la ventana de fechas; antes de publicar el admin, ver C11), `fix_cambio_estado_operacion_mejorado_recepcion.sql` (con la prueba de recepción usada), `newa_traer_funciones_main.sql`.
-3b. Clientes que dependen de lo anterior (C14, revisión de `cierre_screen.dart` y `sales_screen.dart`): el TPV (`ventiq_app/lib/screens/cierre_screen.dart`) muestra el resumen del cierre por moneda y se alimenta de `desglose_monedas` (`importe_nativo`, `operaciones`) de `fn_resumen_turno_por_id_v2`; el admin (`sales_screen.dart`) decide la pertenencia de las órdenes de un turno por el rango de ids que lee de `app_dat_caja_turno` y pide `listar_ordenes` hasta hoy. Main no se toca desde estas pantallas: se modifica en el pase, con los scripts del punto 3 ya aplicados y antes de publicar TPV y admin. El egreso 3 del turno 20 de newa (5 000 USD) es un registro de prueba que no existe en main ni se migra; la comprobación de saldo por moneda del egreso sigue siendo solo de cliente (C5): decidir antes del pase si se añade también a las RPC de egreso.
-3c. Pendientes offline (C16): solo clientes, sin SQL. Publicar el TPV con `getUnsyncedOfflineCounts`, `asegurarSubidaPendientes`, el cierre de sesión que conserva datos, `PendientesOtraTiendaException` y la omisión de descargas con pendientes; probar en dispositivo antes del pase (logout con y sin red, venta online con pendientes, orden con error permanente, cambio de tienda con pendientes, versión nueva con pendientes).
-4. **No** entra: ningún `REVOKE`, `DROP POLICY`, `ENABLE ROW LEVEL SECURITY` sobre tablas que ya existen y están en uso, `DROP FUNCTION`, ni los triggers `m01_*` sobre tablas de ventas (se instalan en la fase 3: con el flag apagado no cambian nada, y así no se añade un trigger al camino de venta antes de necesitarlo).
-5. Preservar lo propio de main: `trg_bloquear_operaciones_maria`, WhatsApp, referidos, crons.
-6. Verificación inmediata: los conteos de errores 4xx/5xx por ruta en los logs de main deben quedar iguales que la hora anterior; `fn_check_update` y una venta de prueba.
+Solo crea o agrega. **Orden canónico y exclusiones:** `docs/plan-multimoneda/runbook_pase_newa_main.md` (audit regla de oro 2026-11-23).
+1. Helpers aditivos (sin tocar la tabla): `sql_updates/fn_config_tienda_helpers_aditivos.sql` (G2 incluido). **No** aplicar S01 completo (`ENABLE RLS` + `REVOKE` en `app_dat_configuracion_tienda`) en esta oleada.
+2. Columnas/tablas nuevas: R0i idempotencia, `costos_adicionales_producto_tablas_fase1.sql` (solo tablas; no el archivo completo), columnas v1 sin triggers `m01_*`, flag apagado, etc.
+3. Reportes same-name (bugfixes C9–C13 / C11 / turno sin cierre) **en este orden:** `fix_reporte_ventas_por_turno_sin_cierre` → `fix_esperado_turno_por_moneda_ventas_offline` (**C9**) → `fix_reportes_turno_ventas_offline` (**C12**) → `reportes_turno_completadas_y_por_moneda` (**C13**) → `fix_listar_entregas_por_turno_sin_ventana_fecha` (**C11**). Luego `add_ticket_caja_a_tickets_a_imprimir` (**C2**, antes de publicar TPV).
+4. Las 14 `_m01` (`promocion_m01/01…06`). **C14** solo en `fn_registrar_egreso_offline_v2_m01` (+ helper en 01). **No** aplicar `fn_egreso_validar_saldo_caja.sql` (REPLACE del nombre publicado → Fase 3).
+5. Post-`_m01` aditivos: `fn_registrar_egreso_fondo_caja_v2_moneda.sql` (**C6**, llama `_v2_m01`), `fn_reporte_ventas_producto_por_moneda.sql` (**C17a**), `fn_fdi_crear_liquidacion_depositar_inversion.sql` (**C17b**: 11 params **sin** DEFAULT en `p_repartir_igual`; conserva la de 10; no usar `fondo_inversion_schema.sql`).
+6. Recepción `fix_cambio_estado_operacion_mejorado_recepcion.sql`: rechazo nuevo `RECEPCION_INVENTARIO_USADO` — solo con OK explícito / Admin listo.
+7. Clientes (C14 UI, C16, C17 sesión): publicar TPV+Admin con `RpcM01` tras el SQL. El egreso 3 del turno 20 de newa no se migra.
+8. **No** entra: `REVOKE`/`DROP`/`ENABLE RLS` sobre tablas en uso, `DROP FUNCTION`, triggers `m01_*` (R15/R16/R17/H9), `costos_adicionales_producto.sql` completo, `newa_traer_*`, R0b/R0d/…, S01 RLS completo.
+9. Preservar lo propio de main: `trg_bloquear_operaciones_maria`, WhatsApp, referidos, crons.
+10. Verificación: 4xx/5xx ≈ hora anterior; cliente viejo sin `EGRESO_SIN_SALDO`; cliente nuevo con `_m01`.
 
 ### Fase 1b — Cuerpos de la fase 6 (costos) que el pase debe llevar desde newa
 La fase 6 de `docs/planes/fondo-inversion/PLAN.md` cambió **dos cuerpos que ya existen en main**. No son

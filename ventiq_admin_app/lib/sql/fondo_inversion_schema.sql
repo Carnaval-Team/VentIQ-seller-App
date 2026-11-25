@@ -657,6 +657,7 @@ DECLARE
     v_retirada         numeric;
     v_vendido          numeric;
     v_inversion        numeric;
+    v_depositar        boolean;
     v_id_detalle       bigint;
 BEGIN
     IF NOT public.fn_user_is_gerente_or_superadmin(p_id_tienda) THEN
@@ -757,21 +758,29 @@ BEGIN
                 v_retirada, v_id_medio, v_moneda USING ERRCODE = 'P0002';
         END IF;
 
-        -- Equivalente CUP de la retirada (validación de ganancia).
-        v_equiv_retirada := v_equiv_retirada + v_retirada *
-            CASE WHEN v_moneda = 'CUP' THEN 1
-                 ELSE COALESCE(p_tasa_validacion, v_tasa_fallback, 1) END;
+        -- Montos nativos: sin tasa solo se acumula CUP para columnas legacy.
+        -- Con p_tasa_validacion se mantiene el equivalente multimoneda.
+        IF p_tasa_validacion IS NOT NULL THEN
+            v_equiv_retirada := v_equiv_retirada + v_retirada *
+                CASE WHEN v_moneda = 'CUP' THEN 1 ELSE p_tasa_validacion END;
+        ELSIF v_moneda = 'CUP' THEN
+            v_equiv_retirada := v_equiv_retirada + v_retirada;
+        END IF;
     END LOOP;
 
-    v_diferencia := v_equiv_retirada - v_ganancia;
-
-    IF abs(COALESCE(v_diferencia, 0)) > 0.01 AND NOT p_confirmar_diferencia THEN
-        RETURN jsonb_build_object(
-            'status', 'requires_confirmation',
-            'code', 'diferencia_ganancia',
-            'ganancia_reporte', v_ganancia,
-            'ganancia_retirada_equivalente', v_equiv_retirada,
-            'diferencia', v_diferencia);
+    -- Sin tasa: no se exige confirmación por diferencia vs ganancia CUP.
+    IF p_tasa_validacion IS NOT NULL THEN
+        v_diferencia := v_equiv_retirada - v_ganancia;
+        IF abs(COALESCE(v_diferencia, 0)) > 0.01 AND NOT p_confirmar_diferencia THEN
+            RETURN jsonb_build_object(
+                'status', 'requires_confirmation',
+                'code', 'diferencia_ganancia',
+                'ganancia_reporte', v_ganancia,
+                'ganancia_retirada_equivalente', v_equiv_retirada,
+                'diferencia', v_diferencia);
+        END IF;
+    ELSE
+        v_diferencia := 0;
     END IF;
 
     INSERT INTO public.fdi_dat_liquidacion (
@@ -790,17 +799,36 @@ BEGIN
     ) RETURNING id INTO v_id_liquidacion;
 
     -- Detalle por medio/moneda y movimientos al saldo destino.
+    -- depositar_inversion (default true): si false, el sobrante no entra al FDI
+    -- (queda fuera del módulo; el fondo de caja es independiente).
     v_equiv_retirada := 0;
     FOR v_id_medio, v_moneda, v_vendido IN
         SELECT id_medio_pago, moneda, monto_vendido FROM _fdi_pagos
     LOOP
-        v_retirada := COALESCE((
-            SELECT (d->>'monto_ganancia_retirada')::numeric
-            FROM jsonb_array_elements(COALESCE(p_detalle, '[]'::jsonb)) d
-            WHERE (d->>'id_medio_pago')::smallint = v_id_medio
-              AND COALESCE(NULLIF(TRIM(d->>'moneda'), ''), 'CUP') = v_moneda
-            LIMIT 1), 0);
-        v_inversion := v_vendido - v_retirada;
+        SELECT
+            COALESCE((d->>'monto_ganancia_retirada')::numeric, 0),
+            CASE
+              WHEN d ? 'monto_inversion' THEN (d->>'monto_inversion')::numeric
+              WHEN d ? 'depositar_inversion' AND NOT (d->>'depositar_inversion')::boolean
+                THEN 0
+              ELSE NULL
+            END
+        INTO v_retirada, v_inversion
+        FROM jsonb_array_elements(COALESCE(p_detalle, '[]'::jsonb)) d
+        WHERE (d->>'id_medio_pago')::smallint = v_id_medio
+          AND COALESCE(NULLIF(TRIM(d->>'moneda'), ''), 'CUP') = v_moneda
+        LIMIT 1;
+
+        v_retirada := COALESCE(v_retirada, 0);
+        -- Sin monto_inversion explícito: depósito = vendido − ganancia (legado).
+        IF v_inversion IS NULL THEN
+            v_inversion := v_vendido - v_retirada;
+        END IF;
+        IF v_inversion < 0 OR v_inversion > v_vendido - v_retirada + 0.01 THEN
+            RAISE EXCEPTION 'Inversión a depositar (%) fuera de rango para % %',
+                v_inversion, v_id_medio, v_moneda USING ERRCODE = 'P0002';
+        END IF;
+        v_depositar := v_inversion > 0;
 
         INSERT INTO public.fdi_dat_liquidacion_detalle (
             id_liquidacion, id_medio_pago, moneda,
@@ -810,15 +838,19 @@ BEGIN
             v_vendido, v_retirada, v_inversion
         ) RETURNING id INTO v_id_detalle;
 
+        -- El trigger de inversores puede ajustar centavos de la ganancia;
+        -- la inversión pedida se conserva (reparto mixto).
         SELECT COALESCE(sum(monto), 0) INTO v_retirada
         FROM public.fdi_dat_inversor_reparto WHERE id_detalle = v_id_detalle;
-        v_inversion := v_vendido - v_retirada;
         UPDATE public.fdi_dat_liquidacion_detalle
-        SET monto_ganancia_retirada = v_retirada, monto_inversion = v_inversion
+        SET monto_ganancia_retirada = v_retirada
         WHERE id = v_id_detalle;
-        v_equiv_retirada := v_equiv_retirada + v_retirada *
-            CASE WHEN v_moneda = 'CUP' THEN 1
-                 ELSE COALESCE(p_tasa_validacion, v_tasa_fallback, 1) END;
+        IF p_tasa_validacion IS NOT NULL THEN
+            v_equiv_retirada := v_equiv_retirada + v_retirada *
+                CASE WHEN v_moneda = 'CUP' THEN 1 ELSE p_tasa_validacion END;
+        ELSIF v_moneda = 'CUP' THEN
+            v_equiv_retirada := v_equiv_retirada + v_retirada;
+        END IF;
 
         IF v_inversion > 0 THEN
             PERFORM public._fdi_aplicar_movimiento(
@@ -829,7 +861,11 @@ BEGIN
         END IF;
     END LOOP;
 
-    v_diferencia := v_equiv_retirada - v_ganancia;
+    IF p_tasa_validacion IS NOT NULL THEN
+        v_diferencia := v_equiv_retirada - v_ganancia;
+    ELSE
+        v_diferencia := 0;
+    END IF;
     UPDATE public.fdi_dat_liquidacion
     SET ganancia_retirada_equivalente = v_equiv_retirada,
         diferencia_ganancia = v_diferencia

@@ -74,7 +74,9 @@ Badge del producto. CTA inventtia.com abajo. Sin collage, sin purple AI.
 | R1 | GoReservas | Doble reserva | Agenda del día |
 | M1 | Muévete | Viaje incierto | Mapa solicitud |
 
-**Semana negocios:** Lun C1 · Mar G2 · Mié C2 · Jue G3 · Vie C3 · Sáb G1 · Dom duo Caja+Gestión
+**Semana 1 del plan** (“El día no cierra”): Lun C1 · Mar G2 · Mié C2 · Jue G3 · Vie C3 · Sáb G1 · Dom dúo Caja+Gestión.  
+**Semana 2** (“Entre mostrador y almacén”): Lun C4 · Mar G4 · Mié C5 · Jue G5 · Vie C6 · Sáb G6 · Dom dúo precio.  
+El calendario completo está en [`plan-publicaciones-inventtia.md`](./plan-publicaciones-inventtia.md).
 
 ---
 
