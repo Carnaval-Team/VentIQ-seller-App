@@ -3835,8 +3835,10 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
       return;
     }
 
-    // «Entrar a la app»: al checklist, que es donde se ve lo que falta.
-    Navigator.pushReplacementNamed(context, '/activacion');
+    // «Entrar a la app»: al dashboard. El checklist flota encima, abajo a la
+    // derecha, así que no hace falta una pantalla aparte y el usuario puede
+    // empezar a usar la app aunque falten pasos.
+    Navigator.pushReplacementNamed(context, '/dashboard');
   }
 
   /// Guarda lo que haya del paso 2 sin bloquear por campos vacíos.
@@ -3996,7 +3998,7 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
       );
 
       if (mounted) {
-        Navigator.pushReplacementNamed(context, '/activacion');
+        Navigator.pushReplacementNamed(context, '/dashboard');
       }
     } catch (e) {
       if (mounted) {
@@ -4241,8 +4243,10 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                 Navigator.of(context).pop(); // Cerrar diálogo
                 // El usuario ya está autenticado y su tienda existe: mandarlo
                 // al login le obligaría a escribir la contraseña otra vez sin
-                // motivo. Al checklist, que es donde se ve lo que falta.
-                Navigator.pushReplacementNamed(context, '/activacion');
+                // motivo. Al dashboard, donde el checklist flota abajo a la
+                // derecha y puede seguir con lo que falte sin perder de vista
+                // el resto de la app.
+                Navigator.pushReplacementNamed(context, '/dashboard');
               },
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.primary,

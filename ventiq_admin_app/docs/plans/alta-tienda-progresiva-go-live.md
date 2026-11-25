@@ -96,6 +96,48 @@ Current phase: — · Recommended next: revisión y pase a main
 - **Fase 4 (UI): el resumen nunca inventa ceros.** Antes de que el servidor
   responda, la tabla se deriva del estado de las tareas: «Configurado» o «Sin
   configurar». Un `0` es una afirmación, y aquí no se ha contado nada.
+
+### Segunda vuelta: lo que falló al usarlo de verdad
+
+Probado con una tienda recién creada, la fase 3 estaba mal resuelta. Cuatro
+defectos, todos del mismo error de fondo: **el checklist se hizo como pantalla,
+cuando es un aviso**.
+
+- **El checklist a pantalla completa era un muro.** Al entrar con una tienda en
+  borrador, el login mandaba a `/activacion`: sin dashboard, sin salida y sin
+  forma de ver el resto de la app. Además se pintaba dos veces (tarjeta arriba
+  del dashboard **y** pantalla). Ahora el destino es siempre `/dashboard` y el
+  checklist vive en `OnboardingBurbuja`, flotando abajo a la derecha, con el
+  dashboard visible debajo. Se borró `onboarding_dashboard_card.dart`, que era
+  la tarjeta duplicada.
+- **Cerrar exigía volver a iniciar sesión.** Cerrar el panel no descarta nada:
+  `_abierto` es estado local del widget, no una ruta, así que el botón sigue ahí
+  y se reabre con un toque. `descartado` (persistido) sigue existiendo aparte,
+  para cuando el cliente quiere que no le insista.
+- **Faltaban los datos del paso 2.** Las tareas del asistente (`nombre_tienda`,
+  `direccion`, `ubicacion`) no estaban en el checklist, así que una tienda
+  nacida con el nombre provisional `Tienda de <nombre>` se quedaba así para
+  siempre. Ahora son tres tareas que se resuelven **en el propio panel**
+  (`TareaOnboarding.enPanel` + `campoPanel`), no navegando. `_esNombreProvisional`
+  reconoce `Mi tienda` y `Tienda de …` para no dar por buena una denominación
+  que puso el sistema.
+- **«Quién cobra en tu caja» llevaba a la pantalla equivocada.** Apuntaba a
+  `/tpv-management`, donde se crea una caja, no una persona. Ahora abre
+  `/workers` con `arguments: {'nuevoTrabajador': 'cobro'}`, y `WorkersScreen`
+  abre el alta con **usuario de acceso marcado** y rol **Dependiente**
+  preseleccionado. El beneficio de la tarea lo dice con esas palabras.
+
+Reglas nuevas que conviene no romper:
+
+- `TareaOnboarding` tiene dos asserts: una tarea **no** puede navegar y pedirse
+  en el panel a la vez, y una tarea `enPanel` **debe** decir qué `campoPanel` la
+  resuelve.
+- La burbuja se monta en un `Positioned.fill`: sin eso el `Stack` no tiene
+  tamaño y el panel se ancla a un lienzo de cero, saliéndose por arriba.
+- En las pruebas de posición se fija el tamaño con `tester.view`, **no** con
+  `MediaQuery`: `Positioned` se ancla al lienzo real, y un `MediaQuery` distinto
+  hacía que las pruebas de esquina mintieran (el botón «aparecía» en 800×600).
+
 - **Fase 4 (SQL): `estado_onboarding='activa'` solo se escribe en
   `estado_onboarding`, nunca en `estado`.** El verificador lo comprueba con un
   regex **y** con un autotest del regex: un patrón con `\s` dentro de un

@@ -21,7 +21,7 @@ import '../utils/subscription_protection_mixin.dart';
 import '../utils/navigation_guard.dart';
 import '../widgets/consignaciones_widget.dart';
 import '../widgets/alerta_pendientes_card.dart';
-import '../widgets/onboarding_dashboard_card.dart';
+import '../widgets/onboarding_burbuja.dart';
 import '../services/fondo_inversion_service.dart';
 
 
@@ -565,6 +565,10 @@ class _DashboardScreenState extends State<DashboardScreen>
             _isLoading ? _buildLoadingState() : _buildDashboard(),
             // USD Rate Chip positioned at bottom left
             Positioned(bottom: 16, left: 16, child: _buildUsdRateChip()),
+            // Checklist de activación, flotante abajo a la derecha (estilo
+            // Stripe). Va el último para quedar por encima y se oculta solo si
+            // la tienda ya está activa.
+            const OnboardingBurbuja(),
           ],
         ),
         endDrawer: const AdminDrawer(),
@@ -600,12 +604,9 @@ class _DashboardScreenState extends State<DashboardScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Fase 3 (alta progresiva): mientras la tienda esté en borrador, el
-          // acceso al checklist va arriba. La tarjeta se oculta sola si la
-          // tienda ya está activa o si la consulta falla: no se toca el resto
-          // del dashboard.
-          const OnboardingDashboardCard(),
-          const SizedBox(height: 24),
+          // El checklist de activación ya no va arriba como tarjeta: vive en la
+          // burbuja flotante de abajo a la derecha (`OnboardingBurbuja`, montada
+          // en el build). Tenerlo en los dos sitios era el duplicado que se veía.
 
           // Fase 9 (Compras): recordatorio de compras sin recepción completa.
           // La ruta /compras/pendientes todavía no está registrada en

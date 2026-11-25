@@ -14,10 +14,54 @@ del anterior.
 
 | # | Script | Qué crea | Depende de |
 |---|---|---|---|
+| 0 | `grant_update_app_dat_tienda.sql` | `GRANT UPDATE` a `authenticated` en `app_dat_tienda` | — |
 | 1 | `tienda_onboarding.sql` | columnas `estado_onboarding`, `tipo_negocio`, `activada_en`, `onboarding_descartado_en` + tabla `app_dat_tarea_onboarding` con RLS | — |
 | 2 | `tienda_onboarding_verificar.sql` | nada (solo lectura) | 1 |
 | 3 | `fn_m01_activar_tienda.sql` | RPC `fn_m01_activar_tienda` | 1 (lee `estado_onboarding`) |
 | 4 | `fn_m01_activar_tienda_verificar.sql` | nada (solo lectura) | 3 |
+
+### El script 0 no es opcional
+
+Sin él, el paso 2 del asistente falla con:
+
+```
+{ "code": "42501", "message": "permission denied for table app_dat_tienda",
+  "hint": "GRANT UPDATE ON public.app_dat_tienda TO authenticated" }
+```
+
+`authenticated` tiene SELECT, INSERT, DELETE, REFERENCES, TRIGGER y TRUNCATE en
+`app_dat_tienda`, pero **no UPDATE**: solo `postgres` y `service_role` lo tienen.
+La política RLS `m01_tienda_actualizar` existe desde el M01, pero **una política
+no concede privilegios**: filtra filas *después* de que el GRANT deje pasar la
+sentencia. Sin el GRANT, Postgres responde `42501` antes de evaluar la política.
+
+No lo había notado antes porque el cliente solo insertaba tiendas por RPC
+(`SECURITY DEFINER`). El alta progresiva es lo primero que hace `update` directo
+desde el cliente. Y no es solo ese `update`: hay tres más que ya existían y
+estaban rotos por lo mismo (`catalogo_service.dart:168`,
+`carnaval_service.dart:536`, `store_data_service.dart:126`).
+
+`UPDATE` en toda la tabla es el mismo nivel que ya tenían INSERT y DELETE; quien
+decide qué filas se tocan sigue siendo la RLS. Verificado con una prueba de
+aislamiento: un Dueño actualiza su tienda (1 fila) y no la ajena (0 filas).
+
+### Revisar el mismo hueco en otras tablas
+
+`UPDATE` está igual de ausente en `app_dat_almacen`, `app_dat_tpv`,
+`app_dat_trabajadores` y `app_dat_gerente`; y concedido en
+`app_dat_configuracion_tienda`, `app_dat_dueno` y `app_dat_producto`. No se
+concede aquí porque el cliente admin no hace `update` directo sobre esas cuatro
+hoy (verificado por grep: cero coincidencias), pero **si alguna pantalla empieza
+a hacerlo, fallará igual**. Comprobación antes de dar el pase por bueno:
+
+```sql
+SELECT c.relname,
+       has_table_privilege('authenticated', c.oid, 'UPDATE') AS puede_update
+FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = 'public' AND c.relkind = 'r'
+  AND c.relname IN ('app_dat_almacen','app_dat_tpv','app_dat_trabajadores','app_dat_gerente');
+```
+
 
 ## Antes de aplicar, en main
 

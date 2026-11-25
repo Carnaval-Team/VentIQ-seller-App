@@ -130,9 +130,16 @@ void main() {
       await tester.pump();
       expect(abiertas, isEmpty, reason: 'una bloqueada no debe navegar');
 
-      // La de almacén sí es accionable.
+      // La de almacén sí es accionable. Hay que llevarla a la vista primero:
+      // con las tareas de datos de la tienda (nombre, dirección, ubicación)
+      // delante, en 390 px queda fuera del viewport.
       final almacen = tareas.firstWhere((t) => t.clave == 'almacen');
       expect(almacen.accionable, isTrue);
+      await tester.scrollUntilVisible(
+        find.byKey(OnboardingTareaTile.claveTarea('almacen')),
+        120,
+        scrollable: find.byType(Scrollable).first,
+      );
       await tester.tap(find.byKey(OnboardingTareaTile.claveTarea('almacen')));
       await tester.pump();
       expect(abiertas, contains('almacen'));

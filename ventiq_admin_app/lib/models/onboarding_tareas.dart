@@ -68,6 +68,9 @@ class HechosTienda {
     this.modoRestaurante = false,
     this.cocinaActiva = false,
     this.almacenesConvertiblesACocina = 0,
+    this.tieneNombreTienda = false,
+    this.tieneDireccion = false,
+    this.tieneUbicacion = false,
   });
 
   /// `app_dat_almacen` con al menos una fila que no sea cocina.
@@ -106,6 +109,13 @@ class HechosTienda {
   /// `ALMACEN_ES_DE_TPV`: con 1 almacén y 1 TPV la lista sale vacía.
   final int almacenesConvertiblesACocina;
 
+  /// El paso 2 del asistente: datos de la tienda. En el alta progresiva el paso
+  /// 1 crea la tienda con un nombre provisional y vacía la dirección, así que
+  /// sin estas tres tareas el cliente nunca vuelve a rellenarlas.
+  final bool tieneNombreTienda;
+  final bool tieneDireccion;
+  final bool tieneUbicacion;
+
   /// Copia con los hechos indicados cambiados; el resto se conserva.
   HechosTienda copyWith({
     bool? tieneAlmacen,
@@ -119,6 +129,9 @@ class HechosTienda {
     bool? modoRestaurante,
     bool? cocinaActiva,
     int? almacenesConvertiblesACocina,
+    bool? tieneNombreTienda,
+    bool? tieneDireccion,
+    bool? tieneUbicacion,
   }) {
     return HechosTienda(
       tieneAlmacen: tieneAlmacen ?? this.tieneAlmacen,
@@ -134,6 +147,9 @@ class HechosTienda {
       cocinaActiva: cocinaActiva ?? this.cocinaActiva,
       almacenesConvertiblesACocina:
           almacenesConvertiblesACocina ?? this.almacenesConvertiblesACocina,
+      tieneNombreTienda: tieneNombreTienda ?? this.tieneNombreTienda,
+      tieneDireccion: tieneDireccion ?? this.tieneDireccion,
+      tieneUbicacion: tieneUbicacion ?? this.tieneUbicacion,
     );
   }
 }
@@ -148,7 +164,16 @@ class TareaOnboarding {
     required this.estado,
     this.motivoBloqueo,
     this.ruta,
-  });
+    this.enPanel = false,
+    this.campoPanel,
+  })  : assert(
+          !(enPanel && ruta != null),
+          'Una tarea se resuelve en el panel o navegando, no las dos cosas',
+        ),
+        assert(
+          !enPanel || campoPanel != null,
+          'Una tarea en el panel necesita decir qué campo la resuelve',
+        );
 
   /// Identificador estable: `almacen`, `tpv`, `cocina`, ... Es la clave que se
   /// guarda en `app_dat_tarea_onboarding.clave`.
@@ -177,8 +202,22 @@ class TareaOnboarding {
   /// No se puede empezar todavía.
   bool get bloqueada => motivoBloqueo != null;
 
-  /// Tiene una acción concreta que ofrecer ahora mismo.
-  bool get accionable => ruta != null && estado != EstadoTarea.completada;
+  /// Tiene una acción concreta que ofrecer ahora mismo: navegar ([ruta]) o
+  /// pedir el dato en el propio panel ([enPanel]).
+  bool get accionable =>
+      (ruta != null || enPanel) && estado != EstadoTarea.completada;
+
+  /// La resuelve el propio panel (un formulario embebido) en vez de navegar a
+  /// otra pantalla. Cuando es `true`, [ruta] es nulo.
+  ///
+  /// Sirve para los datos de la tienda del paso 2 (nombre, dirección, ubicación)
+  /// y para el alta de quien cobra: son uno o dos campos, y sacar al usuario del
+  /// panel para eso rompe el hilo del checklist.
+  final bool enPanel;
+
+  /// Campo del formulario embebido que resuelve la tarea:
+  /// `nombre`, `direccion`, `ubicacion` o `cobro`.
+  final String? campoPanel;
 }
 
 /// Construye el checklist de una tienda, en el orden de la tabla del plan.
@@ -210,6 +249,53 @@ List<TareaOnboarding> construirTareas({
       estadosGuardados[clave] ?? EstadoTarea.pendiente;
 
   final tareas = <TareaOnboarding>[];
+
+  // Datos de la tienda: son el paso 2 del asistente de alta. En el alta
+  // progresiva la tienda nace con un nombre provisional y sin dirección, y estas
+  // tres son la única forma de volver a rellenarlas. No bloquean el Go Live
+  // (una tienda sin dirección puede vender), pero sin ellas el cliente no
+  // aparecería nunca en los tickets ni en el mapa.
+  tareas.add(
+    TareaOnboarding(
+      clave: 'nombre_tienda',
+      titulo: 'Ponle nombre a tu tienda',
+      beneficio:
+          'Es el nombre que ven tus clientes y tu equipo en la app y en el '
+          'ticket. Ahora mismo tiene uno provisional.',
+      obligatoria: false,
+      estado: estadoDe('nombre_tienda', hechos.tieneNombreTienda),
+      enPanel: true,
+      campoPanel: 'nombre',
+    ),
+  );
+
+  tareas.add(
+    TareaOnboarding(
+      clave: 'direccion',
+      titulo: 'La dirección del local',
+      beneficio:
+          'Sale impresa en cada ticket, para que el cliente sepa dónde '
+          'reclamar.',
+      obligatoria: false,
+      estado: estadoDe('direccion', hechos.tieneDireccion),
+      enPanel: true,
+      campoPanel: 'direccion',
+    ),
+  );
+
+  tareas.add(
+    TareaOnboarding(
+      clave: 'ubicacion',
+      titulo: 'Marca tu tienda en el mapa',
+      beneficio:
+          'Con la ubicación, el reparto y las rutas saben a dónde ir. Sin ella '
+          'la tienda no aparece en el mapa.',
+      obligatoria: false,
+      estado: estadoDe('ubicacion', hechos.tieneUbicacion),
+      enPanel: true,
+      campoPanel: 'ubicacion',
+    ),
+  );
 
   if (tipo != 'catalogo') {
     tareas.add(
@@ -269,11 +355,16 @@ List<TareaOnboarding> construirTareas({
         clave: 'cobro',
         titulo: 'Quién cobra en tu caja',
         beneficio:
-            'Hace falta una persona asignada a la caja. Sin vendedor no se '
-            'puede abrir turno y, sin turno, no se cobra.',
+            'Hace falta una persona con usuario de acceso y rol Dependiente, '
+            'asignada a la caja. Sin vendedor no se puede abrir turno y, sin '
+            'turno, no se cobra.',
         obligatoria: true,
         estado: estadoDe('cobro', hechos.tieneVendedorAsignado),
-        ruta: '/tpv-management',
+        // Se resuelve aquí mismo: es un alta de trabajador con el rol ya
+        // elegido. Mandar a /tpv-management era el error anterior — allí se
+        // crea la caja, no la persona que cobra.
+        enPanel: true,
+        campoPanel: 'cobro',
       ),
     );
 

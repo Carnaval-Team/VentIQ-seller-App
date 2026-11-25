@@ -83,6 +83,33 @@ class _WorkersScreenState extends State<WorkersScreen>
     _loadPermissions();
     _initializeData();
     _checkHRPlan();
+    // Si viene del checklist de activación, abre el alta con los valores ya
+    // puestos. Se programa tras el primer frame: necesita `ModalRoute`.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _abrirAltaDeCobroSiViene();
+    });
+  }
+
+  /// El checklist de activación abre esta pantalla con
+  /// `arguments: {'nuevoTrabajador': 'cobro'}`: es el alta de «quién cobra en tu
+  /// caja». En ese caso se abre el diálogo de agregar con el usuario de acceso y
+  /// el rol Dependiente ya marcados, para que el cliente solo escriba los datos.
+  ///
+  /// Se espera a que carguen los roles: el diálogo los necesita para poder
+  /// marcar «Dependiente» (si no, aparecería vacío y el atajo no serviría).
+  void _abrirAltaDeCobroSiViene() async {
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is! Map || args['nuevoTrabajador'] != 'cobro') return;
+
+    // Espera acotada: los roles llegan por red. Sin esto el diálogo podría
+    // abrirse antes de tener la lista y no poder preseleccionar nada.
+    for (var i = 0; i < 40 && _roles.isEmpty; i++) {
+      if (!mounted) return;
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    if (!mounted || _roles.isEmpty) return;
+
+    _showAddWorkerDialog(preparadoParaCobro: true);
   }
 
   Future<void> _checkHRPlan() async {
@@ -1255,7 +1282,13 @@ class _WorkersScreenState extends State<WorkersScreen>
   }
 
   // 🆕 Diálogo mejorado para agregar trabajador
-  void _showAddWorkerDialog() {
+  //
+  // [preparadoParaCobro] llega desde el checklist de activación («quién cobra en
+  // tu caja»): marca el usuario de acceso y preselecciona el rol Dependiente.
+  // Sin ese atajo el cliente tendría que descubrir por su cuenta que «Quién
+  // cobra» se resuelve aquí y no en la pantalla de TPVs — que es donde apuntaba
+  // la tarea por error.
+  void _showAddWorkerDialog({bool preparadoParaCobro = false}) {
     final nombresController = TextEditingController();
     final apellidosController = TextEditingController();
     final emailController = TextEditingController();
@@ -1264,9 +1297,9 @@ class _WorkersScreenState extends State<WorkersScreen>
     final salarioHorasController = TextEditingController(text: '0'); // 💰 NUEVO
     // 💰 NUEVO: modalidad de pago del nuevo trabajador
     TipoSalario tipoSalario = TipoSalario.hora;
-    bool crearUsuario = false;
-    bool asignarRolEspecifico = false;
-    String? selectedRole;
+    bool crearUsuario = preparadoParaCobro;
+    bool asignarRolEspecifico = preparadoParaCobro;
+    String? selectedRole = preparadoParaCobro ? 'vendedor' : null;
     int? selectedTPV;
     int? selectedAlmacen;
     int? selectedRolGeneral;

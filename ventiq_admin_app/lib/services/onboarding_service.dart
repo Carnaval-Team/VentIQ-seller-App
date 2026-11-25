@@ -218,6 +218,13 @@ class OnboardingService {
           .maybeSingle(),
       // Mesas: se crean desde ventiq_app, aquí solo se cuentan.
       _supabase.from('app_dat_mesas').select('id').eq('id_tienda', storeId).limit(1),
+      // Datos de la tienda del paso 2 del asistente. `denominacion` es NOT NULL,
+      // así que lo que se mira es si sigue siendo el provisional del alta.
+      _supabase
+          .from('app_dat_tienda')
+          .select('denominacion, direccion, ubicacion, latitude')
+          .eq('id', storeId)
+          .maybeSingle(),
     ]);
 
     final almacenes = _filas(respuestas[0]);
@@ -229,6 +236,9 @@ class OnboardingService {
         ? Map<String, dynamic>.from(respuestas[5] as Map)
         : const <String, dynamic>{};
     final mesas = _filas(respuestas[6]);
+    final tienda = respuestas[7] is Map
+        ? Map<String, dynamic>.from(respuestas[7] as Map)
+        : const <String, dynamic>{};
 
     final idsAlmacenes = almacenes
         .map((a) => _entero(a['id']))
@@ -287,7 +297,25 @@ class OnboardingService {
       modoRestaurante: config['modo_restaurante'] == true,
       cocinaActiva: config['cocina_activa'] == true,
       almacenesConvertiblesACocina: _contarAlmacenesConvertibles(almacenes, tpvs),
+      tieneNombreTienda: !_esNombreProvisional(_textoONulo(tienda['denominacion'])),
+      tieneDireccion: _textoONulo(tienda['direccion']) != null,
+      tieneUbicacion:
+          _textoONulo(tienda['ubicacion']) != null ||
+          _textoONulo(tienda['latitude']) != null,
     );
+  }
+
+  /// El alta progresiva nombra la tienda `Tienda de <nombre>` (o `Mi tienda`) en
+  /// el paso 1, porque `denominacion` es NOT NULL y el nombre real se pregunta
+  /// en el paso 2. Mientras siga con ese texto, la tarea de nombre está
+  /// pendiente: si no, el cliente vería «Tienda de Ana» para siempre como si la
+  /// hubiera elegido él.
+  static bool _esNombreProvisional(String? nombre) {
+    if (nombre == null) return true;
+    final n = nombre.trim();
+    if (n.isEmpty) return true;
+    if (n == 'Mi tienda') return true;
+    return n.startsWith('Tienda de ');
   }
 
   /// Réplica de `CocinaService.listarAlmacenesConvertibles()`
@@ -439,6 +467,50 @@ class OnboardingService {
     return mensaje
         .replaceAll(RegExp(r'^Exception:\s*'), '')
         .replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // Datos de la tienda (paso 2 del asistente)
+  // ══════════════════════════════════════════════════════════════════════
+
+  /// Guarda los datos de la tienda que el panel pide en línea.
+  ///
+  /// Mismo camino que `_guardarAvanceParcial` del asistente: `update` directo a
+  /// `app_dat_tienda`. Necesita `GRANT UPDATE ... TO authenticated`, que es el
+  /// H15 del registro de hallazgos; sin él Postgres responde 42501 antes de
+  /// mirar la RLS.
+  ///
+  /// **Nunca escribe `estado`**: esa columna es el código de provincia.
+  Future<void> guardarDatosTienda({
+    String? nombre,
+    String? direccion,
+    String? ubicacion,
+  }) async {
+    final storeId = await _requireStoreId();
+
+    final cambios = <String, dynamic>{};
+    final n = nombre?.trim();
+    final d = direccion?.trim();
+    final u = ubicacion?.trim();
+    if (n != null && n.isNotEmpty) cambios['denominacion'] = n;
+    if (d != null && d.isNotEmpty) cambios['direccion'] = d;
+    if (u != null && u.isNotEmpty) cambios['ubicacion'] = u;
+
+    if (cambios.isEmpty) return;
+
+    try {
+      await _supabase
+          .from('app_dat_tienda')
+          .update(cambios)
+          .eq('id', storeId);
+    } catch (e) {
+      throw OnboardingException(
+        'No se pudieron guardar los datos de la tienda: '
+        '${_mensajeDeErrorPostgres(e.toString())}',
+        codigo: e.toString().contains('42501') ? 'PERMISO' : 'GUARDADO',
+        datos: {'detalle': e.toString()},
+      );
+    }
   }
 
   // ══════════════════════════════════════════════════════════════════════

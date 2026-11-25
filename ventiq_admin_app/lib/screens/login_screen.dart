@@ -907,17 +907,19 @@ class _LoginScreenState extends State<LoginScreen> {
             return;
           }
 
-          // Tienda en borrador: el checklist de activación, no el dashboard.
-          // Un dashboard con ceros le diría al Dueño que su tienda no vende,
-          // cuando lo que pasa es que todavía le faltan pasos. Va después del
-          // caso HR a propósito: un usuario de recursos humanos no es quien
-          // configura la tienda.
-          if (tiendaEnBorrador && mounted) {
-            print('🌱 Tienda en borrador - navegando al checklist de activación');
-            Navigator.pushReplacementNamed(context, '/activacion');
-            return;
-          }
-
+          // Tienda en borrador: **también** al dashboard.
+          //
+          // Antes se mandaba a `/activacion`, una pantalla completa sin salida:
+          // el cliente aterrizaba en un checklist a pantalla completa, sin
+          // dashboard y sin más forma de salir que volver a iniciar sesión. Eso
+          // convertía la ayuda en un muro.
+          //
+          // Ahora el destino es siempre el dashboard y el checklist vive en una
+          // burbuja flotante abajo a la derecha (`OnboardingBurbuja`), que se
+          // cierra y se reabre sin perder nada. `tiendaEnBorrador` se sigue
+          // calculando porque el dashboard no necesita saberlo: la burbuja
+          // consulta el estado por su cuenta y se oculta sola si la tienda ya
+          // está activa.
           Navigator.pushReplacementNamed(context, '/dashboard');
         } else {
           print(

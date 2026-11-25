@@ -118,6 +118,24 @@ class _ActivacionTiendaScreenState extends State<ActivacionTiendaScreen> {
   }
 
   Future<void> _abrirTarea(TareaOnboarding tarea) async {
+    // Tareas que se resuelven en línea (datos de la tienda y quién cobra): la
+    // pantalla completa no tiene formulario propio, así que se delega en el
+    // panel, que sí lo tiene. Así la vista de detalle no queda coja respecto a
+    // la burbuja del dashboard.
+    if (tarea.enPanel) {
+      final ruta = tarea.campoPanel == 'cobro'
+          ? '/workers'
+          : '/dashboard';
+      await Navigator.of(context).pushNamed(
+        ruta,
+        arguments: tarea.campoPanel == 'cobro'
+            ? const {'nuevoTrabajador': 'cobro'}
+            : null,
+      );
+      if (mounted) await _cargar();
+      return;
+    }
+
     final ruta = tarea.ruta;
     if (ruta == null) return;
     try {
