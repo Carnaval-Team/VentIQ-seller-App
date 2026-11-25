@@ -32,6 +32,10 @@ const double _anchoPanel = 400;
 /// Alto máximo: el 70 % de la ventana, para que siempre se vea el dashboard.
 const double _altoMaximoFactor = 0.7;
 
+/// Alto aproximado de la píldora. Se usa para colocar el panel justo encima,
+/// sin tener que medirla en cada frame.
+const double _altoBoton = 46;
+
 /// Botón flotante + panel de activación.
 ///
 /// Se coloca en el `Stack` del `Scaffold` del dashboard, **después** del
@@ -47,6 +51,7 @@ class OnboardingBurbuja extends StatefulWidget {
     this.tareasIniciales,
     this.estadoInicial,
     this.abiertoInicial = false,
+    this.margenInferior = 16,
   });
 
   /// Servicio inyectable (pruebas).
@@ -60,6 +65,17 @@ class OnboardingBurbuja extends StatefulWidget {
 
   /// Arranca con el panel abierto (pruebas).
   final bool abiertoInicial;
+
+  /// Separación desde el borde inferior.
+  ///
+  /// Existe porque en la web del dashboard hay un `FloatingActionButton` de
+  /// accesos rápidos anclado abajo a la derecha, en el mismo sitio: sin subir
+  /// la píldora, el FAB la tapaba. En móvil no hay FAB y se queda en 16.
+  ///
+  /// Se sube **la píldora**, no el FAB: los accesos rápidos llevan ahí desde
+  /// antes y moverlos rompería una costumbre de uso; el aviso de activación es
+  /// temporal y es el que debe apartarse.
+  final double margenInferior;
 
   /// Clave estable para las pruebas.
   static const Key claveBoton = Key('onboarding_burbuja_boton');
@@ -140,7 +156,11 @@ class _OnboardingBurbujaState extends State<OnboardingBurbuja> {
       child: Stack(
         children: [
           if (_abierto) _panel(tareas),
-          Positioned(right: 16, bottom: 16, child: _boton(tareas, quedan)),
+          Positioned(
+            right: 16,
+            bottom: widget.margenInferior,
+            child: _boton(tareas, quedan),
+          ),
         ],
       ),
     );
@@ -210,8 +230,8 @@ class _OnboardingBurbujaState extends State<OnboardingBurbuja> {
 
     return Positioned(
       right: 16,
-      // Deja sitio al botón, que va justo debajo.
-      bottom: 74,
+      // Justo encima de la píldora, sea cual sea su margen inferior.
+      bottom: widget.margenInferior + _altoBoton + 12,
       width: ancho,
       child: ConstrainedBox(
         constraints: BoxConstraints(maxHeight: pantalla.height * _altoMaximoFactor),

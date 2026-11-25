@@ -255,6 +255,95 @@ void main() {
     });
   });
 
+  group('no tapa el FAB de accesos rápidos (solo web)', () {
+    // El FAB estándar mide 56 y va a 16 del borde inferior: ocupa de 16 a 72.
+    const fabAlto = 56.0;
+    const fabMargen = 16.0;
+    final fabTop = fabMargen + fabAlto; // 72
+
+    testWidgets('con el margen de la web, la píldora queda por encima', (
+      tester,
+    ) async {
+      const alto = 900.0;
+      fijarVentana(tester, const Size(1200, alto));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Stack(
+              children: [
+                const Center(child: Text('DASHBOARD')),
+                OnboardingBurbuja(
+                  tareasIniciales: tareasNuevas(),
+                  estadoInicial: 'borrador',
+                  margenInferior: 84,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final boton = tester.getRect(find.byKey(OnboardingBurbuja.claveBoton));
+      // El borde inferior de la píldora no puede meterse en la franja del FAB.
+      final distanciaAlFondo = alto - boton.bottom;
+      expect(
+        distanciaAlFondo,
+        greaterThanOrEqualTo(fabTop),
+        reason:
+            'la píldora se solapa con el FAB: quedan ${distanciaAlFondo}px al '
+            'fondo y el FAB llega hasta $fabTop',
+      );
+    });
+
+    testWidgets('por defecto (móvil) se queda abajo, sin FAB que esquivar', (
+      tester,
+    ) async {
+      const alto = 900.0;
+      fijarVentana(tester, const Size(500, alto));
+      await tester.pumpWidget(conDashboard(tareas: tareasNuevas()));
+      await tester.pump();
+
+      final boton = tester.getRect(find.byKey(OnboardingBurbuja.claveBoton));
+      final distanciaAlFondo = alto - boton.bottom;
+      expect(
+        distanciaAlFondo,
+        lessThan(fabTop),
+        reason: 'en móvil no hay FAB: subirla dejaría un hueco raro',
+      );
+    });
+
+    testWidgets('el panel se abre encima de la píldora, no sobre el FAB', (
+      tester,
+    ) async {
+      fijarVentana(tester, const Size(1200, 1000));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Stack(
+              children: [
+                OnboardingBurbuja(
+                  tareasIniciales: tareasNuevas(),
+                  estadoInicial: 'borrador',
+                  abiertoInicial: true,
+                  margenInferior: 84,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final panel = tester.getRect(find.byKey(OnboardingBurbuja.clavePanel));
+      final boton = tester.getRect(find.byKey(OnboardingBurbuja.claveBoton));
+      // El panel acaba por encima del botón (coordenada Y menor = más arriba).
+      expect(panel.bottom, lessThanOrEqualTo(boton.top));
+      // Y no se sale por arriba.
+      expect(panel.top, greaterThanOrEqualTo(0));
+    });
+  });
+
   group('reglas que no deben romperse', () {
     test('tachar lo hecho: una completada no es accionable', () {
       final tareas = tareasNuevas(conDatosDeTienda: true);

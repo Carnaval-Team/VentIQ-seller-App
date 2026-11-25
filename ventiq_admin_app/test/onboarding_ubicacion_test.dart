@@ -27,7 +27,7 @@ void main() {
         final fuente = File(ruta).readAsStringSync();
         expect(
           fuente,
-          contains('OnboardingBurbuja()'),
+          contains('OnboardingBurbuja('),
           reason:
               'sin la burbuja, una tienda en borrador no tiene checklist en '
               'esta plataforma y el cliente no sabe qué le falta',

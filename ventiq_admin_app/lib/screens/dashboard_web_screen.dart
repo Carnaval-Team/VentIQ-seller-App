@@ -438,7 +438,12 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
           // Stripe). En web `/dashboard` resuelve a esta pantalla, no a
           // `dashboard_screen.dart`: sin esta línea el Dueño de una tienda en
           // borrador no veía el aviso por ningún sitio.
-          const OnboardingBurbuja(),
+          //
+          // `margenInferior: 84` sube la píldora por encima del FAB de accesos
+          // rápidos (56 de alto + 16 de margen + 12 de aire). Sin eso, el FAB
+          // la tapaba. Se mueve el aviso, no el FAB: los accesos rápidos ya
+          // estaban ahí y son permanentes.
+          const OnboardingBurbuja(margenInferior: 84),
         ],
       ),
       endDrawer: const AdminDrawer(),
