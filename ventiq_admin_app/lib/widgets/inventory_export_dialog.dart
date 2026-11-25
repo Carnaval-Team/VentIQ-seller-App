@@ -40,6 +40,8 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
 
   bool _includePrecios = false;
   bool _canViewGanancias = false;
+  bool _canViewPrecioVenta = false;
+  bool _includePrecioVenta = false;
 
   // Opciones de filtrado
   bool _includeZeroStock = false; // Incluir productos con stock cero
@@ -54,10 +56,16 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
   }
 
   Future<void> _loadProfitPermission() async {
-    final allowed = await PermissionsService().canViewGanancias();
+    final permissions = PermissionsService();
+    final allowed = await permissions.canViewGanancias();
+    final storeId = await _prefsService.getIdTienda();
+    final role = storeId == null
+        ? await permissions.getUserRole()
+        : await permissions.getUserRoleForStore(storeId);
     if (!mounted) return;
     setState(() {
       _canViewGanancias = allowed;
+      _canViewPrecioVenta = allowed || role == UserRole.gerente;
       if (!allowed) _includePrecios = false;
     });
   }
@@ -139,7 +147,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
 
       // Si se pidieron precios completos, enriquecer filas
       List<Map<String, dynamic>> enrichedData = inventoryData;
-      if (_includePrecios) {
+      if (_includePrecios || _includePrecioVenta) {
         enrichedData = await _enrichWithPrices(inventoryData, storeId);
       }
 
@@ -162,7 +170,8 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
         includeMarca: _includeMarca,
         includeDescripcionCorta: _includeDescripcionCorta,
         includeDescripcion: _includeDescripcion,
-        includePrecios: _includePrecios,
+        includePrecios: _includePrecios && _canViewGanancias,
+        includePrecioVenta: _includePrecioVenta && _canViewPrecioVenta,
         includeReservado: true,
         includePresentacion: true,
       );
@@ -237,8 +246,22 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
     final preciosResp = await supabase
         .from('app_v_precio_venta_base_vigente')
         .select('id_producto, precio_venta_cup, precio_venta_usd')
-        .inFilter('id_producto', ids)
-        .order('created_at', ascending: false);
+        .inFilter('id_producto', ids);
+
+    if (!_canViewGanancias || !_includePrecios) {
+      final precios = {
+        for (final row in preciosResp) row['id_producto']: row,
+      };
+      return inventoryData.map((row) {
+        final precio = precios[row['id_producto']];
+        final cup = (precio?['precio_venta_cup'] as num?)?.toDouble();
+        return <String, dynamic>{
+          ...row,
+          'precio_venta_cup_actual': cup,
+          'precio_venta_usd_calc': cup == null || tasa <= 0 ? null : cup / tasa,
+        };
+      }).toList();
+    }
 
     final Map<int, Map<String, dynamic>> preciosPorProducto = {};
     for (final row in (preciosResp as List)) {
@@ -648,6 +671,17 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                             activeColor: AppColors.primary,
                             contentPadding: EdgeInsets.zero,
                           ),
+                          if (_canViewPrecioVenta)
+                            CheckboxListTile(
+                              title: const Text('Incluir precio de venta'),
+                              subtitle: const Text('Precio de venta USD/CUP, sin costos ni ganancias'),
+                              value: _includePrecioVenta,
+                              onChanged: (value) => setState(() {
+                                _includePrecioVenta = value ?? false;
+                              }),
+                              activeColor: AppColors.primary,
+                              contentPadding: EdgeInsets.zero,
+                            ),
                           if (_canViewGanancias)
                           CheckboxListTile(
                             title: const Text(

@@ -237,10 +237,13 @@ List<TotalesPorMonedaProducto> agregarTotalesPorMoneda(
     final a = map.putIfAbsent(f.moneda, _AcumMoneda.new);
     a.ingresos += f.ingresosNativos;
     a.cantidad += f.equivUnidadesBase;
-    if (f.utilidadDisponible && f.costoNativo != null && f.gananciaNativa != null) {
+    if (f.costoNativo != null) {
       a.costo = (a.costo ?? 0) + f.costoNativo!;
+    }
+    if (f.gananciaNativa != null) {
       a.ganancia = (a.ganancia ?? 0) + f.gananciaNativa!;
-    } else {
+    }
+    if (!f.utilidadDisponible || f.costoNativo == null || f.gananciaNativa == null) {
       a.utilidadCompleta = false;
     }
   }
@@ -254,8 +257,8 @@ List<TotalesPorMonedaProducto> agregarTotalesPorMoneda(
       TotalesPorMonedaProducto(
         moneda: m,
         ingresos: map[m]!.ingresos,
-        costo: map[m]!.utilidadCompleta ? map[m]!.costo : null,
-        ganancia: map[m]!.utilidadCompleta ? map[m]!.ganancia : null,
+        costo: map[m]!.costo,
+        ganancia: map[m]!.ganancia,
         cantidadBase: map[m]!.cantidad,
         utilidadCompleta: map[m]!.utilidadCompleta,
       ),

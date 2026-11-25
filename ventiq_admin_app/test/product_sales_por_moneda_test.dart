@@ -175,6 +175,31 @@ void main() {
       expect(totales.single.ganancia, isNull);
     });
 
+    test('totales conservan cada columna disponible con filas incompletas', () {
+      final filas = [
+        const ProductSalesReportPorMoneda(
+          idTienda: 1, idProducto: 1, nombreProducto: 'Completo',
+          moneda: 'CUP', precioVentaNativo: 100, precioCostoUsd: 0,
+          precioCostoNativo: 40, ingresosNativos: 100,
+          costoNativo: 40, gananciaNativa: 60, utilidadDisponible: true,
+          totalVendido: 1, equivUnidadesBase: 1,
+        ),
+        const ProductSalesReportPorMoneda(
+          idTienda: 1, idProducto: 2, nombreProducto: 'Solo costo',
+          moneda: 'CUP', precioVentaNativo: 50, precioCostoUsd: 0,
+          precioCostoNativo: 20, ingresosNativos: 50,
+          costoNativo: 20, utilidadDisponible: false,
+          totalVendido: 2, equivUnidadesBase: 2,
+        ),
+      ];
+      final total = agregarTotalesPorMoneda(filas).single;
+      expect(total.ingresos, 150);
+      expect(total.cantidadBase, 3);
+      expect(total.costo, 60);
+      expect(total.ganancia, 60);
+      expect(total.utilidadCompleta, isFalse);
+    });
+
     test('fromCupReport marca fallback y conserva magnitud CUP', () {
       final cup = ProductSalesReport(
         idTienda: 1,
@@ -233,6 +258,18 @@ void main() {
     test('agrupa por producto y moneda', () {
       expect(sql, contains('GROUP BY ve.id_producto, ve.moneda'));
     });
+  });
+
+  test('exportación separa precio de venta de costos y ganancias', () {
+    final dialog = File('lib/widgets/inventory_export_dialog.dart').readAsStringSync();
+    final export = File('lib/services/export_service.dart').readAsStringSync();
+    expect(dialog, contains('allowed || role == UserRole.gerente'));
+    expect(dialog, contains('Incluir precio de venta'));
+    expect(dialog, contains('includePrecios: _includePrecios && _canViewGanancias'));
+    expect(dialog, contains('if (!_canViewGanancias || !_includePrecios)'));
+    expect(export, contains("headers.addAll(['P.Venta USD', 'P.Venta CUP'])"));
+    expect('if (includePrecioVenta && !includePrecios)'.allMatches(export).length, 4);
+    expect('includePrecioVenta: includePrecioVenta'.allMatches(export).length, 3);
   });
 
   group('contrato cliente', () {

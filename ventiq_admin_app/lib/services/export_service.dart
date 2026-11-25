@@ -1381,6 +1381,7 @@ class ExportService {
     bool includeDescripcionCorta = false,
     bool includeDescripcion = false,
     bool includePrecios = false,
+    bool includePrecioVenta = false,
     bool includeReservado = false,
     bool includePresentacion = false,
     bool includeValorInventarioCosto = false,
@@ -1407,6 +1408,7 @@ class ExportService {
           includeDescripcionCorta: includeDescripcionCorta,
           includeDescripcion: includeDescripcion,
           includePrecios: includePrecios,
+          includePrecioVenta: includePrecioVenta,
           includeReservado: includeReservado,
           includePresentacion: includePresentacion,
           includeValorInventarioCosto: includeValorInventarioCosto,
@@ -1528,6 +1530,7 @@ class ExportService {
                       includeDescripcionCorta: includeDescripcionCorta,
                       includeDescripcion: includeDescripcion,
                       includePrecios: includePrecios,
+          includePrecioVenta: includePrecioVenta,
                       includeReservado: includeReservado,
                       includePresentacion: includePresentacion,
                       includeValorInventarioCosto: includeValorInventarioCosto,
@@ -1911,6 +1914,7 @@ class ExportService {
     bool includeDescripcionCorta = false,
     bool includeDescripcion = false,
     bool includePrecios = false,
+    bool includePrecioVenta = false,
     bool includeReservado = false,
     bool includePresentacion = false,
     bool includeValorInventarioCosto = false,
@@ -1972,6 +1976,7 @@ class ExportService {
           includeDescripcionCorta: includeDescripcionCorta,
           includeDescripcion: includeDescripcion,
           includePrecios: includePrecios,
+          includePrecioVenta: includePrecioVenta,
           includeReservado: includeReservado,
           includePresentacion: includePresentacion,
           includeValorInventarioCosto: includeValorInventarioCosto,
@@ -2185,6 +2190,7 @@ class ExportService {
     bool includeDescripcionCorta = false,
     bool includeDescripcion = false,
     bool includePrecios = false,
+    bool includePrecioVenta = false,
     bool includeReservado = false,
     bool includeValorInventarioCosto = false,
     bool includePresentacion = false,
@@ -2222,6 +2228,9 @@ class ExportService {
         'Ganancia CUP',
         '%Ganancia',
       ]);
+    }
+    if (includePrecioVenta && !includePrecios) {
+      headers.addAll(['P.Venta USD', 'P.Venta CUP']);
     }
     if (includeValorInventarioCosto) {
       headers.addAll([
@@ -2266,13 +2275,13 @@ class ExportService {
     for (int i = 0; i < qtyColCount; i++) {
       sheet.setColumnWidth(currentCol + i, 12);
     }
-    if (includePrecios) {
-      for (int i = 0; i < 7; i++) {
+    if (includePrecios || includePrecioVenta) {
+      for (int i = 0; i < (includePrecios ? 7 : 2); i++) {
         sheet.setColumnWidth(currentCol + qtyColCount + i, 13);
       }
     }
     if (includeValorInventarioCosto) {
-      final base = currentCol + qtyColCount + (includePrecios ? 7 : 0);
+      final base = currentCol + qtyColCount + (includePrecios ? 7 : (includePrecioVenta ? 2 : 0));
       for (int i = 0; i < 4; i++) {
         sheet.setColumnWidth(base + i, i.isEven ? 16 : 18);
       }
@@ -2391,6 +2400,18 @@ class ExportService {
         ]);
       }
 
+      if (includePrecioVenta && !includePrecios) {
+        final raw = rawData?.firstWhere(
+          (r) => r['id_producto'] == product.idProducto &&
+              (r['id_presentacion'] ?? 0) == (product.idPresentacion ?? 0) &&
+              (r['id_ubicacion'] ?? 0) == product.idUbicacion,
+          orElse: () => {},
+        );
+        rowData.addAll([
+          for (final key in ['precio_venta_usd_calc', 'precio_venta_cup_actual'])
+            (raw?[key] as num?)?.toStringAsFixed(2) ?? '—',
+        ]);
+      }
       if (includePrecios && rawData != null) {
         final raw = rawData.firstWhere(
           (r) =>
@@ -2526,6 +2547,7 @@ class ExportService {
     bool includeDescripcionCorta = false,
     bool includeDescripcion = false,
     bool includePrecios = false,
+    bool includePrecioVenta = false,
     bool includeReservado = false,
     bool includePresentacion = false,
     bool includeValorInventarioCosto = false,
@@ -2603,6 +2625,9 @@ class ExportService {
         );
       }
     }
+    if (includePrecioVenta && !includePrecios) {
+      headers.addAll(['P.Venta USD', 'P.Venta CUP']);
+    }
     if (includeValorInventarioCosto) {
       headers.addAll([
         'P.Costo USD',
@@ -2610,7 +2635,7 @@ class ExportService {
         'P.Costo CUP',
         'Val.Total CUP',
       ]);
-      final base = columnIndex + qtyColCount + (includePrecios ? 7 : 0);
+      final base = columnIndex + qtyColCount + (includePrecios ? 7 : (includePrecioVenta ? 2 : 0));
       for (int i = 0; i < 4; i++) {
         columnWidths[base + i] = const pw.FlexColumnWidth(1.2);
       }
@@ -2680,6 +2705,12 @@ class ExportService {
         ]);
       }
 
+      if (includePrecioVenta && !includePrecios) {
+        rowData.addAll([
+          for (final key in ['precio_venta_usd_calc', 'precio_venta_cup_actual'])
+            (producto[key] as num?)?.toStringAsFixed(2) ?? '—',
+        ]);
+      }
       if (includePrecios) {
         final _f2 = (String k) =>
             (double.tryParse(producto[k]?.toString() ?? '0') ?? 0)

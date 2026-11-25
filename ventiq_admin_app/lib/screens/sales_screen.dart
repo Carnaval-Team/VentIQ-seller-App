@@ -6014,8 +6014,8 @@ class _SalesScreenState extends State<SalesScreen>
           t.cantidadBase.toStringAsFixed(2),
           _formatearNativo(t.ingresos, t.moneda),
           '-',
-          t.utilidadCompleta ? _formatearNativo(t.costo, t.moneda) : '—',
-          t.utilidadCompleta ? _formatearNativo(t.ganancia, t.moneda) : '—',
+          _formatearNativo(t.costo, t.moneda),
+          _formatearNativo(t.ganancia, t.moneda),
         ]);
       }
       final porMoneda = await _porMonedaCobradoParaExport();
@@ -6172,11 +6172,11 @@ class _SalesScreenState extends State<SalesScreen>
           excel.DoubleCellValue(t.ingresos),
           if (_canViewGanancias) ...[
             excel.TextCellValue(''),
-            if (t.utilidadCompleta && t.costo != null)
+            if (t.costo != null)
               excel.DoubleCellValue(t.costo!)
             else
               excel.TextCellValue(''),
-            if (t.utilidadCompleta && t.ganancia != null)
+            if (t.ganancia != null)
               excel.DoubleCellValue(t.ganancia!)
             else
               excel.TextCellValue(''),
@@ -7453,9 +7453,7 @@ class _SalesScreenState extends State<SalesScreen>
                           const DataCell(Text('-')),
                           DataCell(
                             Text(
-                              t.utilidadCompleta
-                                  ? _formatearNativo(t.costo, t.moneda)
-                                  : '—',
+                              _formatearNativo(t.costo, t.moneda),
                               style: const TextStyle(
                                 fontWeight: FontWeight.bold,
                                 color: AppColors.warning,
@@ -7464,9 +7462,7 @@ class _SalesScreenState extends State<SalesScreen>
                           ),
                           DataCell(
                             Text(
-                              t.utilidadCompleta
-                                  ? _formatearNativo(t.ganancia, t.moneda)
-                                  : '—',
+                              _formatearNativo(t.ganancia, t.moneda),
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 color:

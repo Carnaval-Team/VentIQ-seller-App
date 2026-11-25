@@ -20,6 +20,9 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
   late DateTime _fechaFin;
   late DateTime _licenciaMes;
   late TabController _tabController;
+  int _revision = 0;
+  int _loadId = 0;
+  bool _filtersExpanded = false;
 
   InventtiaPaymentModel? _paymentData;
   List<AgentPaymentSummary> _agentPayments = [];
@@ -35,10 +38,13 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
+    _tabController.addListener(_onTabChanged);
     _initializeDefaultDates();
     _loadAll();
   }
+
+  void _onTabChanged() => setState(() {});
 
   @override
   void dispose() {
@@ -55,7 +61,9 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
   }
 
   Future<void> _loadAll() async {
+    final loadId = ++_loadId;
     setState(() {
+      _revision++;
       _isLoading = true;
       _errorMessage = null;
     });
@@ -68,7 +76,7 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
         InventtiaPaymentService.getProveedores(),
       ]);
 
-      if (!mounted) return;
+      if (!mounted || loadId != _loadId) return;
       final payment = results[1] as InventtiaPaymentModel;
       setState(() {
         _exchangeRates = results[0] as ExchangeRates;
@@ -80,7 +88,7 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
         _isLoading = false;
       });
     } catch (e) {
-      if (mounted) {
+      if (mounted && loadId == _loadId) {
         setState(() {
           _errorMessage = e.toString();
           _isLoading = false;
@@ -96,29 +104,32 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
 
     final result = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Configurar Comisión Inventtia'),
-        content: TextField(
-          controller: controller,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(
-            labelText: '% Comisión sobre precio costo',
-            suffixText: '%',
-            border: OutlineInputBorder(),
-            helperText: 'Ej: 1.0 = 1% del costo de las órdenes',
+      builder:
+          (_) => AlertDialog(
+            title: const Text('Configurar Comisión Inventtia'),
+            content: TextField(
+              controller: controller,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: const InputDecoration(
+                labelText: '% Comisión sobre precio costo',
+                suffixText: '%',
+                border: OutlineInputBorder(),
+                helperText: 'Ej: 1.0 = 1% del costo de las órdenes',
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Guardar'),
+              ),
+            ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Guardar'),
-          ),
-        ],
-      ),
     );
 
     if (result == true) {
@@ -126,8 +137,8 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
           double.tryParse(controller.text) ?? _commissionPercentage;
       final ok =
           await InventtiaPaymentService.updateInventtiaCommissionPercentage(
-        newPercentage,
-      );
+            newPercentage,
+          );
       if (ok && mounted) {
         setState(() => _commissionPercentage = newPercentage);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -180,104 +191,109 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
 
     final saved = await showDialog<bool>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) => AlertDialog(
-          title: Text(agent == null ? 'Nuevo agente' : 'Editar agente'),
-          content: SizedBox(
-            width: 480,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  TextField(
-                    controller: nombreCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Nombre',
-                      border: OutlineInputBorder(),
+      builder:
+          (ctx) => StatefulBuilder(
+            builder:
+                (ctx, setLocal) => AlertDialog(
+                  title: Text(agent == null ? 'Nuevo agente' : 'Editar agente'),
+                  content: SizedBox(
+                    width: 480,
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          TextField(
+                            controller: nombreCtrl,
+                            decoration: const InputDecoration(
+                              labelText: 'Nombre',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: apellidosCtrl,
+                            decoration: const InputDecoration(
+                              labelText: 'Apellidos',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          const Text(
+                            'Tiendas asociadas',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 6),
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxHeight: 260),
+                            child: ListView.builder(
+                              shrinkWrap: true,
+                              itemCount: _proveedores.length,
+                              itemBuilder: (context, index) {
+                                final p = _proveedores[index];
+                                final id = (p['id'] as num).toInt();
+                                final name =
+                                    p['name']?.toString() ?? 'Tienda #$id';
+                                final checked = selected.contains(id);
+                                return CheckboxListTile(
+                                  dense: true,
+                                  contentPadding: EdgeInsets.zero,
+                                  value: checked,
+                                  title: Text(name),
+                                  controlAffinity:
+                                      ListTileControlAffinity.leading,
+                                  onChanged: (v) {
+                                    setLocal(() {
+                                      if (v == true) {
+                                        selected.add(id);
+                                      } else {
+                                        selected.remove(id);
+                                      }
+                                    });
+                                  },
+                                );
+                              },
+                            ),
+                          ),
+                          if (agent != null) ...[
+                            const SizedBox(height: 8),
+                            SwitchListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('Activo'),
+                              value: activo,
+                              onChanged: (v) => setLocal(() => activo = v),
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: apellidosCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Apellidos',
-                      border: OutlineInputBorder(),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text('Cancelar'),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Tiendas asociadas',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 6),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 260),
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: _proveedores.length,
-                      itemBuilder: (context, index) {
-                        final p = _proveedores[index];
-                        final id = (p['id'] as num).toInt();
-                        final name = p['name']?.toString() ?? 'Tienda #$id';
-                        final checked = selected.contains(id);
-                        return CheckboxListTile(
-                          dense: true,
-                          contentPadding: EdgeInsets.zero,
-                          value: checked,
-                          title: Text(name),
-                          controlAffinity: ListTileControlAffinity.leading,
-                          onChanged: (v) {
-                            setLocal(() {
-                              if (v == true) {
-                                selected.add(id);
-                              } else {
-                                selected.remove(id);
-                              }
-                            });
-                          },
-                        );
+                    ElevatedButton(
+                      onPressed: () {
+                        if (nombreCtrl.text.trim().isEmpty ||
+                            apellidosCtrl.text.trim().isEmpty ||
+                            selected.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Completa nombre, apellidos y al menos una tienda',
+                              ),
+                            ),
+                          );
+                          return;
+                        }
+                        Navigator.pop(ctx, true);
                       },
-                    ),
-                  ),
-                  if (agent != null) ...[
-                    const SizedBox(height: 8),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Activo'),
-                      value: activo,
-                      onChanged: (v) => setLocal(() => activo = v),
+                      child: const Text('Guardar'),
                     ),
                   ],
-                ],
-              ),
-            ),
+                ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                if (nombreCtrl.text.trim().isEmpty ||
-                    apellidosCtrl.text.trim().isEmpty ||
-                    selected.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content:
-                          Text('Completa nombre, apellidos y al menos una tienda'),
-                    ),
-                  );
-                  return;
-                }
-                Navigator.pop(ctx, true);
-              },
-              child: const Text('Guardar'),
-            ),
-          ],
-        ),
-      ),
     );
 
     if (saved != true) {
@@ -303,18 +319,15 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
         );
       }
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Agente guardado')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Agente guardado')));
         await _loadAll();
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -327,147 +340,164 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
     final dateFormat = DateFormat('dd/MM/yyyy');
     showDialog<void>(
       context: context,
-      builder: (ctx) => Dialog(
-        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720, maxHeight: 720),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 14, 8, 8),
-                child: Row(
-                  children: [
-                    const Icon(Icons.storefront, color: AppColors.warning),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            summary.agent.fullName,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          Text(
-                            'Comisión ${_moneyFmt.format(summary.commissionCup)} CUP · '
-                            'Ventas ${_moneyFmt.format(summary.salesCup)} CUP · '
-                            '${summary.ordersCount} órdenes',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(ctx),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1),
-              Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.all(12),
-                  itemCount: summary.byStore.length,
-                  itemBuilder: (context, index) {
-                    final store = summary.byStore[index];
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 10),
-                      child: ExpansionTile(
-                        initiallyExpanded: index == 0,
-                        title: Text(
-                          store.proveedorName ??
-                              'Tienda #${store.proveedorId}',
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        subtitle: Text(
-                          'Ventas ${_moneyFmt.format(store.salesCup)} CUP · '
-                          'Comisión ${_moneyFmt.format(store.commissionCup)} CUP · '
-                          '${store.ordersCount} órdenes',
-                        ),
-                        children: store.orders.isEmpty
-                            ? const [
-                                ListTile(
-                                  dense: true,
-                                  title: Text('Sin órdenes en el período'),
+      builder:
+          (ctx) => Dialog(
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 24,
+              vertical: 24,
+            ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 720, maxHeight: 720),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 8, 8),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.storefront, color: AppColors.warning),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                summary.agent.fullName,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
                                 ),
-                              ]
-                            : store.orders
-                                .map(
-                                  (o) => ListTile(
-                                    dense: true,
-                                    leading: const Icon(Icons.receipt, size: 18),
-                                    title: Text('Orden #${o.orderId}'),
-                                    subtitle: Text(
-                                      o.createdAt != null
-                                          ? dateFormat.format(o.createdAt!)
-                                          : '—',
-                                    ),
-                                    trailing: Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.end,
-                                      children: [
-                                        Text(
-                                          '${_moneyFmt.format(o.commissionCup)} CUP',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w700,
-                                            color: AppColors.warning,
+                              ),
+                              Text(
+                                'Comisión ${_moneyFmt.format(summary.commissionCup)} CUP · '
+                                'Ventas ${_moneyFmt.format(summary.salesCup)} CUP · '
+                                '${summary.ordersCount} órdenes',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: ListView.builder(
+                      padding: const EdgeInsets.all(12),
+                      itemCount: summary.byStore.length,
+                      itemBuilder: (context, index) {
+                        final store = summary.byStore[index];
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          child: ExpansionTile(
+                            initiallyExpanded: index == 0,
+                            title: Text(
+                              store.proveedorName ??
+                                  'Tienda #${store.proveedorId}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            subtitle: Text(
+                              'Ventas ${_moneyFmt.format(store.salesCup)} CUP · '
+                              'Comisión ${_moneyFmt.format(store.commissionCup)} CUP · '
+                              '${store.ordersCount} órdenes',
+                            ),
+                            children:
+                                store.orders.isEmpty
+                                    ? const [
+                                      ListTile(
+                                        dense: true,
+                                        title: Text(
+                                          'Sin órdenes en el período',
+                                        ),
+                                      ),
+                                    ]
+                                    : store.orders
+                                        .map(
+                                          (o) => ListTile(
+                                            dense: true,
+                                            leading: const Icon(
+                                              Icons.receipt,
+                                              size: 18,
+                                            ),
+                                            title: Text('Orden #${o.orderId}'),
+                                            subtitle: Text(
+                                              o.createdAt != null
+                                                  ? dateFormat.format(
+                                                    o.createdAt!,
+                                                  )
+                                                  : '—',
+                                            ),
+                                            trailing: Column(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.end,
+                                              children: [
+                                                Text(
+                                                  '${_moneyFmt.format(o.commissionCup)} CUP',
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.w700,
+                                                    color: AppColors.warning,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  'Venta ${_moneyFmt.format(o.salesCup)}',
+                                                  style: const TextStyle(
+                                                    fontSize: 11,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
                                           ),
-                                        ),
-                                        Text(
-                                          'Venta ${_moneyFmt.format(o.salesCup)}',
-                                          style: const TextStyle(fontSize: 11),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                )
-                                .toList(),
-                      ),
-                    );
-                  },
-                ),
+                                        )
+                                        .toList(),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('Cerrar'),
+                    ),
+                  ),
+                ],
               ),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Cerrar'),
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
-      ),
     );
   }
 
   Future<void> _deleteAgent(InventtiaAgent agent) async {
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Eliminar agente'),
-        content: Text('¿Eliminar a ${agent.fullName}?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Eliminar agente'),
+            content: Text('¿Eliminar a ${agent.fullName}?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Eliminar'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Eliminar'),
-          ),
-        ],
-      ),
     );
     if (ok != true) return;
     try {
@@ -492,21 +522,40 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
         title: Text(
           isDesktop ? 'Pago a Inventtia y Agentes' : 'Pago Inventtia',
         ),
+        backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
         bottom: TabBar(
           controller: _tabController,
+          isScrollable: true,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white,
+          indicatorColor: Colors.white,
           tabs: const [
-            Tab(text: 'Reparto', icon: Icon(Icons.account_balance_wallet)),
+            Tab(text: 'Resumen', icon: Icon(Icons.account_balance_wallet)),
+            Tab(text: 'Licencias', icon: Icon(Icons.receipt_long)),
+            Tab(text: 'Carnaval App', icon: Icon(Icons.storefront)),
             Tab(text: 'Agentes', icon: Icon(Icons.people)),
           ],
         ),
         actions: [
-          if (_exchangeRates != null)
+          IconButton(
+            icon: Icon(
+              _filtersExpanded ? Icons.filter_alt_off : Icons.filter_alt,
+            ),
+            tooltip: _filtersExpanded ? 'Ocultar filtros' : 'Mostrar filtros',
+            onPressed:
+                () => setState(() => _filtersExpanded = !_filtersExpanded),
+          ),
+          if (isDesktop && _exchangeRates != null)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
               child: Center(
                 child: Text(
                   'USD ${_exchangeRates!.valorUsd.toStringAsFixed(2)} | EUR ${_exchangeRates!.valorEuro.toStringAsFixed(2)}',
-                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ),
@@ -526,20 +575,28 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
       drawer: const AppDrawer(),
       body: Column(
         children: [
-          Padding(
-            padding: EdgeInsets.all(PlatformUtils.getScreenPadding()),
-            child: _buildDateFilters(),
-          ),
+          if (_filtersExpanded)
+            ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: screenSize.height * 0.45),
+              child: SingleChildScrollView(
+                padding: EdgeInsets.all(PlatformUtils.getScreenPadding()),
+                child: _buildDateFilters(),
+              ),
+            ),
           Expanded(
-            child: TabBarView(
-              controller: _tabController,
+            child: IndexedStack(
+              index: _tabController.index == 3 ? 1 : 0,
               children: [
                 PagoInventtiaResumen(
                   fechaInicio: _fechaInicio,
                   fechaFin: _fechaFin,
                   licenciaMes: _licenciaMes,
+                  seccion: _tabController.index == 3 ? 0 : _tabController.index,
+                  revision: _revision,
                 ),
-                _isLoading && _agents.isEmpty
+                _errorMessage != null
+                    ? _buildError()
+                    : _isLoading
                     ? const Center(child: CircularProgressIndicator())
                     : _buildAgentsTab(isDesktop),
               ],
@@ -608,7 +665,12 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
                       firstDate: DateTime(2020),
                       lastDate: DateTime.now(),
                     );
-                    if (date != null) setState(() => _fechaInicio = date);
+                    if (date == null || !mounted) return;
+                    setState(() {
+                      _fechaInicio = date;
+                      if (_fechaFin.isBefore(date)) _fechaFin = date;
+                    });
+                    _loadAll();
                   },
                   child: Chip(
                     avatar: const Icon(Icons.calendar_today, size: 16),
@@ -623,7 +685,9 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
                       firstDate: _fechaInicio,
                       lastDate: DateTime.now(),
                     );
-                    if (date != null) setState(() => _fechaFin = date);
+                    if (date == null || !mounted) return;
+                    setState(() => _fechaFin = date);
+                    _loadAll();
                   },
                   child: Chip(
                     avatar: const Icon(Icons.event, size: 16),
@@ -640,9 +704,14 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
               children: [
                 IconButton(
                   tooltip: 'Mes anterior',
-                  onPressed: () => setState(() {
-                    _licenciaMes = DateTime(_licenciaMes.year, _licenciaMes.month - 1, 1);
-                  }),
+                  onPressed:
+                      () => setState(() {
+                        _licenciaMes = DateTime(
+                          _licenciaMes.year,
+                          _licenciaMes.month - 1,
+                          1,
+                        );
+                      }),
                   icon: const Icon(Icons.chevron_left),
                 ),
                 Text(
@@ -651,9 +720,14 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
                 ),
                 IconButton(
                   tooltip: 'Mes siguiente',
-                  onPressed: () => setState(() {
-                    _licenciaMes = DateTime(_licenciaMes.year, _licenciaMes.month + 1, 1);
-                  }),
+                  onPressed:
+                      () => setState(() {
+                        _licenciaMes = DateTime(
+                          _licenciaMes.year,
+                          _licenciaMes.month + 1,
+                          1,
+                        );
+                      }),
                   icon: const Icon(Icons.chevron_right),
                 ),
               ],
@@ -724,14 +798,31 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
     }
     return Column(
       children: [
-        Row(children: [Expanded(child: cards[0]), const SizedBox(width: 8), Expanded(child: cards[1])]),
+        Row(
+          children: [
+            Expanded(child: cards[0]),
+            const SizedBox(width: 8),
+            Expanded(child: cards[1]),
+          ],
+        ),
         const SizedBox(height: 8),
-        Row(children: [Expanded(child: cards[2]), const SizedBox(width: 8), Expanded(child: cards[3])]),
+        Row(
+          children: [
+            Expanded(child: cards[2]),
+            const SizedBox(width: 8),
+            Expanded(child: cards[3]),
+          ],
+        ),
       ],
     );
   }
 
-  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
+  Widget _buildStatCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
     return Card(
       elevation: 2,
       child: Padding(
@@ -825,9 +916,24 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
               spacing: 12,
               runSpacing: 12,
               children: [
-                _commissionBox('CUP', _moneyFmt.format(d.commissionCup), AppColors.primary, true),
-                _commissionBox('USD', _moneyFmt.format(d.commissionUsd), AppColors.success, false),
-                _commissionBox('EUR', _moneyFmt.format(d.commissionEuro), AppColors.warning, false),
+                _commissionBox(
+                  'CUP',
+                  _moneyFmt.format(d.commissionCup),
+                  AppColors.primary,
+                  true,
+                ),
+                _commissionBox(
+                  'USD',
+                  _moneyFmt.format(d.commissionUsd),
+                  AppColors.success,
+                  false,
+                ),
+                _commissionBox(
+                  'EUR',
+                  _moneyFmt.format(d.commissionEuro),
+                  AppColors.warning,
+                  false,
+                ),
               ],
             ),
           ],
@@ -836,21 +942,43 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
     );
   }
 
-  Widget _commissionBox(String label, String value, Color color, bool highlight) {
+  Widget _commissionBox(
+    String label,
+    String value,
+    Color color,
+    bool highlight,
+  ) {
     return Container(
       width: 160,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: highlight ? color.withValues(alpha: 0.12) : Colors.white,
         borderRadius: BorderRadius.circular(10),
-        border: highlight ? Border.all(color: color, width: 2) : Border.all(color: AppColors.info),
+        border:
+            highlight
+                ? Border.all(color: color, width: 2)
+                : Border.all(color: AppColors.info),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w600)),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              color: color,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
           const SizedBox(height: 4),
-          Text(value, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: color)),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
         ],
       ),
     );
@@ -938,7 +1066,10 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
             'sobre la suma de ventas Carnaval de todas sus tiendas. '
             'No incluyen canceladas/devueltas ni productos excluidos de referidos. '
             'Toca un agente en el resumen para ver órdenes por tienda.',
-            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.textSecondary,
+            ),
           ),
           const SizedBox(height: 16),
           if (_agentPayments.isNotEmpty) ...[
@@ -1024,7 +1155,10 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
                         ),
                       ],
                     ),
-                    const Icon(Icons.chevron_right, color: AppColors.textSecondary),
+                    const Icon(
+                      Icons.chevron_right,
+                      color: AppColors.textSecondary,
+                    ),
                   ],
                 ),
               );
@@ -1040,9 +1174,10 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
         leading: CircleAvatar(
-          backgroundColor: agent.activo
-              ? AppColors.primary.withValues(alpha: 0.15)
-              : Colors.grey.shade300,
+          backgroundColor:
+              agent.activo
+                  ? AppColors.primary.withValues(alpha: 0.15)
+                  : Colors.grey.shade300,
           child: Icon(
             Icons.person,
             color: agent.activo ? AppColors.primary : Colors.grey,

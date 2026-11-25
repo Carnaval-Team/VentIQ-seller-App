@@ -61,3 +61,17 @@ Las pruebas de contrato SQL inspeccionan el archivo de migración; no sustituyen
 - Al promover M01, los baselines `md5` de los preflight de los scripts 14, 17 y 56 se regeneran contra main. `fn_fdi_crear_liquidacion` debe quedar solo con la firma de 11 parámetros (Admin siempre manda `p_repartir_igual`).
 - Todo defecto que aparezca probando en newa (síntoma, causa, arreglo, script y si existe en main) se anota en `tasks/hallazgos_pruebas_newa.md` al momento; no se pasa a main nada con filas «pendiente». El plan de promoción está en `tasks/plan_promocion_main.md` (nombres `_m01` para funciones con cambio de contrato, expansión → clientes → contrato).
 - Estado, orden y pendientes: `tasks/plan_sync_newa_main.md` y `tasks/plan_admin_multimoneda.md` (sección «Estado al 2026-11-19»). Verificación desde `ventiq_admin_app`: `flutter test --no-pub test/sync_newa_main_sql_contract_test.dart test/app_compile_test.dart`.
+
+## Pagos del superadmin
+
+- En `ventiq_superadmin`, la vista Pago a Inventtia separa Resumen, Licencias, Carnaval App y Agentes. El total vendido de Carnaval descuenta `excluidoCup`; su 1% se muestra como importe CUP sin cambiar las reglas del reparto. Los filtros recargan al cambiar; ignorar respuestas de cargas anteriores.
+- Verificación focalizada desde `ventiq_superadmin`: `flutter test --no-pub test/pago_inventtia_resumen_test.dart`.
+
+
+## Costo promedio al completar recepciones
+
+- Completar una recepción **manualmente** (estado 2) debe actualizar `app_dat_producto_presentacion.precio_promedio` desde `recepcion_productos.precio_unitario`. Excepciones que NO actualizan costo: motivo 2 (transferencias), envíos de consignación `tipo_envio = 2` (devolución) y operaciones en `app_dat_operacion_transferencia` — lo decide `fn_es_operacion_sin_actualizar_precio_costo`.
+- La actualización ocurre **server-side** dentro de `fn_completar_recepcion_operacion` (misma transacción que contabiliza inventario), llamando `fn_actualizar_precio_promedio_recepcion_v2_m01` con el payload reconstruido desde `app_dat_recepcion_productos`. El resultado viaja en el campo `precio_costo` de la respuesta; no debe tragarse el error en el cliente.
+- Migración: `sql_updates/fn_completar_recepcion_operacion_precio_costo.sql`. Reparación de recepciones históricas sin costo: `sql_updates/reparar_precio_costo_recepciones_sin_costo.sql`.
+- Completar una recepción por cualquier otra vía (`fn_registrar_cambio_estado_operacion*`, insert directo a `app_dat_estado_operacion`) contabiliza o no inventario pero nunca el costo — prohibido para recepciones manuales.
+- `precio_promedio` alimenta `app_dat_precio_costo` vía el trigger `trg_registrar_precio_costo`; un precio NULL/0 deja al producto sin costo de referencia (caso medido: 24 productos en tienda 196, p. ej. op 192359).

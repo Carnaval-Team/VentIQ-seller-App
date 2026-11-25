@@ -11,12 +11,18 @@ class PagoInventtiaResumen extends StatefulWidget {
   final DateTime fechaInicio;
   final DateTime fechaFin;
   final DateTime licenciaMes;
+  final int seccion;
+  final int revision;
+  final Future<RepartoInventtia> Function()? cargar;
 
   const PagoInventtiaResumen({
     super.key,
     required this.fechaInicio,
     required this.fechaFin,
     required this.licenciaMes,
+    this.seccion = 0,
+    this.revision = 0,
+    this.cargar,
   });
 
   @override
@@ -24,6 +30,7 @@ class PagoInventtiaResumen extends StatefulWidget {
 }
 
 class _PagoInventtiaResumenState extends State<PagoInventtiaResumen> {
+  int _loadId = 0;
   final _money = NumberFormat('#,##0.00', 'es');
   RepartoInventtia? _data;
   bool _loading = true;
@@ -43,31 +50,36 @@ class _PagoInventtiaResumenState extends State<PagoInventtiaResumen> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.fechaInicio != widget.fechaInicio ||
         oldWidget.fechaFin != widget.fechaFin ||
-        oldWidget.licenciaMes != widget.licenciaMes) {
+        oldWidget.licenciaMes != widget.licenciaMes ||
+        oldWidget.revision != widget.revision) {
       _load();
     }
   }
 
   Future<void> _load() async {
+    final loadId = ++_loadId;
     setState(() {
       _loading = true;
       _error = null;
       _expanded.clear();
       _orders.clear();
+      _loadingOrders.clear();
     });
     try {
-      final data = await InventtiaRepartoService.cargar(
-        desde: widget.fechaInicio,
-        hasta: widget.fechaFin,
-        licenciaMes: widget.licenciaMes,
-      );
-      if (!mounted) return;
+      final data =
+          await (widget.cargar?.call() ??
+              InventtiaRepartoService.cargar(
+                desde: widget.fechaInicio,
+                hasta: widget.fechaFin,
+                licenciaMes: widget.licenciaMes,
+              ));
+      if (!mounted || loadId != _loadId) return;
       setState(() {
         _data = data;
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || loadId != _loadId) return;
       setState(() {
         _error = e.toString();
         _loading = false;
@@ -76,55 +88,70 @@ class _PagoInventtiaResumenState extends State<PagoInventtiaResumen> {
   }
 
   Future<void> _editarCobro(CobroLicencia cobro) async {
-    final usd = TextEditingController(text: cobro.recibidoUsd.toStringAsFixed(2));
-    final cup = TextEditingController(text: cobro.recibidoCup.toStringAsFixed(2));
+    final usd = TextEditingController(
+      text: cobro.recibidoUsd.toStringAsFixed(2),
+    );
+    final cup = TextEditingController(
+      text: cobro.recibidoCup.toStringAsFixed(2),
+    );
     final tx = TextEditingController(text: cobro.transaccion);
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(cobro.tienda),
-        content: SizedBox(
-          width: 420,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Plan ${cobro.planUsd.toStringAsFixed(2)} USD · teórico ${_money.format(cobro.cupTeorico)} CUP. El reparto usa el CUP recibido.',
+      builder:
+          (ctx) => AlertDialog(
+            title: Text(cobro.tienda),
+            content: SizedBox(
+              width: 420,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Plan ${cobro.planUsd.toStringAsFixed(2)} USD · teórico ${_money.format(cobro.cupTeorico)} CUP. El reparto usa el CUP recibido.',
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: usd,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Recibido USD',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: cup,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Recibido CUP',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: tx,
+                    decoration: const InputDecoration(
+                      labelText: 'Transacción',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: usd,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
-                  labelText: 'Recibido USD',
-                  border: OutlineInputBorder(),
-                ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar'),
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: cup,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
-                  labelText: 'Recibido CUP',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: tx,
-                decoration: const InputDecoration(
-                  labelText: 'Transacción',
-                  border: OutlineInputBorder(),
-                ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Guardar'),
               ),
             ],
           ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Guardar')),
-        ],
-      ),
     );
     if (ok != true) {
       usd.dispose();
@@ -132,8 +159,10 @@ class _PagoInventtiaResumenState extends State<PagoInventtiaResumen> {
       tx.dispose();
       return;
     }
-    cobro.recibidoUsd = double.tryParse(usd.text.replaceAll(',', '.')) ?? cobro.recibidoUsd;
-    cobro.recibidoCup = double.tryParse(cup.text.replaceAll(',', '.')) ?? cobro.recibidoCup;
+    cobro.recibidoUsd =
+        double.tryParse(usd.text.replaceAll(',', '.')) ?? cobro.recibidoUsd;
+    cobro.recibidoCup =
+        double.tryParse(cup.text.replaceAll(',', '.')) ?? cobro.recibidoCup;
     cobro.transaccion = tx.text.trim();
     usd.dispose();
     cup.dispose();
@@ -170,8 +199,6 @@ class _PagoInventtiaResumenState extends State<PagoInventtiaResumen> {
     }
     final data = _data!;
     final cupCobrado = data.cobros.fold<double>(0, (s, c) => s + c.recibidoCup);
-    final veinte = data.cobros.fold<double>(0, (s, c) => s + c.agente20);
-    final neto = data.cobros.fold<double>(0, (s, c) => s + c.quedaInventtia);
     final aPagar = data.personas.fold<double>(0, (s, p) => s + p.total);
 
     return RefreshIndicator(
@@ -191,45 +218,84 @@ class _PagoInventtiaResumenState extends State<PagoInventtiaResumen> {
                 ),
               ),
             ),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _stat('Cobrado CUP', cupCobrado),
-              _stat('20% despliegue', veinte),
-              _stat('Neto socios', neto),
-              _stat('Carnaval 1%', data.comisionCarnavalCup),
-              _stat('A pagar', aPagar),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            data.usoRenovaciones
-                ? 'Licencias de ${_mes(widget.licenciaMes)}'
-                : 'Licencias de ${_mes(widget.licenciaMes)} (no hay renovaciones; se usan las activas)',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
-          _tablaCobros(data.cobros),
-          const SizedBox(height: 20),
-          Text('A quién se le paga', style: Theme.of(context).textTheme.titleMedium),
-          Text(
-            'Pagos del ${DateFormat('dd/MM/yyyy').format(widget.fechaInicio)} al ${DateFormat('dd/MM/yyyy').format(widget.fechaFin)} · 1% de ${_money.format(data.pagoProveedoresCup)} CUP = ${_money.format(data.comisionCarnavalCup)} entre ${data.socios} socios',
-            style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
-          ),
-          const SizedBox(height: 8),
-          _tablaPersonas(data.personas),
-          const SizedBox(height: 20),
-          Text('Pago a proveedores', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 4),
-          Text(
-            _resumenProveedores(data.proveedores),
-            style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
-          ),
-          const SizedBox(height: 8),
-          ...data.proveedores.map(_proveedor),
-          if (data.proveedores.isEmpty)
-            const Text('Sin órdenes de proveedores en el período.'),
+          if (widget.seccion == 0) ...[
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _stat('Cobrado Licencia', cupCobrado),
+                _stat('1% de Carnaval Total', data.comisionCarnavalCup),
+                _stat('Total a pagar', aPagar),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'A quién se le paga',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            Text(
+              'Pagos del ${DateFormat('dd/MM/yyyy').format(widget.fechaInicio)} al ${DateFormat('dd/MM/yyyy').format(widget.fechaFin)} · 1% de ${_money.format(data.pagoProveedoresCup)} CUP = ${_money.format(data.comisionCarnavalCup)} entre ${data.socios} socios',
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _tablaPersonas(data.personas),
+          ],
+          if (widget.seccion == 1) ...[
+            Text(
+              data.usoRenovaciones
+                  ? 'Licencias de ${_mes(widget.licenciaMes)}'
+                  : 'Licencias de ${_mes(widget.licenciaMes)} (no hay renovaciones; se usan las activas)',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            _tablaCobros(data.cobros),
+          ],
+          if (widget.seccion == 2) ...[
+            Text(
+              'Carnaval App',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              _resumenProveedores(data.proveedores),
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 8),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                showCheckboxColumn: false,
+                columns: const [
+                  DataColumn(label: Text('Tienda')),
+                  DataColumn(label: Text('Total vendido (CUP)'), numeric: true),
+                  DataColumn(label: Text('1% (CUP)'), numeric: true),
+                ],
+                rows: data.proveedores.map((p) {
+                  final neto = p.totalCup - p.excluidoCup;
+                  return DataRow(
+                    onSelectChanged: (_) {
+                      setState(() => _expanded[p.id] = !(_expanded[p.id] ?? false));
+                      if (_expanded[p.id] == true) _cargarOrdenes(p.id);
+                    },
+                    cells: [
+                      DataCell(Text(p.name)),
+                      DataCell(Text(_money.format(neto))),
+                      DataCell(Text(_money.format(neto * 0.01))),
+                    ],
+                  );
+                }).toList(),
+              ),
+            ),
+            ...data.proveedores.where((p) => _expanded[p.id] == true).map(_proveedor),
+            if (data.proveedores.isEmpty)
+              const Text('Sin órdenes de proveedores en el período.'),
+          ],
         ],
       ),
     );
@@ -244,9 +310,21 @@ class _PagoInventtiaResumenState extends State<PagoInventtiaResumen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textSecondary,
+                ),
+              ),
               const SizedBox(height: 4),
-              Text(_money.format(value), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+              Text(
+                _money.format(value),
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ],
           ),
         ),
@@ -269,21 +347,22 @@ class _PagoInventtiaResumenState extends State<PagoInventtiaResumen> {
           DataColumn(label: Text('Transacción')),
           DataColumn(label: Text('Agente')),
         ],
-        rows: cobros.map((c) {
-          return DataRow(
-            onSelectChanged: (_) => _editarCobro(c),
-            cells: [
-              DataCell(Text(c.tienda)),
-              DataCell(Text(_money.format(c.planUsd))),
-              DataCell(Text(_money.format(c.cupTeorico))),
-              DataCell(Text(_money.format(c.recibidoCup))),
-              DataCell(Text(_money.format(c.agente20))),
-              DataCell(Text(_money.format(c.quedaInventtia))),
-              DataCell(Text(c.transaccion.isEmpty ? '—' : c.transaccion)),
-              DataCell(Text(c.agenteNombre ?? 'Sin asignar')),
-            ],
-          );
-        }).toList(),
+        rows:
+            cobros.map((c) {
+              return DataRow(
+                onSelectChanged: (_) => _editarCobro(c),
+                cells: [
+                  DataCell(Text(c.tienda)),
+                  DataCell(Text(_money.format(c.planUsd))),
+                  DataCell(Text(_money.format(c.cupTeorico))),
+                  DataCell(Text(_money.format(c.recibidoCup))),
+                  DataCell(Text(_money.format(c.agente20))),
+                  DataCell(Text(_money.format(c.quedaInventtia))),
+                  DataCell(Text(c.transaccion.isEmpty ? '—' : c.transaccion)),
+                  DataCell(Text(c.agenteNombre ?? 'Sin asignar')),
+                ],
+              );
+            }).toList(),
       ),
     );
   }
@@ -301,45 +380,66 @@ class _PagoInventtiaResumenState extends State<PagoInventtiaResumen> {
           DataColumn(label: Text('Total'), numeric: true),
           DataColumn(label: Text('Tarjeta')),
         ],
-        rows: personas.map((p) {
-          final tarjeta = (p.tarjeta ?? '').replaceAll(RegExp(r'\s+'), '');
-          return DataRow(cells: [
-            DataCell(Text(p.nombre)),
-            DataCell(Text(_money.format(p.parteIgual))),
-            DataCell(Text(_money.format(p.despliegue20))),
-            DataCell(Text(_money.format(p.carnavalGlobal))),
-            DataCell(Text(_money.format(p.agenteCarnaval))),
-            DataCell(Text(_money.format(p.total), style: const TextStyle(fontWeight: FontWeight.w700))),
-            DataCell(tarjeta.isEmpty
-                ? const Text('—')
-                : Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(tarjeta.length <= 4 ? tarjeta : '···· ${tarjeta.substring(tarjeta.length - 4)}'),
-                      IconButton(
-                        tooltip: 'Copiar tarjeta',
-                        icon: const Icon(Icons.copy, size: 16),
-                        onPressed: () async {
-                          await Clipboard.setData(ClipboardData(text: tarjeta));
-                          if (!mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Tarjeta copiada')),
-                          );
-                        },
-                      ),
-                    ],
-                  )),
-          ]);
-        }).toList(),
+        rows:
+            personas.map((p) {
+              final tarjeta = (p.tarjeta ?? '').replaceAll(RegExp(r'\s+'), '');
+              return DataRow(
+                cells: [
+                  DataCell(Text(p.nombre)),
+                  DataCell(Text(_money.format(p.parteIgual))),
+                  DataCell(Text(_money.format(p.despliegue20))),
+                  DataCell(Text(_money.format(p.carnavalGlobal))),
+                  DataCell(Text(_money.format(p.agenteCarnaval))),
+                  DataCell(
+                    Text(
+                      _money.format(p.total),
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  DataCell(
+                    tarjeta.isEmpty
+                        ? const Text('—')
+                        : Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              tarjeta.length <= 4
+                                  ? tarjeta
+                                  : '···· ${tarjeta.substring(tarjeta.length - 4)}',
+                            ),
+                            IconButton(
+                              tooltip: 'Copiar tarjeta',
+                              icon: const Icon(Icons.copy, size: 16),
+                              onPressed: () async {
+                                await Clipboard.setData(
+                                  ClipboardData(text: tarjeta),
+                                );
+                                if (!mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Tarjeta copiada'),
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
+                        ),
+                  ),
+                ],
+              );
+            }).toList(),
       ),
     );
   }
 
   String _resumenProveedores(List<SupplierPaymentSummary> proveedores) {
     final venta = proveedores.fold<double>(0, (sum, p) => sum + p.totalCup);
-    final excluido = proveedores.fold<double>(0, (sum, p) => sum + p.excluidoCup);
+    final excluido = proveedores.fold<double>(
+      0,
+      (sum, p) => sum + p.excluidoCup,
+    );
     final pago = venta - excluido;
-    return 'Venta ${_money.format(venta)} · excluido ${_money.format(excluido)} · para el pago ${_money.format(pago)} CUP';
+    return 'Total vendido ${_money.format(pago)} CUP · 1%: ${_money.format(pago * 0.01)} CUP · Exclusiones descontadas';
   }
 
   Widget _proveedor(SupplierPaymentSummary supplier) {
@@ -350,9 +450,12 @@ class _PagoInventtiaResumenState extends State<PagoInventtiaResumen> {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ExpansionTile(
-        title: Text(supplier.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+        title: Text(
+          supplier.name,
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
         subtitle: Text(
-          '${supplier.totalOrders} órdenes · venta ${_money.format(venta)} · excluido ${_money.format(excluido)} · a pagar ${_money.format(pago)} CUP',
+          '${supplier.totalOrders} órdenes · Total vendido ${_money.format(pago)} CUP · 1%: ${_money.format(pago * 0.01)} CUP',
         ),
         initiallyExpanded: abierto,
         onExpansionChanged: (open) {
@@ -366,7 +469,9 @@ class _PagoInventtiaResumenState extends State<PagoInventtiaResumen> {
               child: LinearProgressIndicator(),
             )
           else
-            ...(_orders[supplier.id] ?? const <OrderPaymentDetail>[]).map((orden) {
+            ...(_orders[supplier.id] ?? const <OrderPaymentDetail>[]).map((
+              orden,
+            ) {
               final excluido = orden.excludedSubtotal;
               return ListTile(
                 title: Text('Orden #${orden.orderId}'),
@@ -375,7 +480,9 @@ class _PagoInventtiaResumenState extends State<PagoInventtiaResumen> {
                       ? '${DateFormat('dd/MM/yyyy').format(orden.createdAt)} · venta ${_money.format(orden.total)} · excluido ${_money.format(excluido)}'
                       : DateFormat('dd/MM/yyyy').format(orden.createdAt),
                 ),
-                trailing: Text(_money.format(orden.totalToPay())),
+                trailing: Text(
+                  '1%: ${_money.format(orden.totalToPay() * 0.01)} CUP',
+                ),
                 onTap: () => _verOrden(orden),
               );
             }),
@@ -390,6 +497,7 @@ class _PagoInventtiaResumenState extends State<PagoInventtiaResumen> {
 
   Future<void> _cargarOrdenes(int proveedorId) async {
     if (_orders.containsKey(proveedorId)) return;
+    final loadId = _loadId;
     setState(() => _loadingOrders[proveedorId] = true);
     final orders = await SupplierPaymentService.getSupplierOrders(
       proveedorId,
@@ -397,7 +505,7 @@ class _PagoInventtiaResumenState extends State<PagoInventtiaResumen> {
       widget.fechaFin,
       markExcluded: true,
     );
-    if (!mounted) return;
+    if (!mounted || loadId != _loadId) return;
     setState(() {
       _orders[proveedorId] = orders;
       _loadingOrders[proveedorId] = false;
@@ -407,37 +515,43 @@ class _PagoInventtiaResumenState extends State<PagoInventtiaResumen> {
   void _verOrden(OrderPaymentDetail orden) {
     showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Orden #${orden.orderId}'),
-        content: SizedBox(
-          width: 480,
-          child: ListView(
-            shrinkWrap: true,
-            children: [
-              Text(
-                'Venta ${_money.format(orden.total)} · excluido ${_money.format(orden.excludedSubtotal)} · para el pago ${_money.format(orden.totalToPay())} CUP',
-                style: const TextStyle(fontSize: 12),
-              ),
-              const SizedBox(height: 8),
-              ...orden.products.map((p) {
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(p.productName),
-                  subtitle: Text(
-                    p.isExcluded
-                        ? '${p.quantity} × ${_money.format(p.price)} · excluido'
-                        : '${p.quantity} × ${_money.format(p.price)}',
+      builder:
+          (ctx) => AlertDialog(
+            title: Text('Orden #${orden.orderId}'),
+            content: SizedBox(
+              width: 480,
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  Text(
+                    'Venta ${_money.format(orden.total)} · excluido ${_money.format(orden.excludedSubtotal)} · para el pago ${_money.format(orden.totalToPay())} CUP',
+                    style: const TextStyle(fontSize: 12),
                   ),
-                  trailing: Text(_money.format(p.isExcluded ? 0 : p.subtotal)),
-                );
-              }),
+                  const SizedBox(height: 8),
+                  ...orden.products.map((p) {
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(p.productName),
+                      subtitle: Text(
+                        p.isExcluded
+                            ? '${p.quantity} × ${_money.format(p.price)} · excluido'
+                            : '${p.quantity} × ${_money.format(p.price)}',
+                      ),
+                      trailing: Text(
+                        _money.format(p.isExcluded ? 0 : p.subtotal),
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cerrar'),
+              ),
             ],
           ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cerrar')),
-        ],
-      ),
     );
   }
 }

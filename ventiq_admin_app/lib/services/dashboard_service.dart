@@ -15,6 +15,10 @@ class DashboardService {
   factory DashboardService() => _instance;
   DashboardService._internal();
 
+  static bool hasDirectStoreRole(Iterable<String> roles) => roles.any(
+    (role) => const {'gerente', 'dueño', 'dueno'}.contains(role.trim().toLowerCase()),
+  );
+
   static Future<bool> validateSupervisorStore() async {
     try {
       final authService = AuthService();
@@ -27,10 +31,8 @@ class DashboardService {
 
       // Gerentes have full access to their stores — no need to check supervisor tables
       final rolesByStore = await _prefsService.getUserRolesByStore();
-      final isGerente = rolesByStore.values.any(
-        (r) => r.toLowerCase() == 'gerente',
-      );
-      if (isGerente) {
+      final hasDirectRole = hasDirectStoreRole(rolesByStore.values);
+      if (hasDirectRole) {
         print('✅ User is Gerente — store access granted without supervisor check');
         return true;
       }

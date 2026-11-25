@@ -1596,13 +1596,21 @@ class AdminInventoryService {
       throw Exception('id_operacion inválido en respuesta: $response');
     }
 
-    // Completar la recepción (estado 2) para que sume al inventario en el sistema.
+    // Completar la recepción vía RPC: contabiliza inventario, marca estado 2
+    // y actualiza precio_promedio en la misma transacción (transferencias y
+    // devoluciones de consignación quedan excluidas del costo por
+    // fn_es_operacion_sin_actualizar_precio_costo).
+    // Antes se insertaba estado=2 directo a la tabla: quedaba completada sin
+    // contabilizar y sin costo.
     try {
-      await _supabase.from('app_dat_estado_operacion').insert({
-        'id_operacion': opId,
-        'estado': 2,
-        'uuid': payload['uuid'],
-      });
+      await _supabase.rpc(
+        'fn_completar_recepcion_operacion',
+        params: {
+          'p_id_operacion': opId,
+          'p_uuid_usuario': payload['uuid'],
+          'p_comentario': 'Recepción completada desde Caja',
+        },
+      );
     } catch (e) {
       print('⚠️ Completar recepción $opId: $e');
     }
