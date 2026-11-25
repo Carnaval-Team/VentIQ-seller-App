@@ -9,6 +9,7 @@ import '../services/user_preferences_service.dart';
 import '../services/permissions_service.dart';
 import '../widgets/admin_ai_assistant_sheet.dart';
 import '../widgets/alerta_pendientes_card.dart';
+import '../widgets/onboarding_burbuja.dart';
 
 class DashboardWebScreen extends StatefulWidget {
   const DashboardWebScreen({super.key});
@@ -433,6 +434,11 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
         children: [
           _isLoading ? _buildLoadingState() : _buildWebDashboard(),
           Positioned(bottom: 16, left: 16, child: _buildUsdRateChip()),
+          // Checklist de activación, flotante abajo a la derecha (estilo
+          // Stripe). En web `/dashboard` resuelve a esta pantalla, no a
+          // `dashboard_screen.dart`: sin esta línea el Dueño de una tienda en
+          // borrador no veía el aviso por ningún sitio.
+          const OnboardingBurbuja(),
         ],
       ),
       endDrawer: const AdminDrawer(),

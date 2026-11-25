@@ -112,8 +112,11 @@ class _OnboardingBurbujaState extends State<OnboardingBurbuja> {
         _estado = estado.estadoOnboarding;
         _tareas = tareas;
       });
-    } catch (_) {
-      // Silencio: es un extra del dashboard, no su contenido.
+    } catch (e) {
+      // El usuario no ve un error aquí: es un extra del dashboard y taparlo con
+      // un banner sería peor. Pero callarlo del todo dejaba «no aparece nada» sin
+      // forma de saber por qué, así que queda en el log.
+      debugPrint('⚠️ OnboardingBurbuja: no se pudo cargar el checklist: $e');
       if (!mounted) return;
       setState(() {
         _estado = null;

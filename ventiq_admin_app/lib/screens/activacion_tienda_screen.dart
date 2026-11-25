@@ -231,52 +231,21 @@ class _ActivacionTiendaScreenState extends State<ActivacionTiendaScreen> {
                 ),
               ));
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        foregroundColor: AppColors.textPrimary,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        surfaceTintColor: Colors.transparent,
-        shape: const Border(
-          bottom: BorderSide(color: AppColors.border, width: 1),
-        ),
-        titleSpacing: 16,
-        title: const Text(
-          'Pon en marcha tu tienda',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: AppColors.textPrimary,
-          ),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.close),
-            tooltip: 'Volver al panel',
-            onPressed: () =>
-                Navigator.of(context).pushNamedAndRemoveUntil(
-                  '/dashboard',
-                  (r) => false,
-                ),
-          ),
-          const SizedBox(width: 4),
-        ],
-      ),
-      body: OnboardingChecklistVista(
-        tareas: _tareas,
-        tipoNegocio: _tipoNegocio,
-        cargando: _cargando,
-        error: _error,
-        descartado: _descartado,
-        accionFinal: accionFinal,
-        onReintentar: _cargar,
-        onElegirTipoNegocio: _elegirTipoNegocio,
-        onAbrirTarea: _abrirTarea,
-        onDescartar: _descartar,
-        onRecuperar: _recuperar,
-      ),
+    // Sin `Scaffold` propio: `OnboardingChecklistVista` ya trae el suyo con su
+    // AppBar. Envolverla en otro `Scaffold` apilaba dos barras y eso era el
+    // «duplicado» que se veía.
+    return OnboardingChecklistVista(
+      tareas: _tareas,
+      tipoNegocio: _tipoNegocio,
+      cargando: _cargando,
+      error: _error,
+      descartado: _descartado,
+      accionFinal: accionFinal,
+      onReintentar: _cargar,
+      onElegirTipoNegocio: _elegirTipoNegocio,
+      onAbrirTarea: _abrirTarea,
+      onDescartar: _descartar,
+      onRecuperar: _recuperar,
     );
   }
 }

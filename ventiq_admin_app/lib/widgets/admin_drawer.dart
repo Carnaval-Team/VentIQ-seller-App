@@ -289,9 +289,15 @@ class _AdminDrawerState extends State<AdminDrawer> {
                           icon: Icons.rocket_launch_outlined,
                           title: 'Pon en marcha tu tienda',
                           subtitle: 'Los pasos para abrir tu tienda',
+                          // Vuelve al dashboard en vez de abrir la pantalla
+                          // completa: allí vive la burbuja flotante del
+                          // checklist, que es donde se resuelve cada paso sin
+                          // sacar al usuario de la app.
                           onTap: () {
-                            Navigator.pop(context);
-                            Navigator.pushNamed(context, '/activacion');
+                            NavigationGuard.navigateAndRemoveUntil(
+                              context,
+                              '/dashboard',
+                            );
                           },
                         ),
                         const Divider(height: 1),

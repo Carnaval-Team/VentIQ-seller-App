@@ -17,7 +17,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ventiq_admin_app/models/onboarding_tareas.dart';
 import 'package:ventiq_admin_app/widgets/onboarding_checklist_vista.dart';
-import 'package:ventiq_admin_app/widgets/onboarding_dashboard_card.dart';
+import 'package:ventiq_admin_app/widgets/onboarding_burbuja.dart';
 import 'package:ventiq_admin_app/widgets/onboarding_tarea_tile.dart';
 
 /// Tareas equivalentes a una tienda retail sin nada configurado: 4 obligatorias
@@ -319,57 +319,10 @@ void main() {
     });
   });
 
-  group('tarjeta del dashboard', () {
-    testWidgets('en borrador muestra contador y acceso, sin desbordar', (
-      tester,
-    ) async {
-      _tamano(tester, const Size(390, 844));
-      var abiertos = 0;
-
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: OnboardingDashboardCard(
-              tareasIniciales: _tareasRetail(),
-              estadoInicial: 'borrador',
-              onAbrir: () => abiertos++,
-            ),
-          ),
-        ),
-      );
-      await tester.pump();
-
-      expect(tester.takeException(), isNull);
-      expect(
-        find.byKey(OnboardingDashboardCard.claveTarjeta),
-        findsOneWidget,
-      );
-      expect(find.text(textoProgreso(_tareasRetail())), findsOneWidget);
-
-      await tester.tap(find.text('Ver el checklist'));
-      await tester.pump();
-      expect(abiertos, 1);
-    });
-
-    testWidgets('con la tienda activa no se pinta nada', (tester) async {
-      _tamano(tester, const Size(390, 844));
-
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: OnboardingDashboardCard(
-              tareasIniciales: _tareasRetail(),
-              estadoInicial: 'activa',
-            ),
-          ),
-        ),
-      );
-      await tester.pump();
-
-      expect(tester.takeException(), isNull);
-      expect(find.byKey(OnboardingDashboardCard.claveTarjeta), findsNothing);
-    });
-  });
+  // La tarjeta del dashboard se sustituyó por la burbuja flotante
+  // (`onboarding_burbuja.dart`); sus pruebas viven en `onboarding_burbuja_test.dart`
+  // y `onboarding_ubicacion_test.dart`. Aquí se dejaba una prueba de la tarjeta
+  // que ya no existe.
 
   group('pantalla ancha', () {
     testWidgets('a 1280 el contenido se centra con ancho máximo', (
