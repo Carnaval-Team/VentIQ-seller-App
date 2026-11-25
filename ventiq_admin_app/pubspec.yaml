@@ -97,6 +97,9 @@ flutter:
   assets:
     - assets/images/inventia.png
     - assets/images/ic.png
+    # Fondo del panel de marca del login web. JPEG de 1000x1500 (~180 KB):
+    # el PNG original de 1024x1536 pesaba 1,9 MB, demasiado para una app.
+    - assets/images/login_bg.jpg
     - assets/Lk1KNR.png
     - assets/changelog.json
     - assets/ai_assistant_knowledge.json

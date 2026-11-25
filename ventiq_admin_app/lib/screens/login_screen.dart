@@ -232,93 +232,126 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   /// Panel izquierdo con la marca y los tres argumentos del producto.
+  ///
+  /// Lleva una foto de una tienda real de fondo (generada para el producto) y
+  /// encima un velo azul. El velo no es decoración: sin él, el texto blanco cae
+  /// sobre zonas claras de la foto (la fruta, la luz de la lámpara) y deja de
+  /// leerse. Va más oscuro por la izquierda, que es donde vive el titular.
   Widget _panelMarca() {
-    return Container(
+    return DecoratedBox(
       decoration: const BoxDecoration(gradient: AppColors.primaryGradient),
-      child: Padding(
-        padding: const EdgeInsets.all(48),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // `ic.png` es un cuadro blanco: sobre el azul va en pastilla.
-            Row(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.asset(
+            'assets/images/login_bg.jpg',
+            fit: BoxFit.cover,
+            // La foto es secundaria: si el asset falta, el panel sigue siendo
+            // azul y el texto se lee igual.
+            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+          ),
+          // Velo: azul corporativo con opacidad alta a la izquierda (donde va
+          // el texto) y más baja a la derecha, para que se vea la tienda.
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+                colors: [
+                  Color(0xF2123A6B),
+                  Color(0xE6194B8C),
+                  Color(0xB3194B8C),
+                ],
+                stops: [0.0, 0.55, 1.0],
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(48),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _logo(ancho: 56, enPastilla: true),
-                const SizedBox(width: 12),
+                // `ic.png` es un cuadro blanco: sobre el azul va en pastilla.
+                Row(
+                  children: [
+                    _logo(ancho: 56, enPastilla: true),
+                    const SizedBox(width: 12),
+                    const Text(
+                      'Inventtia Gestión',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                  ],
+                ),
+                const Spacer(),
                 const Text(
-                  'Inventtia Gestión',
+                  'Tu tienda,\n bajo control.',
                   style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
+                    fontSize: 40,
+                    height: 1.12,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -1.1,
                     color: Colors.white,
-                    letterSpacing: 0.2,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Inventario, ventas, caja y equipo en un solo sitio. '
+                  'Sin cuadernos y sin sorpresas al cerrar el día.',
+                  style: TextStyle(
+                    fontSize: 15,
+                    height: 1.55,
+                    color: Colors.white.withValues(alpha: 0.82),
+                  ),
+                ),
+                const SizedBox(height: 36),
+                for (final (icono, texto) in const [
+                  (Icons.speed_outlined, 'Cobra rápido, incluso sin internet'),
+                  (Icons.inventory_2_outlined, 'Sabes qué tienes y dónde está'),
+                  (Icons.insights_outlined, 'Ves tus ganancias reales del día'),
+                ]) ...[
+                  Row(
+                    children: [
+                      Container(
+                        width: 30,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.13),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(icono, size: 16, color: Colors.white),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          texto,
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            height: 1.4,
+                            color: Colors.white.withValues(alpha: 0.9),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                ],
+                const Spacer(),
+                Text(
+                  '© ${DateTime.now().year} Inventtia',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: Colors.white.withValues(alpha: 0.55),
                   ),
                 ),
               ],
             ),
-            const Spacer(),
-            const Text(
-              'Tu tienda,\n bajo control.',
-              style: TextStyle(
-                fontSize: 40,
-                height: 1.12,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -1.1,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Inventario, ventas, caja y equipo en un solo sitio. '
-              'Sin cuadernos y sin sorpresas al cerrar el día.',
-              style: TextStyle(
-                fontSize: 15,
-                height: 1.55,
-                color: Colors.white.withValues(alpha: 0.82),
-              ),
-            ),
-            const SizedBox(height: 36),
-            for (final (icono, texto) in const [
-              (Icons.speed_outlined, 'Cobra rápido, incluso sin internet'),
-              (Icons.inventory_2_outlined, 'Sabes qué tienes y dónde está'),
-              (Icons.insights_outlined, 'Ves tus ganancias reales del día'),
-            ]) ...[
-              Row(
-                children: [
-                  Container(
-                    width: 30,
-                    height: 30,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.13),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(icono, size: 16, color: Colors.white),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      texto,
-                      style: TextStyle(
-                        fontSize: 13.5,
-                        height: 1.4,
-                        color: Colors.white.withValues(alpha: 0.9),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-            ],
-            const Spacer(),
-            Text(
-              '© ${DateTime.now().year} Inventtia',
-              style: TextStyle(
-                fontSize: 11.5,
-                color: Colors.white.withValues(alpha: 0.55),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -768,14 +801,13 @@ class _LoginScreenState extends State<LoginScreen> {
         if (store['id_tienda'] != defaultStoreId) continue;
         final datosTienda = store['app_dat_tienda'];
         if (datosTienda is Map) {
-          estadoOnboardingTiendaPorDefecto =
-              datosTienda['estado_onboarding']?.toString();
+          estadoOnboardingTiendaPorDefecto = datosTienda['estado_onboarding']
+              ?.toString();
         }
         break;
       }
       estadoOnboardingTiendaPorDefecto ??= 'activa';
-      final tiendaEnBorrador =
-          estadoOnboardingTiendaPorDefecto == 'borrador';
+      final tiendaEnBorrador = estadoOnboardingTiendaPorDefecto == 'borrador';
       print(
         '🏪 Estado de onboarding de la tienda $defaultStoreId: '
         '$estadoOnboardingTiendaPorDefecto',
