@@ -439,11 +439,12 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
           // `dashboard_screen.dart`: sin esta línea el Dueño de una tienda en
           // borrador no veía el aviso por ningún sitio.
           //
-          // `margenInferior: 84` sube la píldora por encima del FAB de accesos
-          // rápidos (56 de alto + 16 de margen + 12 de aire). Sin eso, el FAB
-          // la tapaba. Se mueve el aviso, no el FAB: los accesos rápidos ya
-          // estaban ahí y son permanentes.
-          const OnboardingBurbuja(margenInferior: 84),
+          // `margenDerecho: 84` la pone **a la izquierda** del FAB de
+          // accesos rápidos, compartiendo su línea de base. No se puede apilar
+          // encima: por arriba ya está el FAB del asistente de IA
+          // (`ai_assistant_overlay.dart`, `bottom: 150`). Se mueve el aviso,
+          // no los botones: esos son permanentes y llevan ahí desde antes.
+          const OnboardingBurbuja(margenDerecho: 84),
         ],
       ),
       endDrawer: const AdminDrawer(),

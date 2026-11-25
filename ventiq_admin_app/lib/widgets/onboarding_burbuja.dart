@@ -36,6 +36,10 @@ const double _altoMaximoFactor = 0.7;
 /// sin tener que medirla en cada frame.
 const double _altoBoton = 46;
 
+/// Separación desde el borde inferior. La píldora y el FAB de accesos rápidos
+/// comparten línea de base; lo que cambia es el desplazamiento horizontal.
+const double _margenInferior = 16;
+
 /// Botón flotante + panel de activación.
 ///
 /// Se coloca en el `Stack` del `Scaffold` del dashboard, **después** del
@@ -51,7 +55,7 @@ class OnboardingBurbuja extends StatefulWidget {
     this.tareasIniciales,
     this.estadoInicial,
     this.abiertoInicial = false,
-    this.margenInferior = 16,
+    this.margenDerecho = 16,
   });
 
   /// Servicio inyectable (pruebas).
@@ -66,16 +70,18 @@ class OnboardingBurbuja extends StatefulWidget {
   /// Arranca con el panel abierto (pruebas).
   final bool abiertoInicial;
 
-  /// Separación desde el borde inferior.
+  /// Separación desde el borde derecho.
   ///
-  /// Existe porque en la web del dashboard hay un `FloatingActionButton` de
-  /// accesos rápidos anclado abajo a la derecha, en el mismo sitio: sin subir
-  /// la píldora, el FAB la tapaba. En móvil no hay FAB y se queda en 16.
+  /// Existe porque la esquina inferior derecha está ocupada en la web: el FAB
+  /// de accesos rápidos (`bottom: 16`, 56 px) y, por encima, el del asistente
+  /// de IA (`bottom: 150`). Ahí no queda hueco ni vertical ni horizontal para
+  /// el aviso.
   ///
-  /// Se sube **la píldora**, no el FAB: los accesos rápidos llevan ahí desde
-  /// antes y moverlos rompería una costumbre de uso; el aviso de activación es
-  /// temporal y es el que debe apartarse.
-  final double margenInferior;
+  /// Por eso la píldora se coloca **a la izquierda** del FAB, compartiendo su
+  /// línea de base: 56 + 16 + 12 = 84. Se aparta el aviso y no los botones,
+  /// que son permanentes y llevan ahí desde antes. En móvil no hay FAB y se
+  /// queda en 16.
+  final double margenDerecho;
 
   /// Clave estable para las pruebas.
   static const Key claveBoton = Key('onboarding_burbuja_boton');
@@ -157,8 +163,8 @@ class _OnboardingBurbujaState extends State<OnboardingBurbuja> {
         children: [
           if (_abierto) _panel(tareas),
           Positioned(
-            right: 16,
-            bottom: widget.margenInferior,
+            right: widget.margenDerecho,
+            bottom: _margenInferior,
             child: _boton(tareas, quedan),
           ),
         ],
@@ -229,9 +235,9 @@ class _OnboardingBurbujaState extends State<OnboardingBurbuja> {
         : _anchoPanel;
 
     return Positioned(
-      right: 16,
-      // Justo encima de la píldora, sea cual sea su margen inferior.
-      bottom: widget.margenInferior + _altoBoton + 12,
+      // Alineado con la píldora, y el panel crece hacia arriba desde ahí.
+      right: widget.margenDerecho,
+      bottom: _margenInferior + _altoBoton + 12,
       width: ancho,
       child: ConstrainedBox(
         constraints: BoxConstraints(maxHeight: pantalla.height * _altoMaximoFactor),

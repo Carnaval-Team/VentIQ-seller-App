@@ -255,13 +255,17 @@ void main() {
     });
   });
 
-  group('no tapa el FAB de accesos rápidos (solo web)', () {
-    // El FAB estándar mide 56 y va a 16 del borde inferior: ocupa de 16 a 72.
+  group('no tapa los FAB de la esquina (solo web)', () {
+    // La esquina inferior derecha está ocupada en web por dos botones
+    // permanentes: accesos rápidos (`bottom: 16`, 56 px) y el asistente de IA
+    // (`bottom: 150`). Por eso el aviso va a la IZQUIERDA del primero, no
+    // encima: apilarlo arriba chocaría con el de IA.
     const fabAlto = 56.0;
     const fabMargen = 16.0;
-    final fabTop = fabMargen + fabAlto; // 72
+    const fabAncho = 56.0;
+    final fabBordeIzquierdo = 1200 - fabMargen - fabAncho; // 1128
 
-    testWidgets('con el margen de la web, la píldora queda por encima', (
+    testWidgets('con el margen de la web, la píldora queda a la izquierda', (
       tester,
     ) async {
       const alto = 900.0;
@@ -275,7 +279,7 @@ void main() {
                 OnboardingBurbuja(
                   tareasIniciales: tareasNuevas(),
                   estadoInicial: 'borrador',
-                  margenInferior: 84,
+                  margenDerecho: 84,
                 ),
               ],
             ),
@@ -285,35 +289,71 @@ void main() {
       await tester.pump();
 
       final boton = tester.getRect(find.byKey(OnboardingBurbuja.claveBoton));
-      // El borde inferior de la píldora no puede meterse en la franja del FAB.
+
+      // Su borde derecho no llega a donde empieza el FAB.
+      expect(
+        boton.right,
+        lessThanOrEqualTo(fabBordeIzquierdo),
+        reason:
+            'la píldora termina en ${boton.right} y el FAB empieza en '
+            '$fabBordeIzquierdo: se solapan',
+      );
+
+      // Y comparte la línea de base del FAB: no se sube a la franja del
+      // asistente de IA, que empieza mucho más arriba.
       final distanciaAlFondo = alto - boton.bottom;
       expect(
         distanciaAlFondo,
-        greaterThanOrEqualTo(fabTop),
-        reason:
-            'la píldora se solapa con el FAB: quedan ${distanciaAlFondo}px al '
-            'fondo y el FAB llega hasta $fabTop',
+        closeTo(fabMargen, 2),
+        reason: 'debe quedar a la misma altura que el FAB, a 16 del fondo',
       );
     });
 
-    testWidgets('por defecto (móvil) se queda abajo, sin FAB que esquivar', (
-      tester,
-    ) async {
+    testWidgets('no invade la franja del asistente de IA', (tester) async {
+      const alto = 900.0;
+      fijarVentana(tester, const Size(1200, alto));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Stack(
+              children: [
+                OnboardingBurbuja(
+                  tareasIniciales: tareasNuevas(),
+                  estadoInicial: 'borrador',
+                  margenDerecho: 84,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final boton = tester.getRect(find.byKey(OnboardingBurbuja.claveBoton));
+      // El FAB de IA va a 150 del fondo: su borde inferior está en 150.
+      final franjaIA = alto - 150;
+      expect(
+        boton.top,
+        greaterThan(franjaIA),
+        reason:
+            'la píldora sube hasta ${boton.top} y la franja del asistente '
+            'empieza en $franjaIA: se solapan',
+      );
+    });
+
+    testWidgets('por defecto (móvil) se queda en la esquina', (tester) async {
       const alto = 900.0;
       fijarVentana(tester, const Size(500, alto));
       await tester.pumpWidget(conDashboard(tareas: tareasNuevas()));
       await tester.pump();
 
       final boton = tester.getRect(find.byKey(OnboardingBurbuja.claveBoton));
-      final distanciaAlFondo = alto - boton.bottom;
-      expect(
-        distanciaAlFondo,
-        lessThan(fabTop),
-        reason: 'en móvil no hay FAB: subirla dejaría un hueco raro',
-      );
+      // A 16 del fondo y a 16 de la derecha: no hay FAB que esquivar.
+      expect(alto - boton.bottom, closeTo(fabMargen, 2));
+      expect(500 - boton.right, closeTo(fabMargen, 2));
     });
 
-    testWidgets('el panel se abre encima de la píldora, no sobre el FAB', (
+    testWidgets('el panel se abre encima de la píldora, no sobre los FAB', (
       tester,
     ) async {
       fijarVentana(tester, const Size(1200, 1000));
@@ -326,7 +366,7 @@ void main() {
                   tareasIniciales: tareasNuevas(),
                   estadoInicial: 'borrador',
                   abiertoInicial: true,
-                  margenInferior: 84,
+                  margenDerecho: 84,
                 ),
               ],
             ),
