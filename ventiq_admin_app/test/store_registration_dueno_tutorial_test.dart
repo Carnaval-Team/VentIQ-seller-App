@@ -44,7 +44,11 @@ void main() {
         isTrue,
         reason: 'falta sql_updates/fn_m01_crear_estructura_tienda_dueno.sql',
       );
-      sql = fichero.readAsStringSync();
+      // Normaliza el salto de línea: en Windows, `core.autocrlf` convierte el
+      // fichero a CRLF al hacer un checkout limpio, y una aserción con `\n`
+      // literal fallaría sin que el SQL haya cambiado. El contenido es el mismo
+      // con CRLF que con LF; el test no debe depender de eso.
+      sql = fichero.readAsStringSync().replaceAll('\r\n', '\n');
     });
 
     test('escribe en app_dat_dueno y en app_dat_gerente', () {
