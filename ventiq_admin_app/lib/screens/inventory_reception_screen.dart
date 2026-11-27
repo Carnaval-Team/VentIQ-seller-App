@@ -38,7 +38,6 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   final _entregadoPorController = TextEditingController();
   final _recibidoPorController = TextEditingController();
   final _observacionesController = TextEditingController();
-  final _montoTotalController = TextEditingController();
   final _searchController = TextEditingController();
 
   // Static variables to persist field values across screen instances
@@ -140,6 +139,13 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   /// Hay compra seleccionada: cambia el selector de productos y bloquea el fondo.
   bool get _conCompra => _compraSeleccionada != null;
 
+  /// El card de compra solo aparece si hay compras recepcionables (o mientras
+  /// se cargan / falló la carga, para dar feedback y reintento).
+  bool get _mostrarSeccionCompra =>
+      _isLoadingCompras ||
+      _errorCompras != null ||
+      _comprasRecepcion.isNotEmpty;
+
   /// Alguna línea lleva costos adicionales (del producto o de la recepción):
   /// la recepción viaja por el wrapper transaccional y, si la factura no es
   /// USD, ese carril exige la tasa (D8).
@@ -187,9 +193,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
     return cargo.isFinite ? (cargo * 100).round() / 100 : 0;
   }
 
-  double get _montoRecepcion => _montoTotalController.text.trim().isEmpty
-      ? _totalAmount
-      : (double.tryParse(_montoTotalController.text.replaceAll(',', '.')) ?? double.nan);
+  double get _montoRecepcion => _totalAmount;
 
   /// Costos adicionales ya capturados por línea (en USD, como los guarda el
   /// módulo). Es solo para el adelanto en pantalla: el servidor manda.
@@ -273,7 +277,6 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
     _entregadoPorController.dispose();
     _recibidoPorController.dispose();
     _observacionesController.dispose();
-    _montoTotalController.dispose();
     _searchController.dispose();
     _tasaInversionController.dispose();
     _pctImportadoraController.dispose();
@@ -1429,8 +1432,10 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildCompraSection(),
-                    const SizedBox(height: 24),
+                    if (_mostrarSeccionCompra) ...[
+                      _buildCompraSection(),
+                      const SizedBox(height: 24),
+                    ],
                     _buildReceptionInfoSection(),
                     const SizedBox(height: 24),
                     _buildLocationSelectionSection(),
@@ -1768,16 +1773,6 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                     (_isLoading || _usarFondo || _recepcionRegistradaId != null)
                     ? null
                     : (idCompra) => _seleccionarCompra(_compraPorId(idCompra)),
-              ),
-            if (!_isLoadingCompras &&
-                _errorCompras == null &&
-                _comprasRecepcion.isEmpty)
-              const Padding(
-                padding: EdgeInsets.only(top: 8),
-                child: Text(
-                  'No hay compras reservadas, pagadas ni con entrega parcial.',
-                  style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                ),
               ),
             if (compra != null) ...[
               const SizedBox(height: 16),
@@ -2348,17 +2343,6 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
               maxLines: 3,
             ),
             const SizedBox(height: 12),
-            TextFormField(
-              controller: _montoTotalController,
-              decoration: InputDecoration(
-                labelText: 'Monto Total (Opcional)',
-                hintText:
-                    'Calculado automáticamente: \$${_totalAmount.toStringAsFixed(2)}',
-                border: const OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.number,
-              onChanged: (_) => setState(() {}),
-            ),
             if (_cargandoFondo) const LinearProgressIndicator(),
             if (_errorFondo != null)
               TextButton(onPressed: _loadSaldosFondo, child: Text('$_errorFondo · Reintentar')),
