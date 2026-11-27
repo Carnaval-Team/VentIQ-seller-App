@@ -132,7 +132,7 @@ class _CocinasManagementScreenState extends State<CocinasManagementScreen>
           ],
         ),
       ),
-      drawer: const AdminDrawer(),
+      endDrawer: const AdminDrawer(),
       body: Column(
         children: [
           if (!_cargandoConfig) _buildBannerConfig(),

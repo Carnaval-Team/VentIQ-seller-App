@@ -6,6 +6,7 @@ import '../config/app_colors.dart';
 import '../models/supplier_payment_model.dart';
 import '../services/inventtia_reparto_service.dart';
 import '../services/supplier_payment_service.dart';
+import '../widgets/fixed_header_table.dart';
 
 class PagoInventtiaResumen extends StatefulWidget {
   final DateTime fechaInicio;
@@ -15,6 +16,15 @@ class PagoInventtiaResumen extends StatefulWidget {
   final int revision;
   final Future<RepartoInventtia> Function()? cargar;
 
+  /// Navega a otra tab mostrando el origen de un importe del resumen.
+  /// `personaId` resalta en Licencias los cobros de ese agente;
+  /// `agenteCarnavalId` resalta ese agente en el tab Agentes.
+  final void Function(int tab, {int? personaId, int? agenteCarnavalId})?
+  onNavegarOrigen;
+
+  /// Persona (app_dat_agente) cuyos cobros se resaltan en Licencias.
+  final int? highlightPersonaId;
+
   const PagoInventtiaResumen({
     super.key,
     required this.fechaInicio,
@@ -23,6 +33,8 @@ class PagoInventtiaResumen extends StatefulWidget {
     this.seccion = 0,
     this.revision = 0,
     this.cargar,
+    this.onNavegarOrigen,
+    this.highlightPersonaId,
   });
 
   @override
@@ -267,30 +279,24 @@ class _PagoInventtiaResumenState extends State<PagoInventtiaResumen> {
               ),
             ),
             const SizedBox(height: 8),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                showCheckboxColumn: false,
-                columns: const [
-                  DataColumn(label: Text('Tienda')),
-                  DataColumn(label: Text('Total vendido (CUP)'), numeric: true),
-                  DataColumn(label: Text('1% (CUP)'), numeric: true),
-                ],
-                rows: data.proveedores.map((p) {
-                  final neto = p.totalCup - p.excluidoCup;
-                  return DataRow(
-                    onSelectChanged: (_) {
-                      setState(() => _expanded[p.id] = !(_expanded[p.id] ?? false));
-                      if (_expanded[p.id] == true) _cargarOrdenes(p.id);
-                    },
-                    cells: [
-                      DataCell(Text(p.name)),
-                      DataCell(Text(_money.format(neto))),
-                      DataCell(Text(_money.format(neto * 0.01))),
-                    ],
-                  );
-                }).toList(),
-              ),
+            FixedHeaderTable(
+              headers: const ['Tienda', 'Total vendido (CUP)', '1% (CUP)'],
+              flex: const [5, 4, 3],
+              minWidth: 480,
+              maxHeight: 480,
+              onRowTap: (i) {
+                final p = data.proveedores[i];
+                setState(() => _expanded[p.id] = !(_expanded[p.id] ?? false));
+                if (_expanded[p.id] == true) _cargarOrdenes(p.id);
+              },
+              rows: data.proveedores.map((p) {
+                final neto = p.totalCup - p.excluidoCup;
+                return [
+                  Text(p.name),
+                  Text(_money.format(neto)),
+                  Text(_money.format(neto * 0.01)),
+                ];
+              }).toList(),
             ),
             ...data.proveedores.where((p) => _expanded[p.id] == true).map(_proveedor),
             if (data.proveedores.isEmpty)
@@ -333,101 +339,174 @@ class _PagoInventtiaResumenState extends State<PagoInventtiaResumen> {
   }
 
   Widget _tablaCobros(List<CobroLicencia> cobros) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: DataTable(
-        showCheckboxColumn: false,
-        columns: const [
-          DataColumn(label: Text('Cliente')),
-          DataColumn(label: Text('Plan USD'), numeric: true),
-          DataColumn(label: Text('CUP teórico'), numeric: true),
-          DataColumn(label: Text('Recibido CUP'), numeric: true),
-          DataColumn(label: Text('20%'), numeric: true),
-          DataColumn(label: Text('Queda'), numeric: true),
-          DataColumn(label: Text('Transacción')),
-          DataColumn(label: Text('Agente')),
-        ],
-        rows:
-            cobros.map((c) {
-              return DataRow(
-                onSelectChanged: (_) => _editarCobro(c),
-                cells: [
-                  DataCell(Text(c.tienda)),
-                  DataCell(Text(_money.format(c.planUsd))),
-                  DataCell(Text(_money.format(c.cupTeorico))),
-                  DataCell(Text(_money.format(c.recibidoCup))),
-                  DataCell(Text(_money.format(c.agente20))),
-                  DataCell(Text(_money.format(c.quedaInventtia))),
-                  DataCell(Text(c.transaccion.isEmpty ? '—' : c.transaccion)),
-                  DataCell(Text(c.agenteNombre ?? 'Sin asignar')),
+    final highlightId = widget.highlightPersonaId;
+    final highlighted =
+        highlightId == null
+            ? null
+            : {
+              for (var i = 0; i < cobros.length; i++)
+                if (cobros[i].agenteId == highlightId) i,
+            };
+    return FixedHeaderTable(
+      highlightedRows: highlighted,
+      headers: const [
+        'Cliente',
+        'Plan USD',
+        'CUP teórico',
+        'Recibido CUP',
+        '20%',
+        'Queda',
+        'Transacción',
+        'Agente',
+      ],
+      flex: const [5, 3, 3, 3, 3, 3, 4, 4],
+      minWidth: 760,
+      maxHeight: 520,
+      onRowTap: (i) => _editarCobro(cobros[i]),
+      rows:
+          cobros.map((c) {
+            return [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    c.tienda,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  if (c.secundarias.isNotEmpty)
+                    Text(
+                      'Multitienda: incluye ${c.secundarias.join(', ')}',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppColors.info,
+                      ),
+                    )
+                  else if (c.secundariaDe != null)
+                    Text(
+                      'Secundaria de ${c.secundariaDe}',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppColors.textSecondary,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
                 ],
-              );
-            }).toList(),
-      ),
+              ),
+              Text(_money.format(c.planUsd)),
+              Text(_money.format(c.cupTeorico)),
+              Text(_money.format(c.recibidoCup)),
+              Text(_money.format(c.agente20)),
+              Text(_money.format(c.quedaInventtia)),
+              Text(c.transaccion.isEmpty ? '—' : c.transaccion),
+              Text(c.agenteNombre ?? 'Sin asignar'),
+            ];
+          }).toList(),
     );
   }
 
   Widget _tablaPersonas(List<PersonaReparto> personas) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: DataTable(
-        columns: const [
-          DataColumn(label: Text('Trabajador')),
-          DataColumn(label: Text('Parte igual'), numeric: true),
-          DataColumn(label: Text('20%'), numeric: true),
-          DataColumn(label: Text('Carnaval 1%'), numeric: true),
-          DataColumn(label: Text('Agente 1%'), numeric: true),
-          DataColumn(label: Text('Total'), numeric: true),
-          DataColumn(label: Text('Tarjeta')),
-        ],
-        rows:
-            personas.map((p) {
-              final tarjeta = (p.tarjeta ?? '').replaceAll(RegExp(r'\s+'), '');
-              return DataRow(
-                cells: [
-                  DataCell(Text(p.nombre)),
-                  DataCell(Text(_money.format(p.parteIgual))),
-                  DataCell(Text(_money.format(p.despliegue20))),
-                  DataCell(Text(_money.format(p.carnavalGlobal))),
-                  DataCell(Text(_money.format(p.agenteCarnaval))),
-                  DataCell(
-                    Text(
-                      _money.format(p.total),
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                  DataCell(
-                    tarjeta.isEmpty
-                        ? const Text('—')
-                        : Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              tarjeta.length <= 4
-                                  ? tarjeta
-                                  : '···· ${tarjeta.substring(tarjeta.length - 4)}',
+    return FixedHeaderTable(
+      headers: const [
+        'Trabajador',
+        'Parte igual Socios',
+        'Carnaval a Inventtia 1%',
+        'Despliegue 20%',
+        'Agente Carnaval 1%',
+        'Total',
+        'Tarjeta',
+      ],
+      flex: const [4, 3, 3, 3, 3, 3, 5],
+      minWidth: 700,
+      maxHeight: 480,
+      rows:
+          personas.map((p) {
+            final tarjeta = (p.tarjeta ?? '').replaceAll(RegExp(r'\s+'), '');
+            final tarjetaFmt = tarjeta
+                .replaceAllMapped(
+                  RegExp(r'.{1,4}'),
+                  (m) => '${m[0]} ',
+                )
+                .trim();
+            return [
+              Text(p.nombre),
+              _linkCell(p.parteIgual, 'Licencias', () {
+                widget.onNavegarOrigen?.call(1);
+              }),
+              _linkCell(p.carnavalGlobal, 'Carnaval App', () {
+                widget.onNavegarOrigen?.call(2);
+              }),
+              _linkCell(p.despliegue20, 'Licencias', () {
+                widget.onNavegarOrigen?.call(1, personaId: p.id);
+              }),
+              _linkCell(p.agenteCarnaval, 'Agentes', () {
+                widget.onNavegarOrigen?.call(
+                  3,
+                  agenteCarnavalId: p.agenteCarnavalId,
+                );
+              }),
+              Text(
+                _money.format(p.total),
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              tarjeta.isEmpty
+                  ? const Text('—')
+                  : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SelectableText(tarjetaFmt),
+                      IconButton(
+                        tooltip: 'Copiar tarjeta',
+                        icon: const Icon(Icons.copy, size: 16),
+                        onPressed: () async {
+                          await Clipboard.setData(
+                            ClipboardData(text: tarjeta),
+                          );
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Tarjeta copiada'),
                             ),
-                            IconButton(
-                              tooltip: 'Copiar tarjeta',
-                              icon: const Icon(Icons.copy, size: 16),
-                              onPressed: () async {
-                                await Clipboard.setData(
-                                  ClipboardData(text: tarjeta),
-                                );
-                                if (!mounted) return;
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Tarjeta copiada'),
-                                  ),
-                                );
-                              },
-                            ),
-                          ],
-                        ),
+                          );
+                        },
+                      ),
+                    ],
                   ),
-                ],
-              );
-            }).toList(),
+            ];
+          }).toList(),
+    );
+  }
+
+  /// Celda importe que navega a la tab donde sale ese dato.
+  Widget _linkCell(double value, String origen, VoidCallback onTap) {
+    return InkWell(
+      onTap: widget.onNavegarOrigen == null ? null : onTap,
+      child: Tooltip(
+        message: 'Ver origen en $origen',
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              _money.format(value),
+              style: TextStyle(
+                color:
+                    widget.onNavegarOrigen == null
+                        ? null
+                        : AppColors.primary,
+                decoration:
+                    widget.onNavegarOrigen == null
+                        ? null
+                        : TextDecoration.underline,
+              ),
+            ),
+            if (widget.onNavegarOrigen != null)
+              const Icon(
+                Icons.open_in_new,
+                size: 12,
+                color: AppColors.primary,
+              ),
+          ],
+        ),
       ),
     );
   }

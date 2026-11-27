@@ -209,6 +209,7 @@ class _FacturasScreenState extends State<FacturasScreen> {
         backgroundColor: AppColors.primary,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          const EndDrawerButton(),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Actualizar',
@@ -216,7 +217,7 @@ class _FacturasScreenState extends State<FacturasScreen> {
           ),
         ],
       ),
-      drawer: const AdminDrawer(),
+      endDrawer: const AdminDrawer(),
       body: LayoutBuilder(
         builder: (context, constraints) {
           final compacto = constraints.maxWidth < comprasAnchoCompacto;

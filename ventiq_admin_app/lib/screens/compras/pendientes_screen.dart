@@ -297,6 +297,7 @@ class _PendientesScreenState extends State<PendientesScreen> {
         backgroundColor: AppColors.primary,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          const EndDrawerButton(),
           IconButton(
             icon: const Icon(Icons.fact_check_outlined),
             tooltip: 'Facturas',
@@ -309,7 +310,7 @@ class _PendientesScreenState extends State<PendientesScreen> {
           ),
         ],
       ),
-      drawer: const AdminDrawer(),
+      endDrawer: const AdminDrawer(),
       body: LayoutBuilder(
         builder: (context, constraints) {
           final tamano = comprasTamanoDe(constraints.maxWidth);

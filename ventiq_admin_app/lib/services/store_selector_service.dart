@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'user_preferences_service.dart';
 import 'session_cache_manager.dart';
+import 'drawer_menu_service.dart';
 import '../utils/platform_utils.dart';
 import '../utils/web_reload.dart' as web_reload;
 
@@ -302,6 +303,7 @@ class StoreSelectorService extends ChangeNotifier {
     // suscripción, consignaciones). Sin esto, los singletons muestran datos
     // de la tienda anterior.
     await SessionCacheManager.clearForStoreSwitch();
+    await DrawerMenuService.prepare();
 
     print('🏪 Tienda cambiada a: ${store.denominacion} (ID: ${store.id})');
 

@@ -6,7 +6,6 @@ import '../config/app_colors.dart';
 import '../widgets_home/screens/widget_tutorial_sheet.dart';
 import '../services/user_preferences_service.dart';
 import '../services/permissions_service.dart';
-import '../services/cocina_service.dart';
 import '../services/auth_service.dart';
 import '../services/subscription_service.dart';
 import '../utils/navigation_guard.dart';
@@ -14,10 +13,9 @@ import '../utils/platform_utils.dart';
 import '../utils/web_reload.dart' as web_reload;
 import '../services/changelog_service.dart';
 import '../services/update_service.dart';
-import '../services/carnaval_service.dart';
 import '../widgets/changelog_dialog.dart';
 import '../widgets/update_dialog.dart';
-import '../services/onboarding_service.dart';
+import '../services/drawer_menu_service.dart';
 
 class AdminDrawer extends StatefulWidget {
   const AdminDrawer({Key? key}) : super(key: key);
@@ -38,7 +36,25 @@ class _AdminDrawerState extends State<AdminDrawer> {
     super.initState();
     _loadUserData();
     _loadAppVersion();
+    DrawerMenuService.changes.addListener(_menuChanged);
+    DrawerMenuService.prepare();
   }
+
+  void _menuChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    DrawerMenuService.changes.removeListener(_menuChanged);
+    super.dispose();
+  }
+
+  Future<bool> _cachedCanNavigate(
+    String route,
+    BuildContext context, {
+    bool showDialog = false,
+  }) => SynchronousFuture(DrawerMenuService.visible(route));
 
   Future<void> _loadUserData() async {
     try {
@@ -65,6 +81,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
       print('Display Email: $displayEmail');
       print('===================================');
 
+      if (!mounted) return;
       setState(() {
         _userName = displayName;
         _userEmail = displayEmail;
@@ -72,6 +89,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
       });
     } catch (e) {
       print('Error loading admin user data: $e');
+      if (!mounted) return;
       setState(() {
         _userName = 'Administrador';
         _userEmail = 'admin@inventtia.com';
@@ -108,15 +126,8 @@ class _AdminDrawerState extends State<AdminDrawer> {
   }
 
   /// Verificar si la tienda tiene admin_carnaval habilitado
-  Future<bool> _isCarnavalStore() async {
-    try {
-      final storeId = await UserPreferencesService().getIdTienda();
-      if (storeId == null) return false;
-      return await CarnavalService.isStoreSyncedWithCarnaval(storeId);
-    } catch (e) {
-      return false;
-    }
-  }
+  Future<bool> _isCarnavalStore() =>
+      SynchronousFuture(DrawerMenuService.visible('carnaval'));
 
   /// Verificar si la tienda puede acceder a consignaciones
   /// Todas las tiendas pueden ver consignaciones (para confirmar contratos)
@@ -136,15 +147,10 @@ class _AdminDrawerState extends State<AdminDrawer> {
   ///
   /// El modulo de cocinas solo aparece si hay mesas: las comandas salen de las
   /// cuentas de mesa. Se lee la configuracion de la tienda en lugar de suponer.
-  Future<bool> _tiendaEnModoRestaurante() async {
-    try {
-      final config = await CocinaService.leerConfigCocina();
-      return config.modoRestaurante;
-    } catch (e) {
-      // Si falla la consulta se oculta la entrada: es preferible no mostrarla
-      // que enviar al usuario a una pantalla que no puede usar.
-      return false;
-    }
+  Future<bool> _tiendaEnModoRestaurante() {
+    // Si falla la consulta se oculta la entrada: es preferible no mostrarla
+    // que enviar al usuario a una pantalla que no puede usar.
+    return SynchronousFuture(DrawerMenuService.visible('restaurante'));
   }
 
   /// Verificar si la tienda sigue en borrador (no ha hecho Go Live).
@@ -157,30 +163,13 @@ class _AdminDrawerState extends State<AdminDrawer> {
   ///
   /// Ante error se oculta la entrada: en una tienda activa este acceso sobra, y
   /// es preferible no mostrarlo a mandar al usuario a una pantalla que no aplica.
-  Future<bool> _tiendaEnBorrador() async {
-    try {
-      final estado = await OnboardingService().leerEstadoTienda();
-      return estado.estadoOnboarding == 'borrador';
-    } catch (e) {
-      return false;
-    }
-  }
+  Future<bool> _tiendaEnBorrador() =>
+      SynchronousFuture(DrawerMenuService.visible('borrador'));
 
   /// Verificar si el usuario puede acceder al módulo de Recursos Humanos
-  Future<bool> _canAccessHR(BuildContext context) async {
-    try {
-      final hasPermission = await NavigationGuard.canNavigate(
-        '/hr-dashboard',
-        context,
-        showDialog: false,
-      );
-      if (!hasPermission) return false;
-      return await SubscriptionService().hasProPlanInAnyStore();
-    } catch (e) {
-      print('❌ Error verificando acceso a RRHH: $e');
-      return false;
-    }
-  }
+  Future<bool> _canAccessHR(BuildContext context) => SynchronousFuture(
+    DrawerMenuService.visible('/hr-dashboard') && DrawerMenuService.visible('hrPro'),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -308,7 +297,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
 
                 // Productos (solo Gerente y Supervisor)
                 FutureBuilder<bool>(
-                  future: NavigationGuard.canNavigate(
+                  future: _cachedCanNavigate(
                     '/products',
                     context,
                     showDialog: false,
@@ -340,7 +329,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
 
                 // Inventario (Gerente, Supervisor, Auditor y Almacenero)
                 FutureBuilder<UserRole>(
-                  future: PermissionsService().getUserRole(),
+                  future: SynchronousFuture(DrawerMenuService.role),
                   builder: (context, snapshot) {
                     final userRole = snapshot.data ?? UserRole.none;
                     final canAccessInventory = userRole == UserRole.dueno ||
@@ -390,12 +379,12 @@ class _AdminDrawerState extends State<AdminDrawer> {
 
                 // TPVs (Puntos de Venta) - NO para Almacenero
                 FutureBuilder<UserRole>(
-                  future: PermissionsService().getUserRole(),
+                  future: SynchronousFuture(DrawerMenuService.role),
                   builder: (context, snapshot) {
                     final userRole = snapshot.data ?? UserRole.none;
                     final isAlmacenero = userRole == UserRole.almacenero;
 
-                    if (!isAlmacenero) {
+                    if (userRole != UserRole.none && !isAlmacenero) {
                       return Column(
                         children: [
                           _buildDrawerItem(
@@ -430,12 +419,14 @@ class _AdminDrawerState extends State<AdminDrawer> {
                     }
 
                     return FutureBuilder<UserRole>(
-                      future: PermissionsService().getUserRole(),
+                      future: SynchronousFuture(DrawerMenuService.role),
                       builder: (context, snapshot) {
                         final userRole = snapshot.data ?? UserRole.none;
                         final isAlmacenero = userRole == UserRole.almacenero;
 
-                        if (isAlmacenero) return const SizedBox.shrink();
+                        if (userRole == UserRole.none || isAlmacenero) {
+                          return const SizedBox.shrink();
+                        }
 
                         return Column(
                           children: [
@@ -462,7 +453,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
 
                 // Servicentro se configura por TPV (Gestión de TPVs → menú).
                 FutureBuilder<UserRole>(
-                  future: PermissionsService().getUserRole(),
+                  future: SynchronousFuture(DrawerMenuService.role),
                   builder: (context, snapshot) {
                     if (snapshot.data != UserRole.dueno &&
                         snapshot.data != UserRole.gerente) {
@@ -491,7 +482,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
 
                 // Marketing (solo Gerente)
                 FutureBuilder<bool>(
-                  future: NavigationGuard.canNavigate(
+                  future: _cachedCanNavigate(
                     '/marketing-dashboard',
                     context,
                     showDialog: false,
@@ -523,7 +514,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
 
                 // Ventas (solo Gerente y Supervisor)
                 FutureBuilder<bool>(
-                  future: NavigationGuard.canNavigate(
+                  future: _cachedCanNavigate(
                     '/sales',
                     context,
                     showDialog: false,
@@ -555,7 +546,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
 
                 // Finanzas (solo Gerente)
                 FutureBuilder<bool>(
-                  future: NavigationGuard.canNavigate(
+                  future: _cachedCanNavigate(
                     '/financial',
                     context,
                     showDialog: false,
@@ -587,7 +578,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
 
                 // CRM (solo Gerente)
                 FutureBuilder<bool>(
-                  future: NavigationGuard.canNavigate(
+                  future: _cachedCanNavigate(
                     '/crm-dashboard',
                     context,
                     showDialog: false,
@@ -632,7 +623,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
 
                 // Cuentas por Cobrar (solo gerente/supervisor)
                 FutureBuilder<bool>(
-                  future: NavigationGuard.canNavigate(
+                  future: _cachedCanNavigate(
                     '/cuentas-por-cobrar',
                     context,
                     showDialog: false,
@@ -664,7 +655,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
 
                 // Fondo de Inversión (solo gerente)
                 FutureBuilder<bool>(
-                  future: NavigationGuard.canNavigate(
+                  future: _cachedCanNavigate(
                     '/fondo-inversion',
                     context,
                     showDialog: false,
@@ -697,7 +688,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
                 // Compras (solo gerente): documento que precede al pago a
                 // proveedores y que puede financiar el Fondo de Inversión.
                 FutureBuilder<bool>(
-                  future: NavigationGuard.canNavigate(
+                  future: _cachedCanNavigate(
                     '/compras',
                     context,
                     showDialog: false,
@@ -731,7 +722,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
                 // El almacenero entra a las dos: es quien recibe, pero sin
                 // importes (lo resuelve la propia pantalla con el permiso).
                 FutureBuilder<bool>(
-                  future: NavigationGuard.canNavigate(
+                  future: _cachedCanNavigate(
                     '/compras/pendientes',
                     context,
                     showDialog: false,
@@ -762,7 +753,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
                 ),
 
                 FutureBuilder<bool>(
-                  future: NavigationGuard.canNavigate(
+                  future: _cachedCanNavigate(
                     '/compras/facturas',
                     context,
                     showDialog: false,
@@ -795,7 +786,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
                 // Reportes del fondo y de compras (solo gerente): conciliación,
                 // caja, costo y cambiario, movimientos, inversores y pendientes.
                 FutureBuilder<bool>(
-                  future: NavigationGuard.canNavigate(
+                  future: _cachedCanNavigate(
                     '/reportes',
                     context,
                     showDialog: false,
@@ -867,7 +858,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
 
                 // Trabajadores (Gerente, Supervisor, Auditor, RRHH)
                 FutureBuilder<bool>(
-                  future: NavigationGuard.canNavigate(
+                  future: _cachedCanNavigate(
                     '/workers',
                     context,
                     showDialog: false,
@@ -966,7 +957,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
 
                 // Configuración (solo Gerente)
                 FutureBuilder<bool>(
-                  future: NavigationGuard.canNavigate(
+                  future: _cachedCanNavigate(
                     '/settings',
                     context,
                     showDialog: false,

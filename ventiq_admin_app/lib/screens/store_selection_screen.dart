@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/drawer_menu_service.dart';
 import 'package:ventiq_admin_app/services/user_preferences_service.dart';
 import 'package:ventiq_admin_app/services/permissions_service.dart';
 import 'package:ventiq_admin_app/config/app_colors.dart';
@@ -36,6 +37,7 @@ class _StoreSelectionScreenState extends State<StoreSelectionScreen> {
     try {
       // Actualizar la tienda seleccionada
       await _userPreferencesService.updateSelectedStore(_selectedStoreId);
+      await DrawerMenuService.prepare();
       print('✅ Tienda seleccionada: $_selectedStoreId');
 
       // Verificar si el rol en esta tienda es HR para redirigir correctamente

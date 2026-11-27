@@ -156,7 +156,7 @@ class _FondoInversionScreenState extends State<FondoInversionScreen>
           ],
         ),
       ),
-      drawer: const AdminDrawer(),
+      endDrawer: const AdminDrawer(),
       body: _loading
           ? const Center(
               child: CircularProgressIndicator(color: AppColors.primary),

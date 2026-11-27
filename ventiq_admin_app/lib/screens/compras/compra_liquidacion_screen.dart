@@ -389,6 +389,7 @@ class _CompraLiquidacionScreenState extends State<CompraLiquidacionScreen> {
         backgroundColor: AppColors.primary,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          const EndDrawerButton(),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Actualizar disponible',
@@ -396,7 +397,7 @@ class _CompraLiquidacionScreenState extends State<CompraLiquidacionScreen> {
           ),
         ],
       ),
-      drawer: const AdminDrawer(),
+      endDrawer: const AdminDrawer(),
       body: _cuerpo(),
       bottomNavigationBar: conBarra ? _barraFija() : null,
     );

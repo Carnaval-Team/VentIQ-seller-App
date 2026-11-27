@@ -329,6 +329,7 @@ class _ReportesScreenState extends State<ReportesScreen> {
         backgroundColor: AppColors.primary,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          const EndDrawerButton(),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Actualizar',
@@ -336,7 +337,7 @@ class _ReportesScreenState extends State<ReportesScreen> {
           ),
         ],
       ),
-      drawer: const AdminDrawer(),
+      endDrawer: const AdminDrawer(),
       body: _errorTienda != null && _idTienda == null
           ? _vistaSinTienda()
           : Column(

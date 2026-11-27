@@ -7,6 +7,7 @@ import '../services/dashboard_service.dart';
 import '../services/currency_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/permissions_service.dart';
+import '../services/drawer_menu_service.dart';
 import '../widgets/admin_ai_assistant_sheet.dart';
 import '../widgets/onboarding_burbuja.dart';
 
@@ -343,6 +344,8 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
       rolesByStore[storeId] =
           _permissionsService.getRoleName(userRole).toLowerCase();
       await _userPreferencesService.saveUserRolesByStore(rolesByStore);
+      await DrawerMenuService.prepare();
+      if (!mounted) return;
       print('💾 Rol guardado para tienda $storeId: ${rolesByStore[storeId]}');
 
       // Update current store name

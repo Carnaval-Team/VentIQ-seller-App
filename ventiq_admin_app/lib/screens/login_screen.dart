@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import '../config/app_colors.dart';
 import '../services/auth_service.dart';
+import '../services/drawer_menu_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/permissions_service.dart';
 import '../services/subscription_service.dart';
@@ -50,6 +51,8 @@ class _LoginScreenState extends State<LoginScreen> {
     // Sesión Supabase usable (no el token_expiry artificial de preferencias).
     final hasValidSession = await AuthService.ensureValidSession();
     if (hasValidSession && mounted) {
+      await DrawerMenuService.prepare();
+      if (!mounted) return;
       print('✅ Valid session found, auto-logging in...');
       // Agregar pequeño delay para asegurar que la UI se renderice primero
       await Future.delayed(const Duration(milliseconds: 100));
@@ -726,6 +729,7 @@ class _LoginScreenState extends State<LoginScreen> {
       final session = authResponse.session!;
 
       // Limpiar TODO el caché de permisos antes de detectar rol del nuevo usuario
+      DrawerMenuService.invalidate();
       _permissionsService.clearAllCache();
       print('🧹 TODO el caché de permisos limpiado para nuevo login');
 
@@ -918,6 +922,9 @@ class _LoginScreenState extends State<LoginScreen> {
           );
           print('💾 Datos de suscripción guardados en preferencias');
         }
+
+        await DrawerMenuService.prepare();
+        if (!mounted) return;
 
         // Si hay múltiples tiendas, mostrar pantalla de selección
         if (userStores.length > 1) {
