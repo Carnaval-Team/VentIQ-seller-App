@@ -2342,17 +2342,33 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
   Future<void> _abrirAportes(int idCompra) async {
     final tienda = _idTienda;
     if (!mounted || tienda == null) return;
-    final size = MediaQuery.sizeOf(context);
-    await showDialog<void>(
+
+    await showModalBottomSheet<void>(
       context: context,
-      barrierDismissible: false,
-      builder: (ctx) => Dialog(
-        insetPadding: EdgeInsets.zero,
-        child: SizedBox(
-          width: size.width < 940 ? size.width - 24 : 900,
-          height: size.height < 720 ? size.height - 24 : 640,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.9,
+        minChildSize: 0.5,
+        maxChildSize: 1,
+        builder: (ctx, scrollController) => Container(
+          decoration: const BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          ),
           child: Column(
             children: [
+              Container(
+                margin: const EdgeInsets.only(top: 8),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
                 child: Row(
@@ -2376,12 +2392,16 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
               ),
               const Divider(height: 1),
               Expanded(
-                child: CompraAportesPanel(
-                  idCompra: idCompra,
-                  moneda: _monedaPreview,
-                  estado: 'creada',
-                  modoLiquidacion: 'inversores',
-                  idTienda: tienda,
+                child: SingleChildScrollView(
+                  controller: scrollController,
+                  padding: const EdgeInsets.all(16),
+                  child: CompraAportesPanel(
+                    idCompra: idCompra,
+                    moneda: _monedaPreview,
+                    estado: 'creada',
+                    modoLiquidacion: 'inversores',
+                    idTienda: tienda,
+                  ),
                 ),
               ),
             ],
