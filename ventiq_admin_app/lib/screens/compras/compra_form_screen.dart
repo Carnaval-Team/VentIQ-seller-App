@@ -3,12 +3,17 @@ import 'package:flutter/services.dart';
 
 import '../../config/app_colors.dart';
 import '../../models/compra.dart';
+import '../../models/fondo_inversion.dart';
 import '../../models/supplier.dart';
 import '../../services/compra_service.dart';
+import '../../services/compras_costos_calculo.dart';
+import '../../services/currency_service.dart';
 import '../../services/financial_service.dart';
+import '../../services/fondo_inversion_service.dart';
 import '../../services/supplier_service.dart';
 import '../../services/user_preferences_service.dart';
 import '../../widgets/admin_drawer.dart';
+import '../../widgets/fdi_recepcion_fuentes.dart';
 import '../../widgets/product_selector_widget.dart';
 import '../suppliers/add_edit_supplier_screen.dart';
 import 'compra_ayuda.dart';
@@ -46,6 +51,8 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
   final _clavePoliticaPago = GlobalKey();
   final _claveLineas = GlobalKey();
   final _claveAjustes = GlobalKey();
+  final _clavePreviewCosto = GlobalKey();
+  final _clavePanelReserva = GlobalKey();
   final _claveTotales = GlobalKey();
   final _claveBotonTutorial = GlobalKey();
 
@@ -72,6 +79,18 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
   String _moneda = 'USD';
   String _modoLiquidacion = CompraModoLiquidacion.fondo.codigo;
   String _politicaPago = CompraPoliticaPago.alPagar.codigo;
+
+  /// Tasa USD→CUP configurada para la tienda. Es el valor por defecto de una
+  /// factura en CUP; el usuario puede desbloquearla con el botón de editar.
+  double? _tasaTiendaCup;
+  bool _tasaEditable = false;
+
+  /// Reserva del fondo desde el alta (modo fondo, compra nueva).
+  List<FdiSaldo> _saldosFondo = const [];
+  bool _cargandoSaldos = false;
+  bool _reservarAlCrear = false;
+  List<FdiFuenteRecepcion> _fuentesReserva = const [];
+  late final String _claveReserva = _service.newIdempotencyKey();
 
   final List<_LineaForm> _lineasForm = [];
   final List<_AjusteForm> _ajustesForm = [];
@@ -155,8 +174,45 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
     } catch (_) {
       // Se reintenta en _cargarProveedores; el guardado valida la tienda.
     }
-    await Future.wait([_cargarProveedores(), _cargarTiposCosto()]);
+    await Future.wait([
+      _cargarProveedores(),
+      _cargarTiposCosto(),
+      _cargarTasaTienda(),
+      _cargarSaldosFondo(),
+    ]);
     if (mounted) _avisarUnaVez();
+  }
+
+  /// Tasa USD→CUP de la tienda: la misma que usa el TPV. Una factura en CUP
+  /// nace con esta tasa y queda bloqueada; el botón de editar la desbloquea.
+  Future<void> _cargarTasaTienda() async {
+    try {
+      final tasa = await CurrencyService.getEffectiveUsdToCupRate();
+      if (!mounted) return;
+      setState(() => _tasaTiendaCup = tasa > 0 ? tasa : null);
+    } catch (_) {
+      // Sin tasa de tienda el campo queda editable y el usuario la escribe.
+    }
+  }
+
+  /// Saldos del fondo para ofrecer la reserva en el mismo alta.
+  Future<void> _cargarSaldosFondo() async {
+    final tienda = _idTienda;
+    if (tienda == null) return;
+    setState(() => _cargandoSaldos = true);
+    try {
+      final resultado = await FondoInversionService().saldos(tienda);
+      if (!mounted) return;
+      setState(() {
+        _saldosFondo = resultado.saldos
+            .where((s) => s.saldo > 0 && s.idMedioPago != null)
+            .toList();
+      });
+    } catch (_) {
+      // Sin saldos no se ofrece reservar; la compra se crea igual.
+    } finally {
+      if (mounted) setState(() => _cargandoSaldos = false);
+    }
   }
 
   /// Primera vez en el formulario: cuelga la burbuja del icono para que se vea
@@ -175,7 +231,7 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
   /// la etiqueta del concepto.
   Future<void> _cargarTiposCosto() async {
     try {
-      final tipos = await FinancialService().getCostTypes();
+      final tipos = await FinancialService().getCostTypes(idTienda: _idTienda);
       if (!mounted) return;
       setState(() => _tiposCosto = tipos);
     } catch (_) {
@@ -323,7 +379,10 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
   }
 
   void _agregarAjuste() {
-    final form = _AjusteForm();
+    final form = _AjusteForm(
+      reparto: 'cantidad',
+      origenPago: _modoLiquidacion == 'inversores' ? 'externo' : 'fondo',
+    );
     form.escuchar(_alCambiar);
     setState(() => _ajustesForm.add(form));
   }
@@ -336,6 +395,9 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
     final errores = <String>[];
     if (_idProveedor == null) {
       errores.add('Elige el proveedor de la compra.');
+    }
+    if (_numeroFacturaCtrl.text.trim().isEmpty) {
+      errores.add('Escribe el número de factura del proveedor.');
     }
     if (_lineasForm.isEmpty) {
       errores.add('Añade al menos una línea con un producto.');
@@ -366,6 +428,14 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
           'Ajuste ${i + 1}: el valor debe ser un número mayor o igual que 0.',
         );
       }
+    }
+    if (_reservarAlCrear && _modoLiquidacion != 'inversores') {
+      final error = FdiFuenteRecepcion.validar(
+        _fuentesReserva,
+        _totalesPreview.financiado,
+        _monedaPreview,
+      );
+      if (error != null) errores.add('Reserva del fondo: $error');
     }
     return errores;
   }
@@ -458,7 +528,65 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
         return;
       }
 
-      _snack(_mensajeGuardado('Compra creada', r));
+      final idCompra = (r['id_compra'] as num?)?.toInt();
+      String? avisoReserva;
+      if (_reservarAlCrear &&
+          _modoLiquidacion != 'inversores' &&
+          idCompra != null) {
+        final totalServidor =
+            (r['total_financiado'] as num?)?.toDouble() ??
+            _totalesPreview.financiado;
+        final error = FdiFuenteRecepcion.validar(
+          _fuentesReserva,
+          totalServidor,
+          _monedaPreview,
+        );
+        if (error != null) {
+          avisoReserva =
+              'La compra quedó creada, pero la reserva no se envió: $error';
+        } else {
+          try {
+            await _service.reservar(
+              idCompra: idCompra,
+              fuentes: [
+                for (final f in _fuentesReserva)
+                  FuenteReserva(
+                    idCuenta: f.saldo.idCuenta,
+                    idMedioPago: f.saldo.idMedioPago!,
+                    moneda: f.saldo.moneda,
+                    monto: f.monto,
+                    tasaATotal: f.tasaARef,
+                  ),
+              ],
+              idempotencyKey: _claveReserva,
+            );
+            avisoReserva = 'Compra creada y reservada del fondo.';
+          } catch (e) {
+            avisoReserva = 'La compra quedó creada, pero la reserva falló: $e';
+          }
+        }
+      }
+
+      if (avisoReserva != null && mounted) {
+        await showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Reserva del fondo'),
+            content: Text(
+              '$avisoReserva\n\nLa compra ya existe; puede reintentar la '
+              'reserva desde su detalle.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Entendido'),
+              ),
+            ],
+          ),
+        );
+      }
+      if (!mounted) return;
+      _snack(avisoReserva ?? _mensajeGuardado('Compra creada', r));
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
@@ -557,9 +685,9 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
         titulo: 'Nº de factura',
         icono: Icons.receipt_long_outlined,
         texto:
-            'El número que trae el papel del proveedor. Es opcional, pero si lo '
-            'pones el sistema evita que cargues dos veces la misma factura del '
-            'mismo proveedor.',
+            'El número que trae el papel del proveedor. Es obligatorio: sin él '
+            'no se puede guardar la compra, y el sistema evita que cargues dos '
+            'veces la misma factura del mismo proveedor.',
       ),
       PasoTutorialCompra(
         clave: _claveFecha,
@@ -583,8 +711,9 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
         icono: Icons.trending_up,
         texto:
             'Cuántas unidades de esta moneda equivalen a 1 USD. En USD es 1. En '
-            'CUP sería, por ejemplo, 1.250. El sistema la necesita porque el '
-            'costo del inventario se guarda en dólares.',
+            'CUP se toma la tasa extraoficial configurada de la tienda y queda '
+            'bloqueada; el botón de editar permite cambiarla y queda congelada '
+            'en esta compra.',
       ),
       if (!_esEdicion) ...[
         PasoTutorialCompra(
@@ -621,19 +750,39 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
         icono: Icons.tune,
         texto:
             'Los costos de traer la mercancía: flete, aduana, seguro, el '
-            'servicio de la importadora. Cada ajuste dice cómo se calcula su '
-            'importe y quién lo paga. Son los que convierten el precio de '
-            'compra en costo aterrizado.',
+            'servicio de la importadora. Se reparten por cantidad de unidades y '
+            'quién los paga lo decide el modo de liquidación. Son los que '
+            'convierten el precio de compra en costo aterrizado.',
       ),
+      PasoTutorialCompra(
+        clave: _clavePreviewCosto,
+        titulo: 'Costo por unidad',
+        icono: Icons.price_change_outlined,
+        texto:
+            'Aquí ves, antes de guardar, cuánto sube cada unidad con los ajustes '
+            'repartidos. Es la cuenta que de verdad importa: el costo de compra '
+            'no es el costo final del producto.',
+      ),
+      if (!_esEdicion)
+        PasoTutorialCompra(
+          clave: _clavePanelReserva,
+          titulo: 'Reservar del fondo',
+          icono: Icons.account_balance_wallet_outlined,
+          texto:
+              'Si la compra la paga el fondo, puedes reservar el dinero aquí '
+              'mismo, sin ir al detalle. Eliges las cuentas y cuánto de cada '
+              'una; el pago se confirma después. En modo inversores este panel '
+              'no aparece.',
+        ),
       PasoTutorialCompra(
         clave: _claveTotales,
         titulo: 'Las cifras',
         icono: Icons.summarize_outlined,
         texto:
             'Mercancía es lo que cuestan los productos. Financiado es lo que '
-            'tiene que poner el fondo. Aterrizado es el costo real, con todos '
-            'los ajustes dentro. Son cuatro números distintos: nunca se suman '
-            'entre ellos.',
+            'tiene que poner el fondo. Aterrizado del documento es mercancía + '
+            'ajustes; los cargos de la recepción se suman en el detalle. Son '
+            'números distintos: nunca se suman entre ellos.',
       ),
     ];
   }
@@ -723,6 +872,12 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
           _panelCabecera(tamano),
           _panelLineas(tamano),
           _panelAjustes(),
+          KeyedSubtree(
+            key: _clavePreviewCosto,
+            child: _panelPreviewCosto(),
+          ),
+          if (!_esEdicion)
+            KeyedSubtree(key: _clavePanelReserva, child: _panelReserva()),
           _panelObservacion(),
           if (!conPanel) _panelTotales(tamano),
           if (!conPanel) const SizedBox(height: 8),
@@ -990,7 +1145,15 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
               ChoiceChip(
                 label: Text(m.etiqueta),
                 selected: _modoLiquidacion == m.codigo,
-                onSelected: (_) => setState(() => _modoLiquidacion = m.codigo),
+                onSelected: (_) => setState(() {
+                  _modoLiquidacion = m.codigo;
+                  // El origen de los ajustes lo decide el modo, no una elección
+                  // aparte: fondo lo financia; inversores lo declaran externo.
+                  for (final a in _ajustesForm) {
+                    a.origenPago =
+                        m.codigo == 'inversores' ? 'externo' : 'fondo';
+                  }
+                }),
               ),
           ],
         ),
@@ -1136,7 +1299,7 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
       decoration: InputDecoration(
         isDense: true,
         labelText: 'Nº de factura',
-        hintText: 'Opcional',
+        hintText: 'Obligatorio',
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
       ),
     );
@@ -1208,9 +1371,21 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
               selected: _moneda == m,
               onSelected: (_) => setState(() {
                 _moneda = m;
+                _tasaEditable = false;
                 // En USD la tasa es 1 por definición: dejarla escrita evita que
                 // se guarde una tasa vieja de cuando era CUP.
-                if (m == 'USD') _tasaCtrl.text = '1';
+                if (m == 'USD') {
+                  _tasaCtrl.text = '1';
+                } else if (m == 'CUP' && _tasaTiendaCup != null) {
+                  // La tasa configurada de la tienda, bloqueada por defecto.
+                  _tasaCtrl.text = _textoNumero(_tasaTiendaCup!);
+                } else {
+                  // EUR (o CUP sin tasa configurada): se escribe a mano. Se
+                  // limpia el 1 de USD para no guardarlo como tasa de otra
+                  // moneda por descuido.
+                  _tasaEditable = true;
+                  _tasaCtrl.clear();
+                }
               }),
             ),
         ],
@@ -1219,24 +1394,55 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
   }
 
   Widget _campoTasa() {
+    final esUsd = _moneda == 'USD';
+    final bloqueada = esUsd || !_tasaEditable;
+    final ayuda = esUsd
+        ? 'En USD la tasa es 1'
+        : (_moneda == 'CUP' && _tasaTiendaCup != null && !_tasaEditable
+            ? 'Tasa configurada de la tienda: '
+                '${_textoNumero(_tasaTiendaCup!)} CUP por 1 USD'
+            : 'Unidades de $_moneda por 1 USD');
     return TextField(
       controller: _tasaCtrl,
-      enabled: _moneda != 'USD',
+      readOnly: bloqueada,
+      enabled: true,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
       inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
       onChanged: (_) => setState(() {}),
       decoration: InputDecoration(
         isDense: true,
         labelText: 'Tasa factura',
-        helperText: _moneda == 'USD'
-            ? 'En USD la tasa es 1'
-            : 'Unidades de $_moneda por 1 USD',
+        helperText: ayuda,
         helperMaxLines: 2,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-        suffixIcon: botonAyuda(ayudaTasaFactura, tamano: 16),
         suffixIconConstraints: const BoxConstraints(
           minWidth: 32,
           minHeight: 32,
+        ),
+        suffixIcon: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (!esUsd)
+              IconButton(
+                tooltip: _tasaEditable
+                    ? 'Volver a la tasa de la tienda'
+                    : 'Editar la tasa',
+                icon: Icon(
+                  _tasaEditable ? Icons.lock_open : Icons.edit_outlined,
+                  size: 18,
+                ),
+                visualDensity: VisualDensity.compact,
+                onPressed: () => setState(() {
+                  _tasaEditable = !_tasaEditable;
+                  if (!_tasaEditable &&
+                      _moneda == 'CUP' &&
+                      _tasaTiendaCup != null) {
+                    _tasaCtrl.text = _textoNumero(_tasaTiendaCup!);
+                  }
+                }),
+              ),
+            botonAyuda(ayudaTasaFactura, tamano: 16),
+          ],
         ),
       ),
     );
@@ -1923,14 +2129,11 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
   };
 
   Widget _dropdownReparto(_AjusteForm a) {
-    return DropdownButtonFormField<String>(
-      initialValue: a.reparto,
-      isExpanded: true,
-      isDense: true,
+    return InputDecorator(
       decoration: InputDecoration(
         isDense: true,
         labelText: 'Cómo se reparte',
-        helperText: 'Entre los productos de la compra',
+        helperText: 'Siempre por cantidad',
         helperMaxLines: 2,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
         contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
@@ -1940,27 +2143,19 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
           minHeight: 28,
         ),
       ),
-      items: [
-        for (final r in CompraRepartoAjuste.values)
-          DropdownMenuItem(value: r.codigo, child: Text(r.etiqueta)),
-      ],
-      onChanged: (valor) {
-        if (valor != null) setState(() => a.reparto = valor);
-      },
+      child: const Text('Por cantidad'),
     );
   }
 
   Widget _dropdownOrigen(_AjusteForm a) {
-    return DropdownButtonFormField<String>(
-      initialValue: a.origenPago,
-      isExpanded: true,
-      isDense: true,
+    final esFondo = a.origenPago == OrigenPagoAjuste.fondo.codigo;
+    return InputDecorator(
       decoration: InputDecoration(
         isDense: true,
         labelText: 'Quién lo paga',
-        helperText: a.origenPago == OrigenPagoAjuste.fondo.codigo
-            ? 'Sale del fondo'
-            : 'No sale del fondo',
+        helperText: esFondo
+            ? 'Sale del fondo de inversión'
+            : 'Lo declaran los inversores (no sale del fondo)',
         helperMaxLines: 2,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
         contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
@@ -1970,13 +2165,7 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
           minHeight: 28,
         ),
       ),
-      items: [
-        for (final o in OrigenPagoAjuste.values)
-          DropdownMenuItem(value: o.codigo, child: Text(o.etiqueta)),
-      ],
-      onChanged: (valor) {
-        if (valor != null) setState(() => a.origenPago = valor);
-      },
+      child: Text(esFondo ? 'Fondo' : 'Inversores / externo'),
     );
   }
 
@@ -1986,6 +2175,141 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
   // ==========================================================================
   // Panel de cifras
   // ==========================================================================
+
+  /// «0,50 → 0,70»: lo que el usuario necesita ver para entender que un ajuste
+  /// de 5.000 sobre 25.000 unidades sube 0,20 a CADA unidad.
+  Widget _panelPreviewCosto() {
+    if (_lineasForm.isEmpty) return const SizedBox.shrink();
+    final cantidad = _cantidadTotal;
+    if (cantidad <= 0) return const SizedBox.shrink();
+    final totales = _totalesPreview;
+
+    var ajustesTotal = 0.0;
+    for (final a in _ajustesForm) {
+      ajustesTotal += montoAjusteCompra(
+        a.aAjuste(),
+        mercancia: totales.mercancia,
+        cantidad: cantidad,
+      );
+    }
+    final ajustesPorUnidad = ComprasCostosCalculo.ajustesPorUnidad(
+      ajustesTotal: ajustesTotal,
+      cantidadTotal: cantidad,
+    );
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: panelCompras(
+        children: [
+          tituloSeccionCompras(
+            'Costo por unidad',
+            trailing: pastillaCompras('estimado', denso: true),
+          ),
+          textoMetaCompras(
+            'Los ajustes se reparten por cantidad. Si recibes toda la compra, '
+            'cada unidad queda así:',
+          ),
+          const SizedBox(height: 8),
+          for (final l in _lineasForm)
+            _filaPreviewCosto(l, ajustesPorUnidad),
+        ],
+      ),
+    );
+  }
+
+  Widget _filaPreviewCosto(_LineaForm l, double ajustesPorUnidad) {
+    final base = l.costoValor;
+    final finalUnit = ComprasCostosCalculo.costoUnitarioAterrizado(
+      costoUnitario: base,
+      ajustesTotal: ajustesPorUnidad,
+      cantidadTotal: 1,
+    );
+    final delta = finalUnit - base;
+    final pct = base > 0 ? (delta / base) * 100 : 0.0;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              l.nombre,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 13,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '${formatearImporte(base)} → ${formatearImporte(finalUnit)}',
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '+${formatearImporte(delta)} (${pct.toStringAsFixed(1)} %)',
+            style: TextStyle(
+              fontSize: 12,
+              color: delta > 0 ? AppColors.warning : AppColors.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Reserva del fondo en el mismo alta: el dinero se compromete al crear y el
+  /// pago se confirma después, igual que desde el detalle.
+  Widget _panelReserva() {
+    if (_modoLiquidacion == 'inversores') return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: panelCompras(
+        children: [
+          tituloSeccionCompras(
+            'Reservar del fondo',
+            trailing: pastillaCompras('opcional', denso: true),
+          ),
+          if (_cargandoSaldos)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: LinearProgressIndicator(minHeight: 2),
+            )
+          else
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _reservarAlCrear,
+              onChanged: _guardando || _saldosFondo.isEmpty
+                  ? null
+                  : (v) => setState(() => _reservarAlCrear = v),
+              title: const Text(
+                'Reservar al crear la compra',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              ),
+              subtitle: Text(
+                _saldosFondo.isEmpty
+                    ? 'No hay saldos del fondo disponibles.'
+                    : 'El dinero se compromete al guardar; el pago se '
+                        'confirma después.',
+                style: const TextStyle(fontSize: 11),
+              ),
+            ),
+          if (_reservarAlCrear && _saldosFondo.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            FdiRecepcionFuentes(
+              saldos: _saldosFondo,
+              total: _totalesPreview.financiado,
+              moneda: _monedaPreview,
+              enabled: !_guardando,
+              onChanged: (fuentes) =>
+                  setState(() => _fuentesReserva = fuentes),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 
   Widget _panelTotales(ComprasTamano tamano) {
     final totales = _totalesPreview;
@@ -2013,7 +2337,7 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
             moneda: _monedaPreview,
             apilado: apilado,
             helperAterrizado:
-                'Incluye los ajustes pagados por la wallet de importadora.',
+                'Mercancía + ajustes declarados (sin cargos de recepción).',
           ),
           const SizedBox(height: 10),
           avisoCompras(
@@ -2156,7 +2480,7 @@ class _AjusteForm {
 
   _AjusteForm({
     this.base = 'global',
-    this.reparto = 'valor',
+    this.reparto = 'cantidad',
     this.origenPago = 'fondo',
     this.idTipoCosto,
     String valor = '0',

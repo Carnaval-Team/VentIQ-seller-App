@@ -40,6 +40,8 @@ antes o en paralelo y que sigue mandando donde no lo contradiga el plan.
 | [`11-diff-v4-v6.md`](11-diff-v4-v6.md) | Qué cambió entre la v4 y la v6 del plan. |
 | [`12-inventario-migraciones.md`](12-inventario-migraciones.md) | Inventario de migraciones necesarias. |
 | [`13-ui-compras.md`](13-ui-compras.md) / [`14-ui-liquidacion.md`](14-ui-liquidacion.md) | Pantallas y flujos de compras y liquidación. |
+| [`15-plan-compras-costos.md`](15-plan-compras-costos.md) | **Plan vigente de correcciones** (2026-11-26): factura obligatoria, tasa de la tienda, conceptos por tienda, aterrizaje por cantidad, reserva desde el alta y margen CUP en la recepción. Incluye el diagnóstico de las recepciones 230/231. |
+| [`16-main-sql.md`](16-main-sql.md) | **SQL para main, en orden**: respaldo, preflight, scripts 10-15, post-check y qué desplegar después. |
 
 ## SQL
 
@@ -62,6 +64,12 @@ Cada script tiene su `_rollback.sql` y cada verificación su archivo en `verify/
 | `08_reportes.sql` | R2-R7 | `verify/08_reportes.sql` (14) |
 | `08b_conciliacion_job.sql` | R1 programada en `pg_cron` | `verify/08b_job.sql` (9) |
 | `09_pendientes.sql` | Panel de pendientes, detalle por línea, histórico de recepciones y facturas | `verify/09_pendientes.sql` (14) |
+| `10_costos_tienda.sql` | Conceptos de costo por tienda (id_tienda, roles dueño/gerente) | `verify/10_costos_tienda.sql` (7 + resumen) |
+| `11_importadora_bruto.sql` | Bruto generado = neto + reembolso, sin reescribir historia | `verify/11_importadora.sql` (4 + resumen) |
+| `12_compra_contrato.sql` | Factura obligatoria, tasa de la tienda, reparto por cantidad y origen por modo | `verify/12_compra_contrato.sql` (7 + resumen) |
+| `13a`-`13e` | Aterrizaje: base recibida, atribución, reparto por cantidad, `_v2` unitario, resumen y detalle | prueba revertida sobre el vínculo 30 (0,75/u) |
+| `14_diagnostico_costos.sql` | Vista de comparación de costos (sin recosteo) | consulta en `newa` (productos 2 y 10 marcados) |
+| `15_reset_costo_producto.sql` | Reset manual del costo desde la última recepción, con motivo e historial | probado en revertido (producto 2: 84,30 → 0,55) |
 
 **Prerrequisito del pase**: `sql_updates/costos_adicionales_producto.sql` (tabla de costos por recepción,
 `costo_real` como columna normal y `_v2` leyendo la tabla de costos). Sin él, `06c` no puede parchear `_v2`

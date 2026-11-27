@@ -311,7 +311,91 @@ class _ProductCostosAdicionalesSectionState
             },
           ),
         ],
+        if (widget.canEdit) ...[
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              onPressed: _reiniciarCosto,
+              icon: const Icon(Icons.restart_alt, size: 18),
+              label: const Text('Reiniciar costo promedio'),
+            ),
+          ),
+          Text(
+            'Lo reinicia a partir de la última recepción, con motivo. No '
+            'reescribe ventas ni el COGS histórico.',
+            style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+          ),
+        ],
       ],
     );
+  }
+
+  Future<void> _reiniciarCosto() async {
+    final motivoCtrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reiniciar costo promedio'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'El costo de referencia se recalcula desde la última recepción '
+              'del producto. No se tocan ventas, COGS ni recepciones.',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: motivoCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Motivo',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (motivoCtrl.text.trim().isEmpty) return;
+              Navigator.pop(ctx, true);
+            },
+            child: const Text('Reiniciar'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) {
+      motivoCtrl.dispose();
+      return;
+    }
+    try {
+      final r = await _financial.resetCostoPromedio(
+        widget.idProducto,
+        motivoCtrl.text.trim(),
+      );
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Costo reiniciado: antes ${r['promedio_anterior']} · '
+            'ahora ${r['promedio_nuevo']}',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo reiniciar: $e')),
+      );
+    } finally {
+      motivoCtrl.dispose();
+    }
   }
 }

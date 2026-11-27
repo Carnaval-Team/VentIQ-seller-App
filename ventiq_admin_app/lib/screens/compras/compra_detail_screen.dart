@@ -40,6 +40,8 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
   final _claveCifras = GlobalKey();
   final _claveLineasDetalle = GlobalKey();
   final _claveAjustesDetalle = GlobalKey();
+  final _claveCostoAterrizado = GlobalKey();
+  final _claveRecepciones = GlobalKey();
   final _claveTasa = GlobalKey();
   final _claveBotonTutorialDetalle = GlobalKey();
 
@@ -333,19 +335,19 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
         icono: Icons.summarize_outlined,
         texto:
             'Mercancía es lo que cuestan los productos. Ajustes es lo que costó '
-            'traerlos. Financiado es lo que puso el fondo. Aterrizado es el '
-            'costo real de la mercancía, con todo dentro. Nunca se suman entre '
-            'ellas.',
+            'traerlos. Financiado es lo que puso el fondo. El aterrizado del '
+            'documento es mercancía + ajustes; los cargos de la recepción se '
+            'suman en el panel «Costo aterrizado». Nunca se suman entre ellas.',
       ),
       PasoTutorialCompra(
         clave: _claveTasa,
         titulo: 'La tasa de la factura',
         icono: Icons.currency_exchange,
         texto:
-            'Cuántas unidades de la moneda de la factura equivalen a 1 USD. Se '
-            'guarda con la compra y no se recalcula: es la foto del día en que '
-            'registraste la factura. Con ella se compara después lo que de '
-            'verdad costó pagar.',
+            'Cuántas unidades de la moneda de la factura equivalen a 1 USD. En '
+            'CUP se toma de la tasa configurada de la tienda y queda bloqueada; '
+            'el botón de editar permite corregirla y queda congelada en esta '
+            'compra.',
       ),
       PasoTutorialCompra(
         clave: _claveLineasDetalle,
@@ -361,9 +363,27 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
         titulo: 'Ajustes del costo',
         icono: Icons.tune,
         texto:
-            'Flete, aduana, seguro, importadora. Cada uno con cómo se calcula, '
-            'cómo se reparte y quién lo paga. Si alguno llegó después del pago, '
-            'aquí aparece «Por financiar» hasta que se cubra.',
+            'Flete, aduana, seguro, importadora. Cada uno con cómo se calcula y '
+            'quién lo paga; se reparten por cantidad de unidades. Si alguno '
+            'llegó después del pago, aquí aparece «Por financiar» hasta que se '
+            'cubra.',
+      ),
+      PasoTutorialCompra(
+        clave: _claveCostoAterrizado,
+        titulo: 'Costo aterrizado',
+        icono: Icons.calculate_outlined,
+        texto:
+            'Valor recibido + cargo neto de importadora + ajustes aplicados. El '
+            'cargo bruto solo aparece si hubo devolución: no se suma dos veces. '
+            'El ⓘ del panel lo explica con tus propios números.',
+      ),
+      PasoTutorialCompra(
+        clave: _claveRecepciones,
+        titulo: 'Recepciones',
+        icono: Icons.inventory_2_outlined,
+        texto:
+            'Cada recepción con su operación, fecha y valor recibido. Aquí ves '
+            'qué entró y cuándo; la operación completa está en Recepción.',
       ),
     ];
   }
@@ -519,7 +539,10 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
                         _panelCabecera(detalle),
                         _panelLineas(detalle, tamano),
                         _panelAjustes(detalle),
-                        _panelRecepciones(detalle),
+                        KeyedSubtree(
+                          key: _claveRecepciones,
+                          child: _panelRecepciones(detalle),
+                        ),
                         _panelHistorial(detalle),
                       ],
                     ),
@@ -534,7 +557,10 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
                       children: [
                         _panelTotales(detalle),
                         _panelAportes(detalle),
-                        _panelCostoAterrizado(detalle),
+                        KeyedSubtree(
+                          key: _claveCostoAterrizado,
+                          child: _panelCostoAterrizado(detalle),
+                        ),
                         const SizedBox(height: 12),
                         _panelAcciones(detalle),
                       ],
@@ -554,11 +580,17 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
               _panelCabecera(detalle),
               _panelTotales(detalle),
               _panelAportes(detalle),
-              _panelCostoAterrizado(detalle),
+              KeyedSubtree(
+                          key: _claveCostoAterrizado,
+                          child: _panelCostoAterrizado(detalle),
+                        ),
               const SizedBox(height: 12),
               _panelLineas(detalle, tamano),
               _panelAjustes(detalle),
-              _panelRecepciones(detalle),
+              KeyedSubtree(
+                          key: _claveRecepciones,
+                          child: _panelRecepciones(detalle),
+                        ),
               _panelHistorial(detalle),
               const SizedBox(height: 4),
               _panelAcciones(detalle),
@@ -742,7 +774,8 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
             moneda: c.monedaTotal,
             apilado: true,
             helperAterrizado:
-                'Incluye lo pagado por la wallet de importadora y el resto de ajustes.',
+                'Mercancía + ajustes declarados. Los cargos de recepción se '
+                'suman en el panel «Costo aterrizado».',
           ),
           const SizedBox(height: 10),
           Text(
@@ -833,7 +866,9 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
     if (detalle == null) return;
     List<Map<String, dynamic>> tipos;
     try {
-      tipos = await FinancialService().getCostTypes();
+      tipos = await FinancialService().getCostTypes(
+        idTienda: detalle.compra.idTienda,
+      );
     } catch (e) {
       _snack('No se pudieron cargar los tipos de costo: $e', error: true);
       return;
@@ -976,16 +1011,36 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
         children: [
           tituloSeccionCompras(
             'Costo aterrizado',
-            trailing: textoMetaCompras('${vinculos.length} recepción(es)'),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                botonAyuda(ayudaCostoAterrizado, tamano: 16),
+                const SizedBox(width: 4),
+                textoMetaCompras('${vinculos.length} recepción(es)'),
+              ],
+            ),
           ),
           fila(
-            'Valor de factura vinculado',
+            'Valor recibido',
             formatearImporteMoneda(numero('valor_vinculado'), moneda),
           ),
           fila(
             'Cargo de importadora',
             formatearImporteMoneda(numero('cargo_importadora'), moneda),
           ),
+          if (numero('reembolso_importadora') > 0) ...[
+            fila(
+              'Cargo bruto',
+              formatearImporteMoneda(
+                numero('cargo_bruto_importadora'),
+                moneda,
+              ),
+            ),
+            fila(
+              'Devolución',
+              formatearImporteMoneda(numero('reembolso_importadora'), moneda),
+            ),
+          ],
           if (pctDecl != null)
             textoMetaCompras(
               'Importadora: declarado ${formatearCantidad(pctDecl)} % · '
@@ -1008,15 +1063,21 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
               ),
             ),
           if (ajustes > 0) ...[
-            fila('Ajustes globales', formatearImporteMoneda(ajustes, moneda)),
-            fila(
-              'Aplicado (${formatearCantidad(numero('pct_recibido') * 100)} % recibido)',
-              formatearImporteMoneda(numero('ajustes_aplicados'), moneda),
-            ),
-            fila(
-              'Por asignar',
-              formatearImporteMoneda(numero('ajustes_por_asignar'), moneda),
-            ),
+            if (numero('ajustes_por_asignar') > 0.005) ...[
+              fila('Ajustes', formatearImporteMoneda(ajustes, moneda)),
+              fila(
+                'Aplicado (${formatearCantidad(numero('pct_recibido') * 100)} % recibido)',
+                formatearImporteMoneda(numero('ajustes_aplicados'), moneda),
+              ),
+              fila(
+                'Por asignar',
+                formatearImporteMoneda(numero('ajustes_por_asignar'), moneda),
+              ),
+            ] else
+              fila(
+                'Ajustes aplicados',
+                formatearImporteMoneda(numero('ajustes_aplicados'), moneda),
+              ),
           ],
           const Divider(height: 20),
           fila(
@@ -1029,33 +1090,7 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
             textoMetaCompras('Costo por línea recibida (${lineas.length})'),
             const SizedBox(height: 4),
             for (final linea in lineas.take(8))
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 3),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        '${linea['producto'] ?? ''} · '
-                        '${formatearCantidad(num.tryParse('${linea['cantidad']}') ?? 0)}',
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                    ),
-                    Text(
-                      '${formatearImporte(num.tryParse('${linea['costo_factura_unit']}') ?? 0)}'
-                      ' → '
-                      '${formatearImporte(num.tryParse('${linea['costo_aterrizado_unit']}') ?? 0)}',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              _filaCostoLinea(linea as Map<String, dynamic>),
             if (lineas.length > 8)
               textoMetaCompras('… y ${lineas.length - 8} línea(s) más'),
             const SizedBox(height: 4),
@@ -1117,6 +1152,78 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
   // ==========================================================================
   // Líneas
   // ==========================================================================
+
+  Widget _filaCostoLinea(Map<String, dynamic> linea) {
+    num? n(String clave) {
+      final v = linea[clave];
+      if (v == null) return null;
+      if (v is num) return v;
+      return num.tryParse('$v');
+    }
+
+    final factura = n('costo_factura_unit') ?? 0;
+    final aterrizado = n('costo_aterrizado_unit') ?? 0;
+    final venta = n('precio_venta_cup');
+    final costoCup = n('costo_aterrizado_cup');
+    final margen =
+        (venta != null && costoCup != null) ? venta - costoCup : null;
+    final conceptos = (linea['conceptos'] as List?) ?? const [];
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              '${linea['producto'] ?? ''} · '
+              '${formatearCantidad(n('cantidad') ?? 0)}',
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 13,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '${formatearImporte(factura)} → '
+                '${formatearImporte(aterrizado)}',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (venta != null && margen != null)
+                Text(
+                  'venta ${formatearImporte(venta)} · '
+                  'margen ${formatearImporte(margen)}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: margen >= 0 ? AppColors.success : AppColors.error,
+                  ),
+                ),
+              if (conceptos.isNotEmpty)
+                Text(
+                  conceptos
+                      .map((c) {
+                        final m = c is Map ? c : const {};
+                        return '${m['denominacion'] ?? 'Costo'} '
+                            '${formatearImporte((m['monto'] as num?) ?? 0)}';
+                      })
+                      .join(' · '),
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _panelLineas(CompraDetalle detalle, ComprasTamano tamano) {
     final c = detalle.compra;
@@ -1488,13 +1595,6 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
       padding: const EdgeInsets.only(top: 12),
       child: panelCompras(
         children: [
-          avisoCompras(
-            'Esta compra ya tiene ${detalle.recepciones.length} '
-            '${detalle.recepciones.length == 1 ? 'recepción registrada' : 'recepciones registradas'}. '
-            'La cancelación la rechazará el servidor mientras existan.',
-            icono: Icons.inventory_2_outlined,
-          ),
-          const SizedBox(height: 8),
           for (final r in detalle.recepciones)
             Padding(
               padding: const EdgeInsets.only(bottom: 6),
@@ -1522,7 +1622,9 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
                   const SizedBox(width: 8),
                   Text(
                     formatearImporteMoneda(
-                      (r['monto_valorizado'] as num?)?.toDouble() ?? 0,
+                      ((r['valor_recibido'] ?? r['monto_valorizado']) as num?)
+                              ?.toDouble() ??
+                          0,
                       (r['moneda'] ?? moneda).toString(),
                     ),
                     style: const TextStyle(

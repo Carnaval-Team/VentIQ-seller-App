@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/notification_model.dart';
 import '../utils/uuid_generator.dart';
+import '../widgets/aviso_producto_agotado.dart';
 import 'local_notification_service.dart';
 
 bool _rpcAusente(Object error, String functionName) {
@@ -272,6 +273,11 @@ class NotificationService {
       // Mostrar notificación push local
       _localNotificationService.showNotification(notification);
 
+      // Aviso flotante propio para el agotado: el SnackBar de abajo se pierde
+      // mientras el vendedor está cobrando. Sólo las de inventario con
+      // producto pasan el filtro; el resto sigue como siempre.
+      AvisoProductoAgotado.mostrar(notification);
+
       print('✅ Nueva notificación agregada: ${notification.titulo}');
     } catch (e) {
       print('❌ Error procesando nueva notificación: $e');
@@ -533,6 +539,7 @@ class NotificationService {
   /// Cerrar servicio y limpiar recursos
   void dispose() {
     print('🔌 Cerrando NotificationService...');
+    AvisoProductoAgotado.ocultarTodo();
     _realtimeChannel?.unsubscribe();
     _notificationsController.close();
     _unreadCountController.close();

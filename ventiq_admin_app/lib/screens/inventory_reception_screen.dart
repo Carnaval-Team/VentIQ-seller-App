@@ -21,6 +21,8 @@ import '../services/fondo_inversion_service.dart';
 import '../widgets/fdi_recepcion_fuentes.dart';
 import '../models/compra.dart';
 import '../services/compra_service.dart';
+import '../services/compras_costos_calculo.dart';
+import '../services/currency_service.dart';
 import '../services/financial_service.dart';
 
 class InventoryReceptionScreen extends StatefulWidget {
@@ -105,6 +107,23 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   final _reembolsoImportadoraController = TextEditingController();
   OrigenPagoAjuste _origenPagoImportadora = OrigenPagoAjuste.walletImportadora;
 
+  /// La importadora es opcional: la mayoría de las recepciones no la tienen.
+  /// Apagada, el cargo es 0 y no se envía nada al vínculo.
+  bool _importadoraActiva = false;
+
+  /// El usuario escribió «Sobre cuánto» a mano: no se pisa al marcar líneas.
+  bool _baseImportadoraManual = false;
+
+  /// Costos adicionales de la RECEPCIÓN (transporte, aduana…), repartidos por
+  /// cantidad entre las líneas. Se suman a los que ya trae cada producto.
+  final List<_CostoExtraRecepcion> _costosExtra = [];
+  int? _tipoExtraSeleccionado;
+  final _montoExtraCtrl = TextEditingController();
+
+  /// Precio de venta CUP por producto y tasa USD→CUP, para el margen estimado.
+  Map<int, double> _precioVentaCup = {};
+  double _tasaCup = 0;
+
   /// Tasa de la factura en la recepción con compra: unidades de la moneda de la
   /// factura por 1 USD (la misma que `fdi_dat_compra.tasa_factura`). El servidor
   /// la exige si la factura no es USD y la guarda en la operación (D8).
@@ -121,12 +140,15 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   /// Hay compra seleccionada: cambia el selector de productos y bloquea el fondo.
   bool get _conCompra => _compraSeleccionada != null;
 
-  /// Alguna línea lleva costos adicionales: la recepción viaja por el wrapper
-  /// transaccional y, si la factura no es USD, ese carril exige la tasa (D8).
-  bool get _hayCostos => _selectedProducts.any((p) {
-    final costos = p['costos'];
-    return costos is List && costos.isNotEmpty;
-  });
+  /// Alguna línea lleva costos adicionales (del producto o de la recepción):
+  /// la recepción viaja por el wrapper transaccional y, si la factura no es
+  /// USD, ese carril exige la tasa (D8).
+  bool get _hayCostos =>
+      _costosExtra.isNotEmpty ||
+      _selectedProducts.any((p) {
+        final costos = p['costos'];
+        return costos is List && costos.isNotEmpty;
+      });
 
   /// Hay que pedir y enviar `p_tasa_usd`: factura no-USD y un carril que la
   /// exige (recepción de compra, siempre, porque el aterrizaje posterior la
@@ -156,10 +178,12 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   double get _reembolsoImportadora =>
       _numeroDe(_reembolsoImportadoraController.text);
 
-  /// `base × % / 100 − reembolso`, el mismo cálculo que hace la RPC.
+  /// `sobre cuánto × % / 100 − devolución`, el mismo cálculo que hace la RPC.
+  /// Si el interruptor está apagado, no hay cargo.
   double get _cargoImportadora {
-    final cargo = _baseImportadora * _pctImportadora / 100 -
-        _reembolsoImportadora;
+    if (!_importadoraActiva) return 0;
+    final cargo =
+        _baseImportadora * _pctImportadora / 100 - _reembolsoImportadora;
     return cargo.isFinite ? (cargo * 100).round() / 100 : 0;
   }
 
@@ -178,7 +202,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
         if (costo is Map) total += _numeroDe('${costo['monto_usd']}');
       }
     }
-    return total;
+    return total + _extrasTotal;
   }
 
   Future<void> _loadSaldosFondo() async {
@@ -206,6 +230,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
     _loadSaldosFondo();
     _loadCompras();
     _cargarNombresCosto();
+    _cargarTasaCup();
     _searchController.addListener(_onSearchChanged);
 
     // Load persisted values from previous entries
@@ -222,7 +247,8 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   /// línea (el importe y el id son los que viajan a la RPC).
   Future<void> _cargarNombresCosto() async {
     try {
-      final tipos = await FinancialService().getCostTypes();
+      final tienda = await UserPreferencesService().getIdTienda();
+      final tipos = await FinancialService().getCostTypes(idTienda: tienda);
       if (!mounted) return;
       setState(() {
         _nombresCosto = {
@@ -254,6 +280,10 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
     _baseImportadoraController.dispose();
     _reembolsoImportadoraController.dispose();
     _tasaFacturaUsdController.dispose();
+    _montoExtraCtrl.dispose();
+    for (final c in _costosExtra) {
+      c.dispose();
+    }
     for (final controller in _cantidadCompraControllers.values) {
       controller.dispose();
     }
@@ -337,12 +367,14 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
       _cantidadCompraControllers.clear();
       _selectedProducts = [];
       _confirmarExcesoCompra = false;
+      _baseImportadoraManual = false;
       _pctImportadoraController.clear();
       _reembolsoImportadoraController.clear();
       _baseImportadoraController.clear();
       if (compra != null) {
-        _baseImportadoraController.text =
-            compra.totalMercancia.toStringAsFixed(2);
+        // La base es el valor recibido de las líneas que se marquen; se llena
+        // en `_sincronizarBaseImportadora`. Nunca la compra entera.
+        _baseImportadoraController.clear();
         // Compra y financiación con el fondo no pueden convivir.
         _usarFondo = false;
         _fuentesFondo = [];
@@ -448,7 +480,9 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
         _cantidadesCompra.remove(linea.idLinea);
       }
       _rebuildProductosCompra();
+      _sincronizarBaseImportadora();
     });
+    _cargarPreciosVenta();
   }
 
   void _setCantidadCompra(int idLinea, String texto) {
@@ -456,7 +490,9 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
     setState(() {
       _cantidadesCompra[idLinea] = _numeroDe(texto);
       _rebuildProductosCompra();
+      _sincronizarBaseImportadora();
     });
+    _cargarPreciosVenta();
   }
 
   /// Convierte las líneas marcadas en los productos que ya sabe manejar el
@@ -497,6 +533,156 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
       if (entry.value > 0)
         {'id_compra_linea': entry.key, 'cantidad_recibida': entry.value},
   ];
+
+  /// Valor de factura de lo que se está recibiendo AHORA.
+  ///
+  /// Es la base que se declara con el vínculo: el porcentaje de importadora se
+  /// cobra sobre lo recibido, no sobre la compra entera (antes se precargaba
+  /// `totalMercancia` y dos recepciones parciales duplicaban la base).
+  double get _valorRecibidoSeleccionado {
+    var total = 0.0;
+    for (final entry in _cantidadesCompra.entries) {
+      final linea = _lineaCompraPorId(entry.key);
+      if (linea == null) continue;
+      total += entry.value * linea.costoUnitario;
+    }
+    return total;
+  }
+
+  /// Mantiene la base sincronizada con las líneas marcadas. El servidor, si
+  /// recibe 0, la calcula igual; aquí se muestra para que el % se entienda.
+  void _sincronizarBaseImportadora() {
+    if (_compraSeleccionada == null || _baseImportadoraManual) return;
+    _baseImportadoraController.text =
+        _valorRecibidoSeleccionado.toStringAsFixed(2);
+  }
+
+  Future<void> _cargarTasaCup() async {
+    try {
+      final tasa = await CurrencyService.getEffectiveUsdToCupRate();
+      if (mounted) setState(() => _tasaCup = tasa);
+    } catch (_) {
+      // Sin tasa no se muestra margen; el costo en USD sigue visible.
+    }
+  }
+
+  /// Precio de venta base en CUP por producto seleccionado.
+  Future<void> _cargarPreciosVenta() async {
+    final ids = <int>{};
+    for (final p in _selectedProducts) {
+      final raw = p['id_producto'] ?? p['id'];
+      final id = raw is int ? raw : int.tryParse('$raw');
+      if (id != null) ids.add(id);
+    }
+    if (ids.isEmpty) {
+      if (mounted) setState(() => _precioVentaCup = {});
+      return;
+    }
+    if (_precioVentaCup.length == ids.length &&
+        ids.every(_precioVentaCup.containsKey)) {
+      return;
+    }
+    try {
+      final rows = await Supabase.instance.client
+          .from('app_v_precio_venta_base_vigente')
+          .select('id_producto, precio_venta_cup')
+          .inFilter('id_producto', ids.toList());
+      if (!mounted) return;
+      setState(() {
+        _precioVentaCup = {
+          for (final r in rows)
+            (r['id_producto'] as num).toInt():
+                (r['precio_venta_cup'] as num?)?.toDouble() ?? 0,
+        };
+      });
+    } catch (_) {
+      // Sin precio vigente no se inventa un margen.
+    }
+  }
+
+  int? _idTipoImportadora() {
+    for (final e in _nombresCosto.entries) {
+      if (e.value.trim().toLowerCase() == 'importadora') return e.key;
+    }
+    return null;
+  }
+
+  /// La importadora se declara arriba con su %. No se vuelve a ofrecer como
+  /// costo adicional por producto: sería contarla dos veces.
+  Set<int> get _conceptosOcultosRecepcion {
+    if (!_importadoraActiva) return const {};
+    final id = _idTipoImportadora();
+    return id == null ? const {} : {id};
+  }
+
+  double get _totalUnidadesSeleccionadas {
+    var total = 0.0;
+    for (final p in _selectedProducts) {
+      total += (p['cantidad'] as num?)?.toDouble() ?? 0;
+    }
+    return total;
+  }
+
+  double get _extrasTotal {
+    var total = 0.0;
+    for (final c in _costosExtra) {
+      total += c.valor;
+    }
+    return total;
+  }
+
+  void _agregarCostoExtra() {
+    final id = _tipoExtraSeleccionado;
+    final monto = _numeroDe(_montoExtraCtrl.text);
+    if (id == null) {
+      _showError('Elige el concepto del costo adicional');
+      return;
+    }
+    if (monto <= 0) {
+      _showError('Indica el importe total del costo adicional (USD)');
+      return;
+    }
+    setState(() {
+      _costosExtra.add(_CostoExtraRecepcion(id, _textoNumero(monto)));
+      _tipoExtraSeleccionado = null;
+      _montoExtraCtrl.clear();
+    });
+  }
+
+  void _quitarCostoExtra(int index) {
+    setState(() {
+      _costosExtra.removeAt(index).dispose();
+    });
+  }
+
+  /// Reparte cada costo extra por cantidad entre las líneas y lo suma a los
+  /// costos que ya trae cada producto. El residuo de centavos va a la línea de
+  /// mayor cantidad, para que Σ filas = importe declarado.
+  void _distribuirCostosExtra(List<Map<String, dynamic>> productos) {
+    if (_costosExtra.isEmpty || productos.isEmpty) return;
+    final cantidades = [
+      for (final p in productos) (p['cantidad'] as num?)?.toDouble() ?? 0,
+    ];
+    for (final extra in _costosExtra) {
+      final monto = extra.valor;
+      if (monto <= 0) continue;
+      final cuotas = ComprasCostosCalculo.repartirPorCantidad(
+        cantidades: cantidades,
+        monto: monto,
+      );
+      for (var i = 0; i < productos.length; i++) {
+        if (cuotas[i] <= 0) continue;
+        final costos = List<Map<String, dynamic>>.from(
+          (productos[i]['costos'] as List?) ?? const [],
+        );
+        costos.add({
+          'id_tipo_costo': extra.idTipoCosto,
+          'monto_usd': cuotas[i],
+        });
+        productos[i]['costos'] = costos;
+      }
+    }
+  }
 
   /// Líneas que superan el pendiente, en texto, para el diálogo de exceso.
   List<String> _lineasSobrePendiente() {
@@ -559,10 +745,14 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
       final status = r['status']?.toString() ?? '?';
       switch (status) {
         case 'ok':
-          final suma = _numeroDe('${r['suma_monto_usd']}');
-          return ' · cargo aterrizado: ${_textoNumero(suma)} USD';
+          final suma = _numeroDe('${r['cargo_suma'] ?? r['suma_monto_usd']}');
+          final ajustes = _numeroDe('${r['ajustes_aplicados']}');
+          final extra = ajustes > 0
+              ? ' · ajustes aplicados: ${_textoNumero(ajustes)} USD'
+              : '';
+          return ' · cargo aterrizado: ${_textoNumero(suma)} USD$extra';
         case 'sin_cargo':
-          return ' · sin cargo de importadora que aterrizar.';
+          return ' · sin cargo de importadora ni ajustes que aterrizar.';
         case 'omitido':
           return ' · el cargo lo paga ${r['origen_pago']}; no se toca el costo.';
         default:
@@ -816,6 +1006,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
         selectedLocation: _selectedLocation,
         invoiceCurrency: _selectedCurrency,
         exchangeRate: null,
+        conceptosOcultos: _conceptosOcultosRecepcion,
         onProductAdded: (productData) {
           setState(() {
             // Identify the incoming product by its numeric ID and presentation
@@ -850,6 +1041,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
               _selectedProducts.add(productData);
             }
           });
+          _cargarPreciosVenta();
         },
       ),
     );
@@ -961,17 +1153,19 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
         _showError('Seleccione al menos una línea de la compra');
         return;
       }
-      if (_pctImportadora < 0 || _pctImportadora > 100) {
-        _showError('El % de importadora debe estar entre 0 y 100');
-        return;
-      }
-      if (_reembolsoImportadora < 0) {
-        _showError('El reembolso no puede ser negativo');
-        return;
-      }
-      if (_cargoImportadora < 0) {
-        _showError('El reembolso supera el cargo de importadora');
-        return;
+      if (_importadoraActiva) {
+        if (_pctImportadora < 0 || _pctImportadora > 100) {
+          _showError('El % de importadora debe estar entre 0 y 100');
+          return;
+        }
+        if (_reembolsoImportadora < 0) {
+          _showError('La devolución no puede ser negativa');
+          return;
+        }
+        if (_cargoImportadora < 0) {
+          _showError('La devolución supera el cargo de importadora');
+          return;
+        }
       }
       final excesos = _lineasSobrePendiente();
       if (excesos.isNotEmpty) {
@@ -1031,6 +1225,12 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
         }
         return productWithLocation;
       }).toList();
+
+      // Los costos de la recepción (transporte, etc.) se reparten por cantidad
+      // y viajan dentro de cada línea al wrapper transaccional.
+      if (_costosExtra.isNotEmpty) {
+        _distribuirCostosExtra(productosParaEnviar);
+      }
 
       // Debug: Print products list before sending to Supabase
       print("=== PRODUCTOS PARA ENVIAR A SUPABASE ===");
@@ -1133,10 +1333,13 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                 idCompra: compra.id,
                 lineas: _lineasParaVincular(),
                 confirmarExceso: _confirmarExcesoCompra,
-                pctImportadora: _pctImportadora,
-                baseImportadora: _baseImportadora,
-                reembolsoImportadora: _reembolsoImportadora,
-                origenPago: _origenPagoImportadora.codigo,
+                pctImportadora: _importadoraActiva ? _pctImportadora : 0,
+                baseImportadora: _importadoraActiva ? _baseImportadora : 0,
+                reembolsoImportadora:
+                    _importadoraActiva ? _reembolsoImportadora : 0,
+                origenPago: _importadoraActiva
+                    ? _origenPagoImportadora.codigo
+                    : OrigenPagoAjuste.walletImportadora.codigo,
               );
               if (vinculo['status'] != 'ok') {
                 await _mostrarVinculoFallido(
@@ -1235,6 +1438,10 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                     _buildProductSelectionSection(),
                     const SizedBox(height: 24),
                     _buildSelectedProductsSection(),
+                    const SizedBox(height: 24),
+                    _buildCostosExtraBlock(),
+                    const SizedBox(height: 24),
+                    _buildMargenCup(),
                   ],
                 ),
               ),
@@ -1244,6 +1451,259 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
         ),
       ),
     );
+  }
+
+  /// Conceptos de la tienda (o globales) que se suman a la recepción completa:
+  /// transporte, aduana, etc. Se reparten por cantidad entre las líneas.
+  Widget _buildCostosExtraBlock() {
+    if (_nombresCosto.isEmpty) return const SizedBox.shrink();
+    final usados = _costosExtra.map((c) => c.idTipoCosto).toSet();
+    final disponibles = _nombresCosto.entries
+        .where(
+          (e) =>
+              !usados.contains(e.key) &&
+              !(_importadoraActiva &&
+                  e.value.trim().toLowerCase() == 'importadora'),
+        )
+        .toList();
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Otros costos de la recepción',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Transporte, aduana, seguro… Se reparten por cantidad entre las '
+              'líneas y suben el costo unitario. No reemplazan el cargo de '
+              'importadora.',
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 12),
+            if (disponibles.isNotEmpty)
+              Row(
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<int>(
+                      value: _tipoExtraSeleccionado,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Concepto',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      items: [
+                        for (final e in disponibles)
+                          DropdownMenuItem(
+                            value: e.key,
+                            child: Text(e.value, overflow: TextOverflow.ellipsis),
+                          ),
+                      ],
+                      onChanged: (v) =>
+                          setState(() => _tipoExtraSeleccionado = v),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 130,
+                    child: TextField(
+                      controller: _montoExtraCtrl,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: const InputDecoration(
+                        labelText: 'Total USD',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton.filled(
+                    tooltip: 'Añadir costo',
+                    onPressed: _agregarCostoExtra,
+                    icon: const Icon(Icons.add),
+                  ),
+                ],
+              ),
+            if (_costosExtra.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              for (var i = 0; i < _costosExtra.length; i++)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _nombresCosto[_costosExtra[i].idTipoCosto] ??
+                              'Concepto #${_costosExtra[i].idTipoCosto}',
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ),
+                      SizedBox(
+                        width: 120,
+                        child: TextField(
+                          controller: _costosExtra[i].monto,
+                          keyboardType:
+                              const TextInputType.numberWithOptions(
+                                decimal: true,
+                              ),
+                          onChanged: (_) => setState(() {}),
+                          decoration: const InputDecoration(
+                            labelText: 'USD',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Quitar',
+                        onPressed: () => _quitarCostoExtra(i),
+                        icon: const Icon(Icons.delete_outline, size: 18),
+                      ),
+                    ],
+                  ),
+                ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  'Total adicional: ${_textoNumero(_extrasTotal)} USD',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Costo estimado por unidad después de esta recepción contra el precio de
+  /// venta CUP vigente. Es la ganancia que verá el cliente al confirmar.
+  Widget _buildMargenCup() {
+    if (_selectedProducts.isEmpty || _tasaCup <= 0) {
+      return const SizedBox.shrink();
+    }
+    if (_selectedCurrency == 'EUR') return const SizedBox.shrink();
+    final unidades = _totalUnidadesSeleccionadas;
+    if (unidades <= 0) return const SizedBox.shrink();
+
+    final cargoUnit = _cargoImportadora / unidades;
+    final extrasUnit = _extrasTotal / unidades;
+
+    double costoUnitCup(double precio) {
+      if (_selectedCurrency == 'USD') {
+        return (precio + cargoUnit + extrasUnit) * _tasaCup;
+      }
+      return precio + cargoUnit + extrasUnit * _tasaCup;
+    }
+
+    final filas = <Widget>[];
+    for (final p in _selectedProducts) {
+      final raw = p['id_producto'] ?? p['id'];
+      final id = raw is int ? raw : int.tryParse('$raw');
+      final venta = id == null ? null : _precioVentaCup[id];
+      if (venta == null || venta <= 0) continue;
+      final precio = (p['precio_unitario'] as num?)?.toDouble() ?? 0;
+      final costo = costoUnitCup(precio);
+      final margen = venta - costo;
+      filas.add(
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 3),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  p['denominacion']?.toString() ?? 'Producto',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ),
+              Text(
+                '${_textoNumero(costo)} → ${_textoNumero(venta)}',
+                style: const TextStyle(fontSize: 12),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '${margen >= 0 ? '+' : ''}${_textoNumero(margen)} CUP',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: margen >= 0 ? AppColors.success : AppColors.error,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    if (filas.isEmpty) return const SizedBox.shrink();
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Costo vs precio de venta (CUP)',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Estimado por unidad después de esta recepción, con la tasa '
+              '1 USD = ${_textoNumero(_tasaCup)} CUP.',
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 8),
+            for (final f in filas) f,
+            const SizedBox(height: 4),
+            Text(
+              'Costo → precio de venta · margen en CUP. El promedio definitivo '
+              'lo recalcula el servidor al completar.',
+              style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Costo por unidad que tendrá el producto si se confirma la recepción:
+  /// factura + parte de importadora + otros costos de la recepción + costos
+  /// propios del producto.
+  String _buildCostoFinalDisplay(Map<String, dynamic> item) {
+    final precio = (item['precio_unitario'] as num?)?.toDouble() ?? 0;
+    final cantidad = (item['cantidad'] as num?)?.toDouble() ?? 0;
+    if (cantidad <= 0) return '';
+    final unidades = _totalUnidadesSeleccionadas;
+
+    final esCup = _selectedCurrency == 'CUP';
+    final tasa = esCup ? (_tasaCup > 0 ? _tasaCup : 0.0) : 1.0;
+
+    var propiosUsd = 0.0;
+    for (final c in _costosDe(item)) {
+      propiosUsd += _numeroDe('${c['monto_usd']}');
+    }
+
+    final prorrateo = unidades > 0
+        ? (_cargoImportadora + _extrasTotal * tasa) / unidades
+        : 0.0;
+    final propios = (propiosUsd * tasa) / cantidad;
+    final finalUnit = precio + prorrateo + propios;
+
+    return 'Costo final estimado: ${finalUnit.toStringAsFixed(2)} '
+        '$_selectedCurrency/u (factura ${precio.toStringAsFixed(2)} + '
+        '${(prorrateo + propios).toStringAsFixed(2)})';
   }
 
   Widget _buildCompraSection() {
@@ -1401,7 +1861,8 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
             ),
             const SizedBox(height: 8),
             _filaCifra('Total recepción', total, _selectedCurrency),
-            _filaCifra('Cargo importadora', cargo, _selectedCurrency),
+            if (_importadoraActiva)
+              _filaCifra('Cargo importadora', cargo, _selectedCurrency),
             if (usd) _filaCifra('Adicionales', adicionales, 'USD'),
             const Divider(height: 20),
             if (usd)
@@ -1503,126 +1964,205 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   Widget _buildCargoImportadoraBlock() {
     final cargo = _cargoImportadora;
     final negativo = cargo < 0;
+    final unidades = _totalUnidadesSeleccionadas;
+    final porUnidad = unidades > 0 ? cargo / unidades : 0.0;
+    final moneda = _compraSeleccionada?.monedaTotal ?? '';
+
+    String etiquetaOrigen(OrigenPagoAjuste origen) => switch (origen) {
+      OrigenPagoAjuste.walletImportadora => 'Wallet de la importadora',
+      OrigenPagoAjuste.walletProveedor => 'Wallet del proveedor',
+      OrigenPagoAjuste.externo => 'Lo pagué por fuera (no sale del fondo)',
+      OrigenPagoAjuste.fondo => 'Fondo (no disponible)',
+    };
+
+    final estiloAyuda = TextStyle(
+      fontSize: 12,
+      color: AppColors.textSecondary,
+      height: 1.3,
+    );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Cargo de importadora',
-          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'Se guarda con el vínculo: base × % / 100 − reembolso.',
-          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-        ),
-        const SizedBox(height: 8),
         Row(
           children: [
-            Expanded(
-              child: TextFormField(
-                controller: _pctImportadoraController,
-                decoration: const InputDecoration(
-                  labelText: '% importadora',
-                  border: OutlineInputBorder(),
-                  suffixText: '%',
-                  isDense: true,
-                ),
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                onChanged: (_) => setState(() {}),
+            const Expanded(
+              child: Text(
+                '¿La importadora cobra por esta carga?',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
               ),
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: TextFormField(
-                controller: _baseImportadoraController,
-                decoration: const InputDecoration(
-                  labelText: 'Base',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                onChanged: (_) => setState(() {}),
-              ),
+            Switch(
+              value: _importadoraActiva,
+              onChanged: (v) => setState(() {
+                _importadoraActiva = v;
+                if (v && _baseImportadoraController.text.trim().isEmpty) {
+                  _sincronizarBaseImportadora();
+                }
+              }),
             ),
           ],
         ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: TextFormField(
-                controller: _reembolsoImportadoraController,
-                decoration: const InputDecoration(
-                  labelText: 'Reembolso',
-                  border: OutlineInputBorder(),
-                  isDense: true,
+        if (!_importadoraActiva)
+          Text(
+            'Déjalo apagado si el proveedor te cobró todo y no hay importadora '
+            'de por medio.',
+            style: estiloAyuda,
+          )
+        else ...[
+          Text(
+            'Es el servicio de la importadora, no la factura del proveedor. '
+            'Se suma al costo de lo que estás recibiendo.',
+            style: estiloAyuda,
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: _pctImportadoraController,
+                  decoration: const InputDecoration(
+                    labelText: '% que cobra',
+                    border: OutlineInputBorder(),
+                    suffixText: '%',
+                    isDense: true,
+                  ),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  onChanged: (_) => setState(() {}),
                 ),
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                onChanged: (_) => setState(() {}),
               ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: DropdownButtonFormField<OrigenPagoAjuste>(
-                key: ValueKey('origen_${_origenPagoImportadora.codigo}'),
-                initialValue: _origenPagoImportadora,
-                isExpanded: true,
-                decoration: const InputDecoration(
-                  labelText: 'Origen de pago',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-                items: [
-                  for (final origen in OrigenPagoAjuste.values)
-                    DropdownMenuItem(
-                      value: origen,
-                      child: Text(
-                        origen.etiqueta,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextFormField(
+                  controller: _baseImportadoraController,
+                  decoration: InputDecoration(
+                    labelText: 'Sobre cuánto',
+                    helperText: 'Se calcula con las líneas marcadas. Solo '
+                        'cámbialo si la importadora cobra sobre otro valor.',
+                    helperMaxLines: 2,
+                    border: const OutlineInputBorder(),
+                    isDense: true,
+                    suffixIcon: IconButton(
+                      tooltip: 'Recalcular con las líneas',
+                      icon: const Icon(Icons.refresh, size: 18),
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () {
+                        setState(() => _baseImportadoraManual = false);
+                        _sincronizarBaseImportadora();
+                        setState(() {});
+                      },
                     ),
-                ],
-                onChanged: (valor) => setState(
-                  () => _origenPagoImportadora =
-                      valor ?? OrigenPagoAjuste.walletImportadora,
+                  ),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  onChanged: (_) =>
+                      setState(() => _baseImportadoraManual = true),
                 ),
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: (negativo ? AppColors.error : AppColors.primary).withValues(
-              alpha: 0.08,
-            ),
-            borderRadius: BorderRadius.circular(8),
+            ],
           ),
-          child: Text(
-            'Cargo calculado: ${cargo.toStringAsFixed(2)} '
-            '${_compraSeleccionada?.monedaTotal ?? ''}',
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              color: negativo ? AppColors.error : AppColors.primary,
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: _reembolsoImportadoraController,
+                  decoration: const InputDecoration(
+                    labelText: 'Parte que te devuelve',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: DropdownButtonFormField<OrigenPagoAjuste>(
+                  key: ValueKey('origen_${_origenPagoImportadora.codigo}'),
+                  initialValue: _origenPagoImportadora,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: '¿Quién lo pagó?',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  items: [
+                    // El fondo ya pagó el total financiado de la compra: no
+                    // puede volver a pagar el cargo de la recepción.
+                    for (final origen in OrigenPagoAjuste.values)
+                      if (origen != OrigenPagoAjuste.fondo)
+                        DropdownMenuItem(
+                          value: origen,
+                          child: Text(
+                            etiquetaOrigen(origen),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                  ],
+                  onChanged: (valor) => setState(
+                    () => _origenPagoImportadora =
+                        valor ?? OrigenPagoAjuste.walletImportadora,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color:
+                  (negativo ? AppColors.error : AppColors.primary).withValues(
+                alpha: 0.08,
+              ),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${_textoNumero(_baseImportadora)} × '
+                  '${_textoNumero(_pctImportadora)} % − '
+                  '${_textoNumero(_reembolsoImportadora)} = '
+                  '${_textoNumero(cargo)} $moneda',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: negativo ? AppColors.error : AppColors.primary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  unidades > 0
+                      ? '+${_textoNumero(porUnidad)} por unidad recibida '
+                          '(${_textoNumero(unidades)} u)'
+                      : 'Marca las líneas para ver cuánto sube por unidad.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: negativo
+                        ? AppColors.error
+                        : AppColors.textSecondary,
+                  ),
+                ),
+              ],
             ),
           ),
-        ),
-        if (negativo)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              'El reembolso supera el cargo: la RPC rechazaría el vínculo.',
-              style: TextStyle(fontSize: 11, color: AppColors.error),
+          if (negativo)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'La devolución supera el cargo: el servidor rechazaría el '
+                'vínculo.',
+                style: TextStyle(fontSize: 11, color: AppColors.error),
+              ),
             ),
-          ),
+        ],
       ],
     );
   }
@@ -2110,6 +2650,13 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                           _buildPriceDisplay(item),
                           style: TextStyle(fontWeight: FontWeight.w500),
                         ),
+                        Text(
+                          _buildCostoFinalDisplay(item),
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.primary,
+                          ),
+                        ),
                         if (_costosDe(item).isNotEmpty) ...[
                           const SizedBox(height: 4),
                           Wrap(
@@ -2473,4 +3020,18 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
 
     return variantParts.join(' | ');
   }
+}
+
+/// Costo adicional declarado para la recepción completa (concepto + total USD).
+class _CostoExtraRecepcion {
+  final int idTipoCosto;
+  final TextEditingController monto;
+
+  _CostoExtraRecepcion(this.idTipoCosto, String initial)
+      : monto = TextEditingController(text: initial);
+
+  double get valor =>
+      double.tryParse(monto.text.trim().replaceAll(',', '.')) ?? 0;
+
+  void dispose() => monto.dispose();
 }

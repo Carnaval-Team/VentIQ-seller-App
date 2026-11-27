@@ -830,10 +830,14 @@ class FinancialService {
     }
   }
 
-  /// Obtener todos los tipos de costo
-  Future<List<Map<String, dynamic>>> getCostTypes() async {
+  /// Obtener los tipos de costo.
+  ///
+  /// Con [idTienda] devuelve los globales (id_tienda NULL) **y** los de esa
+  /// tienda. Sin él mantiene el comportamiento histórico (todos), que usan las
+  /// pantallas de asignaciones.
+  Future<List<Map<String, dynamic>>> getCostTypes({int? idTienda}) async {
     try {
-      final response = await _supabase
+      var consulta = _supabase
           .from('app_cont_tipo_costo')
           .select('''
             id, 
@@ -841,9 +845,13 @@ class FinancialService {
             descripcion, 
             naturaleza, 
             afecta_margen, 
-            created_at
-          ''')
-          .order('denominacion');
+            created_at,
+            id_tienda
+          ''');
+      if (idTienda != null) {
+        consulta = consulta.or('id_tienda.is.null,id_tienda.eq.$idTienda');
+      }
+      final response = await consulta.order('denominacion');
 
       print('✅ Tipos de costo cargados: ${response.length}');
       return List<Map<String, dynamic>>.from(response);
@@ -853,16 +861,18 @@ class FinancialService {
     }
   }
 
-  /// Crear o actualizar un tipo de costo (nomenclador global).
+  /// Crear o actualizar un tipo de costo.
   ///
   /// La tabla `app_cont_tipo_costo` es de **solo lectura** para el cliente: la
-  /// escritura va por `fn_cont_tipo_costo_guardar`, que exige superadmin y
-  /// valida duplicados y el nombre de «Importadora». [id] nulo = crear.
+  /// escritura va por `fn_cont_tipo_costo_guardar`. Con [idTienda] nulo crea un
+  /// concepto global (solo superadmin); con tienda, un concepto propio (dueño,
+  /// gerente o superadmin de esa tienda). [id] nulo = crear.
   Future<Map<String, dynamic>> saveCostType({
     int? id,
     required String name,
     String? description,
     bool afectaMargen = true,
+    int? idTienda,
   }) async {
     final resp = await _supabase.rpc(
       'fn_cont_tipo_costo_guardar',
@@ -871,6 +881,7 @@ class FinancialService {
         'p_denominacion': name,
         'p_descripcion': description,
         'p_afecta_margen': afectaMargen,
+        'p_id_tienda': idTienda,
       },
     );
     return Map<String, dynamic>.from(resp as Map);
@@ -882,6 +893,19 @@ class FinancialService {
     final resp = await _supabase.rpc(
       'fn_cont_tipo_costo_eliminar',
       params: {'p_id': id},
+    );
+    return Map<String, dynamic>.from(resp as Map);
+  }
+
+  /// Reinicia el costo de referencia de un producto a partir de su última
+  /// recepción. No reescribe ventas ni COGS; deja rastro con el motivo.
+  Future<Map<String, dynamic>> resetCostoPromedio(
+    int idProducto,
+    String motivo,
+  ) async {
+    final resp = await _supabase.rpc(
+      'fn_reset_costo_promedio_producto',
+      params: {'p_id_producto': idProducto, 'p_motivo': motivo},
     );
     return Map<String, dynamic>.from(resp as Map);
   }
