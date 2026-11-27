@@ -38,6 +38,46 @@ void main() {
     expect(await prefs.hasValidSession(), isTrue);
   });
 
+  test('logout conserva campos de recordarme pero elimina la sesión', () async {
+    final prefs = UserPreferencesService();
+    await prefs.saveCredentials('anterior@example.com', 'test-password');
+    await prefs.saveUserData(
+      userId: 'anterior',
+      email: 'anterior@example.com',
+      accessToken: 'jwt-anterior',
+      adminName: 'Anterior',
+      adminRole: 'gerente',
+      idTienda: 12,
+      userStores: [
+        {'id_tienda': 12},
+      ],
+    );
+    await prefs.saveUserRolesByStore({12: 'gerente'});
+    await prefs.saveSubscriptionData(
+      subscriptionId: 1,
+      state: 1,
+      planId: 1,
+      planName: 'Pro',
+      startDate: DateTime(2026),
+    );
+    await prefs.saveAppVersion('1.0.0');
+
+    await prefs.clearUserData();
+
+    expect(await prefs.shouldRememberMe(), isTrue);
+    expect(await prefs.getSavedCredentials(), {
+      'email': 'anterior@example.com',
+      'password': 'test-password',
+    });
+    expect(await prefs.hasValidSession(), isFalse);
+    expect(await prefs.isLoggedIn(), isFalse);
+    expect((await prefs.getUserData()).values, everyElement(isNull));
+    expect(await prefs.getUserStores(), isEmpty);
+    expect(await prefs.getUserRolesByStore(), isEmpty);
+    expect(await prefs.getSubscriptionData(), isNull);
+    expect(await prefs.getAppVersion(), '1.0.0');
+  });
+
   test('token caducado en prefs deja hasValidSession en false', () async {
     final prefs = UserPreferencesService();
     final pastSec =

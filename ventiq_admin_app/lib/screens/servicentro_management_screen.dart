@@ -263,7 +263,7 @@ class _ServicentroManagementScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      drawer: const AdminDrawer(),
+      endDrawer: const AdminDrawer(),
       appBar: AppBar(
         title: Text(
           (widget.tpvNombre == null || widget.tpvNombre!.isEmpty)
@@ -273,6 +273,7 @@ class _ServicentroManagementScreenState
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         actions: [
+          const EndDrawerButton(),
           IconButton(
             tooltip: 'Recargar',
             onPressed: _loading || _saving ? null : _cargar,

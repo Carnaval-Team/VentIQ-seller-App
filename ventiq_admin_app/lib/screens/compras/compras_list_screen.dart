@@ -265,6 +265,7 @@ class _ComprasListScreenState extends State<ComprasListScreen> {
         backgroundColor: AppColors.primary,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          const EndDrawerButton(),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Actualizar',
@@ -272,7 +273,7 @@ class _ComprasListScreenState extends State<ComprasListScreen> {
           ),
         ],
       ),
-      drawer: const AdminDrawer(),
+      endDrawer: const AdminDrawer(),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _nuevaCompra,
         icon: const Icon(Icons.add),

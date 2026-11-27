@@ -10,6 +10,12 @@ void main() {
   final storeReg =
       File('lib/services/store_registration_service.dart').readAsStringSync();
 
+  test('AuthService no usa credenciales de recordarme para autenticar', () {
+    expect(authService, isNot(contains('_tryReauthenticateFromRememberMe')));
+    expect(authService, isNot(contains('getSavedCredentials')));
+    expect(authService, isNot(contains('shouldRememberMe')));
+  });
+
   test('AuthService expone createOrLinkAuthUser con runWithSessionGuard', () {
     expect(authService, contains('createOrLinkAuthUser'));
     expect(authService, contains('runWithSessionGuard'));

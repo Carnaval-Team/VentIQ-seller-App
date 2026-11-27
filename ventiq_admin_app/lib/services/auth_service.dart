@@ -159,7 +159,7 @@ class AuthService {
   /// Fuente de verdad para splash/login: sesión Supabase usable.
   ///
   /// 1) Sesión vigente o refresh.
-  /// 2) Si el refresh falla y hay "recordarme", reautentica con credenciales.
+  /// 2) Sin sesión usable, requiere iniciar sesión desde el formulario.
   /// 3) Sincroniza preferencias locales con el JWT actual.
   static Future<bool> ensureValidSession() async {
     final client = Supabase.instance.client;
@@ -177,10 +177,6 @@ class AuthService {
     }
 
     if (session == null) {
-      session = await _tryReauthenticateFromRememberMe(prefs);
-    }
-
-    if (session == null) {
       return false;
     }
 
@@ -194,35 +190,8 @@ class AuthService {
     return true;
   }
 
-  static Future<Session?> _tryReauthenticateFromRememberMe(
-    UserPreferencesService prefs,
-  ) async {
-    try {
-      final remember = await prefs.shouldRememberMe();
-      if (!remember) return null;
-      final credentials = await prefs.getSavedCredentials();
-      final email = credentials['email'];
-      final password = credentials['password'];
-      if (email == null ||
-          email.isEmpty ||
-          password == null ||
-          password.isEmpty) {
-        return null;
-      }
-      print('🔐 ensureValidSession: reautenticando con credenciales guardadas');
-      final response = await Supabase.instance.client.auth.signInWithPassword(
-        email: email,
-        password: password,
-      );
-      return response.session;
-    } catch (e) {
-      print('⚠️ ensureValidSession: reautenticación falló: $e');
-      return null;
-    }
-  }
-
   /// Restaura la sesión del admin tras un signUp/signIn temporal.
-  /// Si [recoverSession] falla, intenta "recordarme" o la sesión JSON de nuevo.
+  /// Si [recoverSession] falla, intenta el refresh token de la sesión JSON.
   static Future<void> restoreAdminSession({
     required String adminSessionJson,
     required String adminUserId,
@@ -239,14 +208,6 @@ class AuthService {
 
     if (client.auth.currentSession?.user.id == adminUserId) {
       print('🔄 Sesión del administrador restaurada');
-      return;
-    }
-
-    final recovered = await _tryReauthenticateFromRememberMe(
-      UserPreferencesService(),
-    );
-    if (recovered?.user.id == adminUserId) {
-      print('🔄 Sesión del administrador restaurada vía recordarme');
       return;
     }
 

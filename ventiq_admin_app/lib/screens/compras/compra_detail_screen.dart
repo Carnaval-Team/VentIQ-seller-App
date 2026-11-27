@@ -458,6 +458,7 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
         backgroundColor: AppColors.primary,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          const EndDrawerButton(),
           IconButton(
             key: _claveBotonTutorialDetalle,
             icon: const Icon(Icons.school_outlined),
@@ -477,7 +478,7 @@ class _CompraDetailScreenState extends State<CompraDetailScreen> {
           ),
         ],
       ),
-      drawer: const AdminDrawer(),
+      endDrawer: const AdminDrawer(),
       body: _cuerpo(detalle),
     );
   }

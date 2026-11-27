@@ -75,3 +75,20 @@ Las pruebas de contrato SQL inspeccionan el archivo de migración; no sustituyen
 - Migración: `sql_updates/fn_completar_recepcion_operacion_precio_costo.sql`. Reparación de recepciones históricas sin costo: `sql_updates/reparar_precio_costo_recepciones_sin_costo.sql`.
 - Completar una recepción por cualquier otra vía (`fn_registrar_cambio_estado_operacion*`, insert directo a `app_dat_estado_operacion`) contabiliza o no inventario pero nunca el costo — prohibido para recepciones manuales.
 - `precio_promedio` alimenta `app_dat_precio_costo` vía el trigger `trg_registrar_precio_costo`; un precio NULL/0 deja al producto sin costo de referencia (caso medido: 24 productos en tienda 196, p. ej. op 192359).
+
+## Multitienda (superadmin)
+
+- La relación principal↔secundaria vive en `app_dat_tienda.id_tienda_principal` (migración `ventiq_superadmin/SQL/tienda_multitienda.sql`, debe aplicarse antes de usar el tab). Se gestiona en el tab Multitienda de Pago a Inventtia vía `TiendaGrupoService`; no hay cadenas (una secundaria no puede ser principal).
+- Las secundarias no se listan como clientes independientes: el reparto las colapsa en la principal (`InventtiaRepartoService.agruparCobros`; el grupo cobra solo por la licencia de la principal, la secundaria no suma) y Licencias solo lista la principal con nota de sus secundarias. Renovar la licencia de la principal propaga plan/vencimiento/estado a la suscripción vigente de cada secundaria; el bloque de propagación por gerente del plan Pro se mantiene aparte.
+- Verificación desde `ventiq_superadmin`: `flutter test --no-pub test/multitienda_agrupacion_test.dart test/pago_inventtia_resumen_test.dart`.
+
+## Navegación del Admin
+
+- Los menús laterales se montan con `endDrawer` y se abren con `openEndDrawer` / `EndDrawerButton`, no con `drawer`. `AdminDrawer` es el menú general; `HRDrawer` conserva las opciones específicas de Recursos Humanos.
+- `DrawerMenuService` precarga las opciones visibles por usuario y tienda en login, restauración de sesión y cambio de tienda. No consultar permisos ni configuración remota desde el `build` del drawer. La caché de visibilidad no sustituye a `NavigationGuard` al navegar.
+- Verificación desde `ventiq_admin_app`: `flutter test --no-pub test/drawer_menu_test.dart test/app_compile_test.dart test/compra_ayuda_tutorial_test.dart test/store_registration_dueno_tutorial_test.dart`.
+
+## Cierre de sesión del Admin
+
+- «Recordarme» solo precarga email y contraseña en el formulario de login. `UserPreferencesService.clearUserData` conserva esas credenciales, pero borra sesión, tienda, roles y suscripción. `AuthService` nunca usa credenciales guardadas para reautenticar automáticamente; `ensureValidSession` solo valida o refresca una sesión Supabase existente.
+- Verificación desde `ventiq_admin_app`: `flutter test --no-pub test/admin_session_persistence_test.dart test/auth_session_guard_contract_test.dart test/drawer_menu_test.dart test/app_compile_test.dart`.

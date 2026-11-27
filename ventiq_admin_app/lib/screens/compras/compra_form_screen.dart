@@ -936,6 +936,7 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
             backgroundColor: AppColors.primary,
             iconTheme: const IconThemeData(color: Colors.white),
             actions: [
+              const EndDrawerButton(),
               _botonTutorial(),
               if (conPanel)
                 Padding(
@@ -960,7 +961,7 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
                 ),
             ],
           ),
-          drawer: const AdminDrawer(),
+          endDrawer: const AdminDrawer(),
           bottomNavigationBar: conPanel ? null : _barraInferior(compacto),
           body: conPanel
               ? Padding(

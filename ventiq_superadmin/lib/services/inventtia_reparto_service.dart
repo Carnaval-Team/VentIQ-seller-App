@@ -7,6 +7,7 @@ import 'supplier_payment_service.dart';
 
 class CobroLicencia {
   final int suscripcionId;
+  final int? tiendaId;
   final String tienda;
   final String plan;
   final double planUsd;
@@ -18,8 +19,16 @@ class CobroLicencia {
   final String? agenteNombre;
   final DateTime periodo;
 
+  /// Nombres de las tiendas secundarias agrupadas bajo esta principal.
+  final List<String> secundarias = [];
+
+  /// Nombre de la principal cuando esta fila es una secundaria sin cobro
+  /// propio de la principal en el período.
+  String? secundariaDe;
+
   CobroLicencia({
     required this.suscripcionId,
+    this.tiendaId,
     required this.tienda,
     required this.plan,
     required this.planUsd,
@@ -41,6 +50,10 @@ class PersonaReparto {
   final String nombre;
   final String? tarjeta;
   final bool esSocio;
+
+  /// Id del agente Carnaval (`inventtia_agentes`) cuya comisión 1%
+  /// alimenta `agenteCarnaval`; null si la persona no cobra por esa vía.
+  final int? agenteCarnavalId;
   double parteIgual = 0;
   double despliegue20 = 0;
   double carnavalGlobal = 0;
@@ -51,6 +64,7 @@ class PersonaReparto {
     required this.nombre,
     required this.tarjeta,
     required this.esSocio,
+    this.agenteCarnavalId,
   });
 
   double get total =>
@@ -108,7 +122,14 @@ class InventtiaRepartoService {
     for (final s in suscripciones) {
       final idTienda = (s['id_tienda'] as num?)?.toInt();
       if (idTienda != null && !prueba.ids.contains(idTienda)) {
-        porTienda[idTienda] = s;
+        // Si la tienda tiene varias suscripciones activas gana la de id
+        // mayor (la más reciente): las duplicadas viejas no cuentan dos veces.
+        final previa = porTienda[idTienda];
+        final idActual = (s['id'] as num?)?.toInt() ?? 0;
+        final idPrevia = (previa?['id'] as num?)?.toInt() ?? 0;
+        if (previa == null || idActual > idPrevia) {
+          porTienda[idTienda] = s;
+        }
       }
     }
 
@@ -120,6 +141,14 @@ class InventtiaRepartoService {
         final idTienda = (r['id_tienda'] as num?)?.toInt();
         final sus = idTienda == null ? null : porTienda[idTienda];
         if (sus == null) continue;
+        // Resumen de un mes en el que la licencia ya estaba vencida:
+        // dato inconsistente, no se cobra (limpiar con el script SQL).
+        final vencimiento = DateTime.tryParse(
+          sus['fecha_fin']?.toString() ?? '',
+        );
+        if (vencimiento != null && vencimiento.isBefore(mesLicencia)) {
+          continue;
+        }
         final usd = (r['total_pagado'] as num?)?.toDouble() ?? 0;
         cobros.add(_cobro(
           sus: sus,
@@ -131,9 +160,21 @@ class InventtiaRepartoService {
       }
     } else {
       final periodo = mesLicencia;
+      final vistas = <int>{};
       for (final sus in suscripciones) {
         final idTienda = (sus['id_tienda'] as num?)?.toInt();
-        if (idTienda != null && prueba.ids.contains(idTienda)) continue;
+        if (idTienda == null || prueba.ids.contains(idTienda)) continue;
+        // Un cobro por tienda: la suscripción elegida en porTienda.
+        if (porTienda[idTienda]?['id'] != sus['id']) continue;
+        if (!vistas.add(idTienda)) continue;
+        // Solo se cobran licencias vigentes en el mes consultado:
+        // vencida antes del mes = no entra al reparto (revocarla la saca del todo).
+        final vencimiento = DateTime.tryParse(
+          sus['fecha_fin']?.toString() ?? '',
+        );
+        if (vencimiento != null && vencimiento.isBefore(mesLicencia)) {
+          continue;
+        }
         final plan = sus['app_suscripciones_plan'];
         final usd = plan is Map ? (plan['precio_mensual'] as num?)?.toDouble() ?? 0 : 0.0;
         if (usd <= 0) continue;
@@ -147,7 +188,18 @@ class InventtiaRepartoService {
       }
     }
 
-    cobros.sort((a, b) => a.tienda.toLowerCase().compareTo(b.tienda.toLowerCase()));
+    final grupos = await _gruposMultitienda();
+    final cobrosAgrupados = agruparCobros(
+      cobros,
+      grupos.$1,
+      grupos.$2,
+    )
+      // Fuera las filas con pago 0 (planes gratuitos o renovaciones basura
+      // sin monto): el reparto es solo sobre lo que realmente se cobra.
+      ..removeWhere(
+        (c) => c.planUsd <= 0 && c.recibidoUsd <= 0 && c.recibidoCup <= 0,
+      )
+      ..sort((a, b) => a.tienda.toLowerCase().compareTo(b.tienda.toLowerCase()));
 
     final personas = personasRows.map((row) {
       return PersonaReparto(
@@ -155,12 +207,13 @@ class InventtiaRepartoService {
         nombre: '${row['nombre'] ?? ''} ${row['apellidos'] ?? ''}'.trim(),
         tarjeta: row['tarjeta']?.toString(),
         esSocio: row['es_socio'] == true && row['estado'] == 1,
+        agenteCarnavalId: (row['id_agente_carnaval'] as num?)?.toInt(),
       );
     }).toList();
 
     final porId = {for (final p in personas) p.id: p};
     final socios = personas.where((p) => p.esSocio).length;
-    final neto = cobros.fold<double>(0, (s, c) => s + c.quedaInventtia);
+    final neto = cobrosAgrupados.fold<double>(0, (s, c) => s + c.quedaInventtia);
     final parte = socios > 0 ? neto / socios : 0.0;
 
     final proveedoresPago = proveedores
@@ -179,7 +232,7 @@ class InventtiaRepartoService {
         p.carnavalGlobal = parteCarnaval;
       }
     }
-    for (final c in cobros) {
+    for (final c in cobrosAgrupados) {
       final agente = c.agenteId == null ? null : porId[c.agenteId!];
       if (agente != null) agente.despliegue20 += c.agente20;
     }
@@ -207,7 +260,7 @@ class InventtiaRepartoService {
       });
 
     return RepartoInventtia(
-      cobros: cobros,
+      cobros: cobrosAgrupados,
       personas: visibles,
       pagoProveedoresCup: pagoProveedores,
       comisionCarnavalCup: comision,
@@ -249,6 +302,7 @@ class InventtiaRepartoService {
     final agente = sus['app_dat_agente'];
     return CobroLicencia(
       suscripcionId: id,
+      tiendaId: (sus['id_tienda'] as num?)?.toInt(),
       tienda: tienda is Map ? (tienda['denominacion']?.toString() ?? 'Tienda') : 'Tienda',
       plan: plan is Map ? (plan['denominacion']?.toString() ?? '') : '',
       planUsd: planUsd,
@@ -300,6 +354,63 @@ class InventtiaRepartoService {
     return idCandidata >= idActual;
   }
 
+  /// Colapsa los cobros de tiendas secundarias dentro de su principal.
+  /// Si la principal no tiene cobro en el período, la secundaria queda
+  /// visible marcada con `secundariaDe`.
+  static List<CobroLicencia> agruparCobros(
+    List<CobroLicencia> cobros,
+    Map<int, int> secundariaAPrincipal,
+    Map<int, String> nombresTiendas,
+  ) {
+    final porTienda = <int, CobroLicencia>{
+      for (final c in cobros)
+        if (c.tiendaId != null) c.tiendaId!: c,
+    };
+    final resultado = <CobroLicencia>[];
+    for (final c in cobros) {
+      final principalId =
+          c.tiendaId == null ? null : secundariaAPrincipal[c.tiendaId];
+      if (principalId == null) {
+        resultado.add(c);
+        continue;
+      }
+      final principal = porTienda[principalId];
+      if (principal != null && !identical(principal, c)) {
+        // El grupo cobra como un solo cliente: solo cuenta la licencia
+        // de la principal, la secundaria solo se anota (no suma).
+        principal.secundarias.add(c.tienda);
+      } else {
+        c.secundariaDe = nombresTiendas[principalId];
+        resultado.add(c);
+      }
+    }
+    return resultado;
+  }
+
+  /// (secundariaId -> principalId, tiendaId -> nombre)
+  static Future<(Map<int, int>, Map<int, String>)> _gruposMultitienda() async {
+    try {
+      final rows = await _supabase
+          .from('app_dat_tienda')
+          .select('id, denominacion, id_tienda_principal');
+      final secAPrincipal = <int, int>{};
+      final nombres = <int, String>{};
+      for (final row in List<Map<String, dynamic>>.from(rows)) {
+        final id = (row['id'] as num?)?.toInt();
+        if (id == null) continue;
+        nombres[id] = row['denominacion']?.toString() ?? 'Tienda #$id';
+        final principal = (row['id_tienda_principal'] as num?)?.toInt();
+        if (principal != null && principal != id) {
+          secAPrincipal[id] = principal;
+        }
+      }
+      return (secAPrincipal, nombres);
+    } catch (e) {
+      debugPrint('Grupos multitienda no disponibles: $e');
+      return (const <int, int>{}, const <int, String>{});
+    }
+  }
+
   static Future<_TiendasPrueba> _tiendasPrueba() async {
     try {
       final rows = await _supabase
@@ -330,7 +441,7 @@ class InventtiaRepartoService {
 
   static Future<List<Map<String, dynamic>>> _suscripciones() async {
     final rows = await _supabase.from('app_suscripciones').select('''
-          id, id_tienda, id_plan, id_agente, estado,
+          id, id_tienda, id_plan, id_agente, estado, fecha_fin,
           app_dat_tienda(denominacion),
           app_suscripciones_plan(denominacion, precio_mensual),
           app_dat_agente(id, nombre, apellidos)

@@ -5,7 +5,9 @@ import '../models/inventtia_payment_model.dart';
 import '../services/inventtia_payment_service.dart';
 import '../utils/platform_utils.dart';
 import '../widgets/app_drawer.dart';
+import 'multitienda_tab.dart';
 import 'pago_inventtia_resumen.dart';
+import 'referral_payments_screen.dart';
 
 class PagoInventtiaScreen extends StatefulWidget {
   const PagoInventtiaScreen({super.key});
@@ -33,12 +35,24 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
   bool _isLoading = false;
   String? _errorMessage;
 
+  /// Resaltado tras navegar "ver origen" desde el resumen.
+  int? _highlightPersonaId;
+  int? _highlightCarnavalAgentId;
+
+  void _irAlOrigen(int tab, {int? personaId, int? agenteCarnavalId}) {
+    setState(() {
+      _highlightPersonaId = personaId;
+      _highlightCarnavalAgentId = agenteCarnavalId;
+    });
+    _tabController.animateTo(tab);
+  }
+
   final NumberFormat _moneyFmt = NumberFormat('#,##0.00', 'es');
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
     _tabController.addListener(_onTabChanged);
     _initializeDefaultDates();
     _loadAll();
@@ -535,6 +549,8 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
             Tab(text: 'Licencias', icon: Icon(Icons.receipt_long)),
             Tab(text: 'Carnaval App', icon: Icon(Icons.storefront)),
             Tab(text: 'Agentes', icon: Icon(Icons.people)),
+            Tab(text: 'Referidos', icon: Icon(Icons.group_add)),
+            Tab(text: 'Multitienda', icon: Icon(Icons.hub)),
           ],
         ),
         actions: [
@@ -585,20 +601,25 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
             ),
           Expanded(
             child: IndexedStack(
-              index: _tabController.index == 3 ? 1 : 0,
+              index: _tabController.index >= 3 ? _tabController.index - 2 : 0,
               children: [
                 PagoInventtiaResumen(
                   fechaInicio: _fechaInicio,
                   fechaFin: _fechaFin,
                   licenciaMes: _licenciaMes,
-                  seccion: _tabController.index == 3 ? 0 : _tabController.index,
+                  seccion:
+                      _tabController.index >= 3 ? 0 : _tabController.index,
                   revision: _revision,
+                  onNavegarOrigen: _irAlOrigen,
+                  highlightPersonaId: _highlightPersonaId,
                 ),
                 _errorMessage != null
                     ? _buildError()
                     : _isLoading
                     ? const Center(child: CircularProgressIndicator())
                     : _buildAgentsTab(isDesktop),
+                const ReferralPaymentsView(),
+                MultitiendaTab(revision: _revision),
               ],
             ),
           ),
@@ -1121,7 +1142,13 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
             ),
             const Divider(),
             ..._agentPayments.map((p) {
-              return ListTile(
+              final resaltado = p.agent.id == _highlightCarnavalAgentId;
+              return Container(
+                color:
+                    resaltado
+                        ? AppColors.warning.withValues(alpha: 0.18)
+                        : null,
+                child: ListTile(
                 contentPadding: EdgeInsets.zero,
                 onTap: () => _showAgentDetail(p),
                 title: Text(
@@ -1161,6 +1188,7 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
                     ),
                   ],
                 ),
+                ),
               );
             }),
           ],
@@ -1170,8 +1198,10 @@ class _PagoInventtiaScreenState extends State<PagoInventtiaScreen>
   }
 
   Widget _buildAgentCard(InventtiaAgent agent) {
+    final resaltado = agent.id == _highlightCarnavalAgentId;
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
+      color: resaltado ? AppColors.warning.withValues(alpha: 0.18) : null,
       child: ListTile(
         leading: CircleAvatar(
           backgroundColor:

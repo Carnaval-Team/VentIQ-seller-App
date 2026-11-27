@@ -302,7 +302,7 @@ class _AddWarehouseScreenState extends State<AddWarehouseScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Layouts del Almacén',
+                  'Layouts del Almacén *',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
@@ -330,7 +330,7 @@ class _AddWarehouseScreenState extends State<AddWarehouseScreen> {
                 ),
                 child: const Center(
                   child: Text(
-                    'No hay layouts agregados\nToque "Agregar Layout" para comenzar',
+                    'No hay layouts agregados\nSe requiere al menos uno para crear el almacén',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: Colors.grey),
                   ),
@@ -565,6 +565,11 @@ class _AddWarehouseScreenState extends State<AddWarehouseScreen> {
 
   Future<void> _saveWarehouse() async {
     if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    if (!_isEdit && _layouts.isEmpty) {
+      _showErrorSnackBar('Agregue al menos un layout (zona) al almacén');
       return;
     }
 

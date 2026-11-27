@@ -5,14 +5,30 @@ import '../services/referral_payments_service.dart';
 import '../services/referral_pdf_service.dart';
 import '../widgets/app_drawer.dart';
 
-class ReferralPaymentsScreen extends StatefulWidget {
+class ReferralPaymentsScreen extends StatelessWidget {
   const ReferralPaymentsScreen({Key? key}) : super(key: key);
 
   @override
-  State<ReferralPaymentsScreen> createState() => _ReferralPaymentsScreenState();
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(title: const Text('Pago a Referidos')),
+      drawer: const AppDrawer(),
+      body: const ReferralPaymentsView(),
+    );
+  }
 }
 
-class _ReferralPaymentsScreenState extends State<ReferralPaymentsScreen> {
+/// Cuerpo de Pago a Referidos sin Scaffold: usable también como tab
+/// dentro de Pago a Inventtia.
+class ReferralPaymentsView extends StatefulWidget {
+  const ReferralPaymentsView({Key? key}) : super(key: key);
+
+  @override
+  State<ReferralPaymentsView> createState() => _ReferralPaymentsViewState();
+}
+
+class _ReferralPaymentsViewState extends State<ReferralPaymentsView> {
   late DateTime _fromDate;
   late DateTime _toDate;
 
@@ -237,49 +253,30 @@ class _ReferralPaymentsScreenState extends State<ReferralPaymentsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: const Text('Pago a Referidos'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.block),
-            tooltip: 'Productos excluidos',
-            onPressed: _isLoading ? null : _openExclusionsManager,
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Recargar',
-            onPressed: _isLoading ? null : _onFiltersChanged,
-          ),
-        ],
-      ),
-      drawer: const AppDrawer(),
-      body: Column(
-        children: [
-          _buildFiltersBar(),
-          const Divider(height: 1),
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : LayoutBuilder(
-                    builder: (context, constraints) {
-                      final isNarrow = constraints.maxWidth < 720;
-                      if (isNarrow) {
-                        return _buildNarrowLayout();
-                      }
-                      return Row(
-                        children: [
-                          Expanded(flex: 6, child: _buildReferrerList()),
-                          const VerticalDivider(width: 1),
-                          Expanded(flex: 4, child: _buildOrdersPanel()),
-                        ],
-                      );
-                    },
-                  ),
-          ),
-        ],
-      ),
+    return Column(
+      children: [
+        _buildFiltersBar(),
+        const Divider(height: 1),
+        Expanded(
+          child: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isNarrow = constraints.maxWidth < 720;
+                    if (isNarrow) {
+                      return _buildNarrowLayout();
+                    }
+                    return Row(
+                      children: [
+                        Expanded(flex: 6, child: _buildReferrerList()),
+                        const VerticalDivider(width: 1),
+                        Expanded(flex: 4, child: _buildOrdersPanel()),
+                      ],
+                    );
+                  },
+                ),
+        ),
+      ],
     );
   }
 

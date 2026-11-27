@@ -1,5 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'drawer_menu_service.dart';
 
 class UserPreferencesService {
   static final UserPreferencesService _instance =
@@ -143,7 +144,9 @@ class UserPreferencesService {
   // Actualizar tienda seleccionada
   Future<void> updateSelectedStore(int idTienda) async {
     final prefs = await SharedPreferences.getInstance();
+    final changed = prefs.getInt(_idTiendaKey) != idTienda;
     await prefs.setInt(_idTiendaKey, idTienda);
+    if (changed) DrawerMenuService.invalidate();
     print('🏪 Updated selected store to: $idTienda');
   }
 
@@ -533,6 +536,7 @@ class UserPreferencesService {
 
   /// Limpia todos los datos del usuario incluyendo suscripción
   Future<void> clearUserData() async {
+    DrawerMenuService.invalidate();
     final prefs = await SharedPreferences.getInstance();
     
     // Limpiar datos básicos del usuario

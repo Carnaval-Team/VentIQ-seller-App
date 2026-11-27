@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../services/auth_service.dart';
+import '../services/drawer_menu_service.dart';
 import '../services/permissions_service.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -25,7 +26,10 @@ class _SplashScreenState extends State<SplashScreen> {
       // Sesión real de Supabase (refresh / recordarme), no el expiry de 24h en prefs.
       final hasValidSession = await AuthService.ensureValidSession();
 
+      if (!mounted) return;
       if (hasValidSession) {
+        await DrawerMenuService.prepare();
+        if (!mounted) return;
         print('✅ Valid admin session found, checking role...');
 
         // Verificar si es usuario HR puro

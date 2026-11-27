@@ -6,8 +6,10 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../config/app_colors.dart';
 import '../widgets/app_drawer.dart';
+import '../widgets/fixed_header_table.dart';
 import '../utils/platform_utils.dart';
 import '../services/agente_service.dart';
+import '../services/tienda_grupo_service.dart';
 
 class LicenciasScreen extends StatefulWidget {
   const LicenciasScreen({super.key});
@@ -24,10 +26,11 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
 
   bool _isLoading = true;
   String _searchQuery = '';
+  List<String> _planesDisponibles = [];
   String _selectedPlan = 'todos';
   String _selectedEstado = 'todos';
   String _selectedUrgencia = 'todas';
-  int _diasFiltro = 365; // Mostrar todas por defecto
+  int _diasFiltro = 100000; // Mostrar todas por defecto
   bool _soloLicenciasPagas = false;
 
   @override
@@ -43,7 +46,7 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
       // Cargar tiendas
       final tiendasResponse = await _supabase
           .from('app_dat_tienda')
-          .select('id, denominacion')
+          .select('id, denominacion, id_tienda_principal')
           .order('denominacion');
 
       // Cargar suscripciones con información de tienda
@@ -81,7 +84,21 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
       // Formatear datos de suscripciones
       final suscripciones = <Map<String, dynamic>>[];
 
+      final tiendasRows = List<Map<String, dynamic>>.from(tiendasResponse);
+      final nombresTienda = TiendaGrupoService.mapaNombres(tiendasRows);
+      final secAPrincipal =
+          TiendaGrupoService.mapaSecundariaPrincipal(tiendasRows);
+      final gruposSec =
+          TiendaGrupoService.secundariasPorPrincipal(tiendasRows);
+
       for (var suscripcion in suscripcionesResponse) {
+        final idTienda = (suscripcion['id_tienda'] as num?)?.toInt();
+        final principalId =
+            idTienda == null ? null : secAPrincipal[idTienda];
+        final secundariasNombres =
+            (gruposSec[idTienda] ?? const <int>[])
+                .map((id) => nombresTienda[id] ?? 'Tienda #$id')
+                .toList();
         final tienda = suscripcion['app_dat_tienda'];
         final plan = suscripcion['app_suscripciones_plan'];
         final fechaVencimiento =
@@ -132,13 +149,25 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
           'urgencia': urgencia,
           'agente_nombre': agenteNombre,
           'id_agente': suscripcion['id_agente'],
+          'id_tienda_principal': principalId,
+          'principal_nombre':
+              principalId != null ? nombresTienda[principalId] : null,
+          'secundarias_nombres': secundariasNombres,
         });
       }
 
       if (mounted) {
+        final planes =
+            suscripciones
+                .map((s) => s['plan']?.toString() ?? '')
+                .where((p) => p.isNotEmpty && p != 'Sin plan')
+                .toSet()
+                .toList()
+              ..sort();
         setState(() {
           _tiendas = List<Map<String, dynamic>>.from(tiendasResponse);
           _suscripciones = suscripciones;
+          _planesDisponibles = planes;
           _isLoading = false;
         });
         // Aplicar filtros guardados después de cargar datos
@@ -162,9 +191,23 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
   }
 
   void _filterSuscripciones() {
+    final tiendasConSuscripcion =
+        _suscripciones
+            .map((s) => (s['id_tienda'] as num?)?.toInt())
+            .whereType<int>()
+            .toSet();
     setState(() {
       _filteredSuscripciones =
           _suscripciones.where((suscripcion) {
+            // Las secundarias no se listan como cliente independiente
+            // cuando la principal tiene suscripción; se ven desde ella.
+            final principalId =
+                (suscripcion['id_tienda_principal'] as num?)?.toInt();
+            if (principalId != null &&
+                tiendasConSuscripcion.contains(principalId)) {
+              return false;
+            }
+
             final matchesSearch =
                 suscripcion['tienda_nombre'].toString().toLowerCase().contains(
                   _searchQuery.toLowerCase(),
@@ -178,19 +221,19 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
                 suscripcion['plan'].toString().toLowerCase() ==
                     _selectedPlan.toLowerCase();
 
-            final matchesEstado =
-                _selectedEstado == 'todos' ||
-                suscripcion['estado'] == _selectedEstado;
+            final matchesEstado = switch (_selectedEstado) {
+              'activa' =>
+                suscripcion['estado'] == 'activa' ||
+                    suscripcion['estado'] == 'por_vencer',
+              'vencida' => suscripcion['estado'] == 'vencida',
+              _ => true,
+            };
 
             final matchesUrgencia =
                 _selectedUrgencia == 'todas' ||
                 suscripcion['urgencia'] == _selectedUrgencia;
 
             final matchesDias = suscripcion['dias_restantes'] <= _diasFiltro;
-
-            // No mostrar licencias vencidas hace más de 60 días
-            final diasRestantes = suscripcion['dias_restantes'] as int;
-            final noExpiradaMasDe60Dias = diasRestantes >= -60;
 
             // Filtro de licencias pagas (excluir gratis)
             final matchesPagas = !_soloLicenciasPagas ||
@@ -201,7 +244,6 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
                 matchesEstado &&
                 matchesUrgencia &&
                 matchesDias &&
-                noExpiradaMasDe60Dias &&
                 matchesPagas;
           }).toList();
     });
@@ -286,7 +328,7 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
                     (_selectedPlan != 'todos' ||
                             _selectedEstado != 'todos' ||
                             _selectedUrgencia != 'todas' ||
-                            _diasFiltro != 365 ||
+                            _diasFiltro != 100000 ||
                             _soloLicenciasPagas)
                         ? AppColors.primary
                         : null,
@@ -325,26 +367,16 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
                           labelText: 'Plan de Suscripción',
                           border: OutlineInputBorder(),
                         ),
-                        items: const [
-                          DropdownMenuItem(
+                        items: [
+                          const DropdownMenuItem(
                             value: 'todos',
                             child: Text('Todos'),
                           ),
-                          DropdownMenuItem(
-                            value: 'gratuita',
-                            child: Text('Gratuita'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'basica',
-                            child: Text('Básica'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'premium',
-                            child: Text('Premium'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'enterprise',
-                            child: Text('Enterprise'),
+                          ..._planesDisponibles.map(
+                            (p) => DropdownMenuItem(
+                              value: p,
+                              child: Text(p),
+                            ),
                           ),
                         ],
                         onChanged: (value) {
@@ -360,23 +392,15 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
                         items: const [
                           DropdownMenuItem(
                             value: 'todos',
-                            child: Text('Todos'),
+                            child: Text('Todas'),
                           ),
                           DropdownMenuItem(
                             value: 'activa',
                             child: Text('Activas'),
                           ),
                           DropdownMenuItem(
-                            value: 'por_vencer',
-                            child: Text('Por Vencer'),
-                          ),
-                          DropdownMenuItem(
                             value: 'vencida',
                             child: Text('Vencidas'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'inactiva',
-                            child: Text('Inactivas'),
                           ),
                         ],
                         onChanged: (value) {
@@ -430,7 +454,10 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
                           DropdownMenuItem(value: 15, child: Text('15 días')),
                           DropdownMenuItem(value: 30, child: Text('30 días')),
                           DropdownMenuItem(value: 60, child: Text('60 días')),
-                          DropdownMenuItem(value: 365, child: Text('Todas')),
+                          DropdownMenuItem(
+                            value: 100000,
+                            child: Text('Todas'),
+                          ),
                         ],
                         onChanged: (value) {
                           setDialogState(() => _diasFiltro = value!);
@@ -457,7 +484,7 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
                         _selectedPlan = 'todos';
                         _selectedEstado = 'todos';
                         _selectedUrgencia = 'todas';
-                        _diasFiltro = 365;
+                        _diasFiltro = 100000;
                         _soloLicenciasPagas = false;
                       });
                       _filterSuscripciones();
@@ -483,21 +510,34 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
     final screenSize = MediaQuery.of(context).size;
     final isDesktop = PlatformUtils.shouldUseDesktopLayout(screenSize.width);
 
-    final activas = _suscripciones.where((s) => s['estado'] == 'activa').length;
+    // Las secundarias no cuentan aparte: se gestionan por la principal.
+    final tiendasConSuscripcion =
+        _suscripciones
+            .map((s) => (s['id_tienda'] as num?)?.toInt())
+            .whereType<int>()
+            .toSet();
+    final grupales =
+        _suscripciones.where((s) {
+          final principal = (s['id_tienda_principal'] as num?)?.toInt();
+          return principal == null ||
+              !tiendasConSuscripcion.contains(principal);
+        }).toList();
+
+    final activas = grupales.where((s) => s['estado'] == 'activa').length;
     final porVencer =
-        _suscripciones.where((s) => s['estado'] == 'por_vencer').length;
+        grupales.where((s) => s['estado'] == 'por_vencer').length;
     final vencidas =
-        _suscripciones.where((s) => s['estado'] == 'vencida').length;
+        grupales.where((s) => s['estado'] == 'vencida').length;
 
     // Total de licencias no gratuitas (precio > 0)
-    final totalNoGratis = _suscripciones
+    final totalNoGratis = grupales
         .where((s) => ((s['precio'] ?? 0) as num).toDouble() > 0)
         .length;
 
     // Ingresos del mes: licencias activas no gratuitas que se vencen después del mes en curso
     final now = DateTime.now();
     final finMes = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
-    final ingresosMensuales = _suscripciones
+    final ingresosMensuales = grupales
         .where((s) {
           final precio = ((s['precio'] ?? 0) as num).toDouble();
           if (precio <= 0) return false;
@@ -712,144 +752,156 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
             ),
             const SizedBox(height: 16),
             Expanded(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: SingleChildScrollView(
-                  child: DataTable(
-                    columns: const [
-                      DataColumn(label: Text('Urgencia')),
-                      DataColumn(label: Text('Tienda')),
-                      DataColumn(label: Text('Plan')),
-                      DataColumn(label: Text('Estado')),
-                      DataColumn(label: Text('Agente')),
-                      DataColumn(label: Text('Fecha Inicio')),
-                      DataColumn(label: Text('Fecha Vencimiento')),
-                      DataColumn(label: Text('Días Restantes')),
-                      DataColumn(label: Text('Precio')),
-                      DataColumn(label: Text('Acciones')),
-                    ],
-                    rows:
-                        _filteredSuscripciones.map((suscripcion) {
-                          return DataRow(
-                            cells: [
-                              DataCell(
-                                _buildUrgenciaChip(suscripcion['urgencia']),
+              child: FixedHeaderTable(
+                headers: const [
+                  'Urgencia',
+                  'Tienda',
+                  'Plan',
+                  'Estado',
+                  'Agente',
+                  'Inicio',
+                  'Vencimiento',
+                  'Días',
+                  'Precio',
+                  'Acciones',
+                ],
+                flex: const [3, 6, 3, 3, 4, 3, 3, 4, 2, 4],
+                maxHeight: double.infinity,
+                minWidth: 900,
+                rows:
+                    _filteredSuscripciones.map((suscripcion) {
+                      return [
+                        _buildUrgenciaChip(suscripcion['urgencia']),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              suscripcion['tienda_nombre'],
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
                               ),
-                              DataCell(
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Text(
-                                      suscripcion['tienda_nombre'],
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    Text(
-                                      suscripcion['tienda_ubicacion'],
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: AppColors.textSecondary,
-                                      ),
-                                    ),
-                                  ],
+                            ),
+                            Text(
+                              suscripcion['tienda_ubicacion'],
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            if ((suscripcion['secundarias_nombres'] as List)
+                                .isNotEmpty)
+                              Text(
+                                'Multitienda: incluye ${(suscripcion['secundarias_nombres'] as List).join(', ')}',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: AppColors.info,
+                                ),
+                              )
+                            else if (suscripcion['principal_nombre'] != null)
+                              Text(
+                                'Secundaria de ${suscripcion['principal_nombre']}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: AppColors.textSecondary,
+                                  fontStyle: FontStyle.italic,
                                 ),
                               ),
-                              DataCell(_buildPlanChip(suscripcion['plan'])),
-                              DataCell(_buildEstadoChip(suscripcion['estado'])),
-                              DataCell(
-                                InkWell(
-                                  onTap: () => _showAsignarAgenteDialog(suscripcion),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.support_agent,
-                                        size: 16,
-                                        color: suscripcion['agente_nombre'] != null
-                                            ? AppColors.primary
+                          ],
+                        ),
+                        _buildPlanChip(suscripcion['plan']),
+                        _buildEstadoChip(suscripcion['estado']),
+                        InkWell(
+                          onTap:
+                              () => _showAsignarAgenteDialog(suscripcion),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.support_agent,
+                                size: 16,
+                                color:
+                                    suscripcion['agente_nombre'] != null
+                                        ? AppColors.primary
+                                        : Colors.grey,
+                              ),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  suscripcion['agente_nombre'] ??
+                                      'Sin asignar',
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color:
+                                        suscripcion['agente_nombre'] != null
+                                            ? AppColors.textPrimary
                                             : Colors.grey,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        suscripcion['agente_nombre'] ?? 'Sin asignar',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: suscripcion['agente_nombre'] != null
-                                              ? AppColors.textPrimary
-                                              : Colors.grey,
-                                          fontStyle: suscripcion['agente_nombre'] == null
-                                              ? FontStyle.italic
-                                              : FontStyle.normal,
-                                        ),
-                                      ),
-                                    ],
+                                    fontStyle:
+                                        suscripcion['agente_nombre'] == null
+                                            ? FontStyle.italic
+                                            : FontStyle.normal,
                                   ),
-                                ),
-                              ),
-                              DataCell(
-                                Text(_formatDate(suscripcion['fecha_inicio'])),
-                              ),
-                              DataCell(
-                                Text(
-                                  _formatDate(suscripcion['fecha_vencimiento']),
-                                ),
-                              ),
-                              DataCell(
-                                _buildDiasRestantesChip(
-                                  suscripcion['dias_restantes'],
-                                ),
-                              ),
-                              DataCell(
-                                Text(
-                                  '\$${suscripcion['precio'] ?? 0}',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                              DataCell(
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    IconButton(
-                                      icon: const Icon(Icons.visibility),
-                                      onPressed:
-                                          () =>
-                                              _showLicenciaDetails(suscripcion),
-                                      tooltip: 'Ver Detalles',
-                                    ),
-                                    if (suscripcion['estado'] == 'por_vencer' ||
-                                        suscripcion['estado'] == 'vencida')
-                                      IconButton(
-                                        icon: const Icon(
-                                          Icons.history,
-                                          color: AppColors.primary,
-                                        ),
-                                        onPressed:
-                                            () => _showHistorialDialog(
-                                              suscripcion,
-                                            ),
-                                        tooltip: 'Historial',
-                                      ),
-                                    IconButton(
-                                      icon: const Icon(
-                                        Icons.refresh,
-                                        color: AppColors.success,
-                                      ),
-                                      onPressed:
-                                          () => _showRenovarDialog(suscripcion),
-                                      tooltip: 'Renovar',
-                                    ),
-                                  ],
                                 ),
                               ),
                             ],
-                          );
-                        }).toList(),
-                  ),
-                ),
+                          ),
+                        ),
+                        Text(_formatDate(suscripcion['fecha_inicio'])),
+                        Text(_formatDate(suscripcion['fecha_vencimiento'])),
+                        _buildDiasRestantesChip(
+                          suscripcion['dias_restantes'],
+                        ),
+                        Text(
+                          '\$${suscripcion['precio'] ?? 0}',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.visibility, size: 20),
+                              onPressed:
+                                  () => _showLicenciaDetails(suscripcion),
+                              tooltip: 'Ver Detalles',
+                            ),
+                            if (suscripcion['estado'] == 'por_vencer' ||
+                                suscripcion['estado'] == 'vencida')
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.history,
+                                  size: 20,
+                                  color: AppColors.primary,
+                                ),
+                                onPressed:
+                                    () => _showHistorialDialog(suscripcion),
+                                tooltip: 'Historial',
+                              ),
+                            IconButton(
+                              icon: const Icon(
+                                Icons.refresh,
+                                size: 20,
+                                color: AppColors.success,
+                              ),
+                              onPressed:
+                                  () => _showRenovarDialog(suscripcion),
+                              tooltip: 'Renovar',
+                            ),
+                            if (suscripcion['estado'] != 'inactiva')
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.block,
+                                  size: 20,
+                                  color: AppColors.error,
+                                ),
+                                onPressed:
+                                    () => _revocarLicencia(suscripcion),
+                                tooltip: 'Revocar',
+                              ),
+                          ],
+                        ),
+                      ];
+                    }).toList(),
               ),
             ),
           ],
@@ -884,6 +936,23 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(suscripcion['tienda_ubicacion']),
+                if ((suscripcion['secundarias_nombres'] as List).isNotEmpty)
+                  Text(
+                    'Multitienda: incluye ${(suscripcion['secundarias_nombres'] as List).join(', ')}',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.info,
+                    ),
+                  )
+                else if (suscripcion['principal_nombre'] != null)
+                  Text(
+                    'Secundaria de ${suscripcion['principal_nombre']}',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textSecondary,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
                 const SizedBox(height: 4),
                 Wrap(
                   spacing: 8,
@@ -972,6 +1041,18 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
                           ),
                           onPressed: () => _showRenovarDialog(suscripcion),
                         ),
+                        if (suscripcion['estado'] != 'inactiva')
+                          TextButton.icon(
+                            icon: const Icon(
+                              Icons.block,
+                              color: AppColors.error,
+                            ),
+                            label: const Text(
+                              'Revocar',
+                              style: TextStyle(color: AppColors.error),
+                            ),
+                            onPressed: () => _revocarLicencia(suscripcion),
+                          ),
                       ],
                     ),
                   ],
@@ -1035,17 +1116,25 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
   Widget _buildPlanChip(String plan) {
     Color color;
     switch (plan.toLowerCase()) {
+      case 'gratis':
       case 'gratuita':
         color = AppColors.textSecondary;
         break;
+      case 'básico':
+      case 'basico':
       case 'basica':
         color = AppColors.info;
         break;
-      case 'premium':
+      case 'pro':
         color = AppColors.secondary;
         break;
+      case 'avanzado':
       case 'enterprise':
         color = AppColors.primary;
+        break;
+      case 'catálogo':
+      case 'catalogo':
+        color = AppColors.warning;
         break;
       default:
         color = AppColors.textSecondary;
@@ -1241,6 +1330,99 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
             supabase: _supabase,
           ),
     );
+  }
+
+  Future<void> _revocarLicencia(Map<String, dynamic> suscripcion) async {
+    final secundarias =
+        (suscripcion['secundarias_nombres'] as List?) ?? const [];
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Revocar licencia'),
+            content: Text(
+              '¿Revocar la licencia de "${suscripcion['tienda_nombre']}"? '
+              'Quedará inactiva y dejará de aparecer en el reparto de pagos.'
+              '${secundarias.isNotEmpty ? '\n\nLas ${secundarias.length} tienda(s) secundaria(s) también serán revocadas.' : ''}',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.error,
+                ),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Revocar'),
+              ),
+            ],
+          ),
+    );
+    if (confirmar != true) return;
+
+    try {
+      final userId = _supabase.auth.currentUser?.id;
+      final ahora = DateTime.now().toIso8601String();
+      final ids = <int>[(suscripcion['id'] as num).toInt()];
+
+      // Si es principal de un grupo, se revocan también las secundarias.
+      final idTienda = (suscripcion['id_tienda'] as num?)?.toInt();
+      if (idTienda != null && secundarias.isNotEmpty) {
+        ids.addAll(
+          await TiendaGrupoService.suscripcionesDeSecundarias(idTienda),
+        );
+      }
+
+      for (final id in ids) {
+        await _supabase
+            .from('app_suscripciones')
+            .update({'estado': 0, 'updated_at': ahora})
+            .eq('id', id);
+        await _supabase.from('app_suscripciones_historial').insert({
+          'id_suscripcion': id,
+          'estado_anterior': suscripcion['estado_id'],
+          'estado_nuevo': 0,
+          'motivo': 'Licencia revocada por superadmin',
+          'cambiado_por': userId,
+        });
+      }
+
+      // Limpiar renovaciones del mes en curso para que no entren al reparto.
+      if (idTienda != null) {
+        final hoy = DateTime.now();
+        await _supabase
+            .from('app_suscripciones_renovaciones_resumen')
+            .delete()
+            .eq('id_tienda', idTienda)
+            .eq('id_mes', hoy.month)
+            .eq('id_anno', hoy.year);
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              ids.length > 1
+                  ? 'Licencias revocadas (${ids.length} del grupo)'
+                  : 'Licencia revocada',
+            ),
+            backgroundColor: AppColors.success,
+          ),
+        );
+        _loadData();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al revocar: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
   }
 }
 
@@ -1591,6 +1773,29 @@ class _RenovarDialogContentState extends State<_RenovarDialogContent> {
         'updated_at': ahora.toIso8601String(),
       }, onConflict: 'id_suscripcion,periodo');
 
+      // Multitienda: renovar la principal renueva todas las secundarias
+      // con el mismo plan y vencimiento.
+      final susSecundarias =
+          await TiendaGrupoService.suscripcionesDeSecundarias(idTienda);
+      for (final idSusSecundaria in susSecundarias) {
+        await widget.supabase
+            .from('app_suscripciones')
+            .update({
+              'id_plan': planId,
+              'fecha_fin': _fechaFin.toIso8601String(),
+              'estado': 1,
+              'updated_at': ahora.toIso8601String(),
+            })
+            .eq('id', idSusSecundaria);
+        await widget.supabase.from('app_suscripciones_historial').insert({
+          'id_suscripcion': idSusSecundaria,
+          'id_plan_nuevo': planId,
+          'estado_nuevo': 1,
+          'motivo': 'Renovación multitienda por tienda principal',
+          'cambiado_por': currentUser.id,
+        });
+      }
+
       // Si es plan pro, buscar todas las tiendas del gerente y aplicar el mismo plan
       if (esPlanPro) {
         // Buscar gerentes de la tienda actual
@@ -1669,6 +1874,8 @@ class _RenovarDialogContentState extends State<_RenovarDialogContent> {
             content: Text(
               esPlanPro
                   ? 'Renovación aplicada a todas las tiendas del gerente'
+                  : susSecundarias.isNotEmpty
+                  ? 'Renovación completada (incluye ${susSecundarias.length} tienda(s) secundaria(s))'
                   : 'Renovación completada',
             ),
             backgroundColor: AppColors.success,
@@ -1840,6 +2047,20 @@ class _RenovarDialogContentState extends State<_RenovarDialogContent> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Tienda: ${widget.suscripcion['tienda_nombre']}'),
+            if ((widget.suscripcion['secundarias_nombres'] as List?)
+                    ?.isNotEmpty ==
+                true)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  'Multitienda: al renovar se renuevan también '
+                  '${(widget.suscripcion['secundarias_nombres'] as List).join(', ')}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.info,
+                  ),
+                ),
+              ),
             const SizedBox(height: 16),
             const Text('Selecciona el plan:'),
             const SizedBox(height: 8),
