@@ -138,6 +138,35 @@ Reglas nuevas que conviene no romper:
   `MediaQuery`: `Positioned` se ancla al lienzo real, y un `MediaQuery` distinto
   hacía que las pruebas de esquina mintieran (el botón «aparecía» en 800×600).
 
+### Tercera vuelta: `inventario` y `moneda` no se verificaban nunca
+
+Medido en debug con la tienda 43: 500 u. recepcionadas (movimiento 373) y tasa
+USD→CUP 970 activa, y las dos tareas seguían sin el check.
+
+- **Causa:** las dos nacían `estadoSinHecho`, es decir, pendientes hasta que
+  alguien las guardara con `marcarTarea` — y `marcarTarea` **no se llama desde
+  ningún sitio**. Quedaban pendientes para siempre, con dato o sin él.
+- **Arreglo:** pasan a hechos reales en `HechosTienda` (modelo Stripe: el
+  checklist se calcula, no se rellena).
+  - `tieneExistencias`: algún saldo vigente del ledger
+    (`app_dat_inventario_productos.cantidad_final`) es positivo en alguna
+    ubicación de la tienda. Se lee de lo más nuevo a lo más viejo y se toma el
+    primer movimiento de cada grupo — el mismo grupo (producto, ubicación,
+    variante, opción, presentación, lote) que usa
+    `get_productos_catalogo_stock_v2`; se corta en el primer positivo. Tope de
+    10 000 filas: si se agota sin encontrar nada, la tarea queda pendiente y no
+    se marca en falso.
+  - `tieneTasaCambio`: hay fila **activa** USD→CUP de la propia tienda en
+    `tasa_cambio_extraoficial` con valor positivo, o con `usar_precio_toque`
+    (la tienda decidió seguir el precio del toque a propósito).
+  - Las dos siguen sin bloquear el Go Live.
+- **De paso:** la consulta de zonas dejó de pedir `limit(1)`. Solo se usaba para
+  saber si había alguna, pero los saldos se leen por `id_ubicacion`: con una
+  sola ubicación conocida, el resto de la tienda era invisible.
+- **Regresión cubierta por** `test/onboarding_hechos_reales_test.dart` (fuente:
+  las tareas salen de `HechosTienda` y el servicio mira esas dos tablas) y por
+  los casos nuevos de `test/onboarding_tareas_test.dart`.
+
 - **Fase 4 (SQL): `estado_onboarding='activa'` solo se escribe en
   `estado_onboarding`, nunca en `estado`.** El verificador lo comprueba con un
   regex **y** con un autotest del regex: un patrón con `\s` dentro de un

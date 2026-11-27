@@ -47,7 +47,8 @@ create table if not exists bkp_20261127.funciones as
        'fn_fdi_compra_costo_resumen','fn_fdi_compra_detalle',
        'fn_actualizar_precio_promedio_recepcion_v2_m01',
        'fn_fdi_compra_ajuste_agregar','fn_fdi_compra_ajuste_financiar',
-       'fn_cont_tipo_costo_guardar','fn_cont_tipo_costo_eliminar'
+       'fn_cont_tipo_costo_guardar','fn_cont_tipo_costo_eliminar',
+       'fn_listar_operaciones_inventario_new'
      );
 ```
 
@@ -101,10 +102,11 @@ de reemplazar cuerpos.
 | 9 | [`13f_ajuste_tardio_cantidad.sql`](../../../ventiq_admin_app/lib/sql/compra/13f_ajuste_tardio_cantidad.sql) | el ajuste posterior también reparte por cantidad |
 | 10 | [`14_diagnostico_costos.sql`](../../../ventiq_admin_app/lib/sql/compra/14_diagnostico_costos.sql) | vista de comparación (solo lectura) |
 | 11 | [`15_reset_costo_producto.sql`](../../../ventiq_admin_app/lib/sql/compra/15_reset_costo_producto.sql) | reset manual con motivo e historial |
+| 12 | [`17_operaciones_detalle_costo_real.sql`](../../../ventiq_admin_app/lib/sql/compra/17_operaciones_detalle_costo_real.sql) | el detalle de la operación muestra `costo_real` (costo final) además del precio de factura |
 
 Rollbacks disponibles: `10_..._rollback.sql`, `11_..._rollback.sql`, `12_..._rollback.sql`,
-`14_..._rollback.sql`, `15_..._rollback.sql`. **13a-13f no tienen rollback propio**: restauran desde el
-respaldo de `bkp_20261127.funciones` si hiciera falta.
+`14_..._rollback.sql`, `15_..._rollback.sql`, `17_..._rollback.sql`. **13a-13f no tienen rollback
+propio**: restauran desde el respaldo de `bkp_20261127.funciones` si hiciera falta.
 
 ---
 

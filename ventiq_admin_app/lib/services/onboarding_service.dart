@@ -57,6 +57,25 @@ class OnboardingService {
       estadoOnboarding == 'borrador';
 
   // ══════════════════════════════════════════════════════════════════════
+  // Constantes de los hechos
+  // ══════════════════════════════════════════════════════════════════════
+
+  /// `app_nom_moneda`: 1 = CUP, 2 = USD. Los mismos ids que usa
+  /// `currency_service.dart` (`_cupId` / `_usdId`) para resolver la tasa de la
+  /// tienda; si cambian allí, tienen que cambiar aquí.
+  static const int _idMonedaCup = 1;
+  static const int _idMonedaUsd = 2;
+
+  /// Filas por página al recorrer el ledger de inventario.
+  static const int _paginaInventario = 500;
+
+  /// Tope de filas del ledger que se leen para decidir «hay existencias».
+  static const int _topeFilasInventario = 10000;
+
+  /// Ubicaciones por consulta: el filtro `in` viaja en la URL de PostgREST.
+  static const int _loteUbicaciones = 100;
+
+  // ══════════════════════════════════════════════════════════════════════
   // Estado de la tienda
   // ══════════════════════════════════════════════════════════════════════
 
@@ -225,6 +244,19 @@ class OnboardingService {
           .select('denominacion, direccion, ubicacion, latitude')
           .eq('id', storeId)
           .maybeSingle(),
+      // Tasa USD→CUP **de esta tienda**. El catálogo global de monedas no dice
+      // nada: lo que decide si los precios cuadran es esta fila. Se ordena por
+      // `created_at` igual que `currency_service._getUsdToCupStoreRateConfig`.
+      _supabase
+          .from('tasa_cambio_extraoficial')
+          .select('valor_cambio, usar_precio_toque')
+          .eq('id_tienda', storeId)
+          .eq('activo', true)
+          .eq('id_moneda_origen', _idMonedaUsd)
+          .eq('id_moneda_destino', _idMonedaCup)
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle(),
     ]);
 
     final almacenes = _filas(respuestas[0]);
@@ -239,6 +271,9 @@ class OnboardingService {
     final tienda = respuestas[7] is Map
         ? Map<String, dynamic>.from(respuestas[7] as Map)
         : const <String, dynamic>{};
+    final tasa = respuestas[8] is Map
+        ? Map<String, dynamic>.from(respuestas[8] as Map)
+        : const <String, dynamic>{};
 
     final idsAlmacenes = almacenes
         .map((a) => _entero(a['id']))
@@ -251,7 +286,9 @@ class OnboardingService {
         .toList();
 
     // ── Consultas dependientes ───────────────────────────────────────────
-    // Zonas: `app_dat_layout_almacen` cuelga del almacén, no de la tienda.
+    // Zonas: `app_dat_layout_almacen` cuelga del almacén, no de la tienda. Se
+    // traen **todas** las ubicaciones (no solo una para saber si hay alguna)
+    // porque los saldos de inventario se leen por `id_ubicacion`.
     final zonas = idsAlmacenes.isEmpty
         ? const <Map<String, dynamic>>[]
         : _filas(
@@ -259,9 +296,12 @@ class OnboardingService {
                 .from('app_dat_layout_almacen')
                 .select('id, id_almacen')
                 .inFilter('id_almacen', idsAlmacenes)
-                .isFilter('deleted_at', null)
-                .limit(1),
+                .isFilter('deleted_at', null),
           );
+    final idsUbicaciones = zonas
+        .map((z) => _entero(z['id']))
+        .whereType<int>()
+        .toList();
 
     // Vendedores asignados a una caja de esta tienda: es lo que permite abrir
     // turno y, por tanto, cobrar. `app_nom_medio_pago` es un catálogo global,
@@ -283,6 +323,19 @@ class OnboardingService {
       return idTrabajador == null || idsTrabajadores.contains(idTrabajador);
     });
 
+    // Existencias: el saldo vigente de cada grupo del ledger. Es la consulta
+    // más cara de las tres dependientes y por eso va la última: si ya hay
+    // tienda con stock se corta en la primera página.
+    final tieneExistencias = await _hayExistencias(idsUbicaciones);
+
+    // Una tasa activa con `usar_precio_toque` también sirve: la tienda decidió
+    // seguir el precio del toque a propósito y los CUP de los precios salen de
+    // ahí. Lo que no cuenta es una fila con valor 0 o negativa.
+    final tieneTasaCambio =
+        tasa.isNotEmpty &&
+        (tasa['usar_precio_toque'] == true ||
+            (_numero(tasa['valor_cambio']) ?? 0) > 0);
+
     return HechosTienda(
       tieneAlmacen: almacenes.isNotEmpty,
       tieneZona: zonas.isNotEmpty,
@@ -302,7 +355,77 @@ class OnboardingService {
       tieneUbicacion:
           _textoONulo(tienda['ubicacion']) != null ||
           _textoONulo(tienda['latitude']) != null,
+      tieneExistencias: tieneExistencias,
+      tieneTasaCambio: tieneTasaCambio,
     );
+  }
+
+  /// `true` si algún saldo vigente del inventario de la tienda es positivo.
+  ///
+  /// El ledger `app_dat_inventario_productos` no guarda el stock: guarda
+  /// movimientos, y el saldo de un grupo es el `cantidad_final` de su última
+  /// fila. Por eso se recorre **de lo más nuevo a lo más viejo** y se queda el
+  /// primer movimiento de cada grupo; ese es el saldo actual. El grupo es el
+  /// mismo que usa `get_productos_catalogo_stock_v2` para calcular el stock:
+  /// producto, ubicación, variante, opción, presentación y lote.
+  ///
+  /// En cuanto un saldo vigente es positivo hay existencias y se corta: en una
+  /// tienda normal se resuelve en la primera página. El recorrido está acotado
+  /// ([_topeFilasInventario]) para no bajar el ledger entero de una tienda con
+  /// años de movimientos por una casilla del checklist; si el tope se agota sin
+  /// encontrar nada, la tarea queda pendiente en vez de marcarse en falso.
+  Future<bool> _hayExistencias(List<int> idsUbicaciones) async {
+    if (idsUbicaciones.isEmpty) return false;
+
+    for (var i = 0; i < idsUbicaciones.length; i += _loteUbicaciones) {
+      final fin = i + _loteUbicaciones;
+      final lote = idsUbicaciones.sublist(
+        i,
+        fin < idsUbicaciones.length ? fin : idsUbicaciones.length,
+      );
+      if (await _hayExistenciasEn(lote)) return true;
+    }
+    return false;
+  }
+
+  /// Un almacén de ubicaciones, del movimiento más nuevo al más viejo.
+  Future<bool> _hayExistenciasEn(List<int> idsUbicaciones) async {
+    final vistos = <String>{};
+    var leidas = 0;
+
+    while (leidas < _topeFilasInventario) {
+      final filas = _filas(
+        await _supabase
+            .from('app_dat_inventario_productos')
+            .select(
+              'id, id_ubicacion, id_variante, id_opcion_variante, '
+              'id_presentacion, id_lote, cantidad_final',
+            )
+            .inFilter('id_ubicacion', idsUbicaciones)
+            .order('id', ascending: false)
+            .range(leidas, leidas + _paginaInventario - 1),
+      );
+      if (filas.isEmpty) return false;
+
+      for (final fila in filas) {
+        // `null` de variante/opción/presentación/lote agrupa igual que
+        // `COALESCE(..., 0)` en la RPC de stock.
+        final grupo = [
+          fila['id_ubicacion'],
+          fila['id_variante'] ?? 0,
+          fila['id_opcion_variante'] ?? 0,
+          fila['id_presentacion'] ?? 0,
+          fila['id_lote'] ?? 0,
+        ].join('|');
+        // Ya se vio un movimiento más nuevo de este grupo: este no es su saldo.
+        if (!vistos.add(grupo)) continue;
+        if ((_numero(fila['cantidad_final']) ?? 0) > 0) return true;
+      }
+
+      leidas += filas.length;
+      if (filas.length < _paginaInventario) return false;
+    }
+    return false;
   }
 
   /// El alta progresiva nombra la tienda `Tienda de <nombre>` (o `Mi tienda`) en
@@ -365,9 +488,10 @@ class OnboardingService {
 
   /// Estados que la pantalla ya persistió, por clave de tarea.
   ///
-  /// Solo hacen falta para las tareas sin hecho propio (`servicentro_tpv`,
-  /// `inventario`, `moneda`) y para las que el usuario omitió: en las demás
-  /// manda el hecho, que es el criterio del modelo Stripe.
+  /// Solo hacen falta para la tarea sin hecho propio (`servicentro_tpv`) y para
+  /// las que el usuario **omitió**: en las demás manda el hecho, que es el
+  /// criterio del modelo Stripe. `inventario` y `moneda` ya tienen hecho propio
+  /// (saldos del ledger y tasa de la tienda), así que no dependen de esta tabla.
   Future<Map<String, EstadoTarea>> _leerEstadosGuardados() async {
     final storeId = await _requireStoreId();
 
@@ -528,6 +652,13 @@ class OnboardingService {
     if (valor is int) return valor;
     if (valor is num) return valor.toInt();
     if (valor is String) return int.tryParse(valor);
+    return null;
+  }
+
+  /// `numeric` de Postgres llega como `num` o como texto (`"970.000000"`).
+  static double? _numero(Object? valor) {
+    if (valor is num) return valor.toDouble();
+    if (valor is String) return double.tryParse(valor);
     return null;
   }
 

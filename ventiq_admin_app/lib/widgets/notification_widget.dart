@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:timeago/timeago.dart' as timeago;
+import '../main.dart' show appNavigatorKey;
 import '../models/notification_model.dart';
 import '../services/notification_service.dart';
 
@@ -84,13 +85,30 @@ class _NotificationWidgetState extends State<NotificationWidget> {
 
   /// Mostrar panel de notificaciones
   void _showNotificationsPanel(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => const NotificationsPanel(),
-    );
+    abrirPanelDeNotificaciones(context);
   }
+}
+
+/// Abre el panel de notificaciones sobre [context].
+///
+/// Es público porque lo usan la campana del dashboard (web y móvil) y el aviso
+/// flotante de producto agotado ([AvisoProductoAgotado]).
+void abrirPanelDeNotificaciones(BuildContext context) {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (context) => const NotificationsPanel(),
+  );
+}
+
+/// Igual que [abrirPanelDeNotificaciones], pero desde fuera de un árbol de
+/// widgets: el servicio de notificaciones y el aviso flotante no tienen un
+/// `BuildContext` propio y tiran del navegador global.
+void abrirPanelDeNotificacionesGlobal() {
+  final BuildContext? context = appNavigatorKey.currentContext;
+  if (context == null) return;
+  abrirPanelDeNotificaciones(context);
 }
 
 /// Panel de notificaciones

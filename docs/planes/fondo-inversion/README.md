@@ -42,6 +42,7 @@ antes o en paralelo y que sigue mandando donde no lo contradiga el plan.
 | [`13-ui-compras.md`](13-ui-compras.md) / [`14-ui-liquidacion.md`](14-ui-liquidacion.md) | Pantallas y flujos de compras y liquidación. |
 | [`15-plan-compras-costos.md`](15-plan-compras-costos.md) | **Plan vigente de correcciones** (2026-11-26): factura obligatoria, tasa de la tienda, conceptos por tienda, aterrizaje por cantidad, reserva desde el alta y margen CUP en la recepción. Incluye el diagnóstico de las recepciones 230/231. |
 | [`16-main-sql.md`](16-main-sql.md) | **SQL para main, en orden**: respaldo, preflight, scripts 10-15, post-check y qué desplegar después. |
+| [`MAIN-SQL-ORDEN.md`](MAIN-SQL-ORDEN.md) | Versión **concisa**: respaldo y lista de scripts en orden con su rollback, sin preflight largo. |
 
 ## SQL
 
@@ -70,6 +71,7 @@ Cada script tiene su `_rollback.sql` y cada verificación su archivo en `verify/
 | `13a`-`13e` | Aterrizaje: base recibida, atribución, reparto por cantidad, `_v2` unitario, resumen y detalle | prueba revertida sobre el vínculo 30 (0,75/u) |
 | `14_diagnostico_costos.sql` | Vista de comparación de costos (sin recosteo) | consulta en `newa` (productos 2 y 10 marcados) |
 | `15_reset_costo_producto.sql` | Reset manual del costo desde la última recepción, con motivo e historial | probado en revertido (producto 2: 84,30 → 0,55) |
+| `17_operaciones_detalle_costo_real.sql` | El detalle de la operación trae `costo_real` (costo final) de la recepción | `fn_listar_operaciones_inventario_new` con `'costo_real'` en los items |
 
 **Prerrequisito del pase**: `sql_updates/costos_adicionales_producto.sql` (tabla de costos por recepción,
 `costo_real` como columna normal y `_v2` leyendo la tabla de costos). Sin él, `06c` no puede parchear `_v2`

@@ -2862,6 +2862,25 @@ class InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                               ),
                             ),
                           ],
+                          // Recepción: el precio de factura no es el costo
+                          // final. `costo_real` es el unitario ya capitalizado
+                          // (factura + importadora + adicionales).
+                          if (item['costo_real'] != null &&
+                              _asItemNum(item['costo_real']) > 0 &&
+                              (_asItemNum(item['costo_real']) -
+                                          _asItemNum(item['precio_unitario']))
+                                      .abs() >
+                                  0.0001) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              'Costo final: \$${_formatFieldValue(_asItemNum(item['costo_real']))}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.teal[700],
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),

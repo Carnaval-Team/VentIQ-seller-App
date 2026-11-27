@@ -13,6 +13,7 @@ import '../../services/fondo_inversion_service.dart';
 import '../../services/supplier_service.dart';
 import '../../services/user_preferences_service.dart';
 import '../../widgets/admin_drawer.dart';
+import '../../widgets/compra_aportes_panel.dart';
 import '../../widgets/fdi_recepcion_fuentes.dart';
 import '../../widgets/product_selector_widget.dart';
 import '../suppliers/add_edit_supplier_screen.dart';
@@ -91,6 +92,10 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
   bool _reservarAlCrear = false;
   List<FdiFuenteRecepcion> _fuentesReserva = const [];
   late final String _claveReserva = _service.newIdempotencyKey();
+
+  /// En modo inversores, al crear se abre el panel de aportes (activado por
+  /// defecto). Así no hay que ir al detalle para repartir el total.
+  bool _aportesAlCrear = true;
 
   final List<_LineaForm> _lineasForm = [];
   final List<_AjusteForm> _ajustesForm = [];
@@ -203,10 +208,15 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
     try {
       final resultado = await FondoInversionService().saldos(tienda);
       if (!mounted) return;
+      final disponibles = resultado.saldos
+          .where((s) => s.saldo > 0 && s.idMedioPago != null)
+          .toList();
       setState(() {
-        _saldosFondo = resultado.saldos
-            .where((s) => s.saldo > 0 && s.idMedioPago != null)
-            .toList();
+        _saldosFondo = disponibles;
+        // Por defecto la reserva va activada: es el paso que sigue al alta.
+        if (_modoLiquidacion == 'fondo' && disponibles.isNotEmpty) {
+          _reservarAlCrear = true;
+        }
       });
     } catch (_) {
       // Sin saldos no se ofrece reservar; la compra se crea igual.
@@ -356,11 +366,28 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
         (producto['denominacion'] ?? producto['nombre_producto'] ?? '')
             .toString()
             .trim();
+
+    // Costo sugerido = el último con el que se compró ese producto. Se puede
+    // corregir en la línea; solo evita teclear de cero.
+    double? ultimo;
+    final tienda = _idTienda;
+    if (tienda != null) {
+      try {
+        ultimo = await _service.ultimoCostoCompra(
+          idTienda: tienda,
+          idProducto: id,
+        );
+      } catch (_) {
+        // Sin histórico, la línea nace en 0 y el usuario escribe.
+      }
+    }
+    if (!mounted) return;
+
     final form = _LineaForm(
       idProducto: id,
       nombre: nombre.isEmpty ? 'Producto #$id' : nombre,
       cantidad: '1',
-      costo: '0',
+      costo: ultimo != null && ultimo > 0 ? _textoNumero(ultimo) : '0',
     );
     form.escuchar(_alCambiar);
     setState(() => _lineasForm.add(form));
@@ -567,6 +594,14 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
         }
       }
 
+      if (_modoLiquidacion == 'inversores' &&
+          _aportesAlCrear &&
+          idCompra != null &&
+          mounted) {
+        await _abrirAportes(idCompra);
+        if (!mounted) return;
+      }
+
       if (avisoReserva != null && mounted) {
         await showDialog<void>(
           context: context,
@@ -766,13 +801,12 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
       if (!_esEdicion)
         PasoTutorialCompra(
           clave: _clavePanelReserva,
-          titulo: 'Reservar del fondo',
+          titulo: 'Financiación al crear',
           icono: Icons.account_balance_wallet_outlined,
           texto:
-              'Si la compra la paga el fondo, puedes reservar el dinero aquí '
-              'mismo, sin ir al detalle. Eliges las cuentas y cuánto de cada '
-              'una; el pago se confirma después. En modo inversores este panel '
-              'no aparece.',
+              'En modo fondo reservas aquí mismo el dinero, sin ir al detalle. '
+              'En modo inversores, al guardar se abre el panel de aportes para '
+              'repartir el total entre los inversores.',
         ),
       PasoTutorialCompra(
         clave: _claveTotales,
@@ -877,7 +911,10 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
             child: _panelPreviewCosto(),
           ),
           if (!_esEdicion)
-            KeyedSubtree(key: _clavePanelReserva, child: _panelReserva()),
+            KeyedSubtree(
+              key: _clavePanelReserva,
+              child: _panelFinanciacion(),
+            ),
           _panelObservacion(),
           if (!conPanel) _panelTotales(tamano),
           if (!conPanel) const SizedBox(height: 8),
@@ -1147,6 +1184,9 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
                 selected: _modoLiquidacion == m.codigo,
                 onSelected: (_) => setState(() {
                   _modoLiquidacion = m.codigo;
+                  _reservarAlCrear =
+                      m.codigo == 'fondo' && _saldosFondo.isNotEmpty;
+                  _aportesAlCrear = m.codigo == 'inversores';
                   // El origen de los ajustes lo decide el modo, no una elección
                   // aparte: fondo lo financia; inversores lo declaran externo.
                   for (final a in _ajustesForm) {
@@ -1958,21 +1998,11 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
                 width: enFila ? 110 : double.infinity,
                 child: _campoValorAjuste(a),
               );
-              final campoReparto = SizedBox(
-                width: enFila ? 180 : double.infinity,
-                child: _dropdownReparto(a),
-              );
-              final campoOrigen = SizedBox(
-                width: enFila ? 200 : double.infinity,
-                child: _dropdownOrigen(a),
-              );
 
               final piezas = [
                 if (campoConcepto != null) campoConcepto,
                 campoBase,
                 campoValor,
-                campoReparto,
-                campoOrigen,
               ];
 
               if (enFila) {
@@ -2128,47 +2158,6 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
     _ => 'Un importe fijo total',
   };
 
-  Widget _dropdownReparto(_AjusteForm a) {
-    return InputDecorator(
-      decoration: InputDecoration(
-        isDense: true,
-        labelText: 'Cómo se reparte',
-        helperText: 'Siempre por cantidad',
-        helperMaxLines: 2,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-        suffixIcon: botonAyuda(ayudaRepartoAjuste, tamano: 15),
-        suffixIconConstraints: const BoxConstraints(
-          minWidth: 28,
-          minHeight: 28,
-        ),
-      ),
-      child: const Text('Por cantidad'),
-    );
-  }
-
-  Widget _dropdownOrigen(_AjusteForm a) {
-    final esFondo = a.origenPago == OrigenPagoAjuste.fondo.codigo;
-    return InputDecorator(
-      decoration: InputDecoration(
-        isDense: true,
-        labelText: 'Quién lo paga',
-        helperText: esFondo
-            ? 'Sale del fondo de inversión'
-            : 'Lo declaran los inversores (no sale del fondo)',
-        helperMaxLines: 2,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-        suffixIcon: botonAyuda(ayudaOrigenPago, tamano: 15),
-        suffixIconConstraints: const BoxConstraints(
-          minWidth: 28,
-          minHeight: 28,
-        ),
-      ),
-      child: Text(esFondo ? 'Fondo' : 'Inversores / externo'),
-    );
-  }
-
   double get _cantidadTotal =>
       _lineasForm.fold<double>(0, (suma, l) => suma + l.cantidadValor);
 
@@ -2302,11 +2291,101 @@ class _CompraFormScreenState extends State<CompraFormScreen> {
               total: _totalesPreview.financiado,
               moneda: _monedaPreview,
               enabled: !_guardando,
+              tasaUsdCup: _tasaTiendaCup,
               onChanged: (fuentes) =>
                   setState(() => _fuentesReserva = fuentes),
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _panelFinanciacion() {
+    if (_modoLiquidacion == 'inversores') return _panelAportesCreacion();
+    return _panelReserva();
+  }
+
+  /// En modo inversores, el alta ofrece registrar los aportes al crear y abre
+  /// el mismo panel del detalle, para no obligar a pasar por ahí.
+  Widget _panelAportesCreacion() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: panelCompras(
+        children: [
+          tituloSeccionCompras(
+            'Aportes de inversores',
+            trailing: pastillaCompras('opcional', denso: true),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: _aportesAlCrear,
+            onChanged: _guardando
+                ? null
+                : (v) => setState(() => _aportesAlCrear = v),
+            title: const Text(
+              'Registrar aportes al crear la compra',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+            subtitle: const Text(
+              'Al guardar se abre el panel para repartir el total entre los '
+              'inversores. Puedes cerrarlo y hacerlo después desde el detalle.',
+              style: TextStyle(fontSize: 11),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _abrirAportes(int idCompra) async {
+    final tienda = _idTienda;
+    if (!mounted || tienda == null) return;
+    final size = MediaQuery.sizeOf(context);
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => Dialog(
+        insetPadding: EdgeInsets.zero,
+        child: SizedBox(
+          width: size.width < 940 ? size.width - 24 : 900,
+          height: size.height < 720 ? size.height - 24 : 640,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Aportes de inversores',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Cerrar',
+                      onPressed: () => Navigator.pop(ctx),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: CompraAportesPanel(
+                  idCompra: idCompra,
+                  moneda: _monedaPreview,
+                  estado: 'creada',
+                  modoLiquidacion: 'inversores',
+                  idTienda: tienda,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

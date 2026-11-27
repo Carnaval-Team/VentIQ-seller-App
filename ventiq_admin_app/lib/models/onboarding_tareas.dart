@@ -71,6 +71,8 @@ class HechosTienda {
     this.tieneNombreTienda = false,
     this.tieneDireccion = false,
     this.tieneUbicacion = false,
+    this.tieneExistencias = false,
+    this.tieneTasaCambio = false,
   });
 
   /// `app_dat_almacen` con al menos una fila que no sea cocina.
@@ -116,6 +118,17 @@ class HechosTienda {
   final bool tieneDireccion;
   final bool tieneUbicacion;
 
+  /// Algo de mercancía en el inventario: algún saldo vigente del ledger
+  /// (`app_dat_inventario_productos.cantidad_final`) es positivo en alguna
+  /// ubicación de la tienda. Es el hecho real de «Carga las existencias», no una
+  /// casilla que se marque a mano: una recepción contabilizada ya lo cumple.
+  final bool tieneExistencias;
+
+  /// La tienda tiene tasa USD→CUP propia y activa en
+  /// `tasa_cambio_extraoficial` (o decidió explícitamente usar el precio del
+  /// toque). Es el hecho real de «Revisa tu tasa de cambio».
+  final bool tieneTasaCambio;
+
   /// Copia con los hechos indicados cambiados; el resto se conserva.
   HechosTienda copyWith({
     bool? tieneAlmacen,
@@ -132,6 +145,8 @@ class HechosTienda {
     bool? tieneNombreTienda,
     bool? tieneDireccion,
     bool? tieneUbicacion,
+    bool? tieneExistencias,
+    bool? tieneTasaCambio,
   }) {
     return HechosTienda(
       tieneAlmacen: tieneAlmacen ?? this.tieneAlmacen,
@@ -150,6 +165,8 @@ class HechosTienda {
       tieneNombreTienda: tieneNombreTienda ?? this.tieneNombreTienda,
       tieneDireccion: tieneDireccion ?? this.tieneDireccion,
       tieneUbicacion: tieneUbicacion ?? this.tieneUbicacion,
+      tieneExistencias: tieneExistencias ?? this.tieneExistencias,
+      tieneTasaCambio: tieneTasaCambio ?? this.tieneTasaCambio,
     );
   }
 }
@@ -228,9 +245,10 @@ class TareaOnboarding {
 ///   tienda que nunca declaró su tipo debe poder activarse igualmente: el tipo
 ///   solo elige qué tareas guiar, no qué se permite.
 /// - El estado sale de los hechos ([HechosTienda]); `estadosGuardados` tiene la
-///   última palabra cuando trae la clave, para las tareas que la pantalla ya
-///   persistió o para las que todavía no tienen hecho propio
-///   (`servicentro_tpv`, `inventario`, `moneda`).
+///   última palabra cuando trae la clave, para poder **omitir** una tarea o
+///   corregirla a mano. Hoy la única tarea sin hecho propio es
+///   `servicentro_tpv`, porque `app_dat_tpv.modo_servicentro` es por TPV y el
+///   checklist no lo consulta.
 /// - Una tarea cuyo hecho ya está satisfecho nace `completada`; si no,
 ///   `pendiente`.
 List<TareaOnboarding> construirTareas({
@@ -440,8 +458,11 @@ List<TareaOnboarding> construirTareas({
             'El stock real de lo que vendes. Así el vendedor no ofrece lo que '
             'ya no hay.',
         obligatoria: false,
-        // Tampoco hay hecho de existencias todavía: se cierra al guardarla.
-        estado: estadoSinHecho('inventario'),
+        // Hecho real: cualquier saldo positivo en el ledger de la tienda, es
+        // decir, lo que contabiliza una recepción o un ajuste. Antes esta tarea
+        // se cerraba solo si la pantalla la guardaba a mano, y ninguna pantalla
+        // lo hacía: una tienda con mercancía recepcionada seguía sin el check.
+        estado: estadoDe('inventario', hechos.tieneExistencias),
         ruta: '/inventory',
       ),
     );
@@ -455,8 +476,10 @@ List<TareaOnboarding> construirTareas({
           'Con la tasa al día los precios en dólares y en pesos cuadran en el '
           'mostrador.',
       obligatoria: false,
-      // Las tasas no se consultan todavía en HechosTienda.
-      estado: estadoSinHecho('moneda'),
+      // Hecho real: la tienda ya tiene su tasa USD→CUP activa en
+      // `tasa_cambio_extraoficial`. Sin eso el precio en CUP de cada producto
+      // se resuelve con la tasa del toque, que la tienda no controla.
+      estado: estadoDe('moneda', hechos.tieneTasaCambio),
       ruta: '/settings',
     ),
   );

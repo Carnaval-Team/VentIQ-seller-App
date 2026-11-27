@@ -9,6 +9,10 @@ class FdiRecepcionFuentes extends StatefulWidget {
   final ValueChanged<List<FdiFuenteRecepcion>> onChanged;
   final bool enabled;
 
+  /// Tasa USD→CUP configurada de la tienda. Con ella se sugiere la tasa y el
+  /// importe cuando la cuenta y la compra están en monedas distintas.
+  final double? tasaUsdCup;
+
   const FdiRecepcionFuentes({
     super.key,
     required this.saldos,
@@ -16,6 +20,7 @@ class FdiRecepcionFuentes extends StatefulWidget {
     required this.moneda,
     required this.onChanged,
     this.enabled = true,
+    this.tasaUsdCup,
   });
 
   @override
@@ -25,6 +30,16 @@ class FdiRecepcionFuentes extends StatefulWidget {
 class _FdiRecepcionFuentesState extends State<FdiRecepcionFuentes> {
   final _montos = <int, double>{};
   final _tasas = <int, double>{};
+
+  /// Unidades de la moneda de la compra por 1 unidad de la cuenta.
+  double _tasaSugerida(FdiSaldo saldo) {
+    if (saldo.moneda == widget.moneda) return 1;
+    final rate = widget.tasaUsdCup;
+    if (rate == null || !rate.isFinite || rate <= 0) return 0;
+    if (saldo.moneda == 'CUP' && widget.moneda == 'USD') return 1 / rate;
+    if (saldo.moneda == 'USD' && widget.moneda == 'CUP') return rate;
+    return 0;
+  }
 
   List<FdiFuenteRecepcion> get _fuentes => [
     for (final i in _montos.keys)
@@ -70,14 +85,22 @@ class _FdiRecepcionFuentesState extends State<FdiRecepcionFuentes> {
                 : (selected) {
                     setState(() {
                       if (selected == true) {
-                        _montos[i] = widget.saldos[i].moneda == widget.moneda
-                            ? double.parse(
-                                min(
-                                  widget.saldos[i].saldo,
-                                  max(0, widget.total - _cubierto),
-                                ).toStringAsFixed(2),
-                              )
-                            : 0;
+                        final saldo = widget.saldos[i];
+                        final tasa = _tasaSugerida(saldo);
+                        final faltante =
+                            max(0.0, widget.total - _cubierto);
+                        double monto;
+                        if (saldo.moneda == widget.moneda) {
+                          monto = min(saldo.saldo, faltante);
+                        } else if (tasa > 0) {
+                          // Se completa el equivalente que falta y se deja la
+                          // tasa de la tienda lista para editar.
+                          monto = min(saldo.saldo, faltante / tasa);
+                          _tasas[i] = tasa;
+                        } else {
+                          monto = 0;
+                        }
+                        _montos[i] = double.parse(monto.toStringAsFixed(2));
                       } else {
                         _montos.remove(i);
                         _tasas.remove(i);
@@ -109,7 +132,12 @@ class _FdiRecepcionFuentesState extends State<FdiRecepcionFuentes> {
             if (widget.saldos[i].moneda != widget.moneda) ...[
               const SizedBox(height: 8),
               TextFormField(
-                key: ValueKey('fdi-tasa-$i'),
+                key: ValueKey('fdi-tasa-$i-${_tasas[i]}'),
+                initialValue: (_tasas[i] ?? 0) > 0
+                    ? _tasas[i]!.toStringAsFixed(
+                        _tasas[i]! >= 1 ? 4 : 10,
+                      )
+                    : '',
                 enabled: widget.enabled,
                 decoration: InputDecoration(
                   labelText:

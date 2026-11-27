@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/notification_model.dart';
+import '../widgets/aviso_producto_agotado.dart';
 import 'local_notification_service.dart';
 
 /// Servicio para gestionar notificaciones en tiempo real
@@ -142,7 +143,12 @@ class NotificationService {
       
       // Mostrar notificación push local
       _localNotificationService.showNotification(notification);
-      
+
+      // Aviso flotante propio para el agotado: no puede competir con los
+      // SnackBar de resultado del panel. Sólo las de inventario con producto
+      // pasan el filtro; el resto sigue como siempre.
+      AvisoProductoAgotado.mostrar(notification);
+
       print('✅ Nueva notificación agregada: ${notification.titulo}');
     } catch (e) {
       print('❌ Error procesando nueva notificación: $e');
@@ -382,6 +388,7 @@ class NotificationService {
   /// Cerrar servicio y limpiar recursos
   void dispose() {
     print('🔌 Cerrando NotificationService...');
+    AvisoProductoAgotado.ocultarTodo();
     _realtimeChannel?.unsubscribe();
     _notificationsController.close();
     _unreadCountController.close();

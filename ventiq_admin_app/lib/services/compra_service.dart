@@ -215,6 +215,23 @@ class CompraService {
     return _asMap(resp);
   }
 
+  /// Último costo unitario con el que se compró ese producto en la tienda.
+  /// Sirve para precargar la línea en el alta y no teclear de cero.
+  Future<double?> ultimoCostoCompra({
+    required int idTienda,
+    required int idProducto,
+  }) async {
+    final rows = await _supabase
+        .from('fdi_dat_compra_linea')
+        .select('costo_unitario')
+        .eq('id_tienda', idTienda)
+        .eq('id_producto', idProducto)
+        .order('id', ascending: false)
+        .limit(1);
+    if (rows.isEmpty) return null;
+    return (rows.first['costo_unitario'] as num?)?.toDouble();
+  }
+
   /// Paga al proveedor la compra reservada y la deja en `pagada`. Devuelve
   /// `{status, id_compra, estado, pagado}` o `{status:'ok', duplicada:true}`.
   ///

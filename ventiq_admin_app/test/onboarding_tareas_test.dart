@@ -260,6 +260,102 @@ void main() {
     });
   });
 
+  group('existencias y tasa de cambio', () {
+    // Regresión del caso medido en la tienda 43: productos recepcionados con
+    // saldo y tasa USD→CUP activa, y las dos tareas seguían sin el check porque
+    // solo se cerraban si la pantalla las guardaba a mano (nadie lo hacía).
+    test('sin inventario ni tasa: las dos quedan pendientes', () {
+      final tareas = construirTareas(
+        tipoNegocio: 'retail',
+        hechos: const HechosTienda(),
+      );
+
+      expect(tarea(tareas, 'inventario').estado, EstadoTarea.pendiente);
+      expect(tarea(tareas, 'moneda').estado, EstadoTarea.pendiente);
+    });
+
+    test('con saldo en el ledger, existencias se completa sola', () {
+      final tareas = construirTareas(
+        tipoNegocio: 'retail',
+        hechos: const HechosTienda(tieneExistencias: true),
+      );
+
+      expect(tarea(tareas, 'inventario').estado, EstadoTarea.completada);
+      expect(tarea(tareas, 'moneda').estado, EstadoTarea.pendiente);
+    });
+
+    test('con tasa de la tienda, la moneda se completa sola', () {
+      final tareas = construirTareas(
+        tipoNegocio: 'retail',
+        hechos: const HechosTienda(tieneTasaCambio: true),
+      );
+
+      expect(tarea(tareas, 'moneda').estado, EstadoTarea.completada);
+      expect(tarea(tareas, 'inventario').estado, EstadoTarea.pendiente);
+    });
+
+    test('las dos son recomendadas: completarlas no es requisito para activar', () {
+      final soloEsenciales = construirTareas(
+        tipoNegocio: 'retail',
+        hechos: const HechosTienda(
+          tieneAlmacen: true,
+          tieneTpv: true,
+          tieneProducto: true,
+          tieneVendedorAsignado: true,
+        ),
+      );
+      final conTodo = construirTareas(
+        tipoNegocio: 'retail',
+        hechos: const HechosTienda(
+          tieneAlmacen: true,
+          tieneTpv: true,
+          tieneProducto: true,
+          tieneVendedorAsignado: true,
+          tieneExistencias: true,
+          tieneTasaCambio: true,
+        ),
+      );
+
+      expect(puedeActivar(soloEsenciales), isTrue);
+      expect(puedeActivar(conTodo), isTrue);
+      expect(
+        progreso(conTodo).completadas,
+        progreso(soloEsenciales).completadas + 2,
+        reason: 'las dos son pasos del progreso aunque no bloqueen',
+      );
+      expect(tarea(conTodo, 'inventario').obligatoria, isFalse);
+      expect(tarea(conTodo, 'moneda').obligatoria, isFalse);
+    });
+
+    test('un pendiente guardado no pisa el hecho nuevo', () {
+      // `marcarTarea` no escribe estas claves; si alguna vez queda una fila
+      // vieja de la versión anterior, el hecho real sigue mandando por encima
+      // salvo que el usuario la haya omitido a propósito.
+      final tareas = construirTareas(
+        tipoNegocio: 'retail',
+        hechos: const HechosTienda(
+          tieneExistencias: true,
+          tieneTasaCambio: true,
+        ),
+        estadosGuardados: const {'moneda': EstadoTarea.omitida},
+      );
+
+      expect(tarea(tareas, 'inventario').estado, EstadoTarea.completada);
+      expect(tarea(tareas, 'moneda').estado, EstadoTarea.omitida);
+      expect(progreso(tareas).total, tareas.length - 1);
+    });
+
+    test('un catálogo no pide existencias, pero sí revisar la tasa', () {
+      final tareas = construirTareas(
+        tipoNegocio: 'catalogo',
+        hechos: const HechosTienda(),
+      );
+
+      expect(claves(tareas), isNot(contains('inventario')));
+      expect(claves(tareas), contains('moneda'));
+    });
+  });
+
   group('gate y progreso', () {
     test('una obligatoria omitida impide activar', () {
       final tareas = construirTareas(

@@ -7,7 +7,9 @@ import '../services/dashboard_service.dart';
 import '../services/currency_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/permissions_service.dart';
+import '../services/notification_service.dart';
 import '../widgets/admin_ai_assistant_sheet.dart';
+import '../widgets/notification_widget.dart';
 import '../widgets/onboarding_burbuja.dart';
 
 class DashboardWebScreen extends StatefulWidget {
@@ -25,6 +27,7 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
   final UserPreferencesService _userPreferencesService =
       UserPreferencesService();
   final PermissionsService _permissionsService = PermissionsService();
+  final NotificationService _notificationService = NotificationService();
 
   String _currentStoreName = 'Cargando...';
   List<Map<String, dynamic>> _userStores = [];
@@ -47,6 +50,10 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
     super.initState();
     _loadStoreInfo();
     _loadDashboardData();
+    // En web `/dashboard` resuelve a ESTA pantalla, no a `DashboardScreen`
+    // (móvil). Sin esta línea el dashboard web se quedaba sin campana, sin
+    // realtime y sin aviso de producto agotado, aunque el móvil sí los tenía.
+    _notificationService.initialize();
   }
 
   Future<void> _loadStoreInfo() async {
@@ -419,6 +426,11 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
             onPressed: () => AdminAiAssistantSheet.show(context),
             tooltip: 'Asistente de ayuda',
           ),
+          // Campana de notificaciones: el dashboard web no la tenía. Es la
+          // misma que la del dashboard móvil, sobre el mismo
+          // `NotificationService`, así que las dos vistas comparten contador,
+          // realtime y panel.
+          const NotificationWidget(),
           Builder(
             builder:
                 (context) => IconButton(
