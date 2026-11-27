@@ -5,6 +5,7 @@ import '../models/notification_model.dart';
 import '../services/notification_service.dart';
 import '../services/turno_service.dart';
 import '../theme/ventiq_home_theme.dart';
+import '../utils/global_navigator.dart';
 import '../utils/uuid_generator.dart';
 
 bool _rpcAusente(Object error, String functionName) {
@@ -180,28 +181,45 @@ class _NotificationWidgetState extends State<NotificationWidget> {
 
   /// Mostrar panel de notificaciones
   void _showNotificationsPanel(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      // El panel es un `DraggableScrollableSheet`, así que el contenido de la
-      // ruta ocupa TODA la pantalla (aunque solo pinte la tarjeta abajo). Por
-      // eso la zona oscura de arriba no era el `barrier` del modal y tocarla no
-      // cerraba nada. Con este `Stack`, la zona de encima del panel es un área
-      // táctil que cierra; el `Align` del sheet solo ocupa su tarjeta, así que
-      // los toques de arriba caen aquí y los de la tarjeta siguen siendo suyos.
-      builder: (BuildContext sheetContext) => Stack(
-        fit: StackFit.expand,
-        children: <Widget>[
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => Navigator.of(sheetContext).pop(),
-          ),
-          const NotificationsPanel(),
-        ],
-      ),
-    );
+    abrirPanelDeNotificaciones(context);
   }
+}
+
+/// Abre el panel de notificaciones sobre [context].
+///
+/// Es público porque lo usan la campana del Home y el aviso flotante de
+/// producto agotado ([AvisoProductoAgotado]).
+void abrirPanelDeNotificaciones(BuildContext context) {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    // El panel es un `DraggableScrollableSheet`, así que el contenido de la
+    // ruta ocupa TODA la pantalla (aunque solo pinte la tarjeta abajo). Por eso
+    // la zona oscura de arriba no era el `barrier` del modal y tocarla no
+    // cerraba nada. Con este `Stack`, la zona de encima del panel es un área
+    // táctil que cierra; el `Align` del sheet solo ocupa su tarjeta, así que
+    // los toques de arriba caen aquí y los de la tarjeta siguen siendo suyos.
+    builder: (BuildContext sheetContext) => Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => Navigator.of(sheetContext).pop(),
+        ),
+        const NotificationsPanel(),
+      ],
+    ),
+  );
+}
+
+/// Igual que [abrirPanelDeNotificaciones], pero desde fuera de un árbol de
+/// widgets: el servicio de notificaciones y el aviso flotante no tienen un
+/// `BuildContext` propio y tiran del navegador global.
+void abrirPanelDeNotificacionesGlobal() {
+  final BuildContext? context = globalNavigatorKey.currentContext;
+  if (context == null) return;
+  abrirPanelDeNotificaciones(context);
 }
 
 /// Panel de notificaciones

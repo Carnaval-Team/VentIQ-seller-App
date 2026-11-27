@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../services/financial_service.dart';
 import '../services/permissions_service.dart';
+import '../services/user_preferences_service.dart';
 
 /// Nomenclador global de tipos de costo adicional (Flete, Aduana, Importadora,
 /// Seguro...). Diseño: `docs/design/compras-costos-adicionales.png`
@@ -35,6 +36,10 @@ class _CostTypesManagementScreenState extends State<CostTypesManagementScreen> {
   bool _accessChecked = false;
   bool _guardando = false;
 
+  /// Tienda del usuario e interruptor de ámbito para el alta.
+  int? _idTienda;
+  bool _crearGlobal = false;
+
   @override
   void initState() {
     super.initState();
@@ -50,18 +55,28 @@ class _CostTypesManagementScreenState extends State<CostTypesManagementScreen> {
 
   Future<void> _bootstrap() async {
     final isSa = await _permissions.isSuperAdmin();
+    int? tienda;
+    try {
+      tienda = await UserPreferencesService().getIdTienda();
+    } catch (_) {
+      tienda = null;
+    }
     if (!mounted) return;
     setState(() {
       _isSuperAdmin = isSa;
+      _idTienda = tienda;
       _accessChecked = true;
     });
-    if (isSa) await _cargar();
+    // Los conceptos son de lectura para cualquier autenticado; la escritura la
+    // valida el servidor (dueño/gerente de la tienda o superadmin).
+    await _cargar();
   }
 
   Future<void> _cargar() async {
     setState(() => _isLoading = true);
     try {
-      final tipos = await _financialService.getCostTypes();
+      final tipos =
+          await _financialService.getCostTypes(idTienda: _idTienda);
       if (!mounted) return;
       setState(() {
         _costTypes = tipos;
@@ -103,6 +118,7 @@ class _CostTypesManagementScreenState extends State<CostTypesManagementScreen> {
 
   void _nuevo() {
     _seleccionar(null);
+    setState(() => _crearGlobal = false);
     _formKey.currentState?.reset();
   }
 
@@ -120,11 +136,15 @@ class _CostTypesManagementScreenState extends State<CostTypesManagementScreen> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _guardando = true);
     try {
+      final idTienda = _seleccionado != null
+          ? (_seleccionado!['id_tienda'] as num?)?.toInt()
+          : (_crearGlobal && _isSuperAdmin ? null : _idTienda);
       final res = await _financialService.saveCostType(
         id: (_seleccionado?['id'] as num?)?.toInt(),
         name: _nombreCtrl.text.trim(),
         description: _descripcionCtrl.text.trim(),
         afectaMargen: _afectaMargen,
+        idTienda: idTienda,
       );
       final id = (res['id'] as num?)?.toInt();
       await _cargar();
@@ -207,21 +227,21 @@ class _CostTypesManagementScreenState extends State<CostTypesManagementScreen> {
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Actualizar',
-            onPressed: _isSuperAdmin && !_isLoading ? _cargar : null,
+            onPressed: !_isLoading ? _cargar : null,
           ),
         ],
       ),
       body: !_accessChecked || _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : !_isSuperAdmin
-          ? Center(
+          : (!_isSuperAdmin && _idTienda == null)
+          ? const Center(
               child: Padding(
-                padding: const EdgeInsets.all(24),
+                padding: EdgeInsets.all(24),
                 child: Text(
-                  'Solo un superadmin puede gestionar el nomenclador global de '
-                  'tipos de costo.',
+                  'Inicia sesión con una tienda para gestionar sus conceptos de '
+                  'costo. Los globales los administra el superadmin.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.grey[700], fontSize: 15),
+                  style: TextStyle(color: Colors.grey, fontSize: 15),
                 ),
               ),
             )
@@ -279,12 +299,15 @@ class _CostTypesManagementScreenState extends State<CostTypesManagementScreen> {
       ),
       child: Row(
         children: [
-          const Icon(Icons.lock_outline, size: 18, color: AppColors.info),
+          const Icon(Icons.tune, size: 18, color: AppColors.info),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'Solo superadministrador · este nomenclador lo usa todo el sistema, '
-              'no solo esta tienda',
+              _isSuperAdmin
+                  ? 'Superadministrador · los conceptos globales los usa toda '
+                      'la suite; los de tienda, solo su tienda.'
+                  : 'Conceptos de tu tienda + los globales de la suite. '
+                      'Puedes crear y editar los de tu tienda.',
               style: TextStyle(
                 fontSize: 13,
                 color: AppColors.primary,
@@ -398,6 +421,13 @@ class _CostTypesManagementScreenState extends State<CostTypesManagementScreen> {
                     const SizedBox(width: 6),
                     _chip('Obligatorio', AppColors.primary),
                   ],
+                  const SizedBox(width: 6),
+                  _chip(
+                    tipo['id_tienda'] == null ? 'Global' : 'Tienda',
+                    tipo['id_tienda'] == null
+                        ? AppColors.textSecondary
+                        : AppColors.secondary,
+                  ),
                 ],
               ),
             ),
@@ -480,6 +510,13 @@ class _CostTypesManagementScreenState extends State<CostTypesManagementScreen> {
                         const SizedBox(width: 6),
                         _chip('Obligatorio', AppColors.primary),
                       ],
+                      const SizedBox(width: 6),
+                      _chip(
+                        tipo['id_tienda'] == null ? 'Global' : 'Tienda',
+                        tipo['id_tienda'] == null
+                            ? AppColors.textSecondary
+                            : AppColors.secondary,
+                      ),
                     ],
                   ),
                   if (_texto(tipo['descripcion']).isNotEmpty)
@@ -511,6 +548,75 @@ class _CostTypesManagementScreenState extends State<CostTypesManagementScreen> {
     );
   }
 
+  /// Ámbito del concepto: global (toda la suite) o de la tienda actual.
+  Widget _bloqueAlcance({required bool esNuevo, required bool esGlobal}) {
+    if (!esNuevo && !_isSuperAdmin) {
+      return Row(
+        children: [
+          _chip(
+            esGlobal ? 'Global' : 'Tienda',
+            esGlobal ? AppColors.textSecondary : AppColors.secondary,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              esGlobal
+                  ? 'Global: solo el superadmin lo edita.'
+                  : 'De la tienda ${_idTienda ?? ''}.',
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+    if (esNuevo && !_isSuperAdmin) {
+      return Text(
+        'Se creará para la tienda ${_idTienda ?? ''}.',
+        style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+      );
+    }
+    if (esNuevo && _isSuperAdmin) {
+      return SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        value: _crearGlobal,
+        onChanged: _guardando
+            ? null
+            : (v) => setState(() => _crearGlobal = v),
+        title: const Text(
+          'Concepto global',
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+        ),
+        subtitle: Text(
+          _crearGlobal
+              ? 'Lo verán todas las tiendas.'
+              : 'Solo lo verá la tienda ${_idTienda ?? 'actual'}.',
+          style: const TextStyle(fontSize: 11),
+        ),
+      );
+    }
+    return Row(
+      children: [
+        _chip(
+          esGlobal ? 'Global' : 'Tienda',
+          esGlobal ? AppColors.textSecondary : AppColors.secondary,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            esGlobal ? 'Global: toda la suite.' : 'De la tienda ${_idTienda ?? ''}.',
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _chip(String texto, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
@@ -533,6 +639,9 @@ class _CostTypesManagementScreenState extends State<CostTypesManagementScreen> {
   Widget _panelEditor() {
     final esNuevo = _seleccionado == null;
     final id = (_seleccionado?['id'] as num?)?.toInt();
+    final esGlobal = _seleccionado?['id_tienda'] == null;
+    final soloLectura = !esNuevo && esGlobal && !_isSuperAdmin;
+    final editable = !_guardando && !soloLectura;
     return DecoratedBox(
       decoration: BoxDecoration(
         color: AppColors.surface,
@@ -560,10 +669,12 @@ class _CostTypesManagementScreenState extends State<CostTypesManagementScreen> {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
+              const SizedBox(height: 8),
+              _bloqueAlcance(esNuevo: esNuevo, esGlobal: esGlobal),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _nombreCtrl,
-                enabled: !_guardando,
+                enabled: editable,
                 decoration: const InputDecoration(
                   labelText: 'Nombre',
                   border: OutlineInputBorder(),
@@ -579,7 +690,7 @@ class _CostTypesManagementScreenState extends State<CostTypesManagementScreen> {
               const SizedBox(height: 10),
               TextFormField(
                 controller: _descripcionCtrl,
-                enabled: !_guardando,
+                enabled: editable,
                 minLines: 2,
                 maxLines: 3,
                 decoration: const InputDecoration(
@@ -612,9 +723,9 @@ class _CostTypesManagementScreenState extends State<CostTypesManagementScreen> {
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 value: _afectaMargen,
-                onChanged: _guardando
-                    ? null
-                    : (v) => setState(() => _afectaMargen = v),
+                onChanged: editable
+                    ? (v) => setState(() => _afectaMargen = v)
+                    : null,
                 title: const Text(
                   'Afecta margen',
                   style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
@@ -639,7 +750,7 @@ class _CostTypesManagementScreenState extends State<CostTypesManagementScreen> {
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
-                  onPressed: _guardando ? null : _guardar,
+                  onPressed: (_guardando || soloLectura) ? null : _guardar,
                   icon: _guardando
                       ? const SizedBox(
                           width: 16,
@@ -672,7 +783,7 @@ class _CostTypesManagementScreenState extends State<CostTypesManagementScreen> {
                         ? 'Importadora es obligatorio: el aterrizaje lo resuelve por nombre'
                         : 'Un concepto en uso no se puede eliminar',
                     child: TextButton.icon(
-                      onPressed: (_guardando || _esImportadora)
+                      onPressed: (_guardando || _esImportadora || soloLectura)
                           ? null
                           : _eliminar,
                       icon: const Icon(Icons.delete_outline, size: 18),

@@ -18,6 +18,10 @@ class ProductQuantityDialog extends StatefulWidget {
   final double? exchangeRate;
   final Function(Map<String, dynamic>) onProductAdded;
 
+  /// Conceptos que no se ofrecen en esta recepción (p. ej. la importadora,
+  /// cuando ya se declara arriba con su %). No se borran: solo se ocultan.
+  final Set<int> conceptosOcultos;
+
   const ProductQuantityDialog({
     Key? key,
     required this.product,
@@ -25,6 +29,7 @@ class ProductQuantityDialog extends StatefulWidget {
     this.selectedLocation,
     required this.invoiceCurrency,
     this.exchangeRate,
+    this.conceptosOcultos = const {},
   }) : super(key: key);
 
   @override
@@ -112,7 +117,14 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
           await CostosAdicionalesService().listarActivosPorProducto(id);
       if (!mounted) return;
       setState(() {
-        _costosAdicionales = rows.map((r) {
+        _costosAdicionales = rows
+            .where(
+              (r) =>
+                  !widget.conceptosOcultos.contains(
+                    (r['id_tipo_costo'] as num?)?.toInt(),
+                  ),
+            )
+            .map((r) {
           final tipo = r['app_cont_tipo_costo'];
           final nombre = tipo is Map
               ? (tipo['denominacion']?.toString() ?? 'Concepto')

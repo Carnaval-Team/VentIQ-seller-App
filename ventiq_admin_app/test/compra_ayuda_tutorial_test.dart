@@ -118,11 +118,15 @@ void main() {
       }
     });
 
-    test('el reparto avisa del límite real del aterrizaje', () {
-      // Hoy el reparto del aterrizaje es siempre por valor: si se calla, el
-      // usuario cree que «por peso» se aplica y el costo sale distinto.
-      expect(ayudaRepartoAjuste.aviso, isNotNull);
-      expect(ayudaRepartoAjuste.aviso, contains('por valor'));
+    test('el reparto se explica como por cantidad', () {
+      // El aterrizaje reparte siempre por cantidad base; el texto no debe
+      // prometer valor ni peso.
+      expect(ayudaRepartoAjuste.queEs.toLowerCase(), contains('cantidad'));
+      expect(
+        ayudaRepartoAjuste.detalles.join(' ').toLowerCase(),
+        contains('cantidad base'),
+      );
+      expect(ayudaRepartoAjuste.aviso, isNull);
     });
   });
 

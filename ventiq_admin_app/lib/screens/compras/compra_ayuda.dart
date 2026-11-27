@@ -214,15 +214,16 @@ const ConceptoAyuda ayudaTasaFactura = ConceptoAyuda(
       'en dólares y la factura puede venir en CUP, EUR o USD.',
   detalles: [
     'Si la factura está en USD, la tasa es 1: no hay nada que convertir.',
-    'Si está en CUP, pon cuántos CUP te dan por 1 USD ese día (por ejemplo 1.250).',
-    'Si está en EUR, pon los EUR por 1 USD (por ejemplo 0,92).',
-    'La tasa se guarda con la compra y no se vuelve a calcular: es la foto del '
-        'día en que registraste la factura.',
+    'Si está en CUP, el sistema toma la tasa extraoficial configurada para la '
+        'tienda y la deja bloqueada.',
+    'Si necesitas otra tasa, pulsa el botón de editar: queda congelada en esta '
+        'compra y no se recalcula después.',
+    'Si está en EUR, escríbela a mano.',
   ],
   ejemplo:
-      'Factura de 100.000 CUP con tasa 1.250 → equivale a 80,00 USD. '
-      'Esos 80 USD son los que se comparan después en el reporte cambiario '
-      'contra lo que de verdad costó pagar.',
+      'Factura de 100.000 CUP con la tasa de la tienda 850 → equivale a '
+      '117,65 USD. Esos 117,65 USD son los que se comparan después contra lo '
+      'que de verdad costó pagar.',
 );
 
 /// Ajustes: costos que no son mercancía pero terminan dentro del costo.
@@ -234,9 +235,10 @@ const ConceptoAyuda ayudaAjustes = ConceptoAyuda(
       'de cada línea para saber cuánto te costó de verdad lo que entró al '
       'almacén.',
   detalles: [
-    'Se declaran una vez por compra y el sistema los reparte entre las líneas '
-        'cuando llega la mercancía.',
-    'El «aterrizado» es la mercancía más todos los ajustes.',
+    'Se declaran una vez por compra y el sistema los reparte por cantidad de '
+        'unidades cuando llega la mercancía.',
+    'El «aterrizado» del documento es la mercancía más estos ajustes; los '
+        'cargos de la recepción (importadora) se suman aparte.',
     'El «financiado» es la mercancía más solo los ajustes que paga el fondo.',
     'Si no hay ajustes, el aterrizado es igual a la mercancía.',
   ],
@@ -270,42 +272,59 @@ const ConceptoAyuda ayudaRepartoAjuste = ConceptoAyuda(
   titulo: 'Cómo se reparte el ajuste entre los productos',
   queEs:
       'Un ajuste es un solo importe para toda la compra, pero el costo tiene que '
-      'quedar por producto. El reparto dice con qué criterio se trocea: por lo '
-      'que vale cada línea, por su peso o por sus unidades.',
+      'quedar por producto. El sistema lo reparte siempre por cantidad de '
+      'unidades: quien recibe más unidades, más ajuste recibe.',
   detalles: [
-    'Por valor: quien más pagó, más ajuste recibe. Es lo normal para flete y '
-        'aduanas.',
-    'Por cantidad: se reparte a partes iguales entre unidades.',
-    'Por peso: reparte según el peso de cada línea (para cargas muy pesadas).',
+    'Se usa la cantidad base de cada línea: una caja de 24 cuenta como 24 '
+        'unidades.',
+    'El residuo de centavos va a la línea de mayor cantidad.',
+    'Si la compra se recibe en varias veces, cada recepción recibe solo la '
+        'parte proporcional a lo que entró.',
   ],
   ejemplo:
-      'Flete de 100 USD entre una línea de 800 USD y otra de 200 USD, reparto '
-      'por valor → 80 USD a la primera y 20 USD a la segunda.',
-  aviso:
-      'Hoy el aterrizaje reparte siempre por valor. Si eliges peso o cantidad, '
-      'el criterio queda guardado en el ajuste, pero el costo se sigue '
-      'repartiendo por valor.',
+      'Flete de 100 USD entre una línea de 100 unidades y otra de 300 → '
+      '25 USD a la primera y 75 USD a la segunda.',
 );
 
 /// Quién paga el ajuste.
 const ConceptoAyuda ayudaOrigenPago = ConceptoAyuda(
   titulo: 'Quién paga el ajuste',
   queEs:
-      'No todos los ajustes salen del mismo bolsillo. Este campo decide si el '
-      'dinero sale del fondo de la empresa y, por tanto, si el ajuste cuenta '
-      'como financiado.',
+      'No todos los ajustes salen del mismo bolsillo. En el alta lo decide el '
+      'modo de liquidación de la compra: no se elige a mano.',
   detalles: [
-    'Fondo: lo pagas tú con el dinero de la empresa. Entra en el «financiado».',
-    'Wallet importadora: lo paga la importadora. Capitaliza al costo del '
-        'producto, pero no sale del fondo.',
-    'Wallet proveedor: lo asume el proveedor. Queda declarado para el análisis.',
-    'Externo: se pagó por fuera (efectivo, transferencia aparte). Capitaliza al '
-        'costo.',
+    'Fondo: lo paga la empresa y entra en el «financiado».',
+    'Inversores: el ajuste queda como externo; capitaliza al costo pero no sale '
+        'del fondo.',
+    'En la recepción, el cargo de la importadora tampoco puede pagarse con el '
+        'fondo: se declara wallet de la importadora o externo.',
   ],
   ejemplo:
       'Mercancía 1.000 USD con un flete de 150 USD pagado por el fondo: '
       'financiado 1.150 y aterrizado 1.150. '
       'Si ese flete lo paga la importadora: financiado 1.000 y aterrizado 1.150.',
+);
+
+/// Cómo leer el panel de costo aterrizado del detalle.
+const ConceptoAyuda ayudaCostoAterrizado = ConceptoAyuda(
+  titulo: 'Cómo leer el costo aterrizado',
+  queEs:
+      'Es lo que de verdad te costó lo recibido. Se arma sumando tres cosas '
+      'distintas; ninguna se suma dos veces.',
+  detalles: [
+    'Valor recibido: la factura de lo que entró.',
+    'Cargo de importadora: el servicio de la importadora, ya neto. Si no hubo '
+        'devolución, el bruto coincide con el neto y NO se suma aparte.',
+    'Ajustes aplicados: flete, seguro, aduana… repartidos por cantidad sobre lo '
+        'recibido. «Por asignar» es lo que falta recibir.',
+    'Total aterrizado = valor recibido + cargo neto + ajustes aplicados.',
+  ],
+  ejemplo:
+      'Factura recibida 1.334,55 + importadora 40,04 + seguro 700 = 2.074,59 USD. '
+      'El bruto 40,04 no se suma otra vez.',
+  aviso:
+      'Si la compra se recibe en varias veces, «por asignar» baja hasta 0 '
+      'cuando entra todo.',
 );
 
 /// Mercancía, financiado y aterrizado: las cuatro cifras.
@@ -319,8 +338,8 @@ const ConceptoAyuda ayudaCifrasCompra = ConceptoAyuda(
     'Ajustes: la suma de los costos de traerla (flete, aduana, importadora...).',
     'Financiado: lo que tiene que poner el fondo. Mercancía + ajustes pagados '
         'por el fondo.',
-    'Aterrizado: lo que costó de verdad la mercancía, incluidos los ajustes que '
-        'pagó otro. Es el que se lleva al costo del inventario.',
+    'Aterrizado del documento: mercancía + ajustes declarados. Los cargos de '
+        'la recepción (importadora) se suman en el panel «Costo aterrizado».',
   ],
   ejemplo:
       'Mercancía 1.000 · Ajustes 150 (de ellos 100 del fondo) → '
